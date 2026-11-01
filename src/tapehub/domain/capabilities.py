@@ -6,10 +6,10 @@
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from tapehub.domain.intervals import Interval
-from tapehub.domain.models import Adjust, AssetType, DataType, Delivery, ensure_utc
+from tapehub.domain.models import Adjust, AssetType, DataType, DataVariant, Delivery, ensure_utc
 
 
 class IntervalHistory(BaseModel):
@@ -46,6 +46,7 @@ class Capability(BaseModel):
     markets: list[str]
     asset_types: list[AssetType]
     delivery: list[Delivery]
+    variants: list[DataVariant] = Field(default_factory=lambda: [DataVariant.EASTMONEY])
     intervals: list[IntervalEntry]
     adjustments: list[Adjust]
     fields: list[str]
@@ -58,13 +59,16 @@ class Capability(BaseModel):
         asset_type: AssetType,
         interval: Interval,
         adjust: Adjust,
+        variant: DataVariant,
     ) -> bool:
-        """完整能力维度匹配：data_type × market × asset_type × interval × adjust。"""
+        """完整能力维度匹配：data_type × market × asset_type × interval × adjust × variant。"""
         if data_type != self.data_type:
             return False
         if market not in self.markets:
             return False
         if asset_type not in self.asset_types:
+            return False
+        if variant not in self.variants:
             return False
         if not any(entry.code == interval for entry in self.intervals):
             return False

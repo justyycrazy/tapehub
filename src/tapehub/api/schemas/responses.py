@@ -38,6 +38,7 @@ class CapabilityOut(BaseModel):
     markets: list[str]
     asset_types: list[str]
     delivery: list[str]
+    variants: list[str]
     intervals: list[IntervalEntryOut]
     adjustments: list[str]
     fields: list[str]
@@ -107,6 +108,7 @@ def capability_to_out(cap: Capability) -> CapabilityOut:
         markets=list(cap.markets),
         asset_types=[item.value for item in cap.asset_types],
         delivery=[item.value for item in cap.delivery],
+        variants=[item.value for item in cap.variants],
         intervals=[
             IntervalEntryOut(
                 code=entry.code.code,

@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING, Protocol, TypeGuard
 
 from tapehub.domain.capabilities import Capability
 from tapehub.domain.intervals import Interval
-from tapehub.domain.models import Adjust, AssetType, DataType
+from tapehub.domain.models import Adjust, AssetType, DataType, DataVariant
 from tapehub.providers.manifest import ProviderManifest, load_builtin_manifest
 
 if TYPE_CHECKING:
@@ -56,6 +56,7 @@ class ProviderRecord:
         asset_type: AssetType,
         interval: Interval,
         adjust: Adjust,
+        variant: DataVariant,
     ) -> bool:
         return any(
             cap.supports(
@@ -64,6 +65,7 @@ class ProviderRecord:
                 asset_type=asset_type,
                 interval=interval,
                 adjust=adjust,
+                variant=variant,
             )
             for cap in self.capabilities
         )
@@ -96,6 +98,7 @@ class ProviderRegistry:
         asset_type: AssetType,
         interval: Interval,
         adjust: Adjust,
+        variant: DataVariant,
     ) -> list[ProviderRecord]:
         """只返回启用、已实现且完整能力条件全部匹配的候选。"""
         return [
@@ -110,6 +113,7 @@ class ProviderRegistry:
                 asset_type=asset_type,
                 interval=interval,
                 adjust=adjust,
+                variant=variant,
             )
         ]
 

@@ -13,7 +13,7 @@ from tapehub.api.schemas.responses import (
     utc_now,
 )
 from tapehub.application.capability_service import CapabilityService, parse_capability_filters
-from tapehub.domain.models import AssetType, DataType
+from tapehub.domain.models import AssetType, DataType, DataVariant
 from tapehub.settings import Settings
 
 router = APIRouter(prefix="/v1", tags=["capabilities"])
@@ -30,6 +30,9 @@ async def list_capabilities(
     market: Annotated[str | None, Query(description="按市场过滤，如 CN")] = None,
     asset_type: Annotated[AssetType | None, Query(description="按资产类型过滤")] = None,
     interval: Annotated[str | None, Query(description="按 ISO 8601 周期过滤，如 P1D")] = None,
+    variant: Annotated[
+        DataVariant | None, Query(description="按数据源变体过滤，如 eastmoney")
+    ] = None,
 ) -> CapabilitiesResponse:
     interval_value = parse_capability_filters(interval=interval)
     views = service.list_providers(
@@ -38,6 +41,7 @@ async def list_capabilities(
         market=market,
         asset_type=asset_type,
         interval=interval_value,
+        variant=variant,
     )
     return CapabilitiesResponse(
         data=[provider_view_to_out(view) for view in views],

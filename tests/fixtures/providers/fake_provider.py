@@ -15,7 +15,7 @@ _BASE_PRICES: dict[str, float] = {
     "fake_stock_daily": 10.0,
     "fake_etf_daily": 5.0,
     "fake_index_daily": 3000.0,
-    "fake_futures_daily": 4000.0,
+    "fake_contract_daily": 4000.0,
     "fake_stock_minute": 12.5,
 }
 

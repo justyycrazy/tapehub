@@ -5,8 +5,9 @@ enabled: true
 capabilities:
   - data_type: bars
     markets: [CN]
-    asset_types: [stock, etf, index, futures]
+    asset_types: [stock, etf, index, contract]
     delivery: [rest]
+    variants: [eastmoney]
     intervals:
       - code: P1D
         history:
@@ -20,38 +21,13 @@ capabilities:
     fields: [open, high, low, close, volume, amount]
 
 operations:
-  - match:
-      data_type: bars
-      market: CN
-      asset_type: stock
-      interval: P1D
-      adjust: none
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: P1D, adjust: none, variant: eastmoney}
     operation: fake_stock_daily
-  - match:
-      data_type: bars
-      market: CN
-      asset_type: etf
-      interval: P1D
-      adjust: none
+  - match: {data_type: bars, market: CN, asset_type: etf, interval: P1D, adjust: none, variant: eastmoney}
     operation: fake_etf_daily
-  - match:
-      data_type: bars
-      market: CN
-      asset_type: index
-      interval: P1D
-      adjust: none
+  - match: {data_type: bars, market: CN, asset_type: index, interval: P1D, adjust: none, variant: eastmoney}
     operation: fake_index_daily
-  - match:
-      data_type: bars
-      market: CN
-      asset_type: futures
-      interval: P1D
-      adjust: none
-    operation: fake_futures_daily
-  - match:
-      data_type: bars
-      market: CN
-      asset_type: stock
-      interval: PT1M
-      adjust: none
+  - match: {data_type: bars, market: CN, asset_type: contract, interval: P1D, adjust: none, variant: eastmoney}
+    operation: fake_contract_daily
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: PT1M, adjust: none, variant: eastmoney}
     operation: fake_stock_minute

@@ -14,7 +14,7 @@ from tapehub.domain.errors import (
     UnsupportedCapabilityError,
 )
 from tapehub.domain.intervals import Interval
-from tapehub.domain.models import Adjust, AssetType, BarQuery, DataType, Instrument
+from tapehub.domain.models import Adjust, AssetType, BarQuery, DataType, DataVariant, Instrument
 from tapehub.providers.base import BaseProviderAdapter
 from tapehub.providers.manifest import ProviderManifest
 from tapehub.providers.registry import ProviderRegistry, build_provider_record
@@ -91,6 +91,13 @@ class TestSelectAuto:
         router = ProviderRouter(_registry(fake_record))
         assert router.select(_query(provider="auto")) is fake_record
 
+    def test_variant_must_match(self, fake_record: Any) -> None:
+        router = ProviderRouter(_registry(fake_record))
+        # fake 仅声明 eastmoney 变体
+        assert router.select(_query(variant="eastmoney")) is fake_record
+        with pytest.raises(NoProviderAvailableError):
+            router.select(_query(variant="sina"))
+
     def test_skips_disabled_and_unimplemented(self) -> None:
         manifest = ProviderManifest(provider="stub-provider", enabled=True)
         stub = build_provider_record("stub-provider", manifest, _YesAdapter)
@@ -114,13 +121,14 @@ class TestSelectAuto:
             router.select(_query(interval="P1M"))
 
     def test_asset_type_must_match(self, fake_record: Any) -> None:
-        # 通过直接构造能力检查验证 asset_type 维度参与匹配
+        # 通过直接构造能力检查验证 asset_type 与 variant 维度参与匹配
         assert fake_record.capabilities[0].supports(
             data_type=DataType.BARS,
             market="CN",
             asset_type=AssetType.ETF,
             interval=Interval.parse("P1D"),
             adjust=Adjust.NONE,
+            variant=DataVariant.EASTMONEY,
         )
         assert not fake_record.capabilities[0].supports(
             data_type=DataType.BARS,
@@ -128,6 +136,15 @@ class TestSelectAuto:
             asset_type=AssetType.ETF,
             interval=Interval.parse("P1D"),
             adjust=Adjust.NONE,
+            variant=DataVariant.EASTMONEY,
+        )
+        assert not fake_record.capabilities[0].supports(
+            data_type=DataType.BARS,
+            market="CN",
+            asset_type=AssetType.ETF,
+            interval=Interval.parse("P1D"),
+            adjust=Adjust.NONE,
+            variant=DataVariant.SINA,
         )
 
 
@@ -136,14 +153,14 @@ class TestAdapterOperationRouting:
         adapter = fake_record.adapter
         operations = {
             asset_type: adapter.resolve_operation(_query(asset_type=asset_type))
-            for asset_type in (AssetType.STOCK, AssetType.ETF, AssetType.INDEX, AssetType.FUTURES)
+            for asset_type in (AssetType.STOCK, AssetType.ETF, AssetType.INDEX, AssetType.CONTRACT)
         }
         assert len(set(operations.values())) == 4
         assert operations == {
             AssetType.STOCK: "fake_stock_daily",
             AssetType.ETF: "fake_etf_daily",
             AssetType.INDEX: "fake_index_daily",
-            AssetType.FUTURES: "fake_futures_daily",
+            AssetType.CONTRACT: "fake_contract_daily",
         }
 
     def test_minute_operation_for_stock(self, fake_record: Any) -> None:

@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 from tapehub.domain.capabilities import Capability
 from tapehub.domain.errors import InvalidRequestError, ProviderNotFoundError
 from tapehub.domain.intervals import Interval
-from tapehub.domain.models import AssetType, DataType
+from tapehub.domain.models import AssetType, DataType, DataVariant
 
 if TYPE_CHECKING:
     from tapehub.providers.registry import ProviderRegistry
@@ -43,6 +43,7 @@ class CapabilityService:
         market: str | None = None,
         asset_type: AssetType | None = None,
         interval: Interval | None = None,
+        variant: DataVariant | None = None,
     ) -> list[ProviderCapabilitiesView]:
         """列出（可过滤的）Provider 能力视图。
 
@@ -63,11 +64,10 @@ class CapabilityService:
                     market=market,
                     asset_type=asset_type,
                     interval=interval,
+                    variant=variant,
                 )
             ]
-            capability_filters_applied = any(
-                (data_type, market, asset_type, interval)
-            )
+            capability_filters_applied = any((data_type, market, asset_type, interval, variant))
             if capabilities or not capability_filters_applied:
                 views.append(
                     ProviderCapabilitiesView(
@@ -102,12 +102,15 @@ def _matches(
     market: str | None,
     asset_type: AssetType | None,
     interval: Interval | None,
+    variant: DataVariant | None,
 ) -> bool:
     if data_type is not None and cap.data_type != data_type:
         return False
     if market is not None and market not in cap.markets:
         return False
     if asset_type is not None and asset_type not in cap.asset_types:
+        return False
+    if variant is not None and variant not in cap.variants:
         return False
     if interval is not None and not any(entry.code == interval for entry in cap.intervals):
         return False

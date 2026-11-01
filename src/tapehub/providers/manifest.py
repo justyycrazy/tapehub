@@ -15,7 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from tapehub.domain.capabilities import Capability, IntervalEntry, IntervalHistory
 from tapehub.domain.errors import ManifestError
 from tapehub.domain.intervals import Interval
-from tapehub.domain.models import Adjust, AssetType, DataType, Delivery, ensure_utc
+from tapehub.domain.models import Adjust, AssetType, DataType, DataVariant, Delivery, ensure_utc
 
 
 class ManifestHistory(BaseModel):
@@ -52,6 +52,7 @@ class ManifestCapability(BaseModel):
     markets: list[str]
     asset_types: list[AssetType]
     delivery: list[Delivery]
+    variants: list[DataVariant] = Field(default_factory=lambda: [DataVariant.EASTMONEY])
     intervals: list[ManifestInterval]
     adjustments: list[Adjust]
     fields: list[str]
@@ -62,6 +63,7 @@ class ManifestCapability(BaseModel):
             markets=list(self.markets),
             asset_types=list(self.asset_types),
             delivery=list(self.delivery),
+            variants=list(self.variants),
             intervals=[entry.to_domain() for entry in self.intervals],
             adjustments=list(self.adjustments),
             fields=list(self.fields),
@@ -69,7 +71,10 @@ class ManifestCapability(BaseModel):
 
 
 class OperationMatch(BaseModel):
-    """内部操作匹配键：data_type × market × asset_type × interval × adjust。"""
+    """内部操作匹配键：data_type × market × asset_type × interval × adjust × variant。
+
+    所有维度必须显式声明，不依赖默认值，避免“未传递参数的默认值不一致”。
+    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -78,6 +83,7 @@ class OperationMatch(BaseModel):
     asset_type: AssetType
     interval: Interval
     adjust: Adjust
+    variant: DataVariant
 
 
 class ManifestOperation(BaseModel):
@@ -100,7 +106,7 @@ class ProviderManifest(BaseModel):
         seen: set[tuple[Any, ...]] = set()
         for op in self.operations:
             m = op.match
-            key = (m.data_type, m.market, m.asset_type, m.interval, m.adjust)
+            key = (m.data_type, m.market, m.asset_type, m.interval, m.adjust, m.variant)
             if key in seen:
                 raise ValueError(f"duplicate operation match for {key}")
             seen.add(key)

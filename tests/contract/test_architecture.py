@@ -6,6 +6,7 @@
 - 上游 SDK 函数名不得出现在 Application/API 层。
 """
 
+import re
 from pathlib import Path
 
 SRC_DIR = Path(__file__).parents[2] / "src" / "tapehub"
@@ -47,8 +48,13 @@ def test_adapters_do_not_import_fastapi_or_sdk() -> None:
         adapter = SRC_DIR / "providers" / name / "adapter.py"
         text = adapter.read_text(encoding="utf-8")
         assert "fastapi" not in text, f"{name} adapter must not depend on FastAPI"
-        # SDK 只能延迟导入：模块顶层不得出现 SDK import（占位实现完全没有）
-        assert f"import {name}" not in text
+        # SDK 必须延迟导入：模块顶层不得出现 SDK import（允许函数体内缩进的延迟导入）
+        assert not re.search(rf"^import {name}\b", text, re.MULTILINE), (
+            f"{name} adapter must lazily import its SDK"
+        )
+        assert not re.search(rf"^from {name}\b", text, re.MULTILINE), (
+            f"{name} adapter must lazily import its SDK"
+        )
 
 
 def test_api_layer_does_not_import_provider_sdk_modules() -> None:

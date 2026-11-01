@@ -7,7 +7,9 @@
 - ``interval`` 必须是合法 ISO 8601 Duration；
 - 日期值（YYYY-MM-DD）按 UTC 0 点解释；带时间的值必须包含时区；
 - ``start`` 必须早于 ``end``；时间范围为闭区间 [start, end]；
-- ``limit`` 不超过服务配置上限。
+- ``limit`` 不超过服务配置上限；
+- ``adjust`` 未传递时：个股（stock）默认 ``qfq``（前复权），其余默认 ``none``；
+- ``variant`` 未传递时默认 ``eastmoney``（东方财富）。
 """
 
 import re
@@ -17,7 +19,7 @@ from pydantic import BaseModel, Field
 
 from tapehub.domain.errors import InvalidRequestError
 from tapehub.domain.intervals import Interval
-from tapehub.domain.models import Adjust, AssetType, BarQuery, Instrument
+from tapehub.domain.models import Adjust, AssetType, BarQuery, DataVariant, Instrument
 from tapehub.settings import Settings
 
 _DATE_ONLY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
@@ -26,7 +28,11 @@ DEFAULT_PAGE_LIMIT = 500
 
 
 class BarsQueryParams(BaseModel):
-    """``GET /v1/market/bars`` 查询参数。"""
+    """``GET /v1/market/bars`` 查询参数。
+
+    ``adjust`` 使用 None 作为「未传递」哨兵，由 ``to_bar_query`` 按
+    资产类型填充声明默认值（个股 qfq，其余 none）。
+    """
 
     provider: str = "auto"
     asset_type: AssetType
@@ -34,9 +40,19 @@ class BarsQueryParams(BaseModel):
     interval: str
     start: str
     end: str
-    adjust: Adjust = Adjust.NONE
+    adjust: Adjust | None = None
+    variant: DataVariant = DataVariant.EASTMONEY
     offset: int = Field(default=0, ge=0)
     limit: int = Field(default=DEFAULT_PAGE_LIMIT, ge=1)
+
+
+def effective_adjust(params: BarsQueryParams) -> Adjust:
+    """未传递 adjust 时的声明默认值：个股前复权，其余不复权。"""
+    if params.adjust is not None:
+        return params.adjust
+    if params.asset_type == AssetType.STOCK:
+        return Adjust.QFQ
+    return Adjust.NONE
 
 
 def parse_boundary(value: str, name: str) -> datetime:
@@ -99,7 +115,8 @@ def to_bar_query(params: BarsQueryParams, settings: Settings) -> BarQuery:
         interval=interval,
         start=start,
         end=end,
-        adjust=params.adjust,
+        adjust=effective_adjust(params),
+        variant=params.variant,
         offset=params.offset,
         limit=params.limit,
     )

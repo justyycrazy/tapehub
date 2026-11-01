@@ -1,6 +1,6 @@
 # tapehub
 
-通用行情数据网关：对外提供统一的 HTTP RESTful API，内部通过适配器接入多个行情数据源（计划：akshare、tushare、tickflow、alphafeed、tqsdk）。
+通用行情数据网关：对外提供统一的 HTTP RESTful API，内部通过适配器接入多个行情数据源（akshare、tushare、tickflow、alphafeed、tqsdk）。
 
 **第一版只实现「历史 K 线查询」这一条业务链路，不建设行情数据存储平台。**
 
@@ -25,7 +25,9 @@
 - `GET /v1/providers/{provider}/capabilities`：单个 Provider 能力；
 - `GET /v1/market/bars`：统一历史 K 线查询；
 - Provider 注册、能力匹配与公共路由；Provider 内部二级操作路由的扩展机制；
-- 统一错误处理；基于测试 Fake Provider 的完整链路验证与单元/契约测试。
+- 统一错误处理；
+- **akshare Provider 已接入**（接口签名按官方文档核实，见下文）；
+- 基于 Fake Provider 与 Mock SDK 的完整链路验证与单元/契约测试。
 
 明确不实现（第一版）：
 
@@ -33,7 +35,7 @@
 - 定时任务、全量转储 Worker、消息队列、WebSocket/SSE 实时订阅；
 - 实时行情、快照、逐笔、盘口、标的元数据等其它查询接口；
 - Docker 与前端页面；
-- 真实 Provider 的未经核实接入（见下文「真实 Provider 接入状态」）。
+- tushare / tickflow / alphafeed / tqsdk（均未接入，返回明确错误）。
 
 ## 快速开始
 
@@ -44,16 +46,17 @@
 # pipx install uv
 # powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
 
-uv sync --dev          # 同步依赖（自动准备 Python 3.12）
+uv sync --dev                  # 同步依赖（自动准备 Python 3.12）
+uv sync --dev --extra akshare  # 额外安装 akshare SDK（可选依赖）
 
-uv run pytest          # 运行测试
+uv run pytest          # 运行测试（不依赖任何真实 SDK 与网络）
 uv run ruff check .    # 静态检查
 uv run uvicorn tapehub.api.app:app --reload   # 启动服务（默认 127.0.0.1:8000）
 ```
 
-## 连接测试（base_url + /health）
+Provider SDK 均为**可选依赖**：不安装 akshare 时服务正常启动，请求会返回 `PROVIDER_NOT_IMPLEMENTED`。
 
-其他项目把 `base_url` 配置为本服务地址后，调用：
+## 连接测试（base_url + /health）
 
 ```http
 GET http://tapehub:8000/health
@@ -71,7 +74,7 @@ GET http://tapehub:8000/health
 }
 ```
 
-调用方可同时校验 **HTTP 200** 与 **`service == "tapehub"`**，避免 `base_url` 配置到了其他服务。该接口不访问任何上游 Provider，也不需要鉴权。
+调用方可同时校验 **HTTP 200** 与 **`service == "tapehub"`**。该接口不访问任何上游 Provider，也不需要鉴权。
 
 ## API 示例
 
@@ -79,16 +82,18 @@ GET http://tapehub:8000/health
 
 ```http
 GET /v1/capabilities?asset_type=stock&interval=P1D
-GET /v1/providers/tushare/capabilities
+GET /v1/providers/akshare/capabilities
 ```
 
-只读取本地能力目录，不实时访问上游；支持可选过滤参数 `provider`、`data_type`、`market`、`asset_type`、`interval`。`enabled`（是否启用）与 `runtime_status`（运行状态，第一版恒为 `unknown`）是两个不同概念。
+只读取本地能力目录，不实时访问上游；支持可选过滤参数 `provider`、`data_type`、`market`、`asset_type`、`interval`、`variant`。`enabled`（是否启用）与 `runtime_status`（运行状态，第一版恒为 `unknown`）是两个不同概念。
 
 ### 历史 K 线
 
 ```http
-GET /v1/market/bars?provider=auto&asset_type=stock&instrument=CN-SSE-600000&interval=P1D&start=2026-01-01&end=2026-01-31&adjust=none&offset=0&limit=100
+GET /v1/market/bars?provider=akshare&asset_type=stock&instrument=CN-SSE-600000&interval=P1D&start=2026-01-01&end=2026-01-31&offset=0&limit=100
 ```
+
+参数：`provider`（默认 `auto`）、`asset_type`（必填）、`instrument`（必填）、`interval`（必填）、`start`/`end`（必填）、`adjust`（可选）、`variant`（可选，默认 `eastmoney`）、`offset`（默认 0）、`limit`（默认 500）。
 
 成功响应（节选）：
 
@@ -100,25 +105,25 @@ GET /v1/market/bars?provider=auto&asset_type=stock&instrument=CN-SSE-600000&inte
     "interval": "P1D",
     "bars": [
       {
-        "timestamp": "2026-01-01T00:00:00Z",
+        "timestamp": "2026-01-05T00:00:00Z",
         "open": 10.0, "high": 10.1, "low": 9.9, "close": 10.05,
-        "volume": 1000.0, "amount": 10050.0,
-        "extensions": null
+        "volume": 1000000.0, "amount": 10050000.0,
+        "extensions": {"pct_change": 0.5, "turnover_rate": 0.8}
       }
     ]
   },
   "meta": {
     "request_id": "req_...",
-    "provider": "fake-provider",
+    "provider": "akshare",
     "source_time": null,
     "received_at": "2026-01-01T00:00:00Z",
-    "offset": 0, "limit": 100, "count": 21, "partial": false
+    "offset": 0, "limit": 100, "count": 20, "partial": false
   },
   "warnings": []
 }
 ```
 
-缺失数值以 `null` 返回，不用 `0` 冒充；Provider 特有字段只能通过 `extensions` 受控透出。
+缺失数值以 `null` 返回，不用 `0` 冒充；Provider 特有字段只能通过 `extensions` 受控透出（如 akshare 的 `pct_change`、`turnover_rate`、`hold`、`settle`）。
 
 ## 请求规范
 
@@ -127,20 +132,54 @@ GET /v1/market/bars?provider=auto&asset_type=stock&instrument=CN-SSE-600000&inte
 格式为 `{market}-{exchange}-{symbol}`，全部大写，例如 `CN-SSE-600000`。
 
 - `market`、`exchange` 由服务端解析，调用方无需重复传递；
-- **不接受** `CN.SSE.600000`、`600000` 等非标准格式；Provider 专用代码由各自适配器转换；
+- **不接受** `CN.SSE.600000`、`600000` 等非标准格式；Provider 专用代码（如 akshare 的 `sh600000`、`RB0`）由适配器转换；
 - 第一版只校验标准格式，不通过标的元数据验证真实资产类型。
 
-### asset_type 必须显式传递
+### asset_type 资产类型体系
 
-`asset_type`（`stock` / `etf` / `index` / `futures`）是**必填**字段：
+`asset_type` 是**必填**字段，不做默认推断，也不根据代码格式猜测。取值按以下分类体系（category → asset_type）：
 
-- 同一数字代码在不同资产类型下含义不同（指数、ETF、股票可能共用代码段）；
-- 服务端不做默认推断，也不根据代码格式猜测；
-- 缺失时返回统一参数错误 `INVALID_REQUEST`。
+| 分类 | asset_type | 说明 |
+| --- | --- | --- |
+| securities 证券 | `stock` | 个股 |
+| securities 证券 | `index` | 指数 |
+| securities 证券 | `etf` | ETF |
+| futures 期货 | `contract` | 单一合约 |
+| futures 期货 | `continuous` | 主力连续 |
+| futures 期货 | `weighted-index` | 加权 |
+| options 期权 | `option` | 期权 |
+| forex 外汇 | `forex` | 外汇 |
+| crypto 加密货币 | `crypto` | 加密货币 |
+
+缺失或未知取值返回统一参数错误 `INVALID_REQUEST`。
+
+### variant 数据源变体
+
+同一 Provider 下同一资产类型往往有多个上游接口（如 akshare 个股有东方财富/新浪/腾讯三个源）。统一请求通过可选参数 `variant` 指定，取值为**中立站点名**而非上游函数名：
+
+| variant | 含义 | 默认 |
+| --- | --- | --- |
+| `eastmoney` | 东方财富 | ✅ 默认值 |
+| `sina` | 新浪 | |
+| `tencent` | 腾讯 | |
+
+- 未传递 `variant` 时默认 `eastmoney`；Provider 不支持的变体在能力目录即不声明；
+- variant 与 capability、内部 operation 一样参与路由维度匹配，不会静默降级。
+
+### adjust 复权方式（默认值约定）
+
+`adjust` 取值 `none`（不复权）、`qfq`（前复权）、`hfq`（后复权）。**未传递时的声明默认值按资产类型区分**：
+
+| 资产类型 | 默认 adjust |
+| --- | --- |
+| `stock` | **`qfq`（前复权）** |
+| 其余（index、contract 等） | `none` |
+
+通用参数转换的原则是：**所有相关参数都显式传递给上游，不依赖上游默认值**。例如 akshare `stock_zh_a_hist` 的 `adjust` 默认 `""`（不复权），与 tapehub 的声明默认值（个股 qfq）不一致，因此适配器始终显式传参，保证「接口默认行为」与「上游实际行为」一致。
 
 ### interval：ISO 8601 Duration
 
-周期直接使用 ISO 8601 Duration，不使用自定义缩写：
+周期直接使用 ISO 8601 Duration：
 
 | 周期 | 取值 | | 周期 | 取值 |
 | --- | --- | --- | --- | --- |
@@ -149,19 +188,16 @@ GET /v1/market/bars?provider=auto&asset_type=stock&instrument=CN-SSE-600000&inte
 | 5 分钟 | `PT5M` | | 1 月 | `P1M` |
 | 1 小时 | `PT1H` | | 1 年 | `P1Y` |
 
-注意事项：
-
-- **`PT1M`（1 分钟）与 `P1M`（1 个月）是不同周期**，能力匹配互不相通；
-- 不会把 `P1M` 换算为固定 30 天，也不会把周期统一换算为秒数；
-- 周期相等当且仅当各分量一致，因此 `P1W` 与 `P7D`、`PT1H` 与 `PT60M` 视为**不同**周期代码；
-- `tick` 不是 ISO 8601 周期，不在第一版范围内；manifest 中出现非法周期会在加载时被拒绝。
+- **`PT1M`（1 分钟）与 `P1M`（1 个月）是不同周期**；
+- 不把 `P1M` 换算为固定 30 天，也不把周期统一换算为秒数；`P1W` 与 `P7D`、`PT1H` 与 `PT60M` 视为**不同**周期代码；
+- `tick` 不是 ISO 8601 周期；manifest 中出现非法周期会在加载时被拒绝。
 
 ### 时间边界
 
 - 时间范围是**闭区间 `[start, end]`**，`start` 必须早于 `end`；
-- 纯日期（`2026-01-01`）按 UTC 0 点解释；
-- 带时间的值**必须包含时区**（如 `2026-01-01T09:30:00+08:00` 或 `...Z`），否则返回参数错误；
-- 响应中的时间统一转换为 UTC（`Z` 结尾）。
+- 纯日期（`2026-01-01`）按 UTC 0 点解释；带时间的值**必须包含时区**；
+- 响应中的时间统一为 UTC（`Z` 结尾）；日线 K 线的时间戳为该交易日 00:00 UTC；
+- 上游只支持按日期过滤时，适配器在标准化后按 `[start, end]` 闭区间精确复核。
 
 ### 分页语义
 
@@ -171,14 +207,10 @@ GET /v1/market/bars?provider=auto&asset_type=stock&instrument=CN-SSE-600000&inte
 | `limit` | `500` | ≥ 1，最大值由 `TAPEHUB_MAX_LIMIT` 配置（默认 5000） |
 
 - 结果先按 `timestamp` **升序**排序，再应用 `offset`/`limit`；
-- 两者描述**统一接口最终结果**的分页语义，不是 Provider 原生页码；
-- 适配器在返回前完成排序与切片（原生支持分页时可下推，但语义不变），Application 层不会二次切片；
-- 第一版不返回 `total`，避免为统计总数拉取全量数据；
-- 响应 `meta` 返回 `offset`、`limit`、`count`（本次实际返回数量）。
+- 两者描述**统一接口最终结果**的分页语义；akshare 接口均不支持原生分页，由适配器用共享组件在内存切片（不落盘）；
+- 第一版不返回 `total`；响应 `meta` 返回 `offset`、`limit`、`count`。
 
 ## 错误处理
-
-所有错误返回统一结构：
 
 ```json
 {
@@ -196,7 +228,7 @@ GET /v1/market/bars?provider=auto&asset_type=stock&instrument=CN-SSE-600000&inte
 | `INVALID_REQUEST` | 422 | 参数校验失败 |
 | `PROVIDER_NOT_FOUND` | 404 | 指定的 Provider 不存在 |
 | `PROVIDER_DISABLED` | 409 | 指定的 Provider 已禁用 |
-| `PROVIDER_NOT_IMPLEMENTED` | 501 | Provider 已启用但未实现 |
+| `PROVIDER_NOT_IMPLEMENTED` | 501 | Provider 已启用但未实现 / SDK 未安装 |
 | `UNSUPPORTED_CAPABILITY` | 422 | 能力目录或内部操作不支持该请求 |
 | `NO_PROVIDER_AVAILABLE` | 409 | `auto` 路由无可用候选 |
 | `UPSTREAM_TIMEOUT` | 504 | 上游超时 |
@@ -213,49 +245,68 @@ API 层 → Application 层 → Domain 层
         Provider 适配器实现 Domain Port
 ```
 
-- **能力目录是唯一事实来源**：`/v1/capabilities` 与公共路由复用同一份目录，不会出现「接口显示支持、路由却不支持」；
-- **两级路由**：公共 `ProviderRouter` 只按能力维度（provider × data_type × market × asset_type × interval × adjust）选 Provider；选中后由适配器按 manifest 中的 `operations` 做内部二级路由（如 `stock_daily` / `etf_daily`），上游函数名不会暴露到公共 API；
-- **公共能力声明 vs 内部 operation 映射**：manifest 的 `capabilities` 面向目录与公共路由；`operations` 面向适配器内部，二者分开维护。
+- **能力目录是唯一事实来源**：`/v1/capabilities` 与公共路由复用同一份目录；
+- **两级路由**：公共 `ProviderRouter` 按 provider × data_type × market × asset_type × interval × adjust × **variant** 选 Provider；适配器按 manifest 的 `operations` 做内部二级路由，上游函数名不暴露到公共 API；
+- **公共能力声明 vs 内部 operation 映射**：manifest 的 `capabilities` 面向目录与公共路由（含 `variants` 声明）；`operations` 的 match 键包含全部六个维度且必须显式声明，面向适配器内部。
+
+### akshare 已接入范围
+
+接口签名均已按官方文档核实（https://akshare.akfamily.xyz/）：
+
+| 资产类型 | variant | akshare 接口 | 周期 | adjust | 标准字段 |
+| --- | --- | --- | --- | --- | --- |
+| stock | eastmoney | `stock_zh_a_hist` | P1D/P1W/P1M | none/qfq/hfq | 全部 |
+| stock | sina | `stock_zh_a_daily` | P1D | none/qfq/hfq | 全部 |
+| stock | tencent | `stock_zh_a_hist_tx` | P1D | none/qfq/hfq | 全部 |
+| index | eastmoney | `stock_zh_index_daily_em` | P1D | none | 全部 |
+| index | sina | `stock_zh_index_daily` | P1D | none | 无 amount |
+| index | tencent | `stock_zh_index_daily_tx` | P1D | none | 无 amount（上游 amount 列语义为成交量） |
+| contract / continuous | sina | `futures_zh_daily_sina` | P1D | none | 全部（extensions: hold/settle） |
+
+单位约定（按官方文档）：
+
+- 个股 `volume` 统一为**股**：东财接口返回手，适配器 ×100 换算；新浪/腾讯为股，原样返回；
+- `amount` 统一为**元**；指数/期货的上游未标注单位时原样返回（见各接口文档）；
+- 交易所映射（已核实部分）：个股/指数 `SSE→sh`、`SZSE→sz`；指数东财另支持 `CSI→csi`、`BSE→bj`；期货合约符号原样传递（如 `RB2410`），主力连续为品种代码+`0`（如 `RB`→`RB0`）。
+
+未接入说明（诚实边界，不编造能力）：
+
+- `futures_hist_em`（东财期货）需要**中文合约名**（如“热卷主连”），无法从标准代码映射，第一版不接入；
+- 加权（`weighted-index`）在上述接口文档中没有符号说明，暂不声明能力；
+- 历史覆盖范围（`history`）未核实，能力目录中保持 `null`。
+
+其余 Provider：tushare / tickflow / alphafeed / tqsdk 均未接入，manifest 能力为空、默认禁用；指定请求返回 `PROVIDER_DISABLED`（默认）或启用后 `PROVIDER_NOT_IMPLEMENTED`；`provider=auto` 不会选中它们，也**绝不返回写死的模拟行情**。
 
 ### 新增 / 接入 Provider
 
-1. 新建 `src/tapehub/providers/<name>/` 目录，放置 `manifest.yaml`；
-2. 在 `manifest.yaml` 中填写**已核实**的能力声明（`capabilities`）与内部操作映射（`operations`）；
-3. 实现 `adapter.py`：继承 `BaseProviderAdapter`，把 `implemented` 置为 `True`，实现 `fetch_bars`；
-4. Provider SDK 一律作为**可选依赖 + 延迟导入**（只在 `fetch_bars` 内部导入，同步阻塞调用用 `call_in_thread` 隔离）；任一 SDK 缺失不影响服务启动；
-5. Token 等凭据只能通过环境变量提供，禁止写入 manifest、日志或异常响应。
+1. 新建 `src/tapehub/providers/<name>/`，放置 `manifest.yaml`（能力声明 + operations 映射，match 六维度显式声明）；
+2. 实现 `adapter.py`（继承 `BaseProviderAdapter`，`implemented = True`，`fetch_bars` 内延迟导入 SDK 并用 `call_in_thread` 隔离同步调用）；
+3. 新增 `request_mapper.py`（所有参数显式传递，不依赖上游默认值）与 `response_mapper.py`（缺失值→null，扩展字段白名单，单位按文档换算）；
+4. `pyproject.toml` 以 `[project.optional-dependencies]` 添加该 SDK；
+5. 凭据只能通过环境变量提供，禁止写入 manifest、日志或异常响应。
 
-接入第一个真实 Provider 需要修改的最小文件集合：
+接入一个新 Provider 需要修改的最小文件集合：
 
 ```text
-src/tapehub/providers/<name>/manifest.yaml      # 能力声明 + 操作映射
-src/tapehub/providers/<name>/adapter.py         # 实现 fetch_bars，延迟导入 SDK
-src/tapehub/providers/<name>/request_mapper.py  # 新增：标准请求 → Provider 参数
-src/tapehub/providers/<name>/response_mapper.py # 新增：上游数据 → Bar/BarBatch
-pyproject.toml                                  # 以 optional-dependencies 添加该 SDK
-tests/                                          # 新增该适配器的 Mock 单元测试
+src/tapehub/providers/<name>/manifest.yaml
+src/tapehub/providers/<name>/adapter.py
+src/tapehub/providers/<name>/request_mapper.py   # 新增
+src/tapehub/providers/<name>/response_mapper.py  # 新增
+pyproject.toml
+tests/                                           # 该适配器的 Mock 测试
 ```
 
 Application/API 层与其它 Provider 不需要任何改动。
 
-### 真实 Provider 接入状态
-
-五个内置 Provider（akshare、tushare、tickflow、alphafeed、tqsdk）目前均为**未接入**状态：
-
-- manifest 的 `capabilities` / `operations` 为空，`enabled: false`；
-- 指定请求返回 `PROVIDER_DISABLED`（默认）或启用后 `PROVIDER_NOT_IMPLEMENTED`；
-- `provider=auto` 不会选中它们，也**绝不返回写死的模拟行情**；
-- 测试链路由 `tests/fixtures` 中的 Fake Provider 覆盖，仅存在于测试环境。
-
 ### 配置
 
-环境变量前缀 `TAPEHUB_`（见 [.env.example](.env.example)）：`TAPEHUB_VERSION`、`TAPEHUB_API_VERSION`、`TAPEHUB_CATALOG_VERSION`、`TAPEHUB_MAX_LIMIT`、`TAPEHUB_PROVIDER_ENABLED_OVERRIDES`（JSON，如 `{"tushare": true}`）。`.env` 不提交版本库。
+环境变量前缀 `TAPEHUB_`（见 [.env.example](.env.example)）：`TAPEHUB_VERSION`、`TAPEHUB_API_VERSION`、`TAPEHUB_CATALOG_VERSION`、`TAPEHUB_MAX_LIMIT`、`TAPEHUB_PROVIDER_ENABLED_OVERRIDES`（JSON，如 `{"akshare": false}` 可整体停用 akshare）。`.env` 不提交版本库。
 
 ### 未来扩展边界（现在不实现）
 
-- **定时全量转储**：适配器不依赖 FastAPI 请求上下文，未来 Worker 可复用统一查询与分页模型逐批拉取；现在不建数据库与调度器；
-- **实时行情订阅**：未来新增独立 `StreamingProvider` 接口，不扩展 `HistoricalBarProvider`，不侵入历史查询链路；
-- **新资产类型**：扩展标准枚举、能力清单与对应操作映射即可，无需修改健康检查与公共响应框架；
+- **定时全量转储**：适配器不依赖 FastAPI 请求上下文，未来 Worker 可复用统一查询与分页模型逐批拉取；
+- **实时行情订阅**：未来新增独立 `StreamingProvider` 接口，不侵入历史查询链路；
+- **新资产类型**：扩展标准枚举、能力清单与对应操作映射即可；
 - 第一版不存储任何行情数据。
 
 ## 测试
@@ -264,4 +315,4 @@ Application/API 层与其它 Provider 不需要任何改动。
 uv run pytest
 ```
 
-所有外部 SDK 调用均 Mock，测试不发起真实网络请求、不落盘、不依赖真实 Token；测试数据只来自 Fake Provider 与 fixture。
+所有外部 SDK 调用均通过 `sys.modules` 注入的桩 Mock，测试不发起真实网络请求、不落盘、不依赖真实 Token；akshare 的调用参数与响应列均按官方文档构造。

@@ -22,12 +22,41 @@ _INSTRUMENT_RE = re.compile(
 
 
 class AssetType(StrEnum):
-    """资产类型。请求必须显式传递，不做默认推断。"""
+    """资产类型。请求必须显式传递，不做默认推断。
+
+    分类体系（category → asset_type）：
+
+    - securities 证券：stock（个股）、index（指数）、etf
+    - futures 期货：contract（单一合约）、continuous（主力连续）、weighted-index（加权）
+    - options 期权：option
+    - forex 外汇：forex
+    - crypto 加密货币：crypto
+    """
 
     ETF = "etf"
     INDEX = "index"
     STOCK = "stock"
-    FUTURES = "futures"
+    CONTRACT = "contract"
+    CONTINUOUS = "continuous"
+    WEIGHTED_INDEX = "weighted-index"
+    OPTION = "option"
+    FOREX = "forex"
+    CRYPTO = "crypto"
+
+
+class DataVariant(StrEnum):
+    """数据源变体：同一 Provider 下同一资产类型的多个上游接口。
+
+    取值是中立的站点名而不是上游函数名；具体映射由各 Provider 的
+    manifest operations 完成。默认使用东方财富（eastmoney）。
+    """
+
+    EASTMONEY = "eastmoney"
+    SINA = "sina"
+    TENCENT = "tencent"
+
+
+DEFAULT_VARIANT = DataVariant.EASTMONEY
 
 
 class Adjust(StrEnum):
@@ -136,6 +165,8 @@ class BarQuery(BaseModel):
     start: datetime
     end: datetime
     adjust: Adjust = Adjust.NONE
+    # 数据源变体，默认东方财富；Provider 专用映射在适配器内完成
+    variant: DataVariant = DEFAULT_VARIANT
     offset: int = Field(default=0, ge=0)
     limit: int = Field(default=500, ge=1)
 

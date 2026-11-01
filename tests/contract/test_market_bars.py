@@ -1,6 +1,8 @@
 """历史 K 线完整链路契约测试。
 
 时间范围：2026-01-01 至 2026-01-31（闭区间），Fake Provider 日线共 31 根。
+Fake Provider 仅声明 adjust=none，因此测试显式传参；
+「未传递 adjust」的默认值行为（个股 qfq）由 akshare 链路测试覆盖。
 """
 
 BAR_PARAMS = {
@@ -9,6 +11,7 @@ BAR_PARAMS = {
     "interval": "P1D",
     "start": "2026-01-01",
     "end": "2026-01-31",
+    "adjust": "none",
 }
 
 
@@ -85,6 +88,7 @@ def test_minute_interval(fake_client) -> None:  # type: ignore[no-untyped-def]
         "interval": "PT1M",
         "start": "2026-01-01T00:00:00Z",
         "end": "2026-01-01T00:05:00Z",
+        "adjust": "none",
     }
     response = fake_client.get("/v1/market/bars", params=params)
     assert response.status_code == 200
@@ -101,6 +105,7 @@ def test_timezone_aware_bounds(fake_client) -> None:  # type: ignore[no-untyped-
         "interval": "P1D",
         "start": "2026-01-01T00:00:00+08:00",
         "end": "2026-01-03T00:00:00+08:00",
+        "adjust": "none",
     }
     response = fake_client.get("/v1/market/bars", params=params)
     assert response.status_code == 200
@@ -116,7 +121,7 @@ def test_timezone_aware_bounds(fake_client) -> None:  # type: ignore[no-untyped-
 
 
 def test_other_asset_types(fake_client) -> None:  # type: ignore[no-untyped-def]
-    for asset_type in ("etf", "index", "futures"):
+    for asset_type in ("etf", "index", "contract"):
         params = {**BAR_PARAMS, "asset_type": asset_type}
         response = fake_client.get("/v1/market/bars", params=params)
         assert response.status_code == 200
@@ -204,7 +209,7 @@ class TestUnsupportedCapability:
 
 
 class TestRoutingErrors:
-    """默认应用：五个内置 Provider 全部禁用且未实现。"""
+    """默认应用：akshare 已接入（SDK 未安装），其余四个 Provider 禁用。"""
 
     PARAMS = {**BAR_PARAMS, "instrument": "CN-SSE-600000"}
 
@@ -220,9 +225,17 @@ class TestRoutingErrors:
         assert response.json()["error"]["code"] == "PROVIDER_NOT_FOUND"
 
     def test_auto_without_candidates(self, default_client) -> None:  # type: ignore[no-untyped-def]
-        response = default_client.get("/v1/market/bars", params=self.PARAMS)
+        # 没有任何 Provider 支持期权，auto 路由无候选
+        params = {**self.PARAMS, "asset_type": "option", "instrument": "CN-SSE-10000001"}
+        response = default_client.get("/v1/market/bars", params=params)
         assert response.status_code == 409
         assert response.json()["error"]["code"] == "NO_PROVIDER_AVAILABLE"
+
+    def test_auto_selects_akshare_but_sdk_missing(self, default_client) -> None:  # type: ignore[no-untyped-def]
+        """auto 选中 akshare 后，SDK 未安装必须返回明确错误而不是模拟数据。"""
+        response = default_client.get("/v1/market/bars", params=self.PARAMS)
+        assert response.status_code == 501
+        assert response.json()["error"]["code"] == "PROVIDER_NOT_IMPLEMENTED"
 
     def test_enabled_but_not_implemented(self) -> None:  # type: ignore[no-untyped-def]
         """环境覆盖启用后，未实现 Provider 返回 PROVIDER_NOT_IMPLEMENTED。"""
@@ -233,13 +246,14 @@ class TestRoutingErrors:
 
         settings = Settings(max_limit=1000, provider_enabled_overrides={"tushare": True})
         client = TestClient(create_app(settings=settings))
-        response = client.get("/v1/market/bars", params={**self.PARAMS, "provider": "tushare"})
+        params = {**self.PARAMS, "provider": "tushare"}
+        response = client.get("/v1/market/bars", params=params)
         assert response.status_code == 501
         assert response.json()["error"]["code"] == "PROVIDER_NOT_IMPLEMENTED"
 
-    def test_no_fake_bars_from_unimplemented_providers(self, default_client) -> None:  # type: ignore[no-untyped-def]
-        """真实 Provider 未接入时，绝不返回写死的模拟行情。"""
+    def test_no_fake_bars_from_missing_sdk(self, default_client) -> None:  # type: ignore[no-untyped-def]
+        """真实数据不可用时，绝不返回写死的模拟行情。"""
         params = {**self.PARAMS, "provider": "akshare"}
         response = default_client.get("/v1/market/bars", params=params)
-        assert response.status_code == 409
+        assert response.status_code == 501
         assert "bars" not in response.json().get("data", {})

@@ -40,6 +40,7 @@ def _capability_details(query: BarQuery) -> dict[str, str]:
         "asset_type": query.asset_type.value,
         "interval": query.interval.code,
         "adjust": query.adjust.value,
+        "variant": query.variant.value,
     }
 
 
@@ -78,6 +79,7 @@ class ProviderRouter:
             asset_type=query.asset_type,
             interval=query.interval,
             adjust=query.adjust,
+            variant=query.variant,
         ):
             raise UnsupportedCapabilityError(
                 f"Provider {query.provider!r} does not support the requested capability.",
@@ -92,6 +94,7 @@ class ProviderRouter:
             asset_type=query.asset_type,
             interval=query.interval,
             adjust=query.adjust,
+            variant=query.variant,
         )
         if not candidates:
             raise NoProviderAvailableError(

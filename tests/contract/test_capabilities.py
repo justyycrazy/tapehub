@@ -10,8 +10,21 @@ def test_default_catalog_lists_all_builtin_providers(default_client) -> None:  #
     names = [entry["provider"] for entry in body["data"]]
     assert names == BUILTIN_PROVIDER_NAMES
     for entry in body["data"]:
-        assert entry["enabled"] is False
         assert entry["runtime_status"] == "unknown"
+    # akshare 已接入：启用且能力目录非空
+    akshare = body["data"][0]
+    assert akshare["provider"] == "akshare"
+    assert akshare["enabled"] is True
+    assert len(akshare["capabilities"]) >= 7
+    # 个股按变体拆分为三条能力声明（东财/新浪/腾讯）
+    stock_caps = [cap for cap in akshare["capabilities"] if cap["asset_types"] == ["stock"]]
+    assert {cap["variants"][0] for cap in stock_caps} == {"eastmoney", "sina", "tencent"}
+    em_stock = next(cap for cap in stock_caps if cap["variants"] == ["eastmoney"])
+    assert [i["code"] for i in em_stock["intervals"]] == ["P1D", "P1W", "P1M"]
+    assert em_stock["adjustments"] == ["none", "qfq", "hfq"]
+    # 其余四个 Provider 尚未接入
+    for entry in body["data"][1:]:
+        assert entry["enabled"] is False
         assert entry["capabilities"] == []
     meta = body["meta"]
     assert meta["request_id"].startswith("req_")
@@ -28,7 +41,8 @@ def test_fake_provider_entry(fake_client) -> None:  # type: ignore[no-untyped-de
     cap = entry["capabilities"][0]
     assert cap["data_type"] == "bars"
     assert cap["markets"] == ["CN"]
-    assert cap["asset_types"] == ["stock", "etf", "index", "futures"]
+    assert cap["asset_types"] == ["stock", "etf", "index", "contract"]
+    assert cap["variants"] == ["eastmoney"]
     assert [i["code"] for i in cap["intervals"]] == ["P1D", "PT1M"]
     assert all(i["history"] == {"start": None, "end": None} for i in cap["intervals"])
     assert cap["adjustments"] == ["none"]
@@ -47,6 +61,8 @@ def test_filters(fake_client) -> None:  # type: ignore[no-untyped-def]
     assert names("?market=US") == []
     assert names("?interval=PT1M") == ["fake-provider"]
     assert names("?interval=P1W") == []  # fake 不支持周周期
+    assert names("?variant=eastmoney") == ["fake-provider"]
+    assert names("?variant=sina") == []  # fake 仅声明 eastmoney 变体
 
 
 def test_invalid_interval_filter_returns_unified_error(fake_client) -> None:  # type: ignore[no-untyped-def]

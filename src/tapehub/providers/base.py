@@ -35,10 +35,11 @@ class BaseProviderAdapter:
         return self.manifest.to_domain_capabilities()
 
     def resolve_operation(self, query: BarQuery) -> str:
-        """内部二级路由：按 (market, asset_type, interval, adjust) 匹配 operation。
+        """内部二级路由：按 (market, asset_type, interval, adjust, variant) 匹配 operation。
 
-        相同 instrument/provider/interval 在不同 asset_type 下会命中不同 operation，
-        不会复用错误的上游操作；无匹配时返回 ``UNSUPPORTED_CAPABILITY``。
+        相同 instrument/provider/interval 在不同 asset_type 或 variant 下会命中
+        不同 operation，不会复用错误的上游操作；
+        无匹配时返回 ``UNSUPPORTED_CAPABILITY``。
         """
         for op in self.manifest.operations:
             m = op.match
@@ -48,6 +49,7 @@ class BaseProviderAdapter:
                 and m.asset_type == query.asset_type
                 and m.interval == query.interval
                 and m.adjust == query.adjust
+                and m.variant == query.variant
             ):
                 return op.operation
         raise UnsupportedCapabilityError(
@@ -58,6 +60,7 @@ class BaseProviderAdapter:
                 "asset_type": query.asset_type.value,
                 "interval": query.interval.code,
                 "adjust": query.adjust.value,
+                "variant": query.variant.value,
             },
         )
 

@@ -42,6 +42,7 @@ def test_invalid_interval_in_operations_rejected() -> None:
                     "asset_type": "stock",
                     "interval": "tick",
                     "adjust": "none",
+                    "variant": "eastmoney",
                 },
                 "operation": "whatever",
             }
@@ -58,6 +59,7 @@ def test_duplicate_operation_match_rejected() -> None:
         "asset_type": "stock",
         "interval": "P1D",
         "adjust": "none",
+        "variant": "eastmoney",
     }
     data = {
         "provider": "broken",
@@ -86,6 +88,7 @@ def test_pt1m_and_p1m_are_different_operations() -> None:
                     "asset_type": "stock",
                     "interval": "PT1M",
                     "adjust": "none",
+                    "variant": "eastmoney",
                 },
                 "operation": "minute_op",
             },
@@ -96,6 +99,7 @@ def test_pt1m_and_p1m_are_different_operations() -> None:
                     "asset_type": "stock",
                     "interval": "P1M",
                     "adjust": "none",
+                    "variant": "eastmoney",
                 },
                 "operation": "month_op",
             },
