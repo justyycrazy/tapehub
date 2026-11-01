@@ -1,0 +1,57 @@
+# 测试专用 Fake Provider：只用于验证统一查询链路，不代表任何真实数据源的能力。
+provider: fake-provider
+enabled: true
+
+capabilities:
+  - data_type: bars
+    markets: [CN]
+    asset_types: [stock, etf, index, futures]
+    delivery: [rest]
+    intervals:
+      - code: P1D
+        history:
+          start: null
+          end: null
+      - code: PT1M
+        history:
+          start: null
+          end: null
+    adjustments: [none]
+    fields: [open, high, low, close, volume, amount]
+
+operations:
+  - match:
+      data_type: bars
+      market: CN
+      asset_type: stock
+      interval: P1D
+      adjust: none
+    operation: fake_stock_daily
+  - match:
+      data_type: bars
+      market: CN
+      asset_type: etf
+      interval: P1D
+      adjust: none
+    operation: fake_etf_daily
+  - match:
+      data_type: bars
+      market: CN
+      asset_type: index
+      interval: P1D
+      adjust: none
+    operation: fake_index_daily
+  - match:
+      data_type: bars
+      market: CN
+      asset_type: futures
+      interval: P1D
+      adjust: none
+    operation: fake_futures_daily
+  - match:
+      data_type: bars
+      market: CN
+      asset_type: stock
+      interval: PT1M
+      adjust: none
+    operation: fake_stock_minute

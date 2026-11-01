@@ -1,0 +1,16 @@
+# 非法周期 manifest：加载时必须被拒绝（interval "1d" 不是 ISO 8601 Duration）。
+provider: bad-interval-provider
+enabled: true
+capabilities:
+  - data_type: bars
+    markets: [CN]
+    asset_types: [stock]
+    delivery: [rest]
+    intervals:
+      - code: "1d"
+        history:
+          start: null
+          end: null
+    adjustments: [none]
+    fields: [open, high, low, close]
+operations: []

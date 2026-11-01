@@ -1,0 +1,6 @@
+# tickflow 尚未接入：能力声明与内部操作映射保持为空，默认禁用。
+# SDK 包名、模块与函数未经核实，禁止填写猜测内容。
+provider: tickflow
+enabled: false
+capabilities: []
+operations: []

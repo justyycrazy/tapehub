@@ -1,0 +1,6 @@
+# akshare 尚未接入：能力声明与内部操作映射保持为空，默认禁用。
+# 接入前必须核实真实 SDK 的包名、模块与函数，禁止填写猜测内容。
+provider: akshare
+enabled: false
+capabilities: []
+operations: []
