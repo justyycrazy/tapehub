@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     # Provider 凭据：只能通过环境变量提供，禁止写入代码/manifest/日志
     tickflow_api_key: str = ""
     alphafeed_api_key: str = ""
+    tushare_token: str = ""
 
     @model_validator(mode="after")
     def _validate_limits(self) -> "Settings":

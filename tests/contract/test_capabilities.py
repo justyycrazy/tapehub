@@ -22,14 +22,13 @@ def test_default_catalog_lists_all_builtin_providers(default_client) -> None:  #
     em_stock = next(cap for cap in stock_caps if cap["variants"] == ["eastmoney"])
     assert [i["code"] for i in em_stock["intervals"]] == ["P1D", "P1W", "P1M"]
     assert em_stock["adjustments"] == ["none", "qfq", "hfq"]
-    # tickflow 已接入：启用且能力目录非空
-    tickflow = next(entry for entry in body["data"] if entry["provider"] == "tickflow")
-    assert tickflow["enabled"] is True
-    assert len(tickflow["capabilities"]) == 1
-    assert [i["code"] for i in tickflow["capabilities"][0]["intervals"]][0] == "PT1M"
-    # 其余两个 Provider 尚未接入
+    # tushare 已接入：股票 + 期货两条能力
+    tushare = next(entry for entry in body["data"] if entry["provider"] == "tushare")
+    assert tushare["enabled"] is True
+    assert len(tushare["capabilities"]) == 2
+    # 仅剩 tqsdk 尚未接入
     for entry in body["data"]:
-        if entry["provider"] in ("akshare", "tickflow", "alphafeed"):
+        if entry["provider"] in ("akshare", "tickflow", "alphafeed", "tushare"):
             continue
         assert entry["enabled"] is False
         assert entry["capabilities"] == []
@@ -91,9 +90,9 @@ def test_single_provider_capabilities(fake_client) -> None:  # type: ignore[no-u
 
 
 def test_single_provider_on_default_catalog(default_client) -> None:  # type: ignore[no-untyped-def]
-    response = default_client.get("/v1/providers/tushare/capabilities")
+    response = default_client.get("/v1/providers/tqsdk/capabilities")
     assert response.status_code == 200
     body = response.json()
-    assert body["data"]["provider"] == "tushare"
+    assert body["data"]["provider"] == "tqsdk"
     assert body["data"]["enabled"] is False
     assert body["data"]["capabilities"] == []

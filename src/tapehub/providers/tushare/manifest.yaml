@@ -1,6 +1,68 @@
-# tushare 尚未接入：能力声明与内部操作映射保持为空，默认禁用。
-# 接入前必须核实真实 SDK 的包名、模块与函数，禁止填写猜测内容。
+# Tushare 适配器：能力声明与内部操作映射。
+# 接口签名均已按官方文档核实：https://tushare.pro/document/2
+#
+# 说明：
+# - 股票使用模块级函数 ts.pro_bar（asset='E'，freq D/W/M，adj 仅日线复权）；
+# - 期货单一合约使用 pro 对象方法 pro.fut_daily（无复权，单次上限 2000 条，
+#   达到上限时响应标记 partial=true）；
+# - 股票 ts_code 后缀已按文档示例核实：000001.SH / 000001.SZ（SSE/SZSE）；
+#   北交所 .BJ 为 tushare 通用约定但未在所引文档示例中出现，暂不声明；
+# - 期货 ts_code 后缀仅核实上期所：CU1811.SHF（文档示例）；其余交易所
+#   后缀（DCE/CZCE/INE/GFEX/CFFEX）暂不声明，待逐所核实；
+# - 主力连续另有专门接口（doc_id=189），本次未接入；
+# - 单位换算按文档：股票 vol 手→股（×100）、amount 千元→元（×1000）；
+#   期货 vol 保持手、amount 万元→元（×10000）；
+# - 历史覆盖范围（history）未核实，保持 null，不编造；
+# - 单接口体系 Provider：声明默认变体 eastmoney 以接受统一默认请求。
 provider: tushare
-enabled: false
-capabilities: []
-operations: []
+enabled: true
+
+capabilities:
+  # 股票：ts.pro_bar，日/周/月线，三种复权
+  - data_type: bars
+    markets: [CN]
+    asset_types: [stock]
+    delivery: [rest]
+    variants: [eastmoney]
+    intervals:
+      - {code: P1D, history: {start: null, end: null}}
+      - {code: P1W, history: {start: null, end: null}}
+      - {code: P1M, history: {start: null, end: null}}
+    adjustments: [none, qfq, hfq]
+    fields: [open, high, low, close, volume, amount]
+
+  # 期货单一合约：pro.fut_daily，仅日线、无复权
+  - data_type: bars
+    markets: [CN]
+    asset_types: [contract]
+    delivery: [rest]
+    variants: [eastmoney]
+    intervals:
+      - {code: P1D, history: {start: null, end: null}}
+    adjustments: [none]
+    fields: [open, high, low, close, volume, amount]
+
+operations:
+  # 股票：ts.pro_bar(ts_code, asset='E', freq, adj, start_date, end_date, api=pro)
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: P1D, adjust: none, variant: eastmoney}
+    operation: pro_bar
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: P1D, adjust: qfq, variant: eastmoney}
+    operation: pro_bar
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: P1D, adjust: hfq, variant: eastmoney}
+    operation: pro_bar
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: P1W, adjust: none, variant: eastmoney}
+    operation: pro_bar
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: P1W, adjust: qfq, variant: eastmoney}
+    operation: pro_bar
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: P1W, adjust: hfq, variant: eastmoney}
+    operation: pro_bar
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: P1M, adjust: none, variant: eastmoney}
+    operation: pro_bar
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: P1M, adjust: qfq, variant: eastmoney}
+    operation: pro_bar
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: P1M, adjust: hfq, variant: eastmoney}
+    operation: pro_bar
+
+  # 期货单一合约：pro.fut_daily(ts_code, start_date, end_date)
+  - match: {data_type: bars, market: CN, asset_type: contract, interval: P1D, adjust: none, variant: eastmoney}
+    operation: fut_daily

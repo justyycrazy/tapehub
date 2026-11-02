@@ -209,12 +209,13 @@ class TestUnsupportedCapability:
 
 
 class TestRoutingErrors:
-    """默认应用：akshare 已接入（SDK 未安装），其余四个 Provider 禁用。"""
+    """默认应用：akshare/tickflow/alphafeed/tushare 已接入（凭据或 SDK 未配置），
+    tqsdk 保持禁用。"""
 
     PARAMS = {**BAR_PARAMS, "instrument": "CN-SSE-600000"}
 
     def test_explicit_disabled_provider(self, default_client) -> None:  # type: ignore[no-untyped-def]
-        params = {**self.PARAMS, "provider": "tushare"}
+        params = {**self.PARAMS, "provider": "tqsdk"}
         response = default_client.get("/v1/market/bars", params=params)
         assert response.status_code == 409
         assert response.json()["error"]["code"] == "PROVIDER_DISABLED"
@@ -231,8 +232,8 @@ class TestRoutingErrors:
         assert response.status_code == 409
         assert response.json()["error"]["code"] == "NO_PROVIDER_AVAILABLE"
 
-    def test_auto_selects_akshare_but_sdk_missing(self, default_client) -> None:  # type: ignore[no-untyped-def]
-        """auto 选中 akshare 后，SDK 未安装必须返回明确错误而不是模拟数据。"""
+    def test_auto_selects_first_candidate_but_sdk_missing(self, default_client) -> None:  # type: ignore[no-untyped-def]
+        """auto 选中 akshare（注册顺序第一）后，SDK 未安装必须返回明确错误。"""
         response = default_client.get("/v1/market/bars", params=self.PARAMS)
         assert response.status_code == 501
         assert response.json()["error"]["code"] == "PROVIDER_NOT_IMPLEMENTED"
@@ -244,9 +245,9 @@ class TestRoutingErrors:
         from tapehub.api.app import create_app
         from tapehub.settings import Settings
 
-        settings = Settings(max_limit=1000, provider_enabled_overrides={"tushare": True})
+        settings = Settings(max_limit=1000, provider_enabled_overrides={"tqsdk": True})
         client = TestClient(create_app(settings=settings))
-        params = {**self.PARAMS, "provider": "tushare"}
+        params = {**self.PARAMS, "provider": "tqsdk"}
         response = client.get("/v1/market/bars", params=params)
         assert response.status_code == 501
         assert response.json()["error"]["code"] == "PROVIDER_NOT_IMPLEMENTED"

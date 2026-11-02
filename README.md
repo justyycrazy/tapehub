@@ -29,6 +29,7 @@
 - **akshare Provider 已接入**（接口签名按官方文档核实，见下文）；
 - **TickFlow Provider 已接入**（REST API + 官方 Python SDK，API Key 从 `.env` 读取）；
 - **AlphaFeed Provider 已接入**（REST API + 官方 Python SDK，API Key 从 `.env` 读取）；
+- **Tushare Provider 已接入**（官方 Python SDK `pro_bar`/`fut_daily`，Token 从 `.env` 读取）；
 - 基于 Fake Provider 与 Mock SDK 的完整链路验证与单元/契约测试。
 
 明确不实现（第一版）：
@@ -37,7 +38,7 @@
 - 定时任务、全量转储 Worker、消息队列、WebSocket/SSE 实时订阅；
 - 实时行情、快照、逐笔、盘口、标的元数据等其它查询接口；
 - Docker 与前端页面；
-- tushare / tqsdk（均未接入，返回明确错误）。
+- tqsdk（未接入，返回明确错误）。
 
 ## 快速开始
 
@@ -52,13 +53,14 @@ uv sync --dev                    # 同步依赖（自动准备 Python 3.12）
 uv sync --dev --extra akshare    # 安装 akshare SDK（可选依赖）
 uv sync --dev --extra tickflow   # 安装 TickFlow 官方 SDK（可选依赖）
 uv sync --dev --extra alphafeed  # 安装 AlphaFeed 官方 SDK（可选依赖）
+uv sync --dev --extra tushare    # 安装 Tushare 官方 SDK（可选依赖）
 
 uv run pytest          # 运行测试（不依赖任何真实 SDK 与网络）
 uv run ruff check .    # 静态检查
 uv run uvicorn tapehub.api.app:app --reload   # 启动服务（默认 127.0.0.1:8000）
 ```
 
-Provider SDK 均为**可选依赖**：不安装时服务正常启动，对应请求返回 `PROVIDER_NOT_IMPLEMENTED`（TickFlow/AlphaFeed 未配置 API Key 时同样如此，能力目录不受影响）。
+Provider SDK 均为**可选依赖**：不安装时服务正常启动，对应请求返回 `PROVIDER_NOT_IMPLEMENTED`（TickFlow/AlphaFeed 未配置 API Key、Tushare 未配置 Token 时同样如此，能力目录不受影响）。
 
 ## 连接测试（base_url + /health）
 
@@ -293,6 +295,20 @@ AlphaFeed（REST API `GET https://api.alphafeed.org/v1/klines`，官方 SDK `alp
 - 上游单次上限 10000 根：达到上限时响应 `meta.partial=true` 且 `warnings` 提示可能截断；
 - 分钟级周期需上游套餐开通分钟 K 线权限（403 时统一包装为 `UPSTREAM_ERROR`）。
 
+Tushare（官方 SDK `tushare`：`ts.pro_bar` / `pro.fut_daily`）：
+
+| 资产类型 | 变体 | 上游接口 | 周期 | adjust | 标准字段 |
+| --- | --- | --- | --- | --- | --- |
+| stock | eastmoney（默认） | `ts.pro_bar`（asset='E'） | P1D/P1W/P1M | none/qfq/hfq | 全部（extensions: pre_close/change/pct_chg） |
+| contract | eastmoney（默认） | `pro.fut_daily` | P1D | none | 全部（extensions: pre_close/settle/oi） |
+
+- Token 通过环境变量 `TAPEHUB_TUSHARE_TOKEN` 提供并传入 `ts.pro_api`，禁止写入代码/manifest/日志；未配置时能力目录正常，数据请求返回 `PROVIDER_NOT_IMPLEMENTED`；
+- 股票代码映射：`CN-SSE-600000 → 600000.SH`、`CN-SZSE-… → .SZ`（后缀已按文档示例核实；北交所 .BJ 未在所引文档示例中出现，暂不声明）；
+- 期货合约映射：`CN-SHFE-CU2401 → CU2401.SHF`（后缀仅核实上期所，文档示例 CU1811.SHF；DCE/CZCE/INE/GFEX/CFFEX 待逐所核实后补充）；主力连续另有专门接口（doc_id=189），本次未接入；
+- 单位换算（按文档）：股票 `vol` 手→股（×100）、`amount` 千元→元（×1000）；期货 `vol` 保持手、`amount` 万元→元（×10000）；
+- `fut_daily` 单次上限 2000 条：达到上限时响应 `meta.partial=true` 且 `warnings` 提示可能截断；该接口要求上游账户 2000 积分；
+- 上游积分限频/错误码未在文档中核实，统一包装为 `UPSTREAM_ERROR`。
+
 单位约定（按官方文档）：
 
 - 个股 `volume` 统一为**股**：东财接口返回手，适配器 ×100 换算；新浪/腾讯为股，原样返回；
@@ -305,7 +321,7 @@ AlphaFeed（REST API `GET https://api.alphafeed.org/v1/klines`，官方 SDK `alp
 - 加权（`weighted-index`）在上述接口文档中没有符号说明，暂不声明能力；
 - 历史覆盖范围（`history`）未核实，能力目录中保持 `null`。
 
-其余 Provider：tushare / tqsdk 均未接入，manifest 能力为空、默认禁用；指定请求返回 `PROVIDER_DISABLED`（默认）或启用后 `PROVIDER_NOT_IMPLEMENTED`；`provider=auto` 不会选中它们，也**绝不返回写死的模拟行情**。
+其余 Provider：tqsdk 尚未接入，manifest 能力为空、默认禁用；指定请求返回 `PROVIDER_DISABLED`（默认）或启用后 `PROVIDER_NOT_IMPLEMENTED`；`provider=auto` 不会选中它，也**绝不返回写死的模拟行情**。
 
 ### 新增 / 接入 Provider
 
@@ -330,7 +346,7 @@ Application/API 层与其它 Provider 不需要任何改动。
 
 ### 配置
 
-环境变量前缀 `TAPEHUB_`（见 [.env.example](.env.example)）：`TAPEHUB_VERSION`、`TAPEHUB_API_VERSION`、`TAPEHUB_CATALOG_VERSION`、`TAPEHUB_MAX_LIMIT`、`TAPEHUB_PROVIDER_ENABLED_OVERRIDES`（JSON，如 `{"akshare": false}` 可整体停用 akshare）、`TAPEHUB_TICKFLOW_API_KEY`、`TAPEHUB_ALPHAFEED_API_KEY`（Provider 凭据，只在内存中传给 SDK 客户端）。`.env` 不提交版本库。
+环境变量前缀 `TAPEHUB_`（见 [.env.example](.env.example)）：`TAPEHUB_VERSION`、`TAPEHUB_API_VERSION`、`TAPEHUB_CATALOG_VERSION`、`TAPEHUB_MAX_LIMIT`、`TAPEHUB_PROVIDER_ENABLED_OVERRIDES`（JSON，如 `{"akshare": false}` 可整体停用 akshare）、`TAPEHUB_TICKFLOW_API_KEY`、`TAPEHUB_ALPHAFEED_API_KEY`、`TAPEHUB_TUSHARE_TOKEN`（Provider 凭据，只在内存中传给 SDK 客户端）。`.env` 不提交版本库。
 
 ### 未来扩展边界（现在不实现）
 

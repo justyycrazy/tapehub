@@ -19,6 +19,7 @@ akshare = ["akshare>=1.14"]
 # 版本未在官方文档中标注下限，使用 PyPI 最新版
 tickflow = ["tickflow"]
 alphafeed = ["alphafeed"]
+tushare = ["tushare"]
 
 [dependency-groups]
 dev = [
