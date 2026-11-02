@@ -31,6 +31,7 @@
 - **AlphaFeed Provider 已接入**（REST API + 官方 Python SDK，API Key 从 `.env` 读取）；
 - **Tushare Provider 已接入**（官方 Python SDK `pro_bar`/`fut_daily`，Token 从 `.env` 读取）；
 - **TqSdk Provider 已接入**（官方 Python SDK `get_kline_serial`，快期账户凭据从 `.env` 读取）；
+- **Twelve Data Provider 已接入**（外汇与加密货币，官方 Python 库 `twelvedata`，API Key 从 `.env` 读取）；
 - 基于 Fake Provider 与 Mock SDK 的完整链路验证与单元/契约测试。
 
 明确不实现（第一版）：
@@ -55,6 +56,7 @@ uv sync --dev --extra tickflow   # 安装 TickFlow 官方 SDK（可选依赖）
 uv sync --dev --extra alphafeed  # 安装 AlphaFeed 官方 SDK（可选依赖）
 uv sync --dev --extra tushare    # 安装 Tushare 官方 SDK（可选依赖）
 uv sync --dev --extra tqsdk      # 安装 TqSdk 官方 SDK（可选依赖）
+uv sync --dev --extra twelvedata # 安装 Twelve Data 官方库（可选依赖）
 
 uv run pytest          # 运行测试（不依赖任何真实 SDK 与网络）
 uv run ruff check .    # 静态检查
@@ -336,7 +338,21 @@ TqSdk（官方 SDK `tqsdk`：`TqApi(auth=TqAuth(...)).get_kline_serial(...)`）�
 - 加权（`weighted-index`）在上述接口文档中没有符号说明，暂不声明能力；
 - 历史覆盖范围（`history`）未核实，能力目录中保持 `null`。
 
-五个内置 Provider（akshare、tickflow、alphafeed、tushare、tqsdk）均已接入，接口签名与数据口径按各自官方文档核实；未配置凭据或未安装 SDK 时数据请求返回 `PROVIDER_NOT_IMPLEMENTED`，`provider=auto` 在无可用候选时返回 `NO_PROVIDER_AVAILABLE`，也**绝不返回写死的模拟行情**。
+Twelve Data（官方库 `twelvedata`（twelvedata-python）：`TDClient(apikey=...).time_series(...).as_json()`）：
+
+| 资产类型 | 变体 | 上游接口 | 周期 | adjust | 标准字段 |
+| --- | --- | --- | --- | --- | --- |
+| forex | eastmoney（默认） | `td.time_series` | PT1M~PT1H、P1D/P1W/P1M | none | 无 volume/amount（外汇无成交量） |
+| crypto | eastmoney（默认） | `td.time_series` | PT1M~PT1H、P1D/P1W/P1M | none | 无 amount（volume 上游可能缺失 → null） |
+
+- API Key 通过环境变量 `TAPEHUB_TWELVEDATA_API_KEY` 提供并传入 `TDClient(apikey=...)`，禁止写入代码/manifest/日志；未配置时能力目录正常，数据请求返回 `PROVIDER_NOT_IMPLEMENTED`；
+- 标的代码约定（symbol 段允许斜杠，对应上游货币对写法）：外汇 `GLOBAL-OTC-EUR/USD → EUR/USD`（ISO 4217，OTC 场外聚合报价）；加密货币 `GLOBAL-CRYPTO-BTC/USD → BTC/USD`（聚合对；交易所专属对与 `exchange` 筛选参数暂不支持）；
+- interval 枚举（上游完整支持 1min/5min/15min/30min/45min/1h/2h/4h/8h/1day/1week/1month）：本适配器声明 `PT1M/PT5M/PT15M/PT30M/PT1H/P1D/P1W/P1M`（45min/2h/4h/8h 暂不声明）；
+- 外汇/加密货币的 bar 时间按 **UTC**（官方文档明确）；`start_date`/`end_date` 显式传 `YYYY-MM-DDTHH:MM:SS`；`outputsize` 显式传上限 5000（上游默认仅 30）；
+- 上游 `values` 默认倒序（最新在前），适配器统一按升序排序输出；`values` 字段为字符串，标准化为数值；
+- 上游 SDK/HTTP 异常类型与限频规则未在所引文档中核实，统一包装为 `UPSTREAM_ERROR`。
+
+六个内置 Provider（akshare、tickflow、alphafeed、tushare、tqsdk、twelvedata）均已接入，接口签名与数据口径按各自官方文档核实；未配置凭据或未安装 SDK 时数据请求返回 `PROVIDER_NOT_IMPLEMENTED`，`provider=auto` 在无可用候选时返回 `NO_PROVIDER_AVAILABLE`，也**绝不返回写死的模拟行情**。
 
 ### 新增 / 接入 Provider
 
@@ -361,7 +377,7 @@ Application/API 层与其它 Provider 不需要任何改动。
 
 ### 配置
 
-环境变量前缀 `TAPEHUB_`（见 [.env.example](.env.example)）：`TAPEHUB_VERSION`、`TAPEHUB_API_VERSION`、`TAPEHUB_CATALOG_VERSION`、`TAPEHUB_MAX_LIMIT`、`TAPEHUB_PROVIDER_ENABLED_OVERRIDES`（JSON，如 `{"akshare": false}` 可整体停用 akshare）、`TAPEHUB_TICKFLOW_API_KEY`、`TAPEHUB_ALPHAFEED_API_KEY`、`TAPEHUB_TUSHARE_TOKEN`、`TAPEHUB_TQSDK_AUTH_USER`、`TAPEHUB_TQSDK_AUTH_PASSWORD`（Provider 凭据，只在内存中传给 SDK 客户端）。`.env` 不提交版本库。
+环境变量前缀 `TAPEHUB_`（见 [.env.example](.env.example)）：`TAPEHUB_VERSION`、`TAPEHUB_API_VERSION`、`TAPEHUB_CATALOG_VERSION`、`TAPEHUB_MAX_LIMIT`、`TAPEHUB_PROVIDER_ENABLED_OVERRIDES`（JSON，如 `{"akshare": false}` 可整体停用 akshare）、`TAPEHUB_TICKFLOW_API_KEY`、`TAPEHUB_ALPHAFEED_API_KEY`、`TAPEHUB_TUSHARE_TOKEN`、`TAPEHUB_TQSDK_AUTH_USER`、`TAPEHUB_TQSDK_AUTH_PASSWORD`、`TAPEHUB_TWELVEDATA_API_KEY`（Provider 凭据，只在内存中传给 SDK 客户端）。`.env` 不提交版本库。
 
 ### 未来扩展边界（现在不实现）
 

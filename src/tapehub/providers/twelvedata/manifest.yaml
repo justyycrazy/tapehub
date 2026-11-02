@@ -1,0 +1,96 @@
+# Twelve Data 适配器：能力声明与内部操作映射。
+# 接口签名均已按官方文档核实：https://twelvedata.com/docs/
+#
+# 说明：
+# - 官方 Python 库 twelvedata-python（PyPI 包名 twelvedata）：
+#   TDClient(apikey=...) → td.time_series(symbol, interval, outputsize,
+#   start_date, end_date).as_json()；
+# - 标的代码约定（本网关标准格式）：
+#   外汇 GLOBAL-OTC-EUR/USD → symbol "EUR/USD"（ISO 4217，斜杠分隔）；
+#   加密货币 GLOBAL-CRYPTO-BTC/USD → symbol "BTC/USD"（聚合对，
+#   交易所专属对暂不支持）；
+# - interval 枚举 1min/5min/15min/30min/45min/1h/2h/4h/8h/1day/1week/1month，
+#   本适配器声明 PT1M~PT1H、P1D/P1W/P1M（45min/2h/4h/8h 暂不声明）；
+# - 外汇/加密货币的 datetime 按 UTC（官方文档明确）；start_date/end_date
+#   格式 YYYY-MM-DD 或 YYYY-MM-DDTHH:MM:SS；outputsize 上限 5000，
+#   采用覆盖判定：返回数量达上限且最早一根晚于请求 start 时标记 partial=true；
+# - 外汇/加密货币通常无 volume 字段：标准 volume 为 null（能力 fields
+#   不含 volume）；无复权概念，adjust 仅声明 none；
+# - 响应 values 默认倒序（最新在前），由共享分页组件统一升序排序；
+# - 历史覆盖范围（history）未核实，保持 null，不编造；
+# - 单接口 Provider：声明默认变体 eastmoney 以接受统一默认请求。
+provider: twelvedata
+enabled: true
+
+capabilities:
+  # 外汇（OTC 聚合报价）
+  - data_type: bars
+    markets: [GLOBAL]
+    asset_types: [forex]
+    delivery: [rest]
+    variants: [eastmoney]
+    intervals:
+      - {code: PT1M, history: {start: null, end: null}}
+      - {code: PT5M, history: {start: null, end: null}}
+      - {code: PT15M, history: {start: null, end: null}}
+      - {code: PT30M, history: {start: null, end: null}}
+      - {code: PT1H, history: {start: null, end: null}}
+      - {code: P1D, history: {start: null, end: null}}
+      - {code: P1W, history: {start: null, end: null}}
+      - {code: P1M, history: {start: null, end: null}}
+    adjustments: [none]
+    fields: [open, high, low, close]
+
+  # 加密货币（聚合对）
+  - data_type: bars
+    markets: [GLOBAL]
+    asset_types: [crypto]
+    delivery: [rest]
+    variants: [eastmoney]
+    intervals:
+      - {code: PT1M, history: {start: null, end: null}}
+      - {code: PT5M, history: {start: null, end: null}}
+      - {code: PT15M, history: {start: null, end: null}}
+      - {code: PT30M, history: {start: null, end: null}}
+      - {code: PT1H, history: {start: null, end: null}}
+      - {code: P1D, history: {start: null, end: null}}
+      - {code: P1W, history: {start: null, end: null}}
+      - {code: P1M, history: {start: null, end: null}}
+    adjustments: [none]
+    fields: [open, high, low, close]
+
+operations:
+  # 全部资产类型 × 周期组合都调用同一上游接口 td.time_series；
+  # 显式枚举以保证能力目录与内部操作一一对应。
+  - match: {data_type: bars, market: GLOBAL, asset_type: forex, interval: PT1M, adjust: none, variant: eastmoney}
+    operation: time_series
+  - match: {data_type: bars, market: GLOBAL, asset_type: forex, interval: PT5M, adjust: none, variant: eastmoney}
+    operation: time_series
+  - match: {data_type: bars, market: GLOBAL, asset_type: forex, interval: PT15M, adjust: none, variant: eastmoney}
+    operation: time_series
+  - match: {data_type: bars, market: GLOBAL, asset_type: forex, interval: PT30M, adjust: none, variant: eastmoney}
+    operation: time_series
+  - match: {data_type: bars, market: GLOBAL, asset_type: forex, interval: PT1H, adjust: none, variant: eastmoney}
+    operation: time_series
+  - match: {data_type: bars, market: GLOBAL, asset_type: forex, interval: P1D, adjust: none, variant: eastmoney}
+    operation: time_series
+  - match: {data_type: bars, market: GLOBAL, asset_type: forex, interval: P1W, adjust: none, variant: eastmoney}
+    operation: time_series
+  - match: {data_type: bars, market: GLOBAL, asset_type: forex, interval: P1M, adjust: none, variant: eastmoney}
+    operation: time_series
+  - match: {data_type: bars, market: GLOBAL, asset_type: crypto, interval: PT1M, adjust: none, variant: eastmoney}
+    operation: time_series
+  - match: {data_type: bars, market: GLOBAL, asset_type: crypto, interval: PT5M, adjust: none, variant: eastmoney}
+    operation: time_series
+  - match: {data_type: bars, market: GLOBAL, asset_type: crypto, interval: PT15M, adjust: none, variant: eastmoney}
+    operation: time_series
+  - match: {data_type: bars, market: GLOBAL, asset_type: crypto, interval: PT30M, adjust: none, variant: eastmoney}
+    operation: time_series
+  - match: {data_type: bars, market: GLOBAL, asset_type: crypto, interval: PT1H, adjust: none, variant: eastmoney}
+    operation: time_series
+  - match: {data_type: bars, market: GLOBAL, asset_type: crypto, interval: P1D, adjust: none, variant: eastmoney}
+    operation: time_series
+  - match: {data_type: bars, market: GLOBAL, asset_type: crypto, interval: P1W, adjust: none, variant: eastmoney}
+    operation: time_series
+  - match: {data_type: bars, market: GLOBAL, asset_type: crypto, interval: P1M, adjust: none, variant: eastmoney}
+    operation: time_series

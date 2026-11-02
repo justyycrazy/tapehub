@@ -25,7 +25,14 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-BUILTIN_PROVIDERS: tuple[str, ...] = ("akshare", "tushare", "tickflow", "alphafeed", "tqsdk")
+BUILTIN_PROVIDERS: tuple[str, ...] = (
+    "akshare",
+    "tushare",
+    "tickflow",
+    "alphafeed",
+    "tqsdk",
+    "twelvedata",
+)
 
 
 class _AdapterClass(Protocol):

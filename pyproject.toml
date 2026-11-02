@@ -21,6 +21,7 @@ tickflow = ["tickflow"]
 alphafeed = ["alphafeed"]
 tushare = ["tushare"]
 tqsdk = ["tqsdk"]
+twelvedata = ["twelvedata"]
 
 [dependency-groups]
 dev = [

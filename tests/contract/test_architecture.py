@@ -11,7 +11,7 @@ from pathlib import Path
 
 SRC_DIR = Path(__file__).parents[2] / "src" / "tapehub"
 
-PROVIDER_NAMES = ("akshare", "tushare", "tickflow", "alphafeed", "tqsdk")
+PROVIDER_NAMES = ("akshare", "tushare", "tickflow", "alphafeed", "tqsdk", "twelvedata")
 
 
 def _read(rel: str) -> str:
