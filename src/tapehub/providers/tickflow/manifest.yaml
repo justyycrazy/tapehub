@@ -1,6 +1,101 @@
-# tickflow 尚未接入：能力声明与内部操作映射保持为空，默认禁用。
-# SDK 包名、模块与函数未经核实，禁止填写猜测内容。
+# TickFlow 适配器：能力声明与内部操作映射。
+# 接口签名均已按官方文档核实：https://docs.tickflow.org/zh-hans/
+#
+# 说明：
+# - TickFlow 为 REST API（GET /v1/klines），官方 Python SDK 包名为 tickflow，
+#   客户端 TickFlow(api_key=...)，K 线方法 tf.klines.get(...)；
+# - symbol 格式为 代码.市场后缀，后缀已核实支持 SH / SZ / BJ / US / HK，
+#   第一版仅声明 A 股（SSE/SZSE/BSE）个股；
+# - period 枚举 1m/5m/10m/15m/30m/60m/1d/1w/1M/1Q/1Y；
+#   季线 1Q 无法用 ISO 8601 Duration 表达，故不声明；
+# - adjust 枚举 forward/forward_additive/backward/backward_additive/none，
+#   tapehub 的 qfq/hfq 映射为 forward/backward（加权差值变体不对外暴露）；
+# - 上游单次上限 10000 根 K 线，可能截断时响应标记 partial=true；
+# - 历史覆盖范围（history）未核实，保持 null，不编造；
+# - 单接口 Provider：声明默认变体 eastmoney 以接受统一默认请求。
 provider: tickflow
-enabled: false
-capabilities: []
-operations: []
+enabled: true
+
+capabilities:
+  - data_type: bars
+    markets: [CN]
+    asset_types: [stock]
+    delivery: [rest]
+    variants: [eastmoney]
+    intervals:
+      - {code: PT1M, history: {start: null, end: null}}
+      - {code: PT5M, history: {start: null, end: null}}
+      - {code: PT10M, history: {start: null, end: null}}
+      - {code: PT15M, history: {start: null, end: null}}
+      - {code: PT30M, history: {start: null, end: null}}
+      - {code: PT1H, history: {start: null, end: null}}
+      - {code: P1D, history: {start: null, end: null}}
+      - {code: P1W, history: {start: null, end: null}}
+      - {code: P1M, history: {start: null, end: null}}
+      - {code: P1Y, history: {start: null, end: null}}
+    adjustments: [none, qfq, hfq]
+    fields: [open, high, low, close, volume, amount]
+
+operations:
+  # 全部周期 × 复权组合都调用同一上游接口 tf.klines.get；
+  # 显式枚举以保证能力目录与内部操作一一对应。
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: PT1M, adjust: none, variant: eastmoney}
+    operation: klines
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: PT1M, adjust: qfq, variant: eastmoney}
+    operation: klines
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: PT1M, adjust: hfq, variant: eastmoney}
+    operation: klines
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: PT5M, adjust: none, variant: eastmoney}
+    operation: klines
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: PT5M, adjust: qfq, variant: eastmoney}
+    operation: klines
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: PT5M, adjust: hfq, variant: eastmoney}
+    operation: klines
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: PT10M, adjust: none, variant: eastmoney}
+    operation: klines
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: PT10M, adjust: qfq, variant: eastmoney}
+    operation: klines
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: PT10M, adjust: hfq, variant: eastmoney}
+    operation: klines
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: PT15M, adjust: none, variant: eastmoney}
+    operation: klines
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: PT15M, adjust: qfq, variant: eastmoney}
+    operation: klines
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: PT15M, adjust: hfq, variant: eastmoney}
+    operation: klines
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: PT30M, adjust: none, variant: eastmoney}
+    operation: klines
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: PT30M, adjust: qfq, variant: eastmoney}
+    operation: klines
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: PT30M, adjust: hfq, variant: eastmoney}
+    operation: klines
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: PT1H, adjust: none, variant: eastmoney}
+    operation: klines
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: PT1H, adjust: qfq, variant: eastmoney}
+    operation: klines
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: PT1H, adjust: hfq, variant: eastmoney}
+    operation: klines
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: P1D, adjust: none, variant: eastmoney}
+    operation: klines
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: P1D, adjust: qfq, variant: eastmoney}
+    operation: klines
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: P1D, adjust: hfq, variant: eastmoney}
+    operation: klines
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: P1W, adjust: none, variant: eastmoney}
+    operation: klines
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: P1W, adjust: qfq, variant: eastmoney}
+    operation: klines
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: P1W, adjust: hfq, variant: eastmoney}
+    operation: klines
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: P1M, adjust: none, variant: eastmoney}
+    operation: klines
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: P1M, adjust: qfq, variant: eastmoney}
+    operation: klines
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: P1M, adjust: hfq, variant: eastmoney}
+    operation: klines
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: P1Y, adjust: none, variant: eastmoney}
+    operation: klines
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: P1Y, adjust: qfq, variant: eastmoney}
+    operation: klines
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: P1Y, adjust: hfq, variant: eastmoney}
+    operation: klines

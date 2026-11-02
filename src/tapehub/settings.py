@@ -18,6 +18,9 @@ class Settings(BaseSettings):
     catalog_version: str = "1"
     max_limit: int = Field(default=5000, ge=1)
     provider_enabled_overrides: dict[str, bool] = Field(default_factory=dict)
+    # Provider 凭据：只能通过环境变量提供，禁止写入代码/manifest/日志
+    tickflow_api_key: str = ""
+    alphafeed_api_key: str = ""
 
     @model_validator(mode="after")
     def _validate_limits(self) -> "Settings":

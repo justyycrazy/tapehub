@@ -44,6 +44,21 @@ wheels = [
 ]
 
 [[package]]
+name = "alphafeed"
+version = "0.1.4"
+source = { registry = "https://mirrors.aliyun.com/pypi/simple/" }
+dependencies = [
+    { name = "httpx" },
+    { name = "pandas" },
+    { name = "tqdm" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://mirrors.aliyun.com/pypi/packages/d1/22/550c1b0b6de961b83cb2c469bf1dbca2951a9973b5b028963e008cb160f7/alphafeed-0.1.4.tar.gz", hash = "sha256:d1f2598263783ca7dbde0009d1e2970c459b30ae432d9a03233c25cb7b9df344" }
+wheels = [
+    { url = "https://mirrors.aliyun.com/pypi/packages/fe/68/2c15e6e958a8cd9ec4b354517b15fedd2df1bbb60bbc257ccd1222af9020/alphafeed-0.1.4-py3-none-any.whl", hash = "sha256:c0d23993a8f5d89165e1f9c9696e3e9873a8a8592fa046be7983c225827e3b56" },
+]
+
+[[package]]
 name = "annotated-doc"
 version = "0.0.5"
 source = { registry = "https://mirrors.aliyun.com/pypi/simple/" }
@@ -1099,6 +1114,12 @@ dependencies = [
 akshare = [
     { name = "akshare" },
 ]
+alphafeed = [
+    { name = "alphafeed" },
+]
+tickflow = [
+    { name = "tickflow" },
+]
 
 [package.dev-dependencies]
 dev = [
@@ -1110,19 +1131,34 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "akshare", marker = "extra == 'akshare'", specifier = ">=1.14" },
+    { name = "alphafeed", marker = "extra == 'alphafeed'" },
     { name = "fastapi", specifier = ">=0.115" },
     { name = "pydantic", specifier = ">=2.7" },
     { name = "pydantic-settings", specifier = ">=2.3" },
     { name = "pyyaml", specifier = ">=6.0.1" },
+    { name = "tickflow", marker = "extra == 'tickflow'" },
     { name = "uvicorn", specifier = ">=0.30" },
 ]
-provides-extras = ["akshare"]
+provides-extras = ["akshare", "tickflow", "alphafeed"]
 
 [package.metadata.requires-dev]
 dev = [
     { name = "httpx", specifier = ">=0.27" },
     { name = "pytest", specifier = ">=8.2" },
     { name = "ruff", specifier = ">=0.5" },
+]
+
+[[package]]
+name = "tickflow"
+version = "0.1.25"
+source = { registry = "https://mirrors.aliyun.com/pypi/simple/" }
+dependencies = [
+    { name = "httpx" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://mirrors.aliyun.com/pypi/packages/d1/c9/facd0cd7568ea3c7dcfb0d52ded7d0b52ad871ca45fa97d7df0925b26091/tickflow-0.1.25.tar.gz", hash = "sha256:a86929bc99167014567c3d8b99af1c2f498922ad476bb4507edb57164c576d04" }
+wheels = [
+    { url = "https://mirrors.aliyun.com/pypi/packages/ea/37/f80b8f6e435f1825ea8384b1605a01c323998f00b1c112c59e72a9d7dd9a/tickflow-0.1.25-py3-none-any.whl", hash = "sha256:69687235e85b44eae077262325ddef15e82d5adafda075945612f8cf0815a44c" },
 ]
 
 [[package]]

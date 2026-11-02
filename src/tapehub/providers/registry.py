@@ -124,10 +124,11 @@ def build_provider_record(
     adapter_cls: _AdapterClass,
     *,
     enabled_override: bool | None = None,
+    settings: object = None,
 ) -> ProviderRecord:
     """由 manifest 与适配器类构建注册记录。"""
     enabled = manifest.enabled if enabled_override is None else enabled_override
-    adapter = adapter_cls(name=name, manifest=manifest)
+    adapter = adapter_cls(name=name, manifest=manifest, settings=settings)
     return ProviderRecord(
         name=name,
         manifest=manifest,
@@ -155,7 +156,7 @@ def build_default_registry(settings: object) -> ProviderRegistry:
             if not _is_adapter_class(adapter_cls):
                 raise TypeError("ProviderAdapter is not a class")
             record = build_provider_record(
-                name, manifest, adapter_cls, enabled_override=override
+                name, manifest, adapter_cls, enabled_override=override, settings=settings
             )
         except Exception as exc:  # noqa: BLE001 - 单个 Provider 错误必须被隔离
             logger.warning("provider %s failed to load: %s: %s", name, type(exc).__name__, exc)

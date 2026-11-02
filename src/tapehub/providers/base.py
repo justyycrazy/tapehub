@@ -9,26 +9,36 @@
 """
 
 from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from tapehub.domain.capabilities import Capability
 from tapehub.domain.errors import ProviderNotImplementedError, UnsupportedCapabilityError
 from tapehub.domain.models import BarBatch, BarQuery, DataType
 from tapehub.providers.manifest import ProviderManifest
 
+if TYPE_CHECKING:
+    from tapehub.settings import Settings
+
 
 class BaseProviderAdapter:
-    """适配器基类：持有 manifest，提供内部 operation 解析。
+    """适配器基类：持有 manifest 与服务配置，提供内部 operation 解析。
 
     子类把 ``implemented`` 置为 True 才可参与路由；
     未实现的适配器保持禁用，或在被调用时抛出 ``ProviderNotImplementedError``。
+    需要凭据的 Provider 从 ``settings`` 读取（环境变量注入），不得写入代码或日志。
     """
 
     implemented: bool = False
 
-    def __init__(self, name: str, manifest: ProviderManifest) -> None:
+    def __init__(
+        self,
+        name: str,
+        manifest: ProviderManifest,
+        settings: "Settings | None" = None,
+    ) -> None:
         self.name = name
         self.manifest = manifest
+        self.settings = settings
 
     @property
     def capabilities(self) -> list[Capability]:

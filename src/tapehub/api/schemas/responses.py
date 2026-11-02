@@ -147,4 +147,9 @@ def bars_to_response(batch: BarBatch, query: BarQuery, request_id: str) -> BarsR
         count=batch.count,
         partial=batch.partial,
     )
-    return BarsResponse(data=data, meta=meta, warnings=[])
+    warnings: list[str] = []
+    if batch.partial:
+        warnings.append(
+            "upstream returned the maximum number of bars; result may be truncated"
+        )
+    return BarsResponse(data=data, meta=meta, warnings=warnings)
