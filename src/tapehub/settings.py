@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     tickflow_api_key: str = ""
     alphafeed_api_key: str = ""
     tushare_token: str = ""
+    # TqSdk 快期账户（TqAuth）：用户名/邮箱与密码
+    tqsdk_auth_user: str = ""
+    tqsdk_auth_password: str = ""
 
     @model_validator(mode="after")
     def _validate_limits(self) -> "Settings":

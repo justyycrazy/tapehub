@@ -16,8 +16,10 @@ from tapehub.domain.intervals import Interval
 UTC = timezone.utc
 
 # 标准标的代码：{market}-{exchange}-{symbol}，例如 CN-SSE-600000。
+# market/exchange 必须大写；symbol 大小写遵从交易所/Provider 约定
+#（如 TqSdk 期货品种代码为小写 cu），允许大小写字母与 . _ -。
 _INSTRUMENT_RE = re.compile(
-    r"^([A-Z][A-Z0-9]{0,7})-([A-Z][A-Z0-9]{0,15})-([A-Z0-9][A-Z0-9._-]{0,31})$"
+    r"^([A-Z][A-Z0-9]{0,7})-([A-Z][A-Z0-9]{0,15})-([A-Za-z0-9][A-Za-z0-9._-]{0,31})$"
 )
 
 

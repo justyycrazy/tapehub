@@ -30,6 +30,7 @@
 - **TickFlow Provider 已接入**（REST API + 官方 Python SDK，API Key 从 `.env` 读取）；
 - **AlphaFeed Provider 已接入**（REST API + 官方 Python SDK，API Key 从 `.env` 读取）；
 - **Tushare Provider 已接入**（官方 Python SDK `pro_bar`/`fut_daily`，Token 从 `.env` 读取）；
+- **TqSdk Provider 已接入**（官方 Python SDK `get_kline_serial`，快期账户凭据从 `.env` 读取）；
 - 基于 Fake Provider 与 Mock SDK 的完整链路验证与单元/契约测试。
 
 明确不实现（第一版）：
@@ -37,8 +38,7 @@
 - 数据库、Redis、行情缓存、CSV/Parquet 等行情落盘；
 - 定时任务、全量转储 Worker、消息队列、WebSocket/SSE 实时订阅；
 - 实时行情、快照、逐笔、盘口、标的元数据等其它查询接口；
-- Docker 与前端页面；
-- tqsdk（未接入，返回明确错误）。
+- Docker 与前端页面。
 
 ## 快速开始
 
@@ -54,13 +54,14 @@ uv sync --dev --extra akshare    # 安装 akshare SDK（可选依赖）
 uv sync --dev --extra tickflow   # 安装 TickFlow 官方 SDK（可选依赖）
 uv sync --dev --extra alphafeed  # 安装 AlphaFeed 官方 SDK（可选依赖）
 uv sync --dev --extra tushare    # 安装 Tushare 官方 SDK（可选依赖）
+uv sync --dev --extra tqsdk      # 安装 TqSdk 官方 SDK（可选依赖）
 
 uv run pytest          # 运行测试（不依赖任何真实 SDK 与网络）
 uv run ruff check .    # 静态检查
 uv run uvicorn tapehub.api.app:app --reload   # 启动服务（默认 127.0.0.1:8000）
 ```
 
-Provider SDK 均为**可选依赖**：不安装时服务正常启动，对应请求返回 `PROVIDER_NOT_IMPLEMENTED`（TickFlow/AlphaFeed 未配置 API Key、Tushare 未配置 Token 时同样如此，能力目录不受影响）。
+Provider SDK 均为**可选依赖**：不安装时服务正常启动，对应请求返回 `PROVIDER_NOT_IMPLEMENTED`（TickFlow/AlphaFeed 未配置 API Key、Tushare 未配置 Token、TqSdk 未配置快期账户时同样如此，能力目录不受影响）。
 
 ## 连接测试（base_url + /health）
 
@@ -309,6 +310,20 @@ Tushare（官方 SDK `tushare`：`ts.pro_bar` / `pro.fut_daily`）：
 - `fut_daily` 单次上限 2000 条：达到上限时响应 `meta.partial=true` 且 `warnings` 提示可能截断；该接口要求上游账户 2000 积分；
 - 上游积分限频/错误码未在文档中核实，统一包装为 `UPSTREAM_ERROR`。
 
+TqSdk（官方 SDK `tqsdk`：`TqApi(auth=TqAuth(...)).get_kline_serial(...)`）：
+
+| 资产类型 | 变体 | 上游接口 | 周期 | adjust | 标准字段 |
+| --- | --- | --- | --- | --- | --- |
+| contract / continuous / weighted-index | eastmoney（默认） | `api.get_kline_serial` | PT1M/PT5M/PT15M/PT30M/PT1H、P1D | none | 无 amount（上游无成交额列；extensions: open_oi/close_oi） |
+
+- 快期账户凭据（`TqAuth(用户名, 密码)`，必填）通过环境变量 `TAPEHUB_TQSDK_AUTH_USER` / `TAPEHUB_TQSDK_AUTH_PASSWORD` 提供并传入 SDK 客户端，禁止写入代码/manifest/日志；任一未配置时能力目录正常，数据请求返回 `PROVIDER_NOT_IMPLEMENTED`；
+- 合约代码映射（交易所全大写，品种代码大小写遵从交易所规定）：`CN-SHFE-cu2607 → SHFE.cu2607`、`CN-CZCE-SR609 → CZCE.SR609`；主力连续 `CN-SHFE-cu → KQ.m@SHFE.cu`；指数连续/加权 `CN-SHFE-bu → KQ.i@SHFE.bu`（标准 symbol 允许小写品种代码，如 tqsdk 的小写品种约定）；
+- 周期映射（周期为不超过 1 日的任意秒数）：`PT1M→60`、`PT5M→300`、`PT15M→900`、`PT30M→1800`、`PT1H→3600`、`P1D→86400`；
+- 上游按“最新 N 根”返回（`data_length`，每序列上限 10000，使用文档另有 8000 根的说明、以 API 参考为准）：当返回数量达到上限且最早一根仍晚于请求 `start` 时，更早数据取不到，响应 `meta.partial=true` 且 `warnings` 提示；
+- `datetime` 为纳秒时间戳（绝对时间），标准化为 UTC；期货无复权概念，`adjust` 仅声明 none；
+- 每次请求在线程池中独立创建并关闭 TqApi 实例（官方约定一个线程一个实例）；
+- 上游 SDK 异常类型未在文档中核实，统一包装为 `UPSTREAM_ERROR`。
+
 单位约定（按官方文档）：
 
 - 个股 `volume` 统一为**股**：东财接口返回手，适配器 ×100 换算；新浪/腾讯为股，原样返回；
@@ -321,7 +336,7 @@ Tushare（官方 SDK `tushare`：`ts.pro_bar` / `pro.fut_daily`）：
 - 加权（`weighted-index`）在上述接口文档中没有符号说明，暂不声明能力；
 - 历史覆盖范围（`history`）未核实，能力目录中保持 `null`。
 
-其余 Provider：tqsdk 尚未接入，manifest 能力为空、默认禁用；指定请求返回 `PROVIDER_DISABLED`（默认）或启用后 `PROVIDER_NOT_IMPLEMENTED`；`provider=auto` 不会选中它，也**绝不返回写死的模拟行情**。
+五个内置 Provider（akshare、tickflow、alphafeed、tushare、tqsdk）均已接入，接口签名与数据口径按各自官方文档核实；未配置凭据或未安装 SDK 时数据请求返回 `PROVIDER_NOT_IMPLEMENTED`，`provider=auto` 在无可用候选时返回 `NO_PROVIDER_AVAILABLE`，也**绝不返回写死的模拟行情**。
 
 ### 新增 / 接入 Provider
 
@@ -346,7 +361,7 @@ Application/API 层与其它 Provider 不需要任何改动。
 
 ### 配置
 
-环境变量前缀 `TAPEHUB_`（见 [.env.example](.env.example)）：`TAPEHUB_VERSION`、`TAPEHUB_API_VERSION`、`TAPEHUB_CATALOG_VERSION`、`TAPEHUB_MAX_LIMIT`、`TAPEHUB_PROVIDER_ENABLED_OVERRIDES`（JSON，如 `{"akshare": false}` 可整体停用 akshare）、`TAPEHUB_TICKFLOW_API_KEY`、`TAPEHUB_ALPHAFEED_API_KEY`、`TAPEHUB_TUSHARE_TOKEN`（Provider 凭据，只在内存中传给 SDK 客户端）。`.env` 不提交版本库。
+环境变量前缀 `TAPEHUB_`（见 [.env.example](.env.example)）：`TAPEHUB_VERSION`、`TAPEHUB_API_VERSION`、`TAPEHUB_CATALOG_VERSION`、`TAPEHUB_MAX_LIMIT`、`TAPEHUB_PROVIDER_ENABLED_OVERRIDES`（JSON，如 `{"akshare": false}` 可整体停用 akshare）、`TAPEHUB_TICKFLOW_API_KEY`、`TAPEHUB_ALPHAFEED_API_KEY`、`TAPEHUB_TUSHARE_TOKEN`、`TAPEHUB_TQSDK_AUTH_USER`、`TAPEHUB_TQSDK_AUTH_PASSWORD`（Provider 凭据，只在内存中传给 SDK 客户端）。`.env` 不提交版本库。
 
 ### 未来扩展边界（现在不实现）
 

@@ -20,6 +20,7 @@ akshare = ["akshare>=1.14"]
 tickflow = ["tickflow"]
 alphafeed = ["alphafeed"]
 tushare = ["tushare"]
+tqsdk = ["tqsdk"]
 
 [dependency-groups]
 dev = [

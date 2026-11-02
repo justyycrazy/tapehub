@@ -209,16 +209,9 @@ class TestUnsupportedCapability:
 
 
 class TestRoutingErrors:
-    """默认应用：akshare/tickflow/alphafeed/tushare 已接入（凭据或 SDK 未配置），
-    tqsdk 保持禁用。"""
+    """默认应用：五个 Provider 全部接入，但凭据/SDK 均未配置。"""
 
     PARAMS = {**BAR_PARAMS, "instrument": "CN-SSE-600000"}
-
-    def test_explicit_disabled_provider(self, default_client) -> None:  # type: ignore[no-untyped-def]
-        params = {**self.PARAMS, "provider": "tqsdk"}
-        response = default_client.get("/v1/market/bars", params=params)
-        assert response.status_code == 409
-        assert response.json()["error"]["code"] == "PROVIDER_DISABLED"
 
     def test_unknown_provider(self, default_client) -> None:  # type: ignore[no-untyped-def]
         response = default_client.get("/v1/market/bars", params={**self.PARAMS, "provider": "nope"})
@@ -238,19 +231,19 @@ class TestRoutingErrors:
         assert response.status_code == 501
         assert response.json()["error"]["code"] == "PROVIDER_NOT_IMPLEMENTED"
 
-    def test_enabled_but_not_implemented(self) -> None:  # type: ignore[no-untyped-def]
-        """环境覆盖启用后，未实现 Provider 返回 PROVIDER_NOT_IMPLEMENTED。"""
-        from fastapi.testclient import TestClient
-
-        from tapehub.api.app import create_app
-        from tapehub.settings import Settings
-
-        settings = Settings(max_limit=1000, provider_enabled_overrides={"tqsdk": True})
-        client = TestClient(create_app(settings=settings))
-        params = {**self.PARAMS, "provider": "tqsdk"}
-        response = client.get("/v1/market/bars", params=params)
+    def test_tqsdk_explicit_missing_auth(self, default_client) -> None:  # type: ignore[no-untyped-def]
+        """显式指定 tqsdk 时，凭据未配置返回带 setting 提示的明确错误。"""
+        params = {
+            **self.PARAMS,
+            "provider": "tqsdk",
+            "asset_type": "contract",
+            "instrument": "CN-SHFE-cu2607",
+        }
+        response = default_client.get("/v1/market/bars", params=params)
         assert response.status_code == 501
-        assert response.json()["error"]["code"] == "PROVIDER_NOT_IMPLEMENTED"
+        error = response.json()["error"]
+        assert error["code"] == "PROVIDER_NOT_IMPLEMENTED"
+        assert error["details"]["missing"] == ["user", "password"]
 
     def test_no_fake_bars_from_missing_sdk(self, default_client) -> None:  # type: ignore[no-untyped-def]
         """真实数据不可用时，绝不返回写死的模拟行情。"""

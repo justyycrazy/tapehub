@@ -1,6 +1,80 @@
-# tqsdk 尚未接入：能力声明与内部操作映射保持为空，默认禁用。
-# 接入前必须核实真实 SDK 的包名、模块与函数，禁止填写猜测内容。
+# TqSdk 适配器：能力声明与内部操作映射。
+# 接口签名均已按官方文档核实：
+# https://doc.shinnytech.com/tqsdk/latest/usage/mddatas.html
+# https://doc.shinnytech.com/tqsdk/latest/reference/tqsdk.api.html
+#
+# 说明：
+# - TqSdk 为官方 Python SDK：TqApi(auth=TqAuth(账户, 密码)) 鉴权必填（快期账户）；
+# - 合约代码格式 交易所.合约（交易所全大写，品种代码大小写遵从交易所规定，
+#   如 SHFE.cu2607 / CZCE.SR609）；主力连续 KQ.m@<交易所>.<品种>；
+#   指数连续（加权）KQ.i@<交易所>.<品种>；
+# - get_kline_serial(symbol, duration_seconds, data_length)：
+#   周期为不超过 1 日的任意秒数（日线 86400）；data_length 默认 200，
+#   API 参考注明每序列最大 10000（使用文档另有 8000 根的说明，以 API 参考为准）；
+# - 返回列 id/datetime/open/high/low/close/volume/open_oi/close_oi：
+#   datetime 为纳秒时间戳；无成交额字段，标准 amount 恒为 null；
+#   持仓量 open_oi/close_oi 进入受控 extensions；volume 保持手；
+# - 期货无复权概念，adjust 仅声明 none（adj_type 仅对股票/基金有效）；
+# - 每次请求独立创建并关闭 TqApi 实例（在线程池中执行，一个线程一个实例）；
+# - 上游返回“从最新一根往回”的序列：当返回数量达到上限且最早一根仍晚于
+#   请求 start 时，无法覆盖请求窗口，标记 partial=true；
+# - 历史覆盖范围（history）未核实，保持 null，不编造；
+# - 单接口 Provider：声明默认变体 eastmoney 以接受统一默认请求。
 provider: tqsdk
-enabled: false
-capabilities: []
-operations: []
+enabled: true
+
+capabilities:
+  - data_type: bars
+    markets: [CN]
+    asset_types: [contract, continuous, weighted-index]
+    delivery: [rest]
+    variants: [eastmoney]
+    intervals:
+      - {code: PT1M, history: {start: null, end: null}}
+      - {code: PT5M, history: {start: null, end: null}}
+      - {code: PT15M, history: {start: null, end: null}}
+      - {code: PT30M, history: {start: null, end: null}}
+      - {code: PT1H, history: {start: null, end: null}}
+      - {code: P1D, history: {start: null, end: null}}
+    adjustments: [none]
+    fields: [open, high, low, close, volume]
+
+operations:
+  # 全部资产类型 × 周期组合都调用同一上游接口 api.get_kline_serial；
+  # 显式枚举以保证能力目录与内部操作一一对应。
+  - match: {data_type: bars, market: CN, asset_type: contract, interval: PT1M, adjust: none, variant: eastmoney}
+    operation: get_kline_serial
+  - match: {data_type: bars, market: CN, asset_type: contract, interval: PT5M, adjust: none, variant: eastmoney}
+    operation: get_kline_serial
+  - match: {data_type: bars, market: CN, asset_type: contract, interval: PT15M, adjust: none, variant: eastmoney}
+    operation: get_kline_serial
+  - match: {data_type: bars, market: CN, asset_type: contract, interval: PT30M, adjust: none, variant: eastmoney}
+    operation: get_kline_serial
+  - match: {data_type: bars, market: CN, asset_type: contract, interval: PT1H, adjust: none, variant: eastmoney}
+    operation: get_kline_serial
+  - match: {data_type: bars, market: CN, asset_type: contract, interval: P1D, adjust: none, variant: eastmoney}
+    operation: get_kline_serial
+  - match: {data_type: bars, market: CN, asset_type: continuous, interval: PT1M, adjust: none, variant: eastmoney}
+    operation: get_kline_serial
+  - match: {data_type: bars, market: CN, asset_type: continuous, interval: PT5M, adjust: none, variant: eastmoney}
+    operation: get_kline_serial
+  - match: {data_type: bars, market: CN, asset_type: continuous, interval: PT15M, adjust: none, variant: eastmoney}
+    operation: get_kline_serial
+  - match: {data_type: bars, market: CN, asset_type: continuous, interval: PT30M, adjust: none, variant: eastmoney}
+    operation: get_kline_serial
+  - match: {data_type: bars, market: CN, asset_type: continuous, interval: PT1H, adjust: none, variant: eastmoney}
+    operation: get_kline_serial
+  - match: {data_type: bars, market: CN, asset_type: continuous, interval: P1D, adjust: none, variant: eastmoney}
+    operation: get_kline_serial
+  - match: {data_type: bars, market: CN, asset_type: weighted-index, interval: PT1M, adjust: none, variant: eastmoney}
+    operation: get_kline_serial
+  - match: {data_type: bars, market: CN, asset_type: weighted-index, interval: PT5M, adjust: none, variant: eastmoney}
+    operation: get_kline_serial
+  - match: {data_type: bars, market: CN, asset_type: weighted-index, interval: PT15M, adjust: none, variant: eastmoney}
+    operation: get_kline_serial
+  - match: {data_type: bars, market: CN, asset_type: weighted-index, interval: PT30M, adjust: none, variant: eastmoney}
+    operation: get_kline_serial
+  - match: {data_type: bars, market: CN, asset_type: weighted-index, interval: PT1H, adjust: none, variant: eastmoney}
+    operation: get_kline_serial
+  - match: {data_type: bars, market: CN, asset_type: weighted-index, interval: P1D, adjust: none, variant: eastmoney}
+    operation: get_kline_serial
