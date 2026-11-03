@@ -73,7 +73,7 @@ def test_request_and_response_mapping(monkeypatch: pytest.MonkeyPatch) -> None:
     assert kwargs == {
         "symbol": "SHFE.cu2607",
         "duration_seconds": 86400,
-        "data_length": 10000,
+        "data_length": 5000,
         "adj_type": None,  # 期货无复权概念，显式传 None
     }
 
@@ -194,17 +194,17 @@ def test_closed_interval_filter_and_pagination(
 def test_partial_when_window_not_covered(monkeypatch: pytest.MonkeyPatch) -> None:
     """返回数量达上限且最早一根晚于请求 start：更早数据取不到，标记 partial。"""
     install(monkeypatch)
-    # 10000 根分钟线，从 2026-01-01T00:00Z 开始（覆盖 start）→ 不算 partial
+    # 5000 根分钟线，从 2026-01-01T00:00Z 开始（覆盖 start）→ 不算 partial
     adapter = _adapter()
     covered = asyncio.run(adapter.fetch_bars(_query(interval=Interval.parse("PT1M"))))
     assert covered.partial is False
 
-    # 上游只返回 2026-01-06 起的 10000 根，最早一根晚于请求 start（2026-01-05）
+    # 上游只返回 2026-01-06 起的 5000 根，最早一根晚于请求 start（2026-01-05）
     # → start 之前的更早数据取不到，标记 partial
     from tests.fixtures.providers.stub_tqsdk import StubTqApi
 
     StubTqApi.instances.clear()
-    preset_rows(monkeypatch, sized_klines_rows(10000, start_day="2026-01-06"))
+    preset_rows(monkeypatch, sized_klines_rows(5000, start_day="2026-01-06"))
     query = _query(
         interval=Interval.parse("PT1M"),
         start=datetime(2026, 1, 5, tzinfo=UTC),
@@ -216,7 +216,7 @@ def test_partial_when_window_not_covered(monkeypatch: pytest.MonkeyPatch) -> Non
 
 def test_partial_false_when_bars_cover_start(monkeypatch: pytest.MonkeyPatch) -> None:
     install(monkeypatch)
-    preset_rows(monkeypatch, sized_klines_rows(10000, start_day="2025-12-31"))
+    preset_rows(monkeypatch, sized_klines_rows(5000, start_day="2025-12-31"))
     adapter = _adapter()
     query = _query(
         interval=Interval.parse("PT1M"),

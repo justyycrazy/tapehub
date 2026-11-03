@@ -22,8 +22,9 @@ from tapehub.domain.errors import UnsupportedCapabilityError
 from tapehub.domain.intervals import Interval
 from tapehub.domain.models import Adjust, AssetType, BarQuery
 
-# 单次请求上限（API 参考：每个序列最大支持请求 10000 个数据）
-UPSTREAM_MAX_BARS = 10000
+# 单次请求上限（2026-11-03 探针实测：PT1M/PT5M 同时恰好返回 5000 根，
+# 低于文档 8000/10000 口径，疑受当前套餐限制；升级套餐后需重新实证）
+UPSTREAM_MAX_BARS = 5000
 
 _DURATION_SECONDS: dict[Interval, int] = {
     Interval.parse("PT1M"): 60,

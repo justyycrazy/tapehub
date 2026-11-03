@@ -90,15 +90,21 @@ def test_capability_catalog(tqsdk_client: TestClient) -> None:  # type: ignore[n
         "weighted-index",
         "etf",
     ]
-    assert len(entry["capabilities"]) == 4
+    assert len(entry["capabilities"]) == 6  # 期货三类拆分 + 股票/指数/ETF
     cap = entry["capabilities"][0]
-    assert cap["asset_types"] == ["contract", "continuous", "weighted-index"]
+    assert cap["asset_types"] == ["contract"]
     assert cap["variants"] == ["tqsdk"]
     assert [i["code"] for i in cap["intervals"]] == [
         "PT1M", "PT5M", "PT15M", "PT30M", "PT1H", "P1D",
     ]
     assert cap["adjustments"] == ["none"]
     assert cap["fields"] == ["open", "high", "low", "close", "volume"]
+    # 探针回填的 history.start 在能力目录可见（continuous 日线）
+    continuous_cap = next(
+        c for c in entry["capabilities"] if c["asset_types"] == ["continuous"]
+    )
+    p1d = next(i for i in continuous_cap["intervals"] if i["code"] == "P1D")
+    assert p1d["history"]["start"] == "2016-01-04T16:00:00Z"
 
 
 def test_missing_auth_returns_clear_error(default_client) -> None:  # type: ignore[no-untyped-def]

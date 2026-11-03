@@ -357,15 +357,23 @@ TqSdk（官方 SDK `tqsdk`：`TqApi(auth=TqAuth(...)).get_kline_serial(...)`）�
 - 快期账户凭据（`TqAuth(用户名, 密码)`，必填）通过环境变量 `TAPEHUB_TQSDK_AUTH_USER` / `TAPEHUB_TQSDK_AUTH_PASSWORD` 提供并传入 SDK 客户端，禁止写入代码/manifest/日志；任一未配置时能力目录正常，数据请求返回 `PROVIDER_NOT_IMPLEMENTED`；
 - 合约代码映射（交易所全大写，品种代码大小写遵从交易所规定）：`CN-SHFE-cu2607 → SHFE.cu2607`、`CN-CZCE-SR609 → CZCE.SR609`；主力连续 `CN-SHFE-cu → KQ.m@SHFE.cu`；指数连续/加权 `CN-SHFE-bu → KQ.i@SHFE.bu`（标准 symbol 允许小写品种代码，如 tqsdk 的小写品种约定）；
 - 周期映射（周期为不超过 1 日的任意秒数）：`PT1M→60`、`PT5M→300`、`PT15M→900`、`PT30M→1800`、`PT1H→3600`、`P1D→86400`；
-- 上游按“最新 N 根”返回（`data_length`，每序列上限 10000，使用文档另有 8000 根的说明、以 API 参考为准）：当返回数量达到上限且最早一根仍晚于请求 `start` 时，更早数据取不到，响应 `meta.partial=true` 且 `warnings` 提示；
+- 上游按“最新 N 根”返回（`data_length`）：**单次上限 2026-11-03 探针实测 5000 根**
+  （PT1M/PT5M 同时恰好 5000；文档 8000/10000 口径未复现，疑受当前套餐限制，
+  升级套餐后需重新实证）；当返回数量达到上限且最早一根仍晚于请求 `start` 时，
+  更早数据取不到，响应 `meta.partial=true` 且 `warnings` 提示；
+- **分钟线为滚动保留**（2026-11-03 探针）：1m/5m 深度不足 16 个月、15m 约 17 个月
+  （2025-06 窗口 1m/5m 为 0 根、15m 仅 7 根），故分钟级 `history` 不声明固定起点；
 - `datetime` 为纳秒时间戳（绝对时间），标准化为 UTC；期货/指数无复权概念，`adjust` 仅声明 none；
+- **复权实证**（2026-11-03 探针）：hfq 与 none 差异显著（生效）；分钟级 qfq 与 none 相同（天勤特性，如实标注）；日线 qfq/hfq 均有差异；
+- **history 回填**（探针二分估计，粒度 90 天）：日线 continuous 自 2016-01-05、stock/index 自 2018-01-02；
+  contract（随挂牌期限）/etf/weighted-index 未探，保持 null；
 - 代码映射（股票/指数/ETF 同期货格式）：`CN-SSE-600000 → SSE.600000`、`CN-SZSE-000001 → SZSE.000001`、`CN-SSE-000016 → SSE.000016`、`CN-SSE-510050 → SSE.510050`（mddatas 文档示例口径；指数仅核实 SSE/SZSE 发布的代码）；
 - 每次请求在线程池中独立创建并关闭 TqApi 实例（官方约定一个线程一个实例）；
 - 上游 SDK 异常类型未在文档中核实，统一包装为 `UPSTREAM_ERROR`。
 
 单位约定（按官方文档）：
 
-- 个股 `volume` 统一为**股**：东财接口返回手，适配器 ×100 换算；新浪/腾讯为股，原样返回；TqSdk 股票/ETF 的 volume 单位文档未写明，**原样透出，待探针实证后修正**；
+- 个股 `volume` 统一为**股**：东财接口返回手，适配器 ×100 换算；新浪/腾讯为股，原样返回；TqSdk 股票/ETF 的 volume 单位文档未写明，**2026-11-03 探针量级对照判定为股**（600000 日 volume ≈5×10^7），原样透出；
 - `amount` 统一为**元**；指数/期货的上游未标注单位时原样返回（见各接口文档）；
 - 交易所映射（已核实部分）：个股/指数 `SSE→sh`、`SZSE→sz`；指数东财另支持 `CSI→csi`、`BSE→bj`；期货合约符号原样传递（如 `RB2410`），主力连续为品种代码+`0`（如 `RB`→`RB0`）。
 

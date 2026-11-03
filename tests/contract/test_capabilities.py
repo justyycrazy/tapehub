@@ -29,9 +29,9 @@ def test_default_catalog_lists_all_builtin_providers(default_client) -> None:  #
     # tqsdk 已接入：期货三条能力（单一合约/主力连续/加权）
     tqsdk = next(entry for entry in body["data"] if entry["provider"] == "tqsdk")
     assert tqsdk["enabled"] is True
-    # 期货一条 + 股票/指数/ETF 各一条能力
-    assert len(tqsdk["capabilities"]) == 4
-    assert tqsdk["capabilities"][0]["asset_types"] == ["contract", "continuous", "weighted-index"]
+    # 期货三类拆分 + 股票/指数/ETF 各一条能力
+    assert len(tqsdk["capabilities"]) == 6
+    assert tqsdk["capabilities"][0]["asset_types"] == ["contract"]
     assert tqsdk["default_provider"] == ["contract", "continuous", "weighted-index", "etf"]
     # 全部内置 Provider 均已接入
     for entry in body["data"]:
@@ -100,4 +100,4 @@ def test_single_provider_on_default_catalog(default_client) -> None:  # type: ig
     body = response.json()
     assert body["data"]["provider"] == "tqsdk"
     assert body["data"]["enabled"] is True
-    assert len(body["data"]["capabilities"]) == 4
+    assert len(body["data"]["capabilities"]) == 6

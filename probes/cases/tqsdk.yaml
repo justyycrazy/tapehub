@@ -55,7 +55,7 @@ chain:
     fields: [close]
   history_depth:
     # stock 历史深度受专业版权限直接影响，是权限口径实证的关键探针
-    targets: [continuous, stock, index]
+    targets: [continuous, stock, index, etf]
     earliest: 2000-01-01
     era_step_years: 5
     max_calls: 16

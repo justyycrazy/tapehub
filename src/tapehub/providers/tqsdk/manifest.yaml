@@ -9,20 +9,29 @@
 #   如 SHFE.cu2607 / CZCE.SR609）；主力连续 KQ.m@<交易所>.<品种>；
 #   指数连续（加权）KQ.i@<交易所>.<品种>；
 # - get_kline_serial(symbol, duration_seconds, data_length, adj_type)：
-#   周期为不超过 1 日的任意秒数（日线 86400）；data_length 默认 200，
-#   API 参考注明每序列最大 10000（使用文档另有 8000 根的说明，以 API 参考为准）；
+#   周期为不超过 1 日的任意秒数（日线 86400）；data_length 默认 200；
+#   单次上限 2026-11-03 探针实测 5000 根（PT1M/PT5M 同时恰好 5000，
+#   文档 8000/10000 口径未复现，疑受当前套餐限制）；达到上限时标记 partial=true；
 #   adj_type 仅对股票/基金有效（F=前复权、B=后复权、None=不复权），
-#   期货/指数无复权概念，始终传 None；
+#   期货/指数无复权概念，始终传 None；复权实证（2026-11-03 探针）：
+#   hfq 与 none 差异显著（生效）；分钟级 qfq 与 none 相同（天勤特性，如实标注）；
 # - 返回列 id/datetime/open/high/low/close/volume/open_oi/close_oi：
 #   datetime 为纳秒时间戳；无成交额字段，标准 amount 恒为 null；
-#   持仓量 open_oi/close_oi 进入受控 extensions（股票/指数/ETF 无此列 → null）；
-#   期货 volume 保持手；股票/ETF 的 volume 单位文档未写明，原样透出待探针实证；
-# - 权限边界（usage/mddatas 原文）：免费版仅期货/期权与四大指数实时行情；
-#   A股股票实时与历史行情需专业版（付费）；ETF 权限口径未核实；
+#   持仓量 open_oi/close_oi 进入受控 extensions：期货为真实持仓，
+#   股票/指数/ETF 列存在但恒为 0（如实透出 0.0，不用 null 冒充）；
+#   期货 volume 保持手；股票/ETF 的 volume 单位文档未写明，
+#   2026-11-03 探针量级对照判定为股（600000 日 volume 约 5×10^7）；
+# - 权限边界（usage/mddatas 原文 + 2026-11-03 探针）：免费版仅期货/期权与
+#   四大指数实时行情；A股股票实时与历史行情需专业版（付费）；
+#   当前快期账户股票/指数/ETF 历史日线实测可用；ETF 权限口径待进一步核实；
 # - 每次请求独立创建并关闭 TqApi 实例（在线程池中执行，一个线程一个实例）；
 # - 上游返回“从最新一根往回”的序列：当返回数量达到上限且最早一根仍晚于
 #   请求 start 时，无法覆盖请求窗口，标记 partial=true；
-# - 历史覆盖范围（history）未核实，保持 null，不编造；
+# - 历史覆盖范围（history，2026-11-03 探针二分估计，粒度 90 天）：
+#   日线 continuous 自 2016-01-05（limit 探针实测最早一根 2016-01-04T16:00Z）、
+#   stock/index 自 2018-01-02；分钟级为**滚动保留**（1m/5m 深度不足 16 个月、
+#   15m 约 17 个月，探针 2025-06 窗口 1m/5m 为 0 根），不声明固定起点；
+#   contract（随挂牌期限）/etf/weighted-index 未探，保持 null 不编造；
 # - 单接口 Provider：变体与 default_variant 均为 tqsdk（官方 SDK 包名，
 #   背后为天勤 TianQin 行情平台，与东方财富无关）：缺省请求即可路由，
 #   也可显式传 variant=tqsdk。
@@ -32,9 +41,10 @@ default_variant: tqsdk
 enabled: true
 
 capabilities:
+  # 期货三类拆分声明：history 逐类回填（contract 随挂牌期限不声明固定起点）
   - data_type: bars
     markets: [CN]
-    asset_types: [contract, continuous, weighted-index]
+    asset_types: [contract]
     delivery: [rest]
     variants: [tqsdk]
     intervals:
@@ -46,7 +56,36 @@ capabilities:
       - {code: P1D, history: {start: null, end: null}}
     adjustments: [none]
     fields: [open, high, low, close, volume]
-  # 股票：adj_type 支持 F/B（API 参考）；实时与历史行情需专业版权限
+  - data_type: bars
+    markets: [CN]
+    asset_types: [continuous]
+    delivery: [rest]
+    variants: [tqsdk]
+    intervals:
+      - {code: PT1M, history: {start: null, end: null}}
+      - {code: PT5M, history: {start: null, end: null}}
+      - {code: PT15M, history: {start: null, end: null}}
+      - {code: PT30M, history: {start: null, end: null}}
+      - {code: PT1H, history: {start: null, end: null}}
+      # 探针 limit case 实测最早一根（cu 主连日线，UTC 即北京时间 2016-01-05）
+      - {code: P1D, history: {start: "2016-01-04T16:00:00Z", end: null}}
+    adjustments: [none]
+    fields: [open, high, low, close, volume]
+  - data_type: bars
+    markets: [CN]
+    asset_types: [weighted-index]
+    delivery: [rest]
+    variants: [tqsdk]
+    intervals:
+      - {code: PT1M, history: {start: null, end: null}}
+      - {code: PT5M, history: {start: null, end: null}}
+      - {code: PT15M, history: {start: null, end: null}}
+      - {code: PT30M, history: {start: null, end: null}}
+      - {code: PT1H, history: {start: null, end: null}}
+      - {code: P1D, history: {start: null, end: null}}
+    adjustments: [none]
+    fields: [open, high, low, close, volume]
+  # 股票：adj_type 支持 F/B（API 参考，hfq 生效已实证）；实时与历史行情需专业版权限
   - data_type: bars
     markets: [CN]
     asset_types: [stock]
@@ -58,7 +97,8 @@ capabilities:
       - {code: PT15M, history: {start: null, end: null}}
       - {code: PT30M, history: {start: null, end: null}}
       - {code: PT1H, history: {start: null, end: null}}
-      - {code: P1D, history: {start: null, end: null}}
+      # 探针二分估计（粒度 90 天）：600000 日线最早 ≈2018-01-02
+      - {code: P1D, history: {start: "2018-01-01T16:00:00Z", end: null}}
     adjustments: [none, qfq, hfq]
     fields: [open, high, low, close, volume]
   # 指数：adj_type 对指数无效，仅 none；免费版仅四大指数（上证50/沪深300/
@@ -74,7 +114,8 @@ capabilities:
       - {code: PT15M, history: {start: null, end: null}}
       - {code: PT30M, history: {start: null, end: null}}
       - {code: PT1H, history: {start: null, end: null}}
-      - {code: P1D, history: {start: null, end: null}}
+      # 探针二分估计（粒度 90 天）：000016 日线最早 ≈2018-01-02
+      - {code: P1D, history: {start: "2018-01-01T16:00:00Z", end: null}}
     adjustments: [none]
     fields: [open, high, low, close, volume]
   # ETF：属基金大类，adj_type 有效（F/B）；权限口径未核实，探针实证
