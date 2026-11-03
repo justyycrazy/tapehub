@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import importlib
 import importlib.util
+import itertools
 import json
 import os
 import re
@@ -25,8 +26,8 @@ from probes.analysis import BudgetExhausted
 from probes.loader import ChainCase, ExpandedProbe, RawPlan, expand_probe
 from probes.report import CaseResult, RunResult, sample_bars_of
 from probes.schema import CaseVerdict, PacingSpec, ProbeFile, RawCaseSpec
-from tapehub.domain.errors import TapehubError
-from tapehub.domain.models import Bar, BarBatch, BarQuery, Instrument
+from tapehub.domain.errors import TapehubError, UpstreamError
+from tapehub.domain.models import Bar, BarBatch, BarQuery, DataVariant, Instrument
 from tapehub.providers.registry import ProviderRecord, ProviderRegistry
 from tapehub.settings import Settings
 
@@ -173,8 +174,16 @@ def _dims_of(case: ChainCase) -> dict[str, str]:
 
 
 def _build_query(
-    ctx: RunContext, case: ChainCase, start: Any, end: Any, *, limit: int
+    ctx: RunContext,
+    case: ChainCase,
+    start: Any,
+    end: Any,
+    *,
+    limit: int,
+    variant: DataVariant | None = None,
+    adjust: Any = None,
 ) -> BarQuery:
+    """构造统一查询；``variant`` / ``adjust`` 覆盖 case 默认值（一致性、复权对比探针使用）。"""
     return BarQuery(
         provider=ctx.record.name,
         asset_type=case.asset_type,
@@ -182,23 +191,46 @@ def _build_query(
         interval=case.interval,
         start=start,
         end=end,
-        adjust=case.adjust,
-        variant=case.variant,
+        adjust=adjust if adjust is not None else case.adjust,
+        variant=variant if variant is not None else case.variant,
         offset=0,
         limit=limit,
     )
 
 
-def _make_fetcher(ctx: RunContext, case: ChainCase) -> analysis.WindowFetch:
-    """分析探针共用的窗口查询闭包（含预算与节流，异常原样上抛）。"""
+def _make_fetcher(
+    ctx: RunContext,
+    case: ChainCase,
+    *,
+    adjust: Any = None,
+    variant: DataVariant | None = None,
+) -> analysis.WindowFetch:
+    """分析探针共用的窗口查询闭包（含预算与节流，异常原样上抛）。
+
+    ``adjust`` / ``variant`` 覆盖 case 维度：adjust_diff 用它分别抓取
+    baseline 与 compared 两套序列。
+    """
 
     async def fetch(start: datetime, end: datetime) -> list[Bar]:
         if not await ctx.take_call():
             raise BudgetExhausted()
-        query = _build_query(ctx, case, start, end, limit=PROBE_PAGE_LIMIT)
-        batch = await asyncio.wait_for(
-            ctx.record.adapter.fetch_bars(query), ctx.pacing.timeout_s
+        query = _build_query(
+            ctx, case, start, end, limit=PROBE_PAGE_LIMIT, variant=variant, adjust=adjust
         )
+        try:
+            batch = await asyncio.wait_for(
+                ctx.record.adapter.fetch_bars(query), ctx.pacing.timeout_s
+            )
+        except (TapehubError, BudgetExhausted):
+            raise
+        except Exception as exc:  # noqa: BLE001 - 未识别异常折算为 UpstreamError
+            # 探针直连适配器，绕过了 BarQueryService 的统一包装；
+            # SDK 未识别异常（如 akshare Push2RateLimitError）在此折算，
+            # 保证分析层只需处理 TapehubError / BudgetExhausted。
+            raise UpstreamError(
+                f"unexpected SDK error: {type(exc).__name__}: {exc}"[:500],
+                details={"provider": ctx.record.name},
+            ) from exc
         return batch.bars
 
     return fetch
@@ -210,13 +242,8 @@ def _skip_budget() -> CaseResult:
     )
 
 
-async def _fetch_safe(
-    ctx: RunContext, case: ChainCase, start: datetime, end: datetime, *, limit: int
-) -> tuple[BarBatch | None, Any]:
-    """单次链路调用：返回 (BarBatch, None) 或 (None, 错误描述)。"""
-    if not await ctx.take_call():
-        return None, BudgetExhausted()
-    query = _build_query(ctx, case, start, end, limit=limit)
+async def _fetch_query(ctx: RunContext, query: BarQuery) -> tuple[BarBatch | None, Any]:
+    """单次链路调用（预算由调用方领取）：返回 (BarBatch, None) 或 (None, 错误描述)。"""
     try:
         return (
             await asyncio.wait_for(ctx.record.adapter.fetch_bars(query), ctx.pacing.timeout_s),
@@ -242,6 +269,22 @@ async def _fetch_safe(
         }
 
 
+async def _fetch_safe(
+    ctx: RunContext,
+    case: ChainCase,
+    start: datetime,
+    end: datetime,
+    *,
+    limit: int,
+    variant: DataVariant | None = None,
+) -> tuple[BarBatch | None, Any]:
+    """领取预算后单次链路调用（variant 可覆盖，供一致性探针使用）。"""
+    if not await ctx.take_call():
+        return None, BudgetExhausted()
+    query = _build_query(ctx, case, start, end, limit=limit, variant=variant)
+    return await _fetch_query(ctx, query)
+
+
 async def _run_chain_case(ctx: RunContext, case: ChainCase) -> CaseResult:
     base = CaseResult(
         case_id=case.case_id, kind=case.kind, verdict=CaseVerdict.SKIPPED.value, reason="",
@@ -258,6 +301,8 @@ async def _run_chain_case(ctx: RunContext, case: ChainCase) -> CaseResult:
         return await _run_history_depth(ctx, case, base)
     if case.kind == "limit_truncation":
         return await _run_limit_truncation(ctx, case, base)
+    if case.kind == "variant_consistency":
+        return await _run_variant_consistency(ctx, case, base)
     base.reason = f"unknown case kind: {case.kind}"
     return base
 
@@ -318,10 +363,11 @@ async def _run_availability(ctx: RunContext, case: ChainCase, base: CaseResult) 
 
 async def _run_adjust_diff(ctx: RunContext, case: ChainCase, base: CaseResult) -> CaseResult:
     assert case.compared_adjust is not None
-    fetch = _make_fetcher(ctx, case)
+    fetch_baseline = _make_fetcher(ctx, case, adjust=case.adjust)
+    fetch_compared = _make_fetcher(ctx, case, adjust=case.compared_adjust)
     try:
-        baseline = await fetch(case.window_start, case.window_end)
-        compared = await fetch(case.window_start, case.window_end)
+        baseline = await fetch_baseline(case.window_start, case.window_end)
+        compared = await fetch_compared(case.window_start, case.window_end)
     except TapehubError as exc:
         return _failed_from(base, {"error_code": exc.code.value, "error_text": exc.message})
     except BudgetExhausted:
@@ -414,6 +460,100 @@ async def _run_limit_truncation(ctx: RunContext, case: ChainCase, base: CaseResu
             f"measured single-call count {len(batch.bars)} differs from "
             f"documented max {case.documented_max}"
         )
+    return base
+
+
+async def _run_variant_consistency(
+    ctx: RunContext, case: ChainCase, base: CaseResult
+) -> CaseResult:
+    """跨 variant 一致性：同一查询在全部声明 variant 下的序列必须一致。
+
+    任何不一致（数值差异、无重叠、预算中断导致样本不全）都按 suspect
+    记录并在报告中给出分歧细节（差异幅度 + 首个分歧时间戳）。
+    """
+    assert case.variants, "variant_consistency case must carry declared variants"
+    fields = case.compare_fields or ("close",)
+    series: dict[str, list[Bar]] = {}
+    incomplete = False
+    for variant in case.variants:
+        batch, error = await _fetch_safe(
+            ctx,
+            case,
+            case.window_start,
+            case.window_end,
+            limit=min(PROBE_PAGE_LIMIT, ctx.settings.max_limit),
+            variant=variant,
+        )
+        if isinstance(error, BudgetExhausted):
+            incomplete = True
+            break
+        if error is not None:
+            return _failed_from(base, error)
+        assert batch is not None
+        series[variant.value] = batch.bars
+
+    if len(series) < 2:
+        base.reason = (
+            "call budget exhausted before two variants were fetched"
+            if incomplete
+            else "fewer than two variants returned data"
+        )
+        return base
+
+    comparisons: list[dict[str, Any]] = []
+    names = list(series)
+    for left_name, right_name in itertools.combinations(names, 2):
+        for field_name in fields:
+            result = analysis.compare_price_series(
+                series[left_name], series[right_name], field_name
+            )
+            comparisons.append(
+                {
+                    "a": left_name,
+                    "b": right_name,
+                    "field": result.field,
+                    "compared": result.compared,
+                    "identical": result.identical,
+                    "max_abs_diff": result.max_abs_diff,
+                    "first_divergence": (
+                        result.first_divergence.isoformat() if result.first_divergence else None
+                    ),
+                }
+            )
+    per_variant = {
+        name: {
+            "count": len(bars),
+            "first": bars[0].timestamp.isoformat() if bars else None,
+            "last": bars[-1].timestamp.isoformat() if bars else None,
+        }
+        for name, bars in series.items()
+    }
+    base.observation = {
+        "variants": per_variant,
+        "fields": list(fields),
+        "comparisons": comparisons,
+        "incomplete": incomplete,
+    }
+
+    mismatched = [c for c in comparisons if not c["identical"]]
+    no_overlap = [c for c in comparisons if c["compared"] == 0]
+    if mismatched or no_overlap or incomplete:
+        base.verdict = CaseVerdict.SUSPECT.value
+        details: list[str] = []
+        for item in mismatched:
+            details.append(
+                f"{item['a']} vs {item['b']} [{item['field']}] "
+                f"max_diff={item['max_abs_diff']:.4g} first_at={item['first_divergence']}"
+            )
+        if no_overlap:
+            details.append("some pairs have no overlapping non-null timestamps")
+        if incomplete:
+            details.append("budget exhausted before all variants were fetched")
+        base.reason = "cross-variant inconsistency: " + "; ".join(details)
+        return base
+
+    base.verdict = CaseVerdict.CONFIRMED.value
+    base.reason = "all declared variants agree on identical queries"
     return base
 
 

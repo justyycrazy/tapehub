@@ -86,25 +86,46 @@ class SkipSpec(_Strict):
 
 
 class AdjustDiffSpec(_Strict):
-    """复权生效性探针：同窗口对比 baseline 与 compared 的价格序列。"""
+    """复权生效性探针：同窗口对比 baseline 与 compared 的价格序列。
+
+    按 (interval × variant × pair) 在声明矩阵上**全量展开**，
+    用于核对同一参数在不同 variant 下的一致性；
+    ``intervals`` 可显式收敛 interval 维度以控制预算（variant 维度永不收敛）。
+    """
 
     targets: list[AssetType] = Field(min_length=1)
     window: WindowSpec
     pairs: list[tuple[Adjust, Adjust]] = Field(default_factory=lambda: [(Adjust.NONE, Adjust.QFQ)])
     fields: list[str] = Field(default_factory=lambda: ["close"])
+    intervals: list[Interval] = Field(default_factory=list)
 
 
 class HistoryDepthSpec(_Strict):
-    """历史深度探针：纪元回溯 + 二分搜索最早可用窗口。"""
+    """历史深度探针：纪元回溯 + 二分搜索最早可用窗口。
+
+    按 (interval × variant) 全量展开；``max_calls`` 是**每条 case** 的预算。
+    """
 
     targets: list[AssetType] = Field(min_length=1)
     earliest: dt.date
     era_step_years: int = Field(default=5, ge=1)
     max_calls: int = Field(default=24, ge=1)
+    intervals: list[Interval] = Field(default_factory=list)
+
+
+class VariantConsistencySpec(_Strict):
+    """跨 variant 一致性探针：同一 (asset_type, interval, adjust) 的查询在全部
+    声明 variant 下的序列应当一致；任何不一致必须记录并在报告中呈现。
+    """
+
+    targets: list[AssetType] = Field(min_length=1)
+    window: WindowSpec
+    fields: list[str] = Field(default_factory=lambda: ["close"])
+    intervals: list[Interval] = Field(default_factory=list)
 
 
 class LimitTruncationSpec(_Strict):
-    """单次上限探针：最小声明周期 + 超长窗口，实测单次返回上限。"""
+    """单次上限探针：最小声明周期 + 超长窗口，实测单次返回上限（按 variant 全量展开）。"""
 
     targets: list[AssetType] = Field(min_length=1)
     interval: Interval
@@ -121,6 +142,7 @@ class ChainSpec(_Strict):
     adjust_diff: AdjustDiffSpec | None = None
     history_depth: HistoryDepthSpec | None = None
     limit_truncation: LimitTruncationSpec | None = None
+    variant_consistency: VariantConsistencySpec | None = None
 
 
 class ClientSpec(_Strict):

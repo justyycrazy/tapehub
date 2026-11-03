@@ -78,12 +78,16 @@ def test_adjust_diff_cases_generated() -> None:
     )
     expanded = expand_probe(probe, _manifest())  # type: ignore[arg-type]
     diffs = [c for c in expanded.chain_cases if c.kind == "adjust_diff"]
+    # 全量展开：2 interval × 1 variant × 2 pairs = 4 条；fake 只声明 none，全部 skip
     assert {c.case_id for c in diffs} == {
-        "adjust-diff-stock-none-vs-qfq",
-        "adjust-diff-stock-none-vs-hfq",
+        "adjust-diff-stock-P1D-none-vs-qfq-eastmoney",
+        "adjust-diff-stock-P1D-none-vs-hfq-eastmoney",
+        "adjust-diff-stock-PT1M-none-vs-qfq-eastmoney",
+        "adjust-diff-stock-PT1M-none-vs-hfq-eastmoney",
     }
     assert all(c.expected_calls == 2 for c in diffs)
     assert all(c.compared_adjust is not None for c in diffs)
+    assert all(c.skip_reason is not None and "not declared" in c.skip_reason for c in diffs)
 
 
 def test_history_depth_case_generated() -> None:
@@ -92,10 +96,28 @@ def test_history_depth_case_generated() -> None:
     )
     expanded = expand_probe(probe, _manifest())  # type: ignore[arg-type]
     cases = [c for c in expanded.chain_cases if c.kind == "history_depth"]
-    assert len(cases) == 1
-    assert cases[0].case_id == "history-depth-stock"
-    assert cases[0].window_start.year == 2000
-    assert cases[0].expected_calls == 8
+    # 全量展开：声明了 P1D 与 PT1M 两个周期就生成两条
+    assert {c.case_id for c in cases} == {
+        "history-depth-stock-P1D-eastmoney",
+        "history-depth-stock-PT1M-eastmoney",
+    }
+    assert all(c.window_start.year == 2000 for c in cases)
+    assert all(c.expected_calls == 8 for c in cases)
+
+    # intervals 显式收敛：只保留声明中存在的指定周期
+    filtered = expand_probe(
+        _probe(
+            history_depth={
+                "targets": ["stock"],
+                "earliest": "2000-01-01",
+                "max_calls": 8,
+                "intervals": ["PT1M"],
+            }
+        ),
+        _manifest(),  # type: ignore[arg-type]
+    )
+    cases = [c for c in filtered.chain_cases if c.kind == "history_depth"]
+    assert {c.case_id for c in cases} == {"history-depth-stock-PT1M-eastmoney"}
 
 
 def test_limit_truncation_declared_and_undeclared() -> None:
@@ -112,7 +134,7 @@ def test_limit_truncation_declared_and_undeclared() -> None:
     )
     ok = [c for c in declared.chain_cases if c.kind == "limit_truncation"]
     assert len(ok) == 1
-    assert ok[0].case_id == "limit-stock-PT1M"
+    assert ok[0].case_id == "limit-stock-PT1M-eastmoney"
     # window_end 2025-03-31 回溯 P1Y → 2024-03-31
     assert (ok[0].window_start.year, ok[0].window_start.month, ok[0].window_start.day) == (
         2024,
@@ -128,6 +150,78 @@ def test_limit_truncation_declared_and_undeclared() -> None:
     bad = [c for c in undeclared.chain_cases if c.kind == "limit_truncation"]
     assert len(bad) == 1
     assert bad[0].skip_reason is not None and "not declared" in bad[0].skip_reason
+
+
+def test_variant_consistency_single_variant_skipped() -> None:
+    probe = _probe(
+        variant_consistency={
+            "targets": ["stock"],
+            "window": {"start": "2025-01-01", "end": "2025-03-31"},
+        }
+    )
+    expanded = expand_probe(probe, _manifest())  # type: ignore[arg-type]
+    cases = [c for c in expanded.chain_cases if c.kind == "variant_consistency"]
+    # fake manifest 仅声明 eastmoney：按声明周期全量生成 case 但 skip（无从对比）
+    assert {c.case_id for c in cases} == {
+        "variant-consistency-stock-P1D-none",
+        "variant-consistency-stock-PT1M-none",
+    }
+    assert cases[0].skip_reason == "single declared variant, nothing to compare"
+
+
+def test_full_matrix_expansion_multi_variant() -> None:
+    """多 variant manifest：分析探针必须在全部 (interval × variant × pair) 上展开。"""
+    manifest = load_manifest_file(FIXTURES / "manifests" / "multi_variant.yaml")
+    probe = ProbeFile.model_validate(
+        {
+            "probe": "multi-var",
+            "version": 1,
+            "targets": {
+                "stock": {
+                    "instrument": "CN-SSE-600000",
+                    "window": {"start": "2025-01-01", "end": "2025-03-31"},
+                }
+            },
+            "chain": {
+                "include_declared": True,
+                "adjust_diff": {
+                    "targets": ["stock"],
+                    "window": {"start": "2024-01-01", "end": "2024-12-31"},
+                    "pairs": [["none", "qfq"]],
+                },
+                "history_depth": {"targets": ["stock"], "earliest": "2000-01-01", "max_calls": 4},
+                "variant_consistency": {
+                    "targets": ["stock"],
+                    "window": {"start": "2025-01-01", "end": "2025-03-31"},
+                },
+            },
+        }
+    )
+    expanded = expand_probe(probe, manifest)
+    by_kind: dict[str, list] = {}
+    for case in expanded.chain_cases:
+        by_kind.setdefault(case.kind, []).append(case)
+
+    # adjust_diff：1 interval × 2 variant × 1 pair = 2 条，且均无 skip（none/qfq 均已声明）
+    assert {c.case_id for c in by_kind["adjust_diff"]} == {
+        "adjust-diff-stock-P1D-none-vs-qfq-eastmoney",
+        "adjust-diff-stock-P1D-none-vs-qfq-sina",
+    }
+    assert all(c.skip_reason is None for c in by_kind["adjust_diff"])
+    # history_depth：1 interval × 2 variant = 2 条
+    assert {c.case_id for c in by_kind["history_depth"]} == {
+        "history-depth-stock-P1D-eastmoney",
+        "history-depth-stock-P1D-sina",
+    }
+    # variant_consistency：1 interval × 2 adjusts = 2 条（每条覆盖全部 2 个 variant）
+    consistency = by_kind["variant_consistency"]
+    assert {c.case_id for c in consistency} == {
+        "variant-consistency-stock-P1D-none",
+        "variant-consistency-stock-P1D-qfq",
+    }
+    assert all(c.variants == ("eastmoney", "sina") for c in consistency)
+    assert all(c.expected_calls == 2 for c in consistency)
+    assert all(c.skip_reason is None for c in consistency)
 
 
 def test_load_probe_files_validates_names(tmp_path: Path) -> None:

@@ -24,6 +24,7 @@ from probes.schema import (
     LimitTruncationSpec,
     ProbeFile,
     RawCaseSpec,
+    VariantConsistencySpec,
 )
 from tapehub.domain.capabilities import Capability
 from tapehub.domain.intervals import Interval
@@ -55,6 +56,8 @@ class ChainCase:
     compared_adjust: Adjust | None = None
     # adjust_diff 专属：参与对比的价格字段
     compare_fields: tuple[str, ...] = ()
+    # variant_consistency 专属：参与对比的全部声明 variant
+    variants: tuple[DataVariant, ...] = ()
     # limit_truncation 专属：文档声称的上限
     documented_max: int | None = None
     # 加载期即确定跳过的原因（无 target / 市场不匹配 / 显式 skip / 维度未声明）
@@ -110,18 +113,175 @@ def _to_utc(day: dt.date) -> dt.datetime:
     return dt.datetime(day.year, day.month, day.day, tzinfo=UTC)
 
 
-def capability_of(capabilities: list[Capability], asset_type: AssetType) -> Capability | None:
-    """返回声明了该 asset_type 的第一条能力（声明顺序优先）。"""
-    for cap in capabilities:
-        if asset_type in cap.asset_types:
-            return cap
-    return None
+def capabilities_of(capabilities: list[Capability], asset_type: AssetType) -> list[Capability]:
+    """返回声明了该 asset_type 的全部能力（保持声明顺序）。
+
+    同一 asset_type 可能由多条能力覆盖（如 akshare stock 的 eastmoney/sina/tencent
+    各为一条能力），分析探针的全量展开必须遍历全部能力。
+    """
+    return [cap for cap in capabilities if asset_type in cap.asset_types]
 
 
-def primary_dims(capability: Capability) -> tuple[Interval, Adjust, DataVariant]:
-    """分析探针的「声明顺序第一组维度」，保证确定性并控制预算。"""
-    adjust = Adjust.NONE if Adjust.NONE in capability.adjustments else capability.adjustments[0]
-    return capability.intervals[0].code, adjust, capability.variants[0]
+def _declared_intervals(capability: Capability, only: list) -> list:
+    """该能力声明的全部 interval；``only`` 非空时按其收敛（显式配置，非隐式绑定）。"""
+    codes = [entry.code for entry in capability.intervals]
+    if not only:
+        return codes
+    return [code for code in codes if code in only]
+
+
+def _fallback_adjust(capability: Capability) -> Adjust:
+    """无 none 声明时取第一个声明的复权方式（如期货仅有 none 不受影响）。"""
+    return Adjust.NONE if Adjust.NONE in capability.adjustments else capability.adjustments[0]
+
+
+def _adjust_diff_cases(
+    base: ChainCase, config: AdjustDiffSpec, caps: list[Capability]
+) -> list[ChainCase]:
+    """按 (interval × variant × pair) 全量展开复权生效性探针。"""
+    cases: list[ChainCase] = []
+    seen: set[str] = set()
+    for capability in caps:
+        for interval in _declared_intervals(capability, config.intervals):
+            for variant in capability.variants:
+                for baseline, compared in config.pairs:
+                    case_id = (
+                        f"adjust-diff-{base.asset_type.value}-{interval.code}-"
+                        f"{baseline.value}-vs-{compared.value}-{variant.value}"
+                    )
+                    if case_id in seen:
+                        continue
+                    seen.add(case_id)
+                    skip_reason: str | None = None
+                    if baseline not in capability.adjustments:
+                        skip_reason = f"baseline adjust {baseline.value!r} is not declared"
+                    elif compared not in capability.adjustments:
+                        skip_reason = f"compared adjust {compared.value!r} is not declared"
+                    cases.append(
+                        dataclasses.replace(
+                            base,
+                            case_id=case_id,
+                            kind="adjust_diff",
+                            interval=interval,
+                            adjust=baseline,
+                            variant=variant,
+                            compared_adjust=compared,
+                            compare_fields=tuple(config.fields),
+                            window_start=_to_utc(config.window.start),
+                            window_end=_to_utc(config.window.end),
+                            expected_calls=2,
+                            skip_reason=skip_reason,
+                        )
+                    )
+    return cases
+
+
+def _history_depth_cases(
+    base: ChainCase, config: HistoryDepthSpec, caps: list[Capability]
+) -> list[ChainCase]:
+    """按 (interval × variant) 全量展开历史深度探针。"""
+    cases: list[ChainCase] = []
+    seen: set[str] = set()
+    for capability in caps:
+        for interval in _declared_intervals(capability, config.intervals):
+            for variant in capability.variants:
+                case_id = (
+                    f"history-depth-{base.asset_type.value}-{interval.code}-{variant.value}"
+                )
+                if case_id in seen:
+                    continue
+                seen.add(case_id)
+                cases.append(
+                    dataclasses.replace(
+                        base,
+                        case_id=case_id,
+                        kind="history_depth",
+                        interval=interval,
+                        adjust=_fallback_adjust(capability),
+                        variant=variant,
+                        window_start=_to_utc(config.earliest),
+                        expected_calls=config.max_calls,
+                    )
+                )
+    return cases
+
+
+def _limit_truncation_cases(
+    base: ChainCase, config: LimitTruncationSpec, caps: list[Capability]
+) -> list[ChainCase]:
+    """按 variant 全量展开单次上限探针。"""
+    cases: list[ChainCase] = []
+    seen: set[str] = set()
+    for capability in caps:
+        for variant in capability.variants:
+            case_id = f"limit-{base.asset_type.value}-{config.interval.code}-{variant.value}"
+            if case_id in seen:
+                continue
+            seen.add(case_id)
+            skip_reason: str | None = None
+            if not any(entry.code == config.interval for entry in capability.intervals):
+                skip_reason = (
+                    f"interval {config.interval.code} is not declared for {base.asset_type.value}"
+                )
+            cases.append(
+                dataclasses.replace(
+                    base,
+                    case_id=case_id,
+                    kind="limit_truncation",
+                    interval=config.interval,
+                    adjust=_fallback_adjust(capability),
+                    variant=variant,
+                    documented_max=config.documented_max,
+                    window_start=_window_back(base.window_end, config.max_range),
+                    expected_calls=1,
+                    skip_reason=skip_reason,
+                )
+            )
+    return cases
+
+
+def _variant_consistency_cases(
+    base: ChainCase, config: VariantConsistencySpec, caps: list[Capability]
+) -> list[ChainCase]:
+    """按 (interval × adjust) 展开：同一查询在全部声明 variant 下应得到一致序列。
+
+    variant 必须**跨能力聚合**：同一 (asset_type, interval, adjust) 常由多条能力
+    覆盖（如 akshare stock 的三个 variant 各为一条能力），一致性对比的正是
+    跨能力的同一参数结果。
+    """
+    grouped: dict[tuple[Interval, Adjust], set[DataVariant]] = {}
+    for capability in caps:
+        for interval in _declared_intervals(capability, config.intervals):
+            for adjust in capability.adjustments:
+                grouped.setdefault((interval, adjust), set()).update(capability.variants)
+
+    cases: list[ChainCase] = []
+    for (interval, adjust), variant_set in sorted(
+        grouped.items(), key=lambda item: (item[0][0].code, item[0][1].value)
+    ):
+        ordered = tuple(v for v in DataVariant if v in variant_set)
+        skip_reason: str | None = None
+        if len(ordered) < 2:
+            skip_reason = "single declared variant, nothing to compare"
+        cases.append(
+            dataclasses.replace(
+                base,
+                case_id=(
+                    f"variant-consistency-{base.asset_type.value}-{interval.code}-{adjust.value}"
+                ),
+                kind="variant_consistency",
+                interval=interval,
+                adjust=adjust,
+                variant=ordered[0],
+                variants=ordered,
+                compare_fields=tuple(config.fields),
+                window_start=_to_utc(config.window.start),
+                window_end=_to_utc(config.window.end),
+                expected_calls=len(ordered),
+                skip_reason=skip_reason,
+            )
+        )
+    return cases
 
 
 def _availability_case(
@@ -164,74 +324,6 @@ def _availability_case(
     )
 
 
-def _adjust_diff_case(
-    base: ChainCase,
-    config: AdjustDiffSpec,
-    pair: tuple[Adjust, Adjust],
-    capability: Capability,
-) -> ChainCase:
-    interval, _, variant = primary_dims(capability)
-    baseline, compared = pair
-    case_id = f"adjust-diff-{base.asset_type.value}-{baseline.value}-vs-{compared.value}"
-    skip_reason: str | None = None
-    if Adjust.NONE not in capability.adjustments:
-        skip_reason = "baseline adjust 'none' is not declared"
-    elif compared not in capability.adjustments:
-        skip_reason = f"compared adjust {compared.value!r} is not declared"
-    return dataclasses.replace(
-        base,
-        case_id=case_id,
-        kind="adjust_diff",
-        interval=interval,
-        adjust=baseline,
-        variant=variant,
-        compared_adjust=compared,
-        compare_fields=tuple(config.fields),
-        window_start=_to_utc(config.window.start),
-        window_end=_to_utc(config.window.end),
-        expected_calls=2,
-        skip_reason=skip_reason,
-    )
-
-
-def _history_depth_case(
-    base: ChainCase, spec: "HistoryDepthSpec", capability: Capability
-) -> ChainCase:
-    interval, adjust, variant = primary_dims(capability)
-    return dataclasses.replace(
-        base,
-        case_id=f"history-depth-{base.asset_type.value}",
-        kind="history_depth",
-        interval=interval,
-        adjust=adjust,
-        variant=variant,
-        window_start=_to_utc(spec.earliest),
-        expected_calls=spec.max_calls,
-    )
-
-
-def _limit_truncation_case(
-    base: ChainCase, spec: "LimitTruncationSpec", capability: Capability
-) -> ChainCase:
-    _, adjust, variant = primary_dims(capability)
-    case_id = f"limit-{base.asset_type.value}-{spec.interval.code}"
-    skip_reason: str | None = None
-    if not any(entry.code == spec.interval for entry in capability.intervals):
-        skip_reason = f"interval {spec.interval.code} is not declared for {base.asset_type.value}"
-    return dataclasses.replace(
-        base,
-        case_id=case_id,
-        kind="limit_truncation",
-        interval=spec.interval,
-        adjust=adjust,
-        variant=variant,
-        documented_max=spec.documented_max,
-        window_start=_window_back(base.window_end, spec.max_range),
-        expected_calls=1,
-        skip_reason=skip_reason,
-    )
-
-
 def expand_probe(probe: ProbeFile, manifest: ProviderManifest) -> ExpandedProbe:
     """把探针文件与 manifest 能力矩阵合并展开。"""
     capabilities = manifest.to_domain_capabilities()
@@ -261,11 +353,13 @@ def expand_probe(probe: ProbeFile, manifest: ProviderManifest) -> ExpandedProbe:
 
     if probe.chain:
         chain = probe.chain
-        for asset_type in chain.adjust_diff.targets if chain.adjust_diff else []:
+
+        def _base_for(asset_type: AssetType) -> tuple[ChainCase, list[Capability]] | None:
+            """为分析探针构造共享基底：窗口来自该 asset_type 的 target 声明。"""
             target = probe.targets.get(asset_type)
-            capability = capability_of(capabilities, asset_type)
-            if target is None or capability is None or chain.adjust_diff is None:
-                continue
+            caps = capabilities_of(capabilities, asset_type)
+            if target is None or not caps:
+                return None
             base = ChainCase(
                 case_id="",
                 kind="",
@@ -277,36 +371,22 @@ def expand_probe(probe: ProbeFile, manifest: ProviderManifest) -> ExpandedProbe:
                 window_start=_to_utc(target.window.start),
                 window_end=_to_utc(target.window.end),
             )
-            for pair in chain.adjust_diff.pairs:
-                chain_cases.append(
-                    _adjust_diff_case(base, chain.adjust_diff, pair, capability)
-                )
-        for spec_name in ("history_depth", "limit_truncation"):
-            config = getattr(chain, spec_name)
+            return base, caps
+
+        for config, builder in (
+            (chain.adjust_diff, _adjust_diff_cases),
+            (chain.history_depth, _history_depth_cases),
+            (chain.limit_truncation, _limit_truncation_cases),
+            (chain.variant_consistency, _variant_consistency_cases),
+        ):
             if config is None:
                 continue
-            builder = (
-                _history_depth_case
-                if spec_name == "history_depth"
-                else _limit_truncation_case
-            )
             for asset_type in config.targets:
-                target = probe.targets.get(asset_type)
-                capability = capability_of(capabilities, asset_type)
-                if target is None or capability is None:
+                found = _base_for(asset_type)
+                if found is None:
                     continue
-                base = ChainCase(
-                    case_id="",
-                    kind="",
-                    asset_type=asset_type,
-                    interval=Interval.parse("P1D"),
-                    adjust=Adjust.NONE,
-                    variant=DataVariant.EASTMONEY,
-                    instrument=target.instrument,
-                    window_start=_to_utc(target.window.start),
-                    window_end=_to_utc(target.window.end),
-                )
-                chain_cases.append(builder(base, config, capability))
+                base, caps = found
+                chain_cases.extend(builder(base, config, caps))
 
     raw_cases = [
         RawPlan(spec=case, expected_calls=len(case.call) + (1 if case.client else 0))

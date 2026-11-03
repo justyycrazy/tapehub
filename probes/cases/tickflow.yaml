@@ -31,6 +31,7 @@ chain:
     earliest: 2000-01-01
     era_step_years: 5
     max_calls: 16
+    intervals: [P1D]     # 分钟级历史深度价值低且调用重，显式收敛到日线（变体维度不收敛）
   limit_truncation:
     targets: [stock]
     interval: PT1M

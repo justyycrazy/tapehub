@@ -5,6 +5,14 @@ Fake Provider 仅声明 adjust=none，因此测试显式传参；
 「未传递 adjust」的默认值行为（个股 qfq）由 akshare 链路测试覆盖。
 """
 
+import importlib.util
+
+import pytest
+
+# 「SDK 未安装 → 501」路径只在 akshare 未安装时存在；
+# 本地安装 akshare（如运行 probes 探针）后这两个前提不再成立，跳过。
+_AKSHARE_SDK_INSTALLED = importlib.util.find_spec("akshare") is not None
+
 BAR_PARAMS = {
     "asset_type": "stock",
     "instrument": "CN-SSE-600000",
@@ -225,6 +233,10 @@ class TestRoutingErrors:
         assert response.status_code == 409
         assert response.json()["error"]["code"] == "NO_PROVIDER_AVAILABLE"
 
+    @pytest.mark.skipif(
+        _AKSHARE_SDK_INSTALLED,
+        reason="akshare SDK 已安装，501/SDK 缺失路径不适用（真实调用由探针覆盖）",
+    )
     def test_auto_selects_first_candidate_but_sdk_missing(self, default_client) -> None:  # type: ignore[no-untyped-def]
         """auto 选中 akshare（注册顺序第一）后，SDK 未安装必须返回明确错误。"""
         response = default_client.get("/v1/market/bars", params=self.PARAMS)
@@ -245,6 +257,10 @@ class TestRoutingErrors:
         assert error["code"] == "PROVIDER_NOT_IMPLEMENTED"
         assert error["details"]["missing"] == ["user", "password"]
 
+    @pytest.mark.skipif(
+        _AKSHARE_SDK_INSTALLED,
+        reason="akshare SDK 已安装，501/SDK 缺失路径不适用（真实调用由探针覆盖）",
+    )
     def test_no_fake_bars_from_missing_sdk(self, default_client) -> None:  # type: ignore[no-untyped-def]
         """真实数据不可用时，绝不返回写死的模拟行情。"""
         params = {**self.PARAMS, "provider": "akshare"}

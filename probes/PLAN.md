@@ -168,5 +168,19 @@ adjust-diff 与 history-depth 算法（用合成 fetch 函数构造已知数据�
    manifest（history.start、tushare 周月线复权、twelvedata 周期、tqsdk 上限）与 README，
    单独提交。
 
+## 十、变更记录
+
+- **v2（实施中修订）**：应用户要求，分析探针不再与「声明顺序第一组维度」绑定——
+  adjust_diff 按 (interval × variant × pair)、history_depth / limit_truncation 按
+  (interval × variant) 在声明矩阵上全量展开（`intervals` 字段可显式收敛 interval
+  以控制预算，variant 维度永不收敛）；新增 `variant_consistency` 探针类型，对同一
+  (interval, adjust) 在跨能力聚合的全部声明 variant 下重放同一查询并两两对比，
+  不一致判 suspect 并记录 max_abs_diff 与 first_divergence。
+  实施过程中由离线测试发现并修复两个执行器缺陷：adjust_diff 对比序列未使用
+  compared_adjust（实际抓了两次 baseline）；分析 fetch 闭包未兜底未识别 SDK 异常
+  （直连适配器绕过了 BarQueryService 的统一包装，已在 fetcher 折算为 UpstreamError）。
+  history_depth 的 `max_calls` 语义改为**每条 case** 的预算。
+
 主要风险：上游配额消耗（靠 pacing + max_calls 预算控制）、结果时效性（报告带时间戳，
-明示为时点证据）、tqsdk 实例慢（单独放宽节流）。
+明示为时点证据）、tqsdk 实例慢（单独放宽节流）、东财 push2 对单 IP 频率敏感
+（akshare 实测 2s 节流即触发限流，已放宽至 5s 并记录于 cases/akshare.yaml）。

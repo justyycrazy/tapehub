@@ -94,21 +94,22 @@ notes: 本探针要回答的问题与已知存疑点。
 | 规则 | 说明 |
 | --- | --- |
 | 文件名 = Provider 名 | loader 只认 `BUILTIN_PROVIDERS` 同名文件，缺失/多余即报错 |
-| case ID | chain 自动生成 `{asset_type}-{interval}-{adjust}-{variant}`；分析类为 `adjust-diff-<at>-<a>-vs-<b>`、`history-depth-<at>`、`limit-<at>-<interval>`；raw 自定义 `^[A-Za-z][A-Za-z0-9._-]*$` 且全局唯一 |
+| case ID | chain 自动生成 `{asset_type}-{interval}-{adjust}-{variant}`；分析类为 `adjust-diff-<at>-<interval>-<a>-vs-<b>-<variant>`、`history-depth-<at>-<interval>-<variant>`、`limit-<at>-<interval>-<variant>`、`variant-consistency-<at>-<interval>-<adjust>`；raw 自定义 `^[A-Za-z][A-Za-z0-9._-]*$` 且全局唯一 |
 | 声明内不抄写 | `include_declared: true` 从 manifest 矩阵展开，manifest 改动探针自动跟随 |
+| **分析探针全量展开** | adjust_diff 按 (interval × variant × pair)、history_depth / limit_truncation 按 (interval × variant) 在声明矩阵上**全量展开**，不与「声明顺序第一组维度」绑定；`intervals` 字段可显式收敛 interval 维度以控制预算（variant 维度永不收敛） |
+| **跨 variant 一致性** | `variant_consistency` 对同一 (asset_type, interval, adjust) 在**跨能力聚合的全部声明 variant** 下重放同一查询；任何不一致（数值差异 / 无重叠 / 预算中断）都判 suspect，并记录差异幅度与首个分歧时间戳 |
 | skip 必须带 reason | 防止静默漏探 |
 | 环境引用 | `$TAPEHUB_*` 只允许出现在 raw 的 kwargs；运行时注入，值绝不落盘 |
-| 分析配置带 targets | adjust_diff / history_depth / limit_truncation 各自限定 asset_type，控制预算 |
-| 分析探针维度 | 每个目标 asset_type 取「声明顺序第一组维度」（interval/adjust/variant）生成一条 case |
 
 ## 探针类型语义
 
 | 类型 | 链路 | 做什么 | 判定 |
 | --- | --- | --- | --- |
 | availability | chain | 对每个声明组合查一次 | 0 bars / 低于 min_bars / required 字段全 null → failed；否则 confirmed |
-| adjust_diff | chain | 同窗口 none vs qfq/hfq 对比 | 序列完全一致 → **suspect**（adjust_no_op_suspect）；有差异 → confirmed；无重叠 → suspect |
-| history_depth | chain | 5 年档回溯 + 90 天窗口二分 | 恒为 observe；报告给出 `earliest_estimate`（**近似值**，粒度 = 窗口宽度） |
-| limit_truncation | chain | 最小周期 + 超长窗口数 bar | 实测 = documented_max → confirmed；不等 → suspect；未设 → observe |
+| adjust_diff | chain | 同窗口 none vs qfq/hfq 对比（按 interval × variant × pair 全量展开） | 序列完全一致 → **suspect**（adjust_no_op_suspect）；有差异 → confirmed；无重叠 → suspect |
+| history_depth | chain | 5 年档回溯 + 90 天窗口二分（按 interval × variant 全量展开） | 恒为 observe；报告给出 `earliest_estimate`（**近似值**，粒度 = 窗口宽度） |
+| limit_truncation | chain | 最小周期 + 超长窗口数 bar（按 variant 全量展开） | 实测 = documented_max → confirmed；不等 → suspect；未设 → observe |
+| variant_consistency | chain | 同一 (interval, adjust) 查询在跨能力聚合的全部 variant 下重放并两两对比 | 全部一致 → confirmed；任何不一致（差异 / 无重叠 / 预算中断）→ suspect，记录 max_abs_diff 与 first_divergence |
 | raw | SDK 反射 | 声明外能力探测、错误指纹 | 期望匹配 → confirmed / 不匹配 → failed；`assert: false` → observe |
 
 判定枚举：`confirmed` / `failed` / `suspect` / `skipped` / `observe`。

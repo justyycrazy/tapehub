@@ -46,6 +46,8 @@ class SeriesCompare:
     compared: int
     identical: bool
     max_abs_diff: float
+    # 首个出现分歧的时间戳（不一致排查的入口，None 表示一致或无重叠）
+    first_divergence: dt.datetime | None = None
 
 
 def compare_price_series(a: list[Bar], b: list[Bar], field_name: str) -> SeriesCompare:
@@ -54,6 +56,7 @@ def compare_price_series(a: list[Bar], b: list[Bar], field_name: str) -> SeriesC
     compared = 0
     identical = True
     max_diff = 0.0
+    first_divergence: dt.datetime | None = None
     for bar in b:
         other = left.get(bar.timestamp)
         value = getattr(bar, field_name)
@@ -64,8 +67,14 @@ def compare_price_series(a: list[Bar], b: list[Bar], field_name: str) -> SeriesC
         max_diff = max(max_diff, diff)
         if diff > 0:
             identical = False
+            if first_divergence is None:
+                first_divergence = bar.timestamp
     return SeriesCompare(
-        field=field_name, compared=compared, identical=identical, max_abs_diff=max_diff
+        field=field_name,
+        compared=compared,
+        identical=identical,
+        max_abs_diff=max_diff,
+        first_divergence=first_divergence,
     )
 
 

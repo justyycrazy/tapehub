@@ -35,6 +35,7 @@ chain:
     earliest: 2000-01-01
     era_step_years: 5
     max_calls: 16
+    intervals: [P1D]     # 分钟级历史深度价值低且 TqApi 实例成本高，收敛到日线
   limit_truncation:
     targets: [continuous]
     interval: P1D

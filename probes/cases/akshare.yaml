@@ -7,9 +7,9 @@ requires:
   extras: [akshare]
 
 pacing:
-  call_interval_s: 2.0
-  timeout_s: 60
-  max_calls: 80
+  call_interval_s: 5.0   # 东方财富 push2 对高频断连限流：首次约 5 分钟恢复，
+  timeout_s: 60          # 反复触发需 40 分钟以上；实测 2s 节流即被限流
+  max_calls: 160
 
 targets:
   stock:
@@ -42,7 +42,12 @@ chain:
     targets: [stock, index]
     earliest: 1991-01-01
     era_step_years: 5
-    max_calls: 20
+    max_calls: 10        # 每条 case 的预算；按 (interval × variant) 全量展开
+  variant_consistency:
+    # 同一查询在 eastmoney/sina/tencent 下的序列必须一致（三源一致性正式结论）
+    targets: [stock, index]
+    window: {start: 2025-06-01, end: 2025-12-31}
+    fields: [close]
 
 notes: >
   指数腾讯源的 amount 列语义为成交量（映射到 volume），新浪/腾讯指数的 amount

@@ -17,6 +17,12 @@ _BASE_PRICES: dict[str, float] = {
     "fake_index_daily": 3000.0,
     "fake_contract_daily": 4000.0,
     "fake_stock_minute": 12.5,
+    # 多 variant 测试 manifest：不同 operation 给不同基准价，
+    # 用于构造「跨 variant 不一致」与「同 variant 复权差异」场景
+    "stock_none_em": 10.0,
+    "stock_none_sina": 12.0,
+    "stock_qfq_em": 9.0,
+    "stock_qfq_sina": 8.0,
 }
 
 # 生成上限，防止超大时间范围拖垮测试。

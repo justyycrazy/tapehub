@@ -30,6 +30,7 @@ chain:
     earliest: 2000-01-01
     era_step_years: 5
     max_calls: 16
+    intervals: [P1D]     # 分钟级历史深度成本高（1min 数据量大），收敛到日线
   limit_truncation:
     targets: [forex]
     interval: PT1M

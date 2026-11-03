@@ -209,3 +209,112 @@ def test_raw_missing_module_skipped() -> None:
     result = asyncio.run(run_provider_probe(probe, _registry(), _settings()))
     (case,) = [c for c in result.cases if c.kind == "raw"]
     assert case.verdict == "skipped" and "not installed" in case.reason
+
+
+def _exploding_registry() -> ProviderRegistry:
+    """适配器抛未识别 SDK 异常的注册表：验证探针兜底而不是崩溃。"""
+    from tapehub.providers.base import BaseProviderAdapter
+
+    class ExplodingAdapter(BaseProviderAdapter):
+        implemented = True
+
+        async def fetch_bars(self, query: object) -> object:
+            raise RuntimeError("simulated push2 rate limit")
+
+    manifest = load_manifest_file(FIXTURES / "manifests" / "fake_provider.yaml")
+    return ProviderRegistry(
+        [build_provider_record("fake-provider", manifest, ExplodingAdapter)]
+    )
+
+
+def test_unexpected_sdk_error_becomes_failed_case() -> None:
+    probe = _probe(history_depth={"targets": ["stock"], "earliest": "2020-01-01", "max_calls": 4})
+    result = asyncio.run(run_provider_probe(probe, _exploding_registry(), _settings()))
+    assert result.cases, "run must complete with recorded cases"
+    assert all(c.verdict == "failed" for c in result.cases if c.kind == "history_depth")
+    failed = next(c for c in result.cases if c.kind == "history_depth")
+    assert "simulated push2 rate limit" in failed.observation["error"]["error_text"]
+
+
+def _registry_for(manifest_name: str) -> ProviderRegistry:
+    from tests.fixtures.providers.fake_provider import FakeBarProvider
+
+    manifest = load_manifest_file(FIXTURES / "manifests" / manifest_name)
+    return ProviderRegistry(
+        [build_provider_record(manifest.provider, manifest, FakeBarProvider)]
+    )
+
+
+def _multi_var_probe(provider: str, chain_extra: dict) -> ProbeFile:
+    """probe 名必须与 manifest 的 provider 名一致，否则文件级跳过。"""
+    data = {
+        "probe": provider,
+        "version": 1,
+        "targets": {
+            "stock": {
+                "instrument": "CN-SSE-600000",
+                "window": {"start": "2025-01-01", "end": "2025-03-31"},
+            }
+        },
+        "pacing": {"call_interval_s": 0.1},
+        "chain": {"include_declared": True, **chain_extra},
+    }
+    return ProbeFile.model_validate(data)
+
+
+def test_variant_consistency_confirmed_on_identical_series() -> None:
+    """两 variant 映射同一 operation → 序列一致 → confirmed。"""
+    registry = _registry_for("multi_variant_same.yaml")
+    probe = _multi_var_probe(
+        "multi-var-same",
+        {
+            "variant_consistency": {
+                "targets": ["stock"],
+                "window": {"start": "2025-01-01", "end": "2025-03-31"},
+            }
+        },
+    )
+    result = asyncio.run(run_provider_probe(probe, registry, _settings()))
+    consistency = [c for c in result.cases if c.kind == "variant_consistency"]
+    # manifest 声明 none/qfq 两种 adjust → 每个 (interval × adjust) 一条 case
+    assert {c.case_id for c in consistency} == {
+        "variant-consistency-stock-P1D-none",
+        "variant-consistency-stock-P1D-qfq",
+    }
+    assert all(c.verdict == "confirmed" for c in consistency)
+    comparisons = [item for c in consistency for item in c.observation["comparisons"]]
+    assert comparisons
+    assert all(item["identical"] is True for item in comparisons)
+
+
+def test_variant_consistency_suspect_on_divergence() -> None:
+    """两 variant 序列分歧 → suspect，并记录差异幅度与首个分歧时间戳。"""
+    registry = _registry_for("multi_variant.yaml")
+    probe = _multi_var_probe(
+        "multi-var",
+        {
+            "adjust_diff": {
+                "targets": ["stock"],
+                "window": {"start": "2025-01-01", "end": "2025-03-31"},
+                "pairs": [["none", "qfq"]],
+            },
+            "variant_consistency": {
+                "targets": ["stock"],
+                "window": {"start": "2025-01-01", "end": "2025-03-31"},
+            },
+        },
+    )
+    result = asyncio.run(run_provider_probe(probe, registry, _settings()))
+    consistency = [c for c in result.cases if c.kind == "variant_consistency"]
+    assert {c.verdict for c in consistency} == {"suspect"}
+    assert all("cross-variant inconsistency" in c.reason for c in consistency)
+    comparisons = [item for c in consistency for item in c.observation["comparisons"]]
+    assert comparisons, "every consistency case must record pairwise comparisons"
+    assert all(item["identical"] is False for item in comparisons)
+    assert all(item["max_abs_diff"] > 0 for item in comparisons)
+    assert all(item["first_divergence"] is not None for item in comparisons)
+
+    # adjust_diff：同一 variant 内 none 与 qfq 由不同 operation 生成 → 有差异 → 复权生效
+    diffs = [c for c in result.cases if c.kind == "adjust_diff"]
+    assert len(diffs) == 2
+    assert all(c.verdict == "confirmed" for c in diffs)

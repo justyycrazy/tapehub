@@ -1,0 +1,25 @@
+# 测试专用多 variant Provider：两个 variant 映射到不同 operation，
+# FakeBarProvider 按 operation 名确定性生成数据，因此两 variant 序列不一致。
+provider: multi-var
+enabled: true
+
+capabilities:
+  - data_type: bars
+    markets: [CN]
+    asset_types: [stock]
+    delivery: [rest]
+    variants: [eastmoney, sina]
+    intervals:
+      - {code: P1D, history: {start: null, end: null}}
+    adjustments: [none, qfq]
+    fields: [open, high, low, close, volume, amount]
+
+operations:
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: P1D, adjust: none, variant: eastmoney}
+    operation: stock_none_em
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: P1D, adjust: none, variant: sina}
+    operation: stock_none_sina
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: P1D, adjust: qfq, variant: eastmoney}
+    operation: stock_qfq_em
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: P1D, adjust: qfq, variant: sina}
+    operation: stock_qfq_sina

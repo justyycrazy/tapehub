@@ -1,0 +1,25 @@
+# 测试专用多 variant Provider：两个 variant 映射到相同 operation，
+# FakeBarProvider 生成完全相同的序列（跨 variant 一致性的 confirmed 路径）。
+provider: multi-var-same
+enabled: true
+
+capabilities:
+  - data_type: bars
+    markets: [CN]
+    asset_types: [stock]
+    delivery: [rest]
+    variants: [eastmoney, sina]
+    intervals:
+      - {code: P1D, history: {start: null, end: null}}
+    adjustments: [none, qfq]
+    fields: [open, high, low, close, volume, amount]
+
+operations:
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: P1D, adjust: none, variant: eastmoney}
+    operation: stock_shared_none
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: P1D, adjust: none, variant: sina}
+    operation: stock_shared_none
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: P1D, adjust: qfq, variant: eastmoney}
+    operation: stock_shared_qfq
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: P1D, adjust: qfq, variant: sina}
+    operation: stock_shared_qfq
