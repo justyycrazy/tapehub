@@ -27,11 +27,11 @@
 # - 每次请求独立创建并关闭 TqApi 实例（在线程池中执行，一个线程一个实例）；
 # - 上游返回“从最新一根往回”的序列：当返回数量达到上限且最早一根仍晚于
 #   请求 start 时，无法覆盖请求窗口，标记 partial=true；
-# - 历史覆盖范围（history，2026-11-03 探针二分估计，粒度 90 天）：
-#   日线 continuous 自 2016-01-05（limit 探针实测最早一根 2016-01-04T16:00Z）、
-#   stock/index 自 2018-01-02；分钟级为**滚动保留**（1m/5m 深度不足 16 个月、
-#   15m 约 17 个月，探针 2025-06 窗口 1m/5m 为 0 根），不声明固定起点；
-#   contract（随挂牌期限）/etf/weighted-index 未探，保持 null 不编造；
+# - 历史覆盖范围（history，2026-11-03 探针：日线二分估计，次轮粒度 5 天）：
+#   日线 continuous/weighted-index 自 2016-01-05、stock/index/etf 自 2018-01-02
+#   （数据自该时点起大体连续）；分钟级为**滚动保留**且边界随时间前移，
+#   不声明固定起点（实测矩阵见 README；按数据类划分：现货三类一致、期货两类一致）；
+#   contract 随挂牌期限，保持 null 不编造；
 # - 单接口 Provider：变体与 default_variant 均为 tqsdk（官方 SDK 包名，
 #   背后为天勤 TianQin 行情平台，与东方财富无关）：缺省请求即可路由，
 #   也可显式传 variant=tqsdk。
@@ -82,7 +82,8 @@ capabilities:
       - {code: PT15M, history: {start: null, end: null}}
       - {code: PT30M, history: {start: null, end: null}}
       - {code: PT1H, history: {start: null, end: null}}
-      - {code: P1D, history: {start: null, end: null}}
+      # 探针二分估计（2026-11-03 第二轮，粒度 5 天）：au 加权日线最早 ≈2016-01-05
+      - {code: P1D, history: {start: "2016-01-04T16:00:00Z", end: null}}
     adjustments: [none]
     fields: [open, high, low, close, volume]
   # 股票：adj_type 支持 F/B（API 参考，hfq 生效已实证）；实时与历史行情需专业版权限
@@ -130,7 +131,8 @@ capabilities:
       - {code: PT15M, history: {start: null, end: null}}
       - {code: PT30M, history: {start: null, end: null}}
       - {code: PT1H, history: {start: null, end: null}}
-      - {code: P1D, history: {start: null, end: null}}
+      # 探针二分估计（2026-11-03 第二轮，粒度 5 天）：510050 日线最早 ≈2018-01-02
+      - {code: P1D, history: {start: "2018-01-01T16:00:00Z", end: null}}
     adjustments: [none, qfq, hfq]
     fields: [open, high, low, close, volume]
 
