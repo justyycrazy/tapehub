@@ -271,6 +271,14 @@ API 层 → Application 层 → Domain 层
 
 - **能力目录是唯一事实来源**：`/v1/capabilities` 与公共路由复用同一份目录；
 - **两级路由**：公共 `ProviderRouter` 按 provider × data_type × market × asset_type × interval × adjust × **variant** 选 Provider；适配器按 manifest 的 `operations` 做内部二级路由，上游函数名不暴露到公共 API；
+- **auto 路由优先级（显式声明，非隐式顺序）**：显式 `provider=X` > manifest 的
+  `default_provider` 声明 > 注册顺序（兜底）。每个 Provider 必填声明
+  `default_provider`（资产类型列表，`[]` 表示对任何类型都不是缺省），注册表构建期
+  强制校验**每个被覆盖的资产类型恰好一个缺省**（0 个或多个都拒绝启动）。
+  当前声明：akshare `[stock, index]`、tqsdk `[contract, continuous, weighted-index]`、
+  twelvedata `[forex, crypto]`、tushare/alphafeed/tickflow `[]`；
+- **manifest 属于配置**：缺失、格式错误或校验失败直接启动失败（fail-fast）；
+  适配器导入失败（可选 SDK 未安装等）仍单 Provider 隔离，不影响启动；
 - **公共能力声明 vs 内部 operation 映射**：manifest 的 `capabilities` 面向目录与公共路由（含 `variants` 声明）；`operations` 的 match 键包含全部六个维度且必须显式声明，面向适配器内部。
 
 ### akshare 已接入范围

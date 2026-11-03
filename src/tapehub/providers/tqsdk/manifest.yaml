@@ -23,6 +23,7 @@
 #   背后为天勤 TianQin 行情平台，与东方财富无关）：缺省请求即可路由，
 #   也可显式传 variant=tqsdk。
 provider: tqsdk
+default_provider: [contract, continuous, weighted-index]
 default_variant: tqsdk
 enabled: true
 

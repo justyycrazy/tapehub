@@ -1,5 +1,6 @@
 # 非法周期 manifest：加载时必须被拒绝（interval "1d" 不是 ISO 8601 Duration）。
 provider: bad-interval-provider
+default_provider: [stock]
 enabled: true
 capabilities:
   - data_type: bars

@@ -15,6 +15,7 @@
 # - 历史覆盖范围（history）未核实，保持 null，不编造；
 # - 单接口 Provider：变体与 default_variant 均为 alphafeed（数据源即上游服务自身，与东方财富无关）：缺省请求即可路由，也可显式传 variant=alphafeed。
 provider: alphafeed
+default_provider: []
 default_variant: alphafeed
 enabled: true
 

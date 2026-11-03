@@ -3,10 +3,12 @@
 职责：
 
 - 注册内置 Provider（akshare、tushare、tickflow、alphafeed、tqsdk）；
-- 加载并校验各 Provider 的 manifest.yaml；
+- 加载并校验各 Provider 的 manifest.yaml（manifest 属于配置：缺失或校验失败
+  直接启动失败，不做单 Provider 隔离）；
 - 管理启用状态（manifest + 环境覆盖）；
 - 可选依赖与延迟导入：适配器模块不在启动期导入任何 SDK；
-- 隔离单个 Provider 的导入或初始化错误，不影响服务启动和其他 Provider；
+- 隔离单个 Provider 的适配器导入错误（可选 SDK 未安装等），不影响服务启动；
+- 校验跨 Provider 的缺省声明：每个被覆盖的资产类型恰好一个 default_provider；
 - 聚合能力目录（与能力查询接口、公共路由共用同一份目录）。
 """
 
@@ -59,6 +61,8 @@ class ProviderRecord:
     manifest: ProviderManifest
     capabilities: list[Capability] = field(default_factory=list)
     default_variants: dict[AssetType, DataVariant] = field(default_factory=dict)
+    # 本 Provider 声明为缺省数据源的资产类型（manifest default_provider）
+    default_for: frozenset[AssetType] = frozenset()
     adapter: "HistoricalBarProvider | None" = None
     implemented: bool = False
     enabled: bool = False
@@ -126,6 +130,41 @@ class ProviderRegistry:
                 raise ValueError(f"duplicate provider registration: {record.name!r}")
             self._records.append(record)
             self._by_name[record.name] = record
+        self._validate_default_provider_coverage()
+
+    def _validate_default_provider_coverage(self) -> None:
+        """校验缺省 Provider 声明的覆盖性：每个被覆盖的资产类型恰好一个缺省。
+
+        - ``0`` 个：该资产类型在 auto 路由中将退回注册顺序的隐式裁决，禁止；
+        - ``>=2`` 个：多个 Provider 声明同一缺省，配置冲突，禁止。
+        """
+        covered: set[AssetType] = set()
+        declared: dict[AssetType, list[str]] = {}
+        for record in self._records:
+            for cap in record.capabilities:
+                covered.update(cap.asset_types)
+            for asset_type in record.default_for:
+                declared.setdefault(asset_type, []).append(record.name)
+        missing = sorted(covered - set(declared), key=lambda item: item.value)
+        if missing:
+            names = ", ".join(item.value for item in missing)
+            raise ValueError(
+                "asset types without a default provider: "
+                f"{names}; every capability-covered asset type must declare "
+                "exactly one default_provider across manifests"
+            )
+        conflicts = sorted(
+            (asset_type, names)
+            for asset_type, names in declared.items()
+            if len(names) > 1
+        )
+        if conflicts:
+            details = "; ".join(
+                f"{asset_type.value} -> [{', '.join(names)}]" for asset_type, names in conflicts
+            )
+            raise ValueError(
+                f"multiple default providers declared for the same asset type: {details}"
+            )
 
     def get(self, name: str) -> ProviderRecord | None:
         return self._by_name.get(name)
@@ -144,8 +183,13 @@ class ProviderRegistry:
         adjust: Adjust,
         variant: DataVariant | None,
     ) -> list["ResolvedCandidate"]:
-        """启用、已实现且能力可解析的候选，按注册顺序返回并携带具体变体。"""
-        resolved: list[ResolvedCandidate] = []
+        """启用、已实现且能力可解析的候选，按优先级返回并携带具体变体。
+
+        优先级：声明为该资产类型缺省（``default_provider``）的 Provider 在前，
+        其余按注册顺序；显式 ``provider=X`` 不经过本方法，不受影响。
+        """
+        defaults: list[ResolvedCandidate] = []
+        others: list[ResolvedCandidate] = []
         for record in self._records:
             if not (record.enabled and record.implemented and record.adapter is not None):
                 continue
@@ -157,9 +201,14 @@ class ProviderRegistry:
                 adjust=adjust,
                 variant=variant,
             )
-            if resolved_variant is not None:
-                resolved.append(ResolvedCandidate(record=record, variant=resolved_variant))
-        return resolved
+            if resolved_variant is None:
+                continue
+            candidate = ResolvedCandidate(record=record, variant=resolved_variant)
+            if asset_type in record.default_for:
+                defaults.append(candidate)
+            else:
+                others.append(candidate)
+        return defaults + others
 
 
 def build_provider_record(
@@ -178,6 +227,7 @@ def build_provider_record(
         manifest=manifest,
         capabilities=manifest.to_domain_capabilities(),
         default_variants=manifest.resolved_default_variants(),
+        default_for=frozenset(manifest.default_provider or ()),
         adapter=adapter,
         implemented=bool(getattr(adapter_cls, "implemented", False)),
         enabled=enabled,
@@ -187,15 +237,17 @@ def build_provider_record(
 def build_default_registry(settings: object) -> ProviderRegistry:
     """构建内置 Provider 注册表。
 
-    任一 Provider 的 manifest 缺失、格式错误或适配器导入失败，
-    都只隔离为该 Provider 的 ``load_error``，不影响服务启动。
+    manifest 缺失、格式错误或校验失败属于配置错误：直接抛出，启动失败；
+    适配器导入失败（可选 SDK 未安装等）仍隔离为该 Provider 的
+    ``load_error``，不影响服务启动（数据请求返回 ``PROVIDER_NOT_IMPLEMENTED``）。
     """
     overrides = getattr(settings, "provider_enabled_overrides", {}) or {}
     records: list[ProviderRecord] = []
     for name in BUILTIN_PROVIDERS:
         override = overrides.get(name)
+        # manifest 是配置：加载/校验失败直接失败，不做单 Provider 隔离
+        manifest = load_builtin_manifest(name)
         try:
-            manifest = load_builtin_manifest(name)
             module = import_module(f"tapehub.providers.{name}.adapter")
             adapter_cls = getattr(module, "ProviderAdapter")
             if not _is_adapter_class(adapter_cls):
@@ -203,7 +255,7 @@ def build_default_registry(settings: object) -> ProviderRegistry:
             record = build_provider_record(
                 name, manifest, adapter_cls, enabled_override=override, settings=settings
             )
-        except Exception as exc:  # noqa: BLE001 - 单个 Provider 错误必须被隔离
+        except Exception as exc:  # noqa: BLE001 - 适配器导入错误保持隔离（SDK 可选）
             logger.warning("provider %s failed to load: %s: %s", name, type(exc).__name__, exc)
             fallback = ProviderManifest(provider=name, enabled=False)
             record = ProviderRecord(

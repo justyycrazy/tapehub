@@ -211,6 +211,7 @@ class TestMissingVariantResolution:
             provider="split-source",
             enabled=True,
             default_variant={"stock": "sina"},
+            default_provider=["stock"],
             capabilities=[_cap("eastmoney", "PT1M"), _cap("sina", "P1D")],  # type: ignore[arg-type]
         )
 
@@ -230,3 +231,52 @@ class TestMissingVariantResolution:
         selection = router.select(_query(variant=None, interval="PT1M"))
         assert selection.record is record
         assert selection.variant is DataVariant.EASTMONEY
+
+
+class TestDefaultProviderPrecedence:
+    """跨 Provider 缺省声明（default_provider）：排序生效、冲突与缺失拒绝启动。"""
+
+    @staticmethod
+    def _record(name: str, *, default_provider: list[str]) -> Any:
+        cap = {
+            "data_type": "bars",
+            "markets": ["CN"],
+            "asset_types": ["stock"],
+            "delivery": ["rest"],
+            "variants": ["eastmoney"],
+            "intervals": [{"code": "P1D"}],
+            "adjustments": ["none"],
+            "fields": ["open", "close"],
+        }
+        manifest = ProviderManifest(
+            provider=name,
+            enabled=True,
+            default_variant="eastmoney",
+            default_provider=default_provider,  # type: ignore[arg-type]
+            capabilities=[cap],  # type: ignore[arg-type]
+        )
+        return build_provider_record(name, manifest, _YesAdapter)
+
+    def test_default_provider_ranks_before_registry_order(self) -> None:
+        """注册顺序在后但声明了缺省的 Provider，auto 时排到最前。"""
+        alpha = self._record("alpha-provider", default_provider=[])
+        zeta = self._record("zeta-provider", default_provider=["stock"])
+        router = ProviderRouter(_registry(alpha, zeta))
+        selection = router.select(_query(variant=None))
+        assert selection.record.name == "zeta-provider"
+        # 显式指定不受缺省声明影响
+        explicit = router.select(_query(provider="alpha-provider"))
+        assert explicit.record.name == "alpha-provider"
+
+    def test_conflicting_default_providers_rejected(self) -> None:
+        """同一资产类型被声明两次缺省：注册表构建失败。"""
+        first = self._record("first-provider", default_provider=["stock"])
+        second = self._record("second-provider", default_provider=["stock"])
+        with pytest.raises(ValueError, match="multiple default providers"):
+            ProviderRegistry([first, second])
+
+    def test_missing_default_provider_rejected(self) -> None:
+        """被覆盖的资产类型没有任何缺省声明：注册表构建失败。"""
+        solo = self._record("solo-provider", default_provider=[])
+        with pytest.raises(ValueError, match="without a default provider"):
+            ProviderRegistry([solo])

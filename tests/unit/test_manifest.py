@@ -128,6 +128,7 @@ def test_default_variant_scalar_covers_all_asset_types() -> None:
         "provider": "single-source",
         "enabled": True,
         "default_variant": "tqsdk",
+        "default_provider": ["contract", "continuous"],
         "capabilities": [_capability_data(["tqsdk"], ["contract", "continuous"])],
         "operations": [],
     }
@@ -142,6 +143,7 @@ def test_default_variant_mapping_resolved() -> None:
         "provider": "multi-source",
         "enabled": True,
         "default_variant": {"stock": "eastmoney", "index": "sina"},
+        "default_provider": ["stock", "index"],
         "capabilities": [_capability_data(["eastmoney", "sina", "tencent"], ["stock", "index"])],
         "operations": [],
     }
@@ -196,6 +198,60 @@ def test_default_variant_forbidden_without_capabilities() -> None:
         "provider": "empty-shell",
         "enabled": False,
         "default_variant": "eastmoney",
+        "capabilities": [],
+        "operations": [],
+    }
+    with pytest.raises(ManifestError):
+        manifest_from_dict(data)
+
+
+def test_default_provider_required_when_capabilities_exist() -> None:
+    """有 capabilities 但未声明 default_provider：加载失败，不允许隐式缺省。"""
+    data = {
+        "provider": "no-default-provider",
+        "enabled": True,
+        "default_variant": "eastmoney",
+        "capabilities": [_capability_data(["eastmoney"], ["stock"])],
+        "operations": [],
+    }
+    with pytest.raises(ManifestError):
+        manifest_from_dict(data)
+
+
+def test_default_provider_empty_list_opts_out() -> None:
+    """default_provider: [] 表示对任何资产类型都不是缺省，合法。"""
+    data = {
+        "provider": "opt-out",
+        "enabled": True,
+        "default_variant": "eastmoney",
+        "default_provider": [],
+        "capabilities": [_capability_data(["eastmoney"], ["stock"])],
+        "operations": [],
+    }
+    manifest = manifest_from_dict(data)
+    assert manifest.default_provider == []
+
+
+def test_default_provider_claims_uncovered_asset_type_rejected() -> None:
+    """声明未持有能力的资产类型：加载失败，不编造。"""
+    data = {
+        "provider": "over-claim",
+        "enabled": True,
+        "default_variant": "eastmoney",
+        "default_provider": ["stock", "forex"],
+        "capabilities": [_capability_data(["eastmoney"], ["stock"])],
+        "operations": [],
+    }
+    with pytest.raises(ManifestError):
+        manifest_from_dict(data)
+
+
+def test_default_provider_declared_without_capabilities_rejected() -> None:
+    """无 capabilities 的空壳 manifest 不允许声明 default_provider。"""
+    data = {
+        "provider": "empty-shell",
+        "enabled": False,
+        "default_provider": ["stock"],
         "capabilities": [],
         "operations": [],
     }

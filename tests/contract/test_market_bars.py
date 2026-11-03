@@ -259,6 +259,23 @@ class TestRoutingErrors:
         assert error["code"] == "PROVIDER_NOT_IMPLEMENTED"
         assert error["details"]["missing"] == ["user", "password"]
 
+    def test_contract_default_routes_to_declared_default_provider(
+        self, default_client
+    ) -> None:  # type: ignore[no-untyped-def]
+        """contract 缺省路由到声明的 default_provider（tqsdk）；凭据未配置返回 501。"""
+        params = {
+            **self.PARAMS,
+            "asset_type": "contract",
+            "instrument": "CN-SHFE-cu2607",
+        }
+        response = default_client.get("/v1/market/bars", params=params)
+        assert response.status_code == 501
+        error = response.json()["error"]
+        # tqsdk 是 contract 的声明缺省源：未配置凭据时在调用期返回明确错误，
+        # 而不是回退到其它 Provider
+        assert error["code"] == "PROVIDER_NOT_IMPLEMENTED"
+        assert error["details"]["missing"] == ["user", "password"]
+
     @pytest.mark.skipif(
         _AKSHARE_SDK_INSTALLED,
         reason="akshare SDK 已安装，501/SDK 缺失路径不适用（真实调用由探针覆盖）",
