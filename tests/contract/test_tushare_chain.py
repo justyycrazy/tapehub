@@ -15,8 +15,8 @@ BASE_PARAMS = {
     "asset_type": "stock",
     "instrument": "CN-SSE-600000",
     "interval": "P1D",
-    "start": "2026-01-01",
-    "end": "2026-01-10",
+    "start": "2026-01-01T00:00:00+08:00",
+    "end": "2026-01-10T00:00:00+08:00",
     # 显式传 variant=tushare（缺省时按 default_variant 解析为同名变体）
     "variant": "tushare",
 }
@@ -55,7 +55,7 @@ def test_full_chain_default_adjust_is_qfq(
     assert len(data["bars"]) == 8
     timestamps = [bar["timestamp"] for bar in data["bars"]]
     assert timestamps == sorted(timestamps)
-    assert data["bars"][0]["timestamp"] == "2026-01-02T00:00:00Z"
+    assert data["bars"][0]["timestamp"] == "2026-01-02T00:00:00+08:00"
     # 手→股、千元→元
     assert data["bars"][0]["volume"] == 1234500.0
     assert data["bars"][0]["amount"] == 12345000.0

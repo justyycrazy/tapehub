@@ -15,10 +15,10 @@
 
 import math
 from datetime import date as date_type
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any
 
-from tapehub.domain.models import Bar
+from tapehub.domain.models import CN_TIMEZONE, Bar
 
 # 列名 → 标准字段名
 _STOCK_EM_COLUMNS = {
@@ -93,7 +93,7 @@ def _to_float(value: Any) -> float | None:
 
 
 def _to_timestamp(value: Any) -> datetime:
-    """交易日转换为该日 00:00 UTC。"""
+    """交易日转换为该日 00:00 北京时间（+08:00）。"""
     if isinstance(value, datetime):
         naive = value
     elif isinstance(value, date_type):
@@ -101,7 +101,7 @@ def _to_timestamp(value: Any) -> datetime:
     else:
         text = str(value)[:10]
         naive = datetime.strptime(text, "%Y-%m-%d")
-    return datetime(naive.year, naive.month, naive.day, tzinfo=timezone.utc)
+    return datetime(naive.year, naive.month, naive.day, tzinfo=CN_TIMEZONE)
 
 
 def _timestamp_source(columns: dict[str, str]) -> str:

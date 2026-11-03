@@ -12,10 +12,10 @@
 """
 
 import math
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any
 
-from tapehub.domain.models import Bar
+from tapehub.domain.models import CN_TIMEZONE, Bar
 
 _BAR_FIELDS = ("open", "high", "low", "close", "volume", "amount")
 
@@ -41,8 +41,8 @@ def _scaled(value: Any, scale: float) -> float | None:
 
 
 def _to_timestamp(value: Any) -> datetime:
-    """trade_date（YYYYMMDD）→ 该交易日 00:00 UTC。"""
-    return datetime.strptime(str(value), "%Y%m%d").replace(tzinfo=timezone.utc)
+    """trade_date（YYYYMMDD）→ 该交易日 00:00 北京时间（+08:00）。"""
+    return datetime.strptime(str(value), "%Y%m%d").replace(tzinfo=CN_TIMEZONE)
 
 
 def _stock_bar(row: dict[str, Any]) -> Bar:

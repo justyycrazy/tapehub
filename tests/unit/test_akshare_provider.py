@@ -2,8 +2,9 @@
 
 import asyncio
 import sys
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -24,7 +25,8 @@ from tests.fixtures.providers.stub_akshare import (
     tx_index_rows,
 )
 
-UTC = timezone.utc
+# CN 标的的时间表达统一用北京时间（领域层会将边界归一化到市场规范时区）
+CN = ZoneInfo("Asia/Shanghai")
 
 
 def _query(**overrides: Any) -> BarQuery:
@@ -32,8 +34,8 @@ def _query(**overrides: Any) -> BarQuery:
         "asset_type": AssetType.STOCK,
         "instrument": Instrument.parse("CN-SSE-600000"),
         "interval": Interval.parse("P1D"),
-        "start": datetime(2026, 1, 1, tzinfo=UTC),
-        "end": datetime(2026, 1, 10, tzinfo=UTC),
+        "start": datetime(2026, 1, 1, tzinfo=CN),
+        "end": datetime(2026, 1, 10, tzinfo=CN),
         "adjust": Adjust.QFQ,
         "variant": DataVariant.EASTMONEY,
         "offset": 0,
@@ -81,7 +83,7 @@ def test_em_stock_request_and_response_mapping(
     }
     assert batch.provider == "akshare"
     assert batch.count == 2
-    assert batch.bars[0].timestamp == datetime(2026, 1, 1, tzinfo=UTC)
+    assert batch.bars[0].timestamp == datetime(2026, 1, 1, tzinfo=CN)
     assert batch.bars[0].close == 10.2
     # 东财成交量单位为手，标准化为股（×100）
     assert batch.bars[0].volume == 1234500.0
@@ -223,8 +225,8 @@ def test_closed_interval_filter(
 
     timestamps = [bar.timestamp for bar in batch.bars]
     assert timestamps == [
-        datetime(2026, 1, 1, tzinfo=UTC),
-        datetime(2026, 1, 5, tzinfo=UTC),
+        datetime(2026, 1, 1, tzinfo=CN),
+        datetime(2026, 1, 5, tzinfo=CN),
     ]
 
 

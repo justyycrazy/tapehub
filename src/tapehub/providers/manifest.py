@@ -8,6 +8,7 @@ capabilities 面向能力目录与公共路由，operations 面向适配器内�
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -15,11 +16,23 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from tapehub.domain.capabilities import Capability, IntervalEntry, IntervalHistory
 from tapehub.domain.errors import ManifestError
 from tapehub.domain.intervals import Interval
-from tapehub.domain.models import Adjust, AssetType, DataType, DataVariant, Delivery, ensure_utc
+from tapehub.domain.models import (
+    Adjust,
+    AssetType,
+    DataType,
+    DataVariant,
+    Delivery,
+    ensure_aware,
+    market_zone,
+)
 
 
 class ManifestHistory(BaseModel):
-    """历史覆盖声明：``start``（固定起点）与 ``retention_days``（滚动保留天数）互斥。"""
+    """历史覆盖声明：``start``（固定起点）与 ``retention_days``（滚动保留天数）互斥。
+
+    边界必须携带时区偏移（如 ``2016-01-05T00:00:00+08:00``），不做隐式解释；
+    到市场规范时区的归一化在 ``ManifestCapability.to_domain`` 完成。
+    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -29,10 +42,10 @@ class ManifestHistory(BaseModel):
 
     @field_validator("start", "end")
     @classmethod
-    def _utc(cls, value: datetime | None) -> datetime | None:
+    def _aware(cls, value: datetime | None) -> datetime | None:
         if value is None:
             return None
-        return ensure_utc(value, "history boundary")
+        return ensure_aware(value, "history boundary")
 
     @model_validator(mode="after")
     def _start_and_retention_mutually_exclusive(self) -> "ManifestHistory":
@@ -41,21 +54,18 @@ class ManifestHistory(BaseModel):
         return self
 
 
+def _to_zone(value: datetime | None, zone: ZoneInfo | None) -> datetime | None:
+    """边界归一化到目标时区；值为空或未指定市场时区时原样返回。"""
+    if value is None or zone is None:
+        return value
+    return value.astimezone(zone)
+
+
 class ManifestInterval(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     code: Interval
     history: ManifestHistory = Field(default_factory=ManifestHistory)
-
-    def to_domain(self) -> IntervalEntry:
-        return IntervalEntry(
-            code=self.code,
-            history=IntervalHistory(
-                start=self.history.start,
-                end=self.history.end,
-                retention_days=self.history.retention_days,
-            ),
-        )
 
 
 class ManifestCapability(BaseModel):
@@ -71,13 +81,27 @@ class ManifestCapability(BaseModel):
     fields: list[str]
 
     def to_domain(self) -> Capability:
+        # 历史边界归一化到市场规范时区（单市场声明时，CN → 北京时间）；
+        # 多市场声明不做单一归一，保持 manifest 作者提供的偏移
+        zone = market_zone(self.markets[0]) if len(self.markets) == 1 else None
+        intervals = [
+            IntervalEntry(
+                code=entry.code,
+                history=IntervalHistory(
+                    start=_to_zone(entry.history.start, zone),
+                    end=_to_zone(entry.history.end, zone),
+                    retention_days=entry.history.retention_days,
+                ),
+            )
+            for entry in self.intervals
+        ]
         return Capability(
             data_type=self.data_type,
             markets=list(self.markets),
             asset_types=list(self.asset_types),
             delivery=list(self.delivery),
             variants=list(self.variants),
-            intervals=[entry.to_domain() for entry in self.intervals],
+            intervals=intervals,
             adjustments=list(self.adjustments),
             fields=list(self.fields),
         )

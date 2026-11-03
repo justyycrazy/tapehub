@@ -17,8 +17,8 @@ FOREX_PARAMS = {
     "asset_type": "forex",
     "instrument": "GLOBAL-OTC-EUR/USD",
     "interval": "P1D",
-    "start": "2026-01-01",
-    "end": "2026-01-10",
+    "start": "2026-01-01T00:00:00Z",
+    "end": "2026-01-10T00:00:00Z",
     # 显式传 variant=twelvedata（缺省时按 default_variant 解析为同名变体）
     "variant": "twelvedata",
 }

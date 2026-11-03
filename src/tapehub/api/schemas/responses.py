@@ -1,11 +1,19 @@
-"""API 响应模型：能力目录、健康检查与历史 K 线。"""
+"""API 响应模型：能力目录、健康检查与历史 K 线。
+
+时间字段分两类：
+
+- ``UtcDatetime``：服务级时间戳（健康检查、能力目录 generated_at），UTC、Z 结尾；
+- ``MarketDatetime``：行情数据时间（bar/quote timestamp、received_at 等），
+  已由领域层归一化到标的所属市场的规范时区（CN → 北京时间 +08:00），
+  序列化原样保留偏移。
+"""
 
 from datetime import datetime, timezone
 from typing import Any, Literal
 
 from pydantic import BaseModel
 
-from tapehub.api.schemas.common import UtcDatetime
+from tapehub.api.schemas.common import MarketDatetime, UtcDatetime
 from tapehub.application.capability_service import ProviderCapabilitiesView
 from tapehub.domain.capabilities import Capability
 from tapehub.domain.models import BarBatch, BarQuery
@@ -24,8 +32,8 @@ class HealthResponse(BaseModel):
 
 
 class IntervalHistoryOut(BaseModel):
-    start: UtcDatetime | None = None
-    end: UtcDatetime | None = None
+    start: MarketDatetime | None = None
+    end: MarketDatetime | None = None
     # 滚动保留天数：覆盖「now − N 天 → now」，与 start 互斥（声明二选一）
     retention_days: int | None = None
 
@@ -74,7 +82,7 @@ class ProviderCapabilitiesResponse(BaseModel):
 
 
 class BarOut(BaseModel):
-    timestamp: UtcDatetime
+    timestamp: MarketDatetime
     open: float | None = None
     high: float | None = None
     low: float | None = None
@@ -96,8 +104,8 @@ class BarsMeta(BaseModel):
     provider: str
     # 实际使用的数据源变体：缺省请求经 default_variant 具体化后的值
     variant: str
-    source_time: UtcDatetime | None = None
-    received_at: UtcDatetime
+    source_time: MarketDatetime | None = None
+    received_at: MarketDatetime
     offset: int
     limit: int
     count: int

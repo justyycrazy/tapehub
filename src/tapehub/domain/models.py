@@ -1,19 +1,40 @@
 """统一领域模型。
 
 Domain 不依赖 FastAPI、PyYAML 或任何 Provider SDK；
-时间字段一律要求带时区，对外统一转换为 UTC。
+时间字段一律要求带时区偏移，输出按标的所属市场的规范时区：
+国内（CN）行情统一北京时间（+08:00），其余市场统一 UTC。
 """
 
 import re
 from datetime import datetime, timezone
 from enum import StrEnum
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator, model_validator
 
 from tapehub.domain.intervals import Interval
 
 UTC = timezone.utc
+# 国内行情数据的规范时区：中国无夏令时，Asia/Shanghai 恒为 +08:00
+CN_TIMEZONE = ZoneInfo("Asia/Shanghai")
+
+
+def market_zone(market: str) -> ZoneInfo:
+    """市场的规范时区：国内（CN）→ 北京时间，其余市场 → UTC。"""
+    return CN_TIMEZONE if market == "CN" else UTC
+
+
+def ensure_aware(value: datetime, field: str) -> datetime:
+    """要求时区感知（带时区偏移），原样保留偏移不做换算。"""
+    if value.tzinfo is None or value.tzinfo.utcoffset(value) is None:
+        raise ValueError(f"{field} must include a timezone")
+    return value
+
+
+def normalize_market_time(value: datetime, market: str, field: str) -> datetime:
+    """要求时区感知并归一化到该市场的规范时区（CN → 北京时间，其余 → UTC）。"""
+    return ensure_aware(value, field).astimezone(market_zone(market))
 
 # 标准标的代码：{market}-{exchange}-{symbol}，例如 CN-SSE-600000。
 # market/exchange 必须大写；symbol 大小写与字符集遵从交易所/Provider 约定：
@@ -86,13 +107,6 @@ class DataType(StrEnum):
     BARS = "bars"
 
 
-def ensure_utc(value: datetime, field: str) -> datetime:
-    """要求时区感知并统一转换为 UTC。"""
-    if value.tzinfo is None or value.tzinfo.utcoffset(value) is None:
-        raise ValueError(f"{field} must include a timezone")
-    return value.astimezone(UTC)
-
-
 class Instrument(BaseModel):
     """标准标的：{market}-{exchange}-{symbol}。"""
 
@@ -140,7 +154,11 @@ class Instrument(BaseModel):
 
 
 class Bar(BaseModel):
-    """单根标准化 K 线。缺失数值使用 null，不得用 0 冒充。"""
+    """单根标准化 K 线。缺失数值使用 null，不得用 0 冒充。
+
+    ``timestamp`` 只要求时区感知（偏移原样保留）；市场规范时区的归一化
+    统一由所属 ``BarBatch`` 完成（Bar 自身不携带市场上下文）。
+    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -156,12 +174,16 @@ class Bar(BaseModel):
 
     @field_validator("timestamp")
     @classmethod
-    def _timestamp_utc(cls, value: datetime) -> datetime:
-        return ensure_utc(value, "timestamp")
+    def _timestamp_aware(cls, value: datetime) -> datetime:
+        return ensure_aware(value, "timestamp")
 
 
 class BarQuery(BaseModel):
-    """统一历史 K 线查询。时间范围采用闭区间 [start, end]。"""
+    """统一历史 K 线查询。时间范围采用闭区间 [start, end]。
+
+    输入边界只要求时区感知（偏移任意，CN 标的推荐 +08:00）；
+    构造完成后统一归一化到标的市场的规范时区（CN → 北京时间）。
+    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -180,14 +202,21 @@ class BarQuery(BaseModel):
 
     @field_validator("start", "end")
     @classmethod
-    def _bound_utc(cls, value: datetime, info: object) -> datetime:
+    def _bound_aware(cls, value: datetime, info: object) -> datetime:
         name = getattr(info, "field_name", "boundary")
-        return ensure_utc(value, name)
+        return ensure_aware(value, name)
 
     @model_validator(mode="after")
     def _start_before_end(self) -> "BarQuery":
         if self.start >= self.end:
             raise ValueError("start must be earlier than end")
+        return self
+
+    @model_validator(mode="after")
+    def _bounds_market_zone(self) -> "BarQuery":
+        zone = market_zone(self.instrument.market)
+        self.start = self.start.astimezone(zone)
+        self.end = self.end.astimezone(zone)
         return self
 
 
@@ -196,6 +225,9 @@ class BarBatch(BaseModel):
 
     `offset`/`limit` 描述统一接口最终结果的分页语义：
     适配器返回前必须完成排序与切片，Application 层不得再次切片。
+
+    构造完成后，批次内全部时间字段（bar timestamp、source_time、received_at）
+    统一归一化到标的市场的规范时区（CN → 北京时间，其余 → UTC）。
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -213,15 +245,25 @@ class BarBatch(BaseModel):
 
     @field_validator("received_at")
     @classmethod
-    def _received_utc(cls, value: datetime) -> datetime:
-        return ensure_utc(value, "received_at")
+    def _received_aware(cls, value: datetime) -> datetime:
+        return ensure_aware(value, "received_at")
 
     @field_validator("source_time")
     @classmethod
-    def _source_utc(cls, value: datetime | None) -> datetime | None:
+    def _source_aware(cls, value: datetime | None) -> datetime | None:
         if value is None:
             return None
-        return ensure_utc(value, "source_time")
+        return ensure_aware(value, "source_time")
+
+    @model_validator(mode="after")
+    def _market_zone(self) -> "BarBatch":
+        zone = market_zone(self.instrument.market)
+        self.received_at = self.received_at.astimezone(zone)
+        if self.source_time is not None:
+            self.source_time = self.source_time.astimezone(zone)
+        for bar in self.bars:
+            bar.timestamp = bar.timestamp.astimezone(zone)
+        return self
 
     @computed_field  # type: ignore[prop-decorator]
     @property

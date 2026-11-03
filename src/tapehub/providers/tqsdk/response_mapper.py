@@ -4,17 +4,17 @@
 
 - ``id, datetime, open, high, low, close, volume, open_oi, close_oi``；
 - datetime 为自 unix epoch 以来的**纳秒**数（K 线起点，按北京时间），
-  绝对时间戳，标准化为 UTC；
+  绝对时间戳，规范为北京时间（+08:00）；
 - 无成交额字段：标准 ``amount`` 恒为 null，不用 0 冒充；
 - 持仓量 open_oi/close_oi 进入受控 ``extensions``；volume 保持手；
 - 缺失值与 NaN 统一映射为 null。
 """
 
 import math
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any
 
-from tapehub.domain.models import Bar
+from tapehub.domain.models import CN_TIMEZONE, Bar
 
 _EXTENSIONS_FIELDS = ("open_oi", "close_oi")
 
@@ -33,10 +33,10 @@ def _to_float(value: Any) -> float | None:
 
 
 def _to_timestamp_ns(value: Any) -> datetime:
-    """纳秒时间戳 → UTC datetime。"""
+    """纳秒时间戳 → 北京时间 datetime（+08:00）。"""
     nanos = int(value)
     seconds, remainder_ns = divmod(nanos, 1_000_000_000)
-    return datetime.fromtimestamp(seconds, tz=timezone.utc).replace(
+    return datetime.fromtimestamp(seconds, tz=CN_TIMEZONE).replace(
         microsecond=remainder_ns // 1000
     )
 

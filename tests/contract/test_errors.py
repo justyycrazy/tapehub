@@ -9,8 +9,8 @@ def test_error_shape_unified(fake_client) -> None:  # type: ignore[no-untyped-de
             "asset_type": "stock",
             "instrument": "bad-instrument",
             "interval": "P1D",
-            "start": "2026-01-01",
-            "end": "2026-01-31",
+            "start": "2026-01-01T00:00:00+08:00",
+            "end": "2026-01-31T00:00:00+08:00",
         },
     )
     assert response.status_code == 422
@@ -32,8 +32,8 @@ def test_request_id_echoed_in_header(fake_client) -> None:  # type: ignore[no-un
             "asset_type": "stock",
             "instrument": "CN-SSE-600000",
             "interval": "P1D",
-            "start": "2026-01-01",
-            "end": "2026-01-31",
+            "start": "2026-01-01T00:00:00+08:00",
+            "end": "2026-01-31T00:00:00+08:00",
             "limit": 0,
         },
     )

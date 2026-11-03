@@ -2,8 +2,9 @@
 
 import asyncio
 import sys
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -16,7 +17,8 @@ from tapehub.settings import Settings
 from tests.conftest import make_settings
 from tests.fixtures.providers.stub_tushare import futures_rows, install, stock_rows
 
-UTC = timezone.utc
+# CN 标的的时间表达统一用北京时间（领域层会将边界归一化到市场规范时区）
+CN = ZoneInfo("Asia/Shanghai")
 
 
 def _query(**overrides: Any) -> BarQuery:
@@ -24,8 +26,8 @@ def _query(**overrides: Any) -> BarQuery:
         "asset_type": AssetType.STOCK,
         "instrument": Instrument.parse("CN-SSE-600000"),
         "interval": Interval.parse("P1D"),
-        "start": datetime(2026, 1, 1, tzinfo=UTC),
-        "end": datetime(2026, 1, 10, tzinfo=UTC),
+        "start": datetime(2026, 1, 1, tzinfo=CN),
+        "end": datetime(2026, 1, 10, tzinfo=CN),
         "adjust": Adjust.QFQ,
         "variant": DataVariant.TUSHARE,
         "offset": 0,
@@ -71,7 +73,7 @@ def test_stock_request_and_response_mapping(monkeypatch: pytest.MonkeyPatch) -> 
     assert batch.partial is False
     assert batch.count == 2
     bar = batch.bars[0]
-    assert bar.timestamp == datetime(2026, 1, 5, tzinfo=UTC)
+    assert bar.timestamp == datetime(2026, 1, 5, tzinfo=CN)
     assert bar.close == 10.2
     # 单位换算：vol 手→股（×100）、amount 千元→元（×1000）
     assert bar.volume == 1234500.0
@@ -124,7 +126,7 @@ def test_futures_request_and_response_mapping(monkeypatch: pytest.MonkeyPatch) -
     }
 
     bar = batch.bars[0]
-    assert bar.timestamp == datetime(2026, 1, 5, tzinfo=UTC)
+    assert bar.timestamp == datetime(2026, 1, 5, tzinfo=CN)
     assert bar.close == 68300.0
     # 期货成交量保持手；amount 万元→元（×10000）
     assert bar.volume == 54321.0
@@ -192,4 +194,4 @@ def test_closed_interval_filter_and_pagination(monkeypatch: pytest.MonkeyPatch) 
 
     assert batch.count == 1
     assert batch.offset == 1
-    assert batch.bars[0].timestamp == datetime(2026, 1, 3, tzinfo=UTC)
+    assert batch.bars[0].timestamp == datetime(2026, 1, 3, tzinfo=CN)

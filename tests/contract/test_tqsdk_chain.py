@@ -19,8 +19,9 @@ BASE_PARAMS = {
     "asset_type": "contract",
     "instrument": "CN-SHFE-cu2607",
     "interval": "P1D",
-    "start": "2026-01-01",
-    "end": "2026-01-10",
+    # 时间边界必须带时区偏移；CN 标的统一用北京时间表达
+    "start": "2026-01-01T00:00:00+08:00",
+    "end": "2026-01-10T00:00:00+08:00",
     # 显式传 variant=tqsdk（缺省时按 default_variant 解析为同名变体）
     "variant": "tqsdk",
 }
@@ -104,7 +105,7 @@ def test_capability_catalog(tqsdk_client: TestClient) -> None:  # type: ignore[n
         c for c in entry["capabilities"] if c["asset_types"] == ["continuous"]
     )
     p1d = next(i for i in continuous_cap["intervals"] if i["code"] == "P1D")
-    assert p1d["history"]["start"] == "2016-01-04T16:00:00Z"
+    assert p1d["history"]["start"] == "2016-01-05T00:00:00+08:00"
     # 分钟级滚动保留以 retention_days 声明（探针实测向下取整）
     stock_cap = next(c for c in entry["capabilities"] if c["asset_types"] == ["stock"])
     pt1m = next(i for i in stock_cap["intervals"] if i["code"] == "PT1M")

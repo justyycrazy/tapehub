@@ -40,8 +40,9 @@ BASE_PARAMS = {
     "asset_type": "stock",
     "instrument": "CN-SSE-600000",
     "interval": "P1D",
-    "start": "2026-01-01",
-    "end": "2026-01-10",
+    # 时间边界必须带时区偏移；CN 标的统一用北京时间表达
+    "start": "2026-01-01T00:00:00+08:00",
+    "end": "2026-01-10T00:00:00+08:00",
 }
 
 
@@ -69,7 +70,7 @@ def test_full_chain_default_variant_and_adjust(
     assert len(data["bars"]) == 10
     timestamps = [bar["timestamp"] for bar in data["bars"]]
     assert timestamps == sorted(timestamps)
-    assert data["bars"][0]["timestamp"] == "2026-01-01T00:00:00Z"
+    assert data["bars"][0]["timestamp"] == "2026-01-01T00:00:00+08:00"
     # 东财成交量手 → 股
     assert data["bars"][0]["volume"] == 1234500.0
 
@@ -102,8 +103,8 @@ def test_index_chain(akshare_client: TestClient, akshare_stub: StubAkshare) -> N
         "asset_type": "index",
         "instrument": "CN-SSE-000001",
         "interval": "P1D",
-        "start": "2026-01-01",
-        "end": "2026-01-10",
+        "start": "2026-01-01T00:00:00+08:00",
+        "end": "2026-01-10T00:00:00+08:00",
         "variant": "sina",
     }
     response = akshare_client.get("/v1/market/bars", params=params)

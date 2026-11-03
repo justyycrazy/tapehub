@@ -5,7 +5,8 @@
 - ``asset_type`` 必填，不允许默认推断；
 - ``instrument`` 必须是标准 ``{MARKET}-{EXCHANGE}-{SYMBOL}`` 格式；
 - ``interval`` 必须是合法 ISO 8601 Duration；
-- 日期值（YYYY-MM-DD）按 UTC 0 点解释；带时间的值必须包含时区；
+- 时间边界必须携带时区偏移（国内标的推荐 ``+08:00``），不接受仅日期
+  （YYYY-MM-DD）或无时区的裸时间——不做隐式时区解释；
 - ``start`` 必须早于 ``end``；时间范围为闭区间 [start, end]；
 - ``limit`` 不超过服务配置上限；
 - ``adjust`` 未传递时：个股（stock）默认 ``qfq``（前复权），其余默认 ``none``；
@@ -13,8 +14,7 @@
   由所选 Provider 声明的 ``default_variant`` 具体化，响应 meta 回显实际使用的变体。
 """
 
-import re
-from datetime import date, datetime, timezone
+from datetime import datetime
 
 from pydantic import BaseModel, Field
 
@@ -22,8 +22,6 @@ from tapehub.domain.errors import InvalidRequestError
 from tapehub.domain.intervals import Interval
 from tapehub.domain.models import Adjust, AssetType, BarQuery, DataVariant, Instrument
 from tapehub.settings import Settings
-
-_DATE_ONLY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 DEFAULT_PAGE_LIMIT = 500
 
@@ -57,16 +55,20 @@ def effective_adjust(params: BarsQueryParams) -> Adjust:
 
 
 def parse_boundary(value: str, name: str) -> datetime:
-    """解析时间边界：仅日期按 UTC 0 点解释；带时间必须含时区。"""
-    if _DATE_ONLY_RE.match(value):
-        parsed_date = date.fromisoformat(value)
-        return datetime(parsed_date.year, parsed_date.month, parsed_date.day, tzinfo=timezone.utc)
+    """解析时间边界：必须为带时区偏移的 ISO 8601 datetime，偏移原样保留。
+
+    仅日期（YYYY-MM-DD）与无时区的裸时间一律拒绝，不做隐式时区解释；
+    到市场规范时区的归一化由领域层 ``BarQuery`` 完成。
+    """
     try:
         parsed = datetime.fromisoformat(value)
     except ValueError as exc:
         raise InvalidRequestError(
             "Invalid request parameters.",
-            details={"param": name, "reason": f"{value!r} is not an ISO 8601 date or datetime"},
+            details={
+                "param": name,
+                "reason": f"{value!r} is not an ISO 8601 datetime (date-only values are rejected)",
+            },
         ) from exc
     if parsed.tzinfo is None or parsed.tzinfo.utcoffset(parsed) is None:
         raise InvalidRequestError(
@@ -74,12 +76,12 @@ def parse_boundary(value: str, name: str) -> datetime:
             details={
                 "param": name,
                 "reason": (
-                    "timezone is required for datetime values "
+                    "timezone offset is required for datetime values "
                     "(e.g. 2026-01-01T00:00:00+08:00)"
                 ),
             },
         )
-    return parsed.astimezone(timezone.utc)
+    return parsed
 
 
 def _invalid(param: str, reason: str) -> InvalidRequestError:

@@ -9,7 +9,7 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from tapehub.domain.intervals import Interval
-from tapehub.domain.models import Adjust, AssetType, DataType, DataVariant, Delivery, ensure_utc
+from tapehub.domain.models import Adjust, AssetType, DataType, DataVariant, Delivery, ensure_aware
 
 
 class IntervalHistory(BaseModel):
@@ -18,6 +18,9 @@ class IntervalHistory(BaseModel):
     ``start`` 为固定起点（适合静态覆盖）；``retention_days`` 为滚动保留天数
     （覆盖「now − N 天 → now」，边界随时间前移，适合分钟线等滚动保留场景）。
     两者互斥，可同时为 null（覆盖未知）。
+
+    边界只要求时区感知；到市场规范时区的归一化由 manifest 加载层
+    （知晓所属市场）完成，直接构造 Capability 的调用方需自行保证。
     """
 
     model_config = ConfigDict(frozen=True)
@@ -28,10 +31,10 @@ class IntervalHistory(BaseModel):
 
     @field_validator("start", "end")
     @classmethod
-    def _utc(cls, value: datetime | None) -> datetime | None:
+    def _aware(cls, value: datetime | None) -> datetime | None:
         if value is None:
             return None
-        return ensure_utc(value, "history boundary")
+        return ensure_aware(value, "history boundary")
 
     @model_validator(mode="after")
     def _start_and_retention_mutually_exclusive(self) -> "IntervalHistory":

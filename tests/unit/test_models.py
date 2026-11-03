@@ -1,6 +1,7 @@
 """统一领域模型测试。"""
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 import pytest
 from pydantic import ValidationError
@@ -9,6 +10,7 @@ from tapehub.domain.intervals import Interval
 from tapehub.domain.models import Adjust, Bar, BarBatch, BarQuery, Instrument
 
 UTC = timezone.utc
+CN = ZoneInfo("Asia/Shanghai")
 
 
 def _bar(ts: str, close: float | None = 1.0) -> Bar:
@@ -54,10 +56,11 @@ class TestBar:
         with pytest.raises(ValidationError):
             Bar(timestamp=datetime(2026, 1, 1))
 
-    def test_timestamp_converted_to_utc(self) -> None:
+    def test_timestamp_offset_preserved(self) -> None:
+        # Bar 只要求时区感知，偏移原样保留；市场规范时区归一化由 BarBatch 完成
         bar = Bar(timestamp=datetime.fromisoformat("2026-01-01T08:00:00+08:00"))
-        assert bar.timestamp.tzinfo == UTC
-        assert bar.timestamp.hour == 0
+        assert bar.timestamp.utcoffset() == timedelta(hours=8)
+        assert bar.timestamp.hour == 8
 
 
 class TestBarQuery:
@@ -92,6 +95,21 @@ class TestBarQuery:
     def test_interval_from_string(self) -> None:
         query = self._query(interval="PT1M")
         assert query.interval == Interval.parse("PT1M")
+
+    def test_bounds_normalized_to_market_zone(self) -> None:
+        # CN 标的：任意合法偏移输入，边界统一归一化为北京时间
+        query = self._query(
+            start=datetime.fromisoformat("2026-01-01T08:00:00+08:00"),
+            end=datetime.fromisoformat("2026-01-31T00:00:00Z"),
+        )
+        assert query.start.tzinfo == CN
+        assert query.start.hour == 8
+        assert query.end.tzinfo == CN
+        assert query.end.hour == 8
+
+    def test_naive_bounds_rejected(self) -> None:
+        with pytest.raises(ValidationError):
+            self._query(start=datetime(2026, 1, 1), end=datetime(2026, 1, 31, tzinfo=UTC))
 
 
 class TestBarBatch:

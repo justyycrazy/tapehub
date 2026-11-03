@@ -1,6 +1,7 @@
 """历史 K 线完整链路契约测试。
 
 时间范围：2026-01-01 至 2026-01-31（闭区间），Fake Provider 日线共 31 根。
+CN 标的的输入边界统一用北京时间（+08:00）表达；响应时间亦归一化为北京时间。
 Fake Provider 仅声明 adjust=none，因此测试显式传参；
 「未传递 adjust」的默认值行为（个股 qfq）由 akshare 链路测试覆盖。
 """
@@ -17,8 +18,8 @@ BAR_PARAMS = {
     "asset_type": "stock",
     "instrument": "CN-SSE-600000",
     "interval": "P1D",
-    "start": "2026-01-01",
-    "end": "2026-01-31",
+    "start": "2026-01-01T00:00:00+08:00",
+    "end": "2026-01-31T00:00:00+08:00",
     "adjust": "none",
 }
 
@@ -34,9 +35,9 @@ def test_full_chain_with_fake_provider(fake_client) -> None:  # type: ignore[no-
     assert data["asset_type"] == "stock"
     assert data["interval"] == "P1D"
     assert len(data["bars"]) == 31
-    # 闭区间边界：第一根与最后一根都在请求范围内
-    assert data["bars"][0]["timestamp"] == "2026-01-01T00:00:00Z"
-    assert data["bars"][-1]["timestamp"] == "2026-01-31T00:00:00Z"
+    # 闭区间边界：第一根与最后一根都在请求范围内（CN → 北京时间 +08:00）
+    assert data["bars"][0]["timestamp"] == "2026-01-01T00:00:00+08:00"
+    assert data["bars"][-1]["timestamp"] == "2026-01-31T00:00:00+08:00"
     timestamps = [bar["timestamp"] for bar in data["bars"]]
     assert timestamps == sorted(timestamps)
 
@@ -47,7 +48,8 @@ def test_full_chain_with_fake_provider(fake_client) -> None:  # type: ignore[no-
     assert meta["count"] == 31
     assert meta["partial"] is False
     assert meta["request_id"].startswith("req_")
-    assert meta["received_at"].endswith("Z")
+    # CN 标的响应的全部时间字段统一北京时间
+    assert meta["received_at"].endswith("+08:00")
 
 
 def test_auto_resolves_fake_provider(fake_client) -> None:  # type: ignore[no-untyped-def]
@@ -63,7 +65,11 @@ def test_pagination_window(fake_client) -> None:  # type: ignore[no-untyped-def]
     assert response.status_code == 200
     body = response.json()
     timestamps = [bar["timestamp"] for bar in body["data"]["bars"]]
-    assert timestamps == ["2026-01-03T00:00:00Z", "2026-01-04T00:00:00Z", "2026-01-05T00:00:00Z"]
+    assert timestamps == [
+        "2026-01-03T00:00:00+08:00",
+        "2026-01-04T00:00:00+08:00",
+        "2026-01-05T00:00:00+08:00",
+    ]
     # 适配器已完成分页，Application 不得再次切片：
     # 若 offset 被重复应用，count 将小于 3
     assert body["meta"]["count"] == 3
@@ -78,7 +84,7 @@ def test_offset_tail(fake_client) -> None:  # type: ignore[no-untyped-def]
     assert response.status_code == 200
     body = response.json()
     assert body["meta"]["count"] == 1
-    assert body["data"]["bars"][0]["timestamp"] == "2026-01-31T00:00:00Z"
+    assert body["data"]["bars"][0]["timestamp"] == "2026-01-31T00:00:00+08:00"
 
 
 def test_limit_capped_by_settings(fake_client) -> None:  # type: ignore[no-untyped-def]
@@ -118,13 +124,13 @@ def test_timezone_aware_bounds(fake_client) -> None:  # type: ignore[no-untyped-
     response = fake_client.get("/v1/market/bars", params=params)
     assert response.status_code == 200
     body = response.json()
-    # +08:00 边界转换为 UTC 后闭区间为 [2025-12-31T16:00Z, 2026-01-02T16:00Z]，
-    # 按日步进且端点包含，共 3 根
+    # CN 边界归一化为北京时间后闭区间 [2026-01-01T00:00+08:00, 2026-01-03T00:00+08:00]，
+    # Fake Provider 从归一化后的 start 按日步进且端点包含，共 3 根；输出亦为北京时间
     timestamps = [bar["timestamp"] for bar in body["data"]["bars"]]
     assert timestamps == [
-        "2025-12-31T16:00:00Z",
-        "2026-01-01T16:00:00Z",
-        "2026-01-02T16:00:00Z",
+        "2026-01-01T00:00:00+08:00",
+        "2026-01-02T00:00:00+08:00",
+        "2026-01-03T00:00:00+08:00",
     ]
 
 
@@ -159,11 +165,25 @@ class TestRequestValidation:
             assert response.json()["error"]["code"] == "INVALID_REQUEST"
 
     def test_start_not_earlier_than_end(self, fake_client) -> None:  # type: ignore[no-untyped-def]
-        assert self._post(fake_client, start="2026-01-31", end="2026-01-01").status_code == 422
-        assert self._post(fake_client, start="2026-01-01", end="2026-01-01").status_code == 422
+        reversed_params = {
+            "start": "2026-01-31T00:00:00+08:00",
+            "end": "2026-01-01T00:00:00+08:00",
+        }
+        equal_params = {
+            "start": "2026-01-01T00:00:00+08:00",
+            "end": "2026-01-01T00:00:00+08:00",
+        }
+        assert self._post(fake_client, **reversed_params).status_code == 422
+        assert self._post(fake_client, **equal_params).status_code == 422
 
     def test_naive_datetime_rejected(self, fake_client) -> None:  # type: ignore[no-untyped-def]
         response = self._post(fake_client, start="2026-01-01T00:00:00", end="2026-01-31T00:00:00")
+        assert response.status_code == 422
+        assert response.json()["error"]["code"] == "INVALID_REQUEST"
+
+    def test_date_only_rejected(self, fake_client) -> None:  # type: ignore[no-untyped-def]
+        # 仅日期（YYYY-MM-DD）不做隐式时区解释，一律拒绝
+        response = self._post(fake_client, start="2026-01-01", end="2026-01-31")
         assert response.status_code == 422
         assert response.json()["error"]["code"] == "INVALID_REQUEST"
 
