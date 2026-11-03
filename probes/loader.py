@@ -52,6 +52,8 @@ class ChainCase:
     min_bars: int | None = None
     required_fields: tuple[str, ...] = ()
     declared_history_start: dt.datetime | None = None
+    era_step_years: int = 5
+    probe_span_days: int = 90
     # adjust_diff 专属：被对比的复权方式
     compared_adjust: Adjust | None = None
     # adjust_diff 专属：参与对比的价格字段
@@ -200,6 +202,8 @@ def _history_depth_cases(
                         adjust=_fallback_adjust(capability),
                         variant=variant,
                         window_start=_to_utc(config.earliest),
+                        era_step_years=config.era_step_years,
+                        probe_span_days=config.probe_span_days,
                         expected_calls=config.max_calls,
                     )
                 )

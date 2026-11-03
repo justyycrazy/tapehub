@@ -417,6 +417,8 @@ async def _run_history_depth(ctx: RunContext, case: ChainCase, base: CaseResult)
             fetch,
             earliest=case.window_start,
             latest=case.window_end,
+            era_step_years=case.era_step_years,
+            probe_span_days=case.probe_span_days,
             max_calls=case.expected_calls,
         )
     except TapehubError as exc:

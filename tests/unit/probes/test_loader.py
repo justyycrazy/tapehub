@@ -103,6 +103,26 @@ def test_history_depth_case_generated() -> None:
     }
     assert all(c.window_start.year == 2000 for c in cases)
     assert all(c.expected_calls == 8 for c in cases)
+    # era/二分粒度参数透传到 case（runner 据此调用分析函数）
+    assert all(c.era_step_years == 5 and c.probe_span_days == 90 for c in cases)
+
+
+def test_history_depth_probe_span_days_threaded() -> None:
+    """probe_span_days / era_step_years 从配置透传到展开 case。"""
+    probe = _probe(
+        history_depth={
+            "targets": ["stock"],
+            "earliest": "2000-01-01",
+            "max_calls": 8,
+            "era_step_years": 1,
+            "probe_span_days": 5,
+        }
+    )
+    expanded = expand_probe(probe, _manifest())  # type: ignore[arg-type]
+    cases = [c for c in expanded.chain_cases if c.kind == "history_depth"]
+    assert cases
+    assert all(c.era_step_years == 1 for c in cases)
+    assert all(c.probe_span_days == 5 for c in cases)
 
     # intervals 显式收敛：只保留声明中存在的指定周期
     filtered = expand_probe(

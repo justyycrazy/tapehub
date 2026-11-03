@@ -111,6 +111,8 @@ class HistoryDepthSpec(_Strict):
     era_step_years: int = Field(default=5, ge=1)
     max_calls: int = Field(default=24, ge=1)
     intervals: list[Interval] = Field(default_factory=list)
+    # 二分窗口宽度即精度：earliest_estimate 误差约为该值（天）
+    probe_span_days: int = Field(default=90, ge=1)
 
 
 class VariantConsistencySpec(_Strict):
