@@ -37,6 +37,8 @@ def _query(**overrides: Any) -> BarQuery:
         "start": datetime(2026, 1, 1, tzinfo=UTC),
         "end": datetime(2026, 1, 31, tzinfo=UTC),
         "adjust": Adjust.NONE,
+        # 适配器内部 operation 路由需要具体变体；缺省（None）解析行为另行测试
+        "variant": DataVariant.EASTMONEY,
         "offset": 0,
         "limit": 10,
     }
@@ -56,7 +58,9 @@ def _registry(*records: Any) -> ProviderRegistry:
 class TestSelectExplicit:
     def test_found(self, fake_record: Any) -> None:
         router = ProviderRouter(_registry(fake_record))
-        assert router.select(_query(provider="fake-provider")) is fake_record
+        selection = router.select(_query(provider="fake-provider"))
+        assert selection.record is fake_record
+        assert selection.variant is DataVariant.EASTMONEY
 
     def test_unknown_provider(self, fake_record: Any) -> None:
         router = ProviderRouter(_registry(fake_record))
@@ -89,14 +93,24 @@ class TestSelectExplicit:
 class TestSelectAuto:
     def test_selects_only_full_match(self, fake_record: Any) -> None:
         router = ProviderRouter(_registry(fake_record))
-        assert router.select(_query(provider="auto")) is fake_record
+        selection = router.select(_query(provider="auto"))
+        assert selection.record is fake_record
+        assert selection.variant is DataVariant.EASTMONEY
 
     def test_variant_must_match(self, fake_record: Any) -> None:
         router = ProviderRouter(_registry(fake_record))
         # fake 仅声明 eastmoney 变体
-        assert router.select(_query(variant="eastmoney")) is fake_record
+        selection = router.select(_query(variant="eastmoney"))
+        assert selection.record is fake_record
         with pytest.raises(NoProviderAvailableError):
             router.select(_query(variant="sina"))
+
+    def test_missing_variant_resolves_declared_default(self, fake_record: Any) -> None:
+        """缺省 variant：按 manifest 声明的 default_variant（eastmoney）具体化。"""
+        router = ProviderRouter(_registry(fake_record))
+        selection = router.select(_query(variant=None))
+        assert selection.record is fake_record
+        assert selection.variant is DataVariant.EASTMONEY
 
     def test_skips_disabled_and_unimplemented(self) -> None:
         manifest = ProviderManifest(provider="stub-provider", enabled=True)
@@ -115,7 +129,7 @@ class TestSelectAuto:
 
     def test_pt1m_and_p1m_route_differently(self, fake_record: Any) -> None:
         router = ProviderRouter(_registry(fake_record))
-        assert router.select(_query(interval="PT1M")) is fake_record
+        assert router.select(_query(interval="PT1M")).record is fake_record
         # P1M（月）不在 fake 能力目录中，不能与 PT1M（分钟）混淆
         with pytest.raises(NoProviderAvailableError):
             router.select(_query(interval="P1M"))
@@ -172,3 +186,47 @@ class TestAdapterOperationRouting:
         # etf + PT1M：能力目录声明了 etf 与 PT1M，但没有对应内部 operation
         with pytest.raises(UnsupportedCapabilityError):
             adapter.resolve_operation(_query(asset_type=AssetType.ETF, interval="PT1M"))
+
+
+class TestMissingVariantResolution:
+    """缺省 variant 的具体化：default 优先，default 不覆盖其余维度时回退。"""
+
+    @staticmethod
+    def _split_manifest() -> ProviderManifest:
+        """两条按变体拆分的能力：eastmoney 独有 PT1M，sina 独有 P1D。"""
+
+        def _cap(variant: str, interval: str) -> dict[str, Any]:
+            return {
+                "data_type": "bars",
+                "markets": ["CN"],
+                "asset_types": ["stock"],
+                "delivery": ["rest"],
+                "variants": [variant],
+                "intervals": [{"code": interval}],
+                "adjustments": ["none"],
+                "fields": ["open", "close"],
+            }
+
+        return ProviderManifest(
+            provider="split-source",
+            enabled=True,
+            default_variant={"stock": "sina"},
+            capabilities=[_cap("eastmoney", "PT1M"), _cap("sina", "P1D")],  # type: ignore[arg-type]
+        )
+
+    def test_default_variant_resolved_when_it_matches(self) -> None:
+        manifest = self._split_manifest()
+        record = build_provider_record("split-source", manifest, _YesAdapter)
+        router = ProviderRouter(_registry(record))
+        selection = router.select(_query(variant=None))  # P1D → default sina
+        assert selection.record is record
+        assert selection.variant is DataVariant.SINA
+
+    def test_fallback_to_first_matched_when_default_not_covered(self) -> None:
+        """default（sina）不覆盖 PT1M：回退到声明顺序第一条匹配能力的第一个变体。"""
+        manifest = self._split_manifest()
+        record = build_provider_record("split-source", manifest, _YesAdapter)
+        router = ProviderRouter(_registry(record))
+        selection = router.select(_query(variant=None, interval="PT1M"))
+        assert selection.record is record
+        assert selection.variant is DataVariant.EASTMONEY

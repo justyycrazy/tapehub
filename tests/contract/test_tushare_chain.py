@@ -17,7 +17,7 @@ BASE_PARAMS = {
     "interval": "P1D",
     "start": "2026-01-01",
     "end": "2026-01-10",
-    # Tushare 变体为其自身数据服务，非默认 eastmoney，须显式传递
+    # 显式传 variant=tushare（缺省时按 default_variant 解析为同名变体）
     "variant": "tushare",
 }
 
@@ -129,3 +129,16 @@ def test_weekly_interval(
     response = http.get("/v1/market/bars", params=params)
     assert response.status_code == 200
     assert stub.pro_bar_calls[0]["freq"] == "W"
+
+
+def test_default_variant_routes_to_declared_default(
+    tushare_client: tuple[TestClient, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """缺省 variant：按 manifest default_variant（tushare）具体化并回显 meta。"""
+    http, stub = tushare_client
+    preset_rows(stub, stock_rows(["2026-01-02"]))
+
+    params = {k: v for k, v in BASE_PARAMS.items() if k != "variant"}
+    response = http.get("/v1/market/bars", params=params)
+    assert response.status_code == 200
+    assert response.json()["meta"]["variant"] == "tushare"

@@ -94,7 +94,7 @@ GET /v1/capabilities?asset_type=stock&interval=P1D
 GET /v1/providers/akshare/capabilities
 ```
 
-只读取本地能力目录，不实时访问上游；支持可选过滤参数 `provider`、`data_type`、`market`、`asset_type`、`interval`、`variant`。`enabled`（是否启用）与 `runtime_status`（运行状态，第一版恒为 `unknown`）是两个不同概念。
+只读取本地能力目录，不实时访问上游；支持可选过滤参数 `provider`、`data_type`、`market`、`asset_type`、`interval`、`variant`；每个 Provider 条目携带 `default_variant`（「Provider × 资产类型」级缺省变体，variant 缺省时的解析依据）。`enabled`（是否启用）与 `runtime_status`（运行状态，第一版恒为 `unknown`）是两个不同概念。
 
 ### 历史 K 线
 
@@ -102,7 +102,7 @@ GET /v1/providers/akshare/capabilities
 GET /v1/market/bars?provider=akshare&asset_type=stock&instrument=CN-SSE-600000&interval=P1D&start=2026-01-01&end=2026-01-31&offset=0&limit=100
 ```
 
-参数：`provider`（默认 `auto`）、`asset_type`（必填）、`instrument`（必填）、`interval`（必填）、`start`/`end`（必填）、`adjust`（可选）、`variant`（可选，默认 `eastmoney`）、`offset`（默认 0）、`limit`（默认 500）。
+参数：`provider`（默认 `auto`）、`asset_type`（必填）、`instrument`（必填）、`interval`（必填）、`start`/`end`（必填）、`adjust`（可选）、`variant`（可选，缺省按 Provider 声明的 `default_variant` 解析，`meta.variant` 回显实际值）、`offset`（默认 0）、`limit`（默认 500）。
 
 成功响应（节选）：
 
@@ -164,24 +164,31 @@ GET /v1/market/bars?provider=akshare&asset_type=stock&instrument=CN-SSE-600000&i
 
 ### variant 数据源变体
 
-同一 Provider 下同一资产类型往往有多个上游接口（如 akshare 个股有东方财富/新浪/腾讯三个源）。统一请求通过可选参数 `variant` 指定，取值为**中立站点名**而非上游函数名：
+同一 Provider 下同一资产类型往往有多个上游接口（如 akshare 个股有东方财富/新浪/腾讯三个源）。统一请求通过可选参数 `variant` 指定，取值为**数据源名**而非上游函数名：
 
-| variant | 含义 | 默认 |
-| --- | --- | --- |
-| `eastmoney` | 东方财富 | ✅ 默认值 |
-| `sina` | 新浪 | |
-| `tencent` | 腾讯 | |
-| `tqsdk` | TqSdk（快期 Shinny Tech 官方 SDK 包名，背后为天勤行情平台） | |
-| `tushare` | Tushare（独立数据服务体系） | |
-| `alphafeed` | AlphaFeed（独立数据服务体系） | |
-| `tickflow` | TickFlow（独立数据服务体系） | |
-| `twelvedata` | Twelve Data（外汇/加密货币数据服务） | |
+| variant | 含义 |
+| --- | --- |
+| `eastmoney` | 东方财富（仅 akshare 声明） |
+| `sina` | 新浪（仅 akshare 声明） |
+| `tencent` | 腾讯（仅 akshare 声明） |
+| `tqsdk` | TqSdk（快期 Shinny Tech 官方 SDK 包名，背后为天勤行情平台） |
+| `tushare` | Tushare（独立数据服务体系） |
+| `alphafeed` | AlphaFeed（独立数据服务体系） |
+| `tickflow` | TickFlow（独立数据服务体系） |
+| `twelvedata` | Twelve Data（外汇/加密货币数据服务） |
 
-- 未传递 `variant` 时默认 `eastmoney`；Provider 不支持的变体在能力目录即不声明；
-- variant 与 capability、内部 operation 一样参与路由维度匹配，不会静默降级；
-- 变体名反映真实数据源：仅 akshare 的上游确为东方财富/新浪/腾讯；TqSdk（`tqsdk`）、
-  Tushare、AlphaFeed、TickFlow、Twelve Data 与东方财富无关，各自声明自身数据服务名，
-  请求须显式传对应 `variant`（默认 `eastmoney` 不会路由到这些 Provider）。
+- **变体名反映真实数据源**：仅 akshare 的上游确为东方财富/新浪/腾讯；
+  TqSdk、Tushare、AlphaFeed、TickFlow、Twelve Data 与东方财富无关，
+  变体与其 Provider 同名（即各自的上游服务/包名）；
+- **`variant` 可选，无全局默认值**。未传递时表示不表达数据源偏好：
+  该维度不参与能力过滤，由每个 Provider 在 manifest 中**必填声明**的
+  `default_variant`（Provider × 资产类型级）具体化，`meta.variant` 回显实际值；
+  `default_variant` 不覆盖其余维度时回退到声明顺序第一条匹配能力的第一个变体；
+- 显式传递 `variant` 时严格匹配，不会静默降级；Provider 不支持的变体在能力目录即不声明；
+- variant 与 capability、内部 operation 一样参与路由维度匹配；
+- 每个 Provider 的 `default_variant` 声明见 `/v1/capabilities` 响应的
+  `default_variant` 字段（如 akshare：stock/index → `eastmoney`，
+  contract/continuous → `sina`；其余单源 Provider → 其自身变体）。
 
 ### adjust 复权方式（默认值约定）
 
@@ -284,7 +291,7 @@ TickFlow（REST API `GET https://api.tickflow.org/v1/klines`，官方 SDK `tickf
 
 | 资产类型 | 变体 | 上游接口 | 周期 | adjust | 标准字段 |
 | --- | --- | --- | --- | --- | --- |
-| stock | tickflow（须显式传参） | `tf.klines.get` | PT1M~PT30M/PT1H、P1D/P1W/P1M/P1Y | none/qfq/hfq | 全部（extensions: prev_close） |
+| stock | tickflow（默认） | `tf.klines.get` | PT1M~PT30M/PT1H、P1D/P1W/P1M/P1Y | none/qfq/hfq | 全部（extensions: prev_close） |
 
 - API Key 通过环境变量 `TAPEHUB_TICKFLOW_API_KEY` 提供并传入 SDK 客户端，禁止写入代码/manifest/日志；未配置时能力目录正常，数据请求返回 `PROVIDER_NOT_IMPLEMENTED`；
 - 标的代码映射：`CN-SSE-600000 → 600000.SH`、`CN-SZSE-… → .SZ`、`CN-BSE-… → .BJ`（后缀 SH/SZ/BJ/US/HK 已按文档核实，第一版仅声明 A 股）；
@@ -297,7 +304,7 @@ AlphaFeed（REST API `GET https://api.alphafeed.org/v1/klines`，官方 SDK `alp
 
 | 资产类型 | 变体 | 上游接口 | 周期 | adjust | 标准字段 |
 | --- | --- | --- | --- | --- | --- |
-| stock | alphafeed（须显式传参） | `af.klines.get` | PT1M/PT5M/PT15M/PT30M/PT1H、P1D/P1W/P1M/P1Y | none/qfq/hfq | 全部（extensions: prev_close） |
+| stock | alphafeed（默认） | `af.klines.get` | PT1M/PT5M/PT15M/PT30M/PT1H、P1D/P1W/P1M/P1Y | none/qfq/hfq | 全部（extensions: prev_close） |
 
 - API Key 通过环境变量 `TAPEHUB_ALPHAFEED_API_KEY` 提供并传入 SDK 客户端，禁止写入代码/manifest/日志；未配置时能力目录正常，数据请求返回 `PROVIDER_NOT_IMPLEMENTED`；
 - 标的代码映射：`CN-SSE-600519 → 600519.SH`、`CN-SZSE-… → .SZ`、`CN-BSE-… → .BJ`（示例 600519.SH / 000001.SZ / 920047.BJ 已按文档核实）；
@@ -310,8 +317,8 @@ Tushare（官方 SDK `tushare`：`ts.pro_bar` / `pro.fut_daily`）：
 
 | 资产类型 | 变体 | 上游接口 | 周期 | adjust | 标准字段 |
 | --- | --- | --- | --- | --- | --- |
-| stock | tushare（须显式传参） | `ts.pro_bar`（asset='E'） | P1D/P1W/P1M | none/qfq/hfq | 全部（extensions: pre_close/change/pct_chg） |
-| contract | tushare（须显式传参） | `pro.fut_daily` | P1D | none | 全部（extensions: pre_close/settle/oi） |
+| stock | tushare（默认） | `ts.pro_bar`（asset='E'） | P1D/P1W/P1M | none/qfq/hfq | 全部（extensions: pre_close/change/pct_chg） |
+| contract | tushare（默认） | `pro.fut_daily` | P1D | none | 全部（extensions: pre_close/settle/oi） |
 
 - Token 通过环境变量 `TAPEHUB_TUSHARE_TOKEN` 提供并传入 `ts.pro_api`，禁止写入代码/manifest/日志；未配置时能力目录正常，数据请求返回 `PROVIDER_NOT_IMPLEMENTED`；
 - 股票代码映射：`CN-SSE-600000 → 600000.SH`、`CN-SZSE-… → .SZ`（后缀已按文档示例核实；北交所 .BJ 未在所引文档示例中出现，暂不声明）；
@@ -324,9 +331,9 @@ TqSdk（官方 SDK `tqsdk`：`TqApi(auth=TqAuth(...)).get_kline_serial(...)`）�
 
 | 资产类型 | 变体 | 上游接口 | 周期 | adjust | 标准字段 |
 | --- | --- | --- | --- | --- | --- |
-| contract / continuous / weighted-index | tqsdk（须显式传参） | `api.get_kline_serial` | PT1M/PT5M/PT15M/PT30M/PT1H、P1D | none | 无 amount（上游无成交额列；extensions: open_oi/close_oi） |
+| contract / continuous / weighted-index | tqsdk（默认） | `api.get_kline_serial` | PT1M/PT5M/PT15M/PT30M/PT1H、P1D | none | 无 amount（上游无成交额列；extensions: open_oi/close_oi） |
 
-- 变体为 `tqsdk`（与 Provider 同名，官方 SDK 包名；背后为天勤行情平台，与东方财富无关）：请求须显式传 `variant=tqsdk`，默认 `eastmoney` 的请求不会路由到本 Provider；
+- 变体与 default_variant 均为 `tqsdk`（与 Provider 同名，官方 SDK 包名；背后为天勤行情平台，与东方财富无关）：缺省请求即可路由，也可显式传 `variant=tqsdk`；
 - 快期账户凭据（`TqAuth(用户名, 密码)`，必填）通过环境变量 `TAPEHUB_TQSDK_AUTH_USER` / `TAPEHUB_TQSDK_AUTH_PASSWORD` 提供并传入 SDK 客户端，禁止写入代码/manifest/日志；任一未配置时能力目录正常，数据请求返回 `PROVIDER_NOT_IMPLEMENTED`；
 - 合约代码映射（交易所全大写，品种代码大小写遵从交易所规定）：`CN-SHFE-cu2607 → SHFE.cu2607`、`CN-CZCE-SR609 → CZCE.SR609`；主力连续 `CN-SHFE-cu → KQ.m@SHFE.cu`；指数连续/加权 `CN-SHFE-bu → KQ.i@SHFE.bu`（标准 symbol 允许小写品种代码，如 tqsdk 的小写品种约定）；
 - 周期映射（周期为不超过 1 日的任意秒数）：`PT1M→60`、`PT5M→300`、`PT15M→900`、`PT30M→1800`、`PT1H→3600`、`P1D→86400`；
@@ -351,8 +358,8 @@ Twelve Data（官方库 `twelvedata`（twelvedata-python）：`TDClient(apikey=.
 
 | 资产类型 | 变体 | 上游接口 | 周期 | adjust | 标准字段 |
 | --- | --- | --- | --- | --- | --- |
-| forex | twelvedata（须显式传参） | `td.time_series` | PT1M~PT1H、P1D/P1W/P1M | none | 无 volume/amount（外汇无成交量） |
-| crypto | twelvedata（须显式传参） | `td.time_series` | PT1M~PT1H、P1D/P1W/P1M | none | 无 amount（volume 上游可能缺失 → null） |
+| forex | twelvedata（默认） | `td.time_series` | PT1M~PT1H、P1D/P1W/P1M | none | 无 volume/amount（外汇无成交量） |
+| crypto | twelvedata（默认） | `td.time_series` | PT1M~PT1H、P1D/P1W/P1M | none | 无 amount（volume 上游可能缺失 → null） |
 
 - API Key 通过环境变量 `TAPEHUB_TWELVEDATA_API_KEY` 提供并传入 `TDClient(apikey=...)`，禁止写入代码/manifest/日志；未配置时能力目录正常，数据请求返回 `PROVIDER_NOT_IMPLEMENTED`；
 - 标的代码约定（symbol 段允许斜杠，对应上游货币对写法）：外汇 `GLOBAL-OTC-EUR/USD → EUR/USD`（ISO 4217，OTC 场外聚合报价）；加密货币 `GLOBAL-CRYPTO-BTC/USD → BTC/USD`（聚合对；交易所专属对与 `exchange` 筛选参数暂不支持）；

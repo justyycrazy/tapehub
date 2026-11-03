@@ -13,8 +13,9 @@
 # - 单位换算按文档：股票 vol 手→股（×100）、amount 千元→元（×1000）；
 #   期货 vol 保持手、amount 万元→元（×10000）；
 # - 历史覆盖范围（history）未核实，保持 null，不编造；
-# - 单接口体系 Provider：变体声明为 tushare（数据源即上游服务自身，与东方财富无关）：请求须显式传 variant=tushare，默认变体 eastmoney 不会路由到本 Provider。
+# - 单接口体系 Provider：变体与 default_variant 均为 tushare（数据源即上游服务自身，与东方财富无关）：缺省请求即可路由，也可显式传 variant=tushare。
 provider: tushare
+default_variant: tushare
 enabled: true
 
 capabilities:

@@ -1,9 +1,11 @@
 """历史 K 线查询服务。
 
-流程：校验后的统一请求 → ProviderRouter 选择数据源 → 适配器
+流程：校验后的统一请求 → ProviderRouter 选择数据源并具体化变体 → 适配器
 （内部 operation 路由 + 参数转换 + 上游调用 + 标准化 + 排序分页）
 → 标准化 ``BarBatch``。
 
+请求未传递 ``variant`` 时由路由结果具体化为 Provider 声明的默认变体，
+最终查询随 ``BarQueryResult.query`` 返回（响应 meta 回显实际使用的变体）。
 适配器已经完成统一分页，本层不得再次切片；
 任何未识别的适配器异常都转换为统一 ``UpstreamError``，
 不向客户端泄露 Token、堆栈或内部地址。
@@ -11,6 +13,7 @@
 
 import asyncio
 import logging
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from tapehub.application.provider_router import ProviderRouter
@@ -23,19 +26,34 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+@dataclass(frozen=True)
+class BarQueryResult:
+    """查询结果：标准化批次与实际执行的查询（variant 已具体化）。"""
+
+    batch: BarBatch
+    query: BarQuery
+
+
 class BarQueryService:
     """历史 K 线查询应用服务。"""
 
     def __init__(self, router: ProviderRouter) -> None:
         self._router = router
 
-    async def query(self, query: BarQuery) -> BarBatch:
-        record: ProviderRecord = self._router.select(query)
+    async def query(self, query: BarQuery) -> BarQueryResult:
+        selection = self._router.select(query)
+        record: ProviderRecord = selection.record
         adapter = record.adapter
         if adapter is None:  # 理论上不可达：路由已确保 implemented
             raise UpstreamError(details={"provider": record.name})
+        # 适配器内部路由与响应 meta 都需要具体变体：缺省请求按路由解析结果具体化
+        final_query = (
+            query
+            if query.variant == selection.variant
+            else query.model_copy(update={"variant": selection.variant})
+        )
         try:
-            return await adapter.fetch_bars(query)
+            batch = await adapter.fetch_bars(final_query)
         except TapehubError:
             raise
         except asyncio.CancelledError:
@@ -48,3 +66,4 @@ class BarQueryService:
                 "provider %s failed: %s: %s", record.name, type(exc).__name__, exc
             )
             raise UpstreamError(details={"provider": record.name}) from exc
+        return BarQueryResult(batch=batch, query=final_query)

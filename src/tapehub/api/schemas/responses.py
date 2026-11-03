@@ -48,6 +48,8 @@ class ProviderCapabilitiesOut(BaseModel):
     provider: str
     enabled: bool
     runtime_status: str
+    # 「Provider × 资产类型」级缺省变体：variant 缺省时的解析依据
+    default_variant: dict[str, str]
     capabilities: list[CapabilityOut]
 
 
@@ -88,6 +90,8 @@ class BarsDataOut(BaseModel):
 class BarsMeta(BaseModel):
     request_id: str
     provider: str
+    # 实际使用的数据源变体：缺省请求经 default_variant 具体化后的值
+    variant: str
     source_time: UtcDatetime | None = None
     received_at: UtcDatetime
     offset: int
@@ -126,11 +130,17 @@ def provider_view_to_out(view: ProviderCapabilitiesView) -> ProviderCapabilities
         provider=view.name,
         enabled=view.enabled,
         runtime_status=view.runtime_status,
+        default_variant={
+            asset_type.value: variant.value
+            for asset_type, variant in view.default_variants.items()
+        },
         capabilities=[capability_to_out(cap) for cap in view.capabilities],
     )
 
 
 def bars_to_response(batch: BarBatch, query: BarQuery, request_id: str) -> BarsResponse:
+    if query.variant is None:  # 不可达：BarQueryService 已具体化变体
+        raise ValueError("query variant must be resolved before building the response")
     data = BarsDataOut(
         instrument=batch.instrument.code,
         asset_type=query.asset_type.value,
@@ -140,6 +150,7 @@ def bars_to_response(batch: BarBatch, query: BarQuery, request_id: str) -> BarsR
     meta = BarsMeta(
         request_id=request_id,
         provider=batch.provider,
+        variant=query.variant.value,
         source_time=batch.source_time,
         received_at=batch.received_at,
         offset=batch.offset,

@@ -27,6 +27,8 @@ class ProviderCapabilitiesView:
     enabled: bool
     runtime_status: str
     capabilities: list[Capability] = field(default_factory=list)
+    # 「Provider × 资产类型」级缺省变体（manifest default_variant 归一化）
+    default_variants: dict[AssetType, DataVariant] = field(default_factory=dict)
 
 
 class CapabilityService:
@@ -75,6 +77,7 @@ class CapabilityService:
                         enabled=record.enabled,
                         runtime_status=RUNTIME_STATUS_UNKNOWN,
                         capabilities=capabilities,
+                        default_variants=record.default_variants,
                     )
                 )
         return views
@@ -92,6 +95,7 @@ class CapabilityService:
             enabled=record.enabled,
             runtime_status=RUNTIME_STATUS_UNKNOWN,
             capabilities=list(record.capabilities),
+            default_variants=record.default_variants,
         )
 
 

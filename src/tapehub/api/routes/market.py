@@ -25,5 +25,5 @@ async def get_market_bars(
     request_id: Annotated[str, Depends(get_request_id)],
 ) -> BarsResponse:
     query = to_bar_query(params, settings)
-    batch = await service.query(query)
-    return bars_to_response(batch, query, request_id)
+    result = await service.query(query)
+    return bars_to_response(result.batch, result.query, request_id)

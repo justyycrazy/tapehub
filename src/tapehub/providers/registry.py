@@ -39,6 +39,14 @@ class _AdapterClass(Protocol):
     def __init__(self, name: str, manifest: ProviderManifest) -> None: ...
 
 
+@dataclass(frozen=True)
+class ResolvedCandidate:
+    """路由候选：Provider 记录与其解析后的具体变体。"""
+
+    record: "ProviderRecord"
+    variant: DataVariant
+
+
 def _is_adapter_class(obj: object) -> TypeGuard[_AdapterClass]:
     return callable(obj)
 
@@ -50,12 +58,13 @@ class ProviderRecord:
     name: str
     manifest: ProviderManifest
     capabilities: list[Capability] = field(default_factory=list)
+    default_variants: dict[AssetType, DataVariant] = field(default_factory=dict)
     adapter: "HistoricalBarProvider | None" = None
     implemented: bool = False
     enabled: bool = False
     load_error: str | None = None
 
-    def supports(
+    def resolve_variant(
         self,
         *,
         data_type: DataType,
@@ -63,19 +72,47 @@ class ProviderRecord:
         asset_type: AssetType,
         interval: Interval,
         adjust: Adjust,
-        variant: DataVariant,
-    ) -> bool:
-        return any(
-            cap.supports(
+        variant: DataVariant | None,
+    ) -> DataVariant | None:
+        """解析可执行的具体变体；不支持该能力时返回 ``None``。
+
+        - ``variant`` 显式传递：严格匹配，不匹配即不支持，不做任何降级；
+        - ``variant`` 为 ``None``（未表达偏好）：在其余维度匹配的能力中，
+          优先取声明 ``default_variant`` 所在的能力；default 未覆盖其余维度时
+          回退到声明顺序第一个匹配能力的第一个变体，可观测、确定性强。
+        """
+        if variant is not None:
+            for cap in self.capabilities:
+                if cap.supports(
+                    data_type=data_type,
+                    market=market,
+                    asset_type=asset_type,
+                    interval=interval,
+                    adjust=adjust,
+                    variant=variant,
+                ):
+                    return variant
+            return None
+        matched = [
+            cap
+            for cap in self.capabilities
+            if cap.supports(
                 data_type=data_type,
                 market=market,
                 asset_type=asset_type,
                 interval=interval,
                 adjust=adjust,
-                variant=variant,
+                variant=None,
             )
-            for cap in self.capabilities
-        )
+        ]
+        if not matched:
+            return None
+        default = self.default_variants.get(asset_type)
+        if default is not None:
+            for cap in matched:
+                if default in cap.variants:
+                    return default
+        return matched[0].variants[0]
 
 
 class ProviderRegistry:
@@ -97,7 +134,7 @@ class ProviderRegistry:
         """按注册顺序返回全部记录（固定顺序，保证路由确定性）。"""
         return list(self._records)
 
-    def candidates(
+    def resolve_candidates(
         self,
         *,
         data_type: DataType,
@@ -105,16 +142,14 @@ class ProviderRegistry:
         asset_type: AssetType,
         interval: Interval,
         adjust: Adjust,
-        variant: DataVariant,
-    ) -> list[ProviderRecord]:
-        """只返回启用、已实现且完整能力条件全部匹配的候选。"""
-        return [
-            record
-            for record in self._records
-            if record.enabled
-            and record.implemented
-            and record.adapter is not None
-            and record.supports(
+        variant: DataVariant | None,
+    ) -> list["ResolvedCandidate"]:
+        """启用、已实现且能力可解析的候选，按注册顺序返回并携带具体变体。"""
+        resolved: list[ResolvedCandidate] = []
+        for record in self._records:
+            if not (record.enabled and record.implemented and record.adapter is not None):
+                continue
+            resolved_variant = record.resolve_variant(
                 data_type=data_type,
                 market=market,
                 asset_type=asset_type,
@@ -122,7 +157,9 @@ class ProviderRegistry:
                 adjust=adjust,
                 variant=variant,
             )
-        ]
+            if resolved_variant is not None:
+                resolved.append(ResolvedCandidate(record=record, variant=resolved_variant))
+        return resolved
 
 
 def build_provider_record(
@@ -140,6 +177,7 @@ def build_provider_record(
         name=name,
         manifest=manifest,
         capabilities=manifest.to_domain_capabilities(),
+        default_variants=manifest.resolved_default_variants(),
         adapter=adapter,
         implemented=bool(getattr(adapter_cls, "implemented", False)),
         enabled=enabled,

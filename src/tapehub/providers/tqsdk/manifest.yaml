@@ -19,10 +19,11 @@
 # - 上游返回“从最新一根往回”的序列：当返回数量达到上限且最早一根仍晚于
 #   请求 start 时，无法覆盖请求窗口，标记 partial=true；
 # - 历史覆盖范围（history）未核实，保持 null，不编造；
-# - 单接口 Provider：变体声明为 tqsdk（官方 SDK 包名，背后为天勤 TianQin 行情平台，
-#   与东方财富无关）；请求 TqSdk 需显式传 variant=tqsdk，
-#   默认变体 eastmoney 的请求不会路由到本 Provider。
+# - 单接口 Provider：变体与 default_variant 均为 tqsdk（官方 SDK 包名，
+#   背后为天勤 TianQin 行情平台，与东方财富无关）：缺省请求即可路由，
+#   也可显式传 variant=tqsdk。
 provider: tqsdk
+default_variant: tqsdk
 enabled: true
 
 capabilities:

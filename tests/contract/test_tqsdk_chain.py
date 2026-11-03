@@ -21,7 +21,7 @@ BASE_PARAMS = {
     "interval": "P1D",
     "start": "2026-01-01",
     "end": "2026-01-10",
-    # TqSdk 变体与其 Provider 同名（官方 SDK 包名），非默认 eastmoney，须显式传递
+    # 显式传 variant=tqsdk（缺省时按 default_variant 解析为同名变体）
     "variant": "tqsdk",
 }
 
@@ -75,6 +75,12 @@ def test_capability_catalog(tqsdk_client: TestClient) -> None:  # type: ignore[n
     entry = response.json()["data"][0]
     assert entry["provider"] == "tqsdk"
     assert entry["enabled"] is True
+    # Provider × 资产类型级缺省变体在能力目录透出
+    assert entry["default_variant"] == {
+        "contract": "tqsdk",
+        "continuous": "tqsdk",
+        "weighted-index": "tqsdk",
+    }
     cap = entry["capabilities"][0]
     assert cap["asset_types"] == ["contract", "continuous", "weighted-index"]
     assert cap["variants"] == ["tqsdk"]
@@ -126,3 +132,15 @@ def test_weighted_index_chain(
     response = tqsdk_client.get("/v1/market/bars", params=params)
     assert response.status_code == 200
     assert StubTqApi.instances[-1].calls[0]["symbol"] == "KQ.i@SHFE.bu"
+
+
+def test_default_variant_routes_to_declared_default(
+    tqsdk_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """缺省 variant：按 manifest default_variant（tqsdk）具体化并回显 meta。"""
+    preset_rows(monkeypatch, klines_rows(["2026-01-02"]))
+
+    params = {k: v for k, v in BASE_PARAMS.items() if k != "variant"}
+    response = tqsdk_client.get("/v1/market/bars", params=params)
+    assert response.status_code == 200
+    assert response.json()["meta"]["variant"] == "tqsdk"

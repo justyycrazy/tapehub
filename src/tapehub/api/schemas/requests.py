@@ -9,7 +9,8 @@
 - ``start`` 必须早于 ``end``；时间范围为闭区间 [start, end]；
 - ``limit`` 不超过服务配置上限；
 - ``adjust`` 未传递时：个股（stock）默认 ``qfq``（前复权），其余默认 ``none``；
-- ``variant`` 未传递时默认 ``eastmoney``（东方财富）。
+- ``variant`` 未传递（None）表示不表达数据源偏好：该维度不参与能力过滤，
+  由所选 Provider 声明的 ``default_variant`` 具体化，响应 meta 回显实际使用的变体。
 """
 
 import re
@@ -41,7 +42,7 @@ class BarsQueryParams(BaseModel):
     start: str
     end: str
     adjust: Adjust | None = None
-    variant: DataVariant = DataVariant.EASTMONEY
+    variant: DataVariant | None = None
     offset: int = Field(default=0, ge=0)
     limit: int = Field(default=DEFAULT_PAGE_LIMIT, ge=1)
 

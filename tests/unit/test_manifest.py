@@ -107,3 +107,97 @@ def test_pt1m_and_p1m_are_different_operations() -> None:
     }
     manifest = manifest_from_dict(data)
     assert len(manifest.operations) == 2
+
+
+def _capability_data(variants: list[str], asset_types: list[str]) -> dict:
+    return {
+        "data_type": "bars",
+        "markets": ["CN"],
+        "asset_types": asset_types,
+        "delivery": ["rest"],
+        "variants": variants,
+        "intervals": [{"code": "P1D", "history": {"start": None, "end": None}}],
+        "adjustments": ["none"],
+        "fields": ["open", "high", "low", "close"],
+    }
+
+
+def test_default_variant_scalar_covers_all_asset_types() -> None:
+    """标量 default_variant 作用于全部资产类型，并归一化为映射。"""
+    data = {
+        "provider": "single-source",
+        "enabled": True,
+        "default_variant": "tqsdk",
+        "capabilities": [_capability_data(["tqsdk"], ["contract", "continuous"])],
+        "operations": [],
+    }
+    manifest = manifest_from_dict(data)
+    resolved = manifest.resolved_default_variants()
+    assert resolved == {AssetType.CONTRACT: "tqsdk", AssetType.CONTINUOUS: "tqsdk"}
+
+
+def test_default_variant_mapping_resolved() -> None:
+    """映射 default_variant 按资产类型覆盖，与声明顺序无关。"""
+    data = {
+        "provider": "multi-source",
+        "enabled": True,
+        "default_variant": {"stock": "eastmoney", "index": "sina"},
+        "capabilities": [_capability_data(["eastmoney", "sina", "tencent"], ["stock", "index"])],
+        "operations": [],
+    }
+    manifest = manifest_from_dict(data)
+    assert manifest.resolved_default_variants() == {
+        AssetType.STOCK: "eastmoney",
+        AssetType.INDEX: "sina",
+    }
+
+
+def test_default_variant_required_when_capabilities_exist() -> None:
+    """有 capabilities 但未声明 default_variant：加载失败，不做隐式推断。"""
+    data = {
+        "provider": "no-default",
+        "enabled": True,
+        "capabilities": [_capability_data(["eastmoney"], ["stock"])],
+        "operations": [],
+    }
+    with pytest.raises(ManifestError):
+        manifest_from_dict(data)
+
+
+def test_default_variant_mapping_missing_asset_type_rejected() -> None:
+    """映射未覆盖 capabilities 中出现的资产类型：加载失败。"""
+    data = {
+        "provider": "partial-map",
+        "enabled": True,
+        "default_variant": {"stock": "eastmoney"},
+        "capabilities": [_capability_data(["eastmoney", "sina"], ["stock", "index"])],
+        "operations": [],
+    }
+    with pytest.raises(ManifestError):
+        manifest_from_dict(data)
+
+
+def test_default_variant_not_among_declared_variants_rejected() -> None:
+    """default_variant 不在该资产类型声明的 variants 中：加载失败，不编造。"""
+    data = {
+        "provider": "bad-default",
+        "enabled": True,
+        "default_variant": {"stock": "binance"},
+        "capabilities": [_capability_data(["eastmoney", "sina"], ["stock"])],
+        "operations": [],
+    }
+    with pytest.raises(ManifestError):
+        manifest_from_dict(data)
+
+
+def test_default_variant_forbidden_without_capabilities() -> None:
+    """无 capabilities 的空壳 manifest 不允许声明 default_variant。"""
+    data = {
+        "provider": "empty-shell",
+        "enabled": False,
+        "default_variant": "eastmoney",
+        "capabilities": [],
+        "operations": [],
+    }
+    with pytest.raises(ManifestError):
+        manifest_from_dict(data)

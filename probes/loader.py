@@ -366,7 +366,9 @@ def expand_probe(probe: ProbeFile, manifest: ProviderManifest) -> ExpandedProbe:
                 asset_type=asset_type,
                 interval=Interval.parse("P1D"),
                 adjust=Adjust.NONE,
-                variant=DataVariant.EASTMONEY,
+                # 占位值：下游分析探针构造器会按各能力声明的 variants 全量覆写；
+                # 取首条能力的第一个声明变体，不假设任何具体数据源
+                variant=caps[0].variants[0],
                 instrument=target.instrument,
                 window_start=_to_utc(target.window.start),
                 window_end=_to_utc(target.window.end),

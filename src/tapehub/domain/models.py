@@ -66,9 +66,6 @@ class DataVariant(StrEnum):
     TWELVEDATA = "twelvedata"
 
 
-DEFAULT_VARIANT = DataVariant.EASTMONEY
-
-
 class Adjust(StrEnum):
     """复权方式。"""
 
@@ -175,8 +172,9 @@ class BarQuery(BaseModel):
     start: datetime
     end: datetime
     adjust: Adjust = Adjust.NONE
-    # 数据源变体，默认东方财富；Provider 专用映射在适配器内完成
-    variant: DataVariant = DEFAULT_VARIANT
+    # 数据源变体；未传递（None）表示不表达偏好，由所选 Provider 能力的
+    # default_variant 具体化（见 application 路由），适配器收到的一律是具体值
+    variant: DataVariant | None = None
     offset: int = Field(default=0, ge=0)
     limit: int = Field(default=500, ge=1)
 

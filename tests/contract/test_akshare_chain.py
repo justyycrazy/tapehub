@@ -56,11 +56,12 @@ def test_full_chain_default_variant_and_adjust(
     assert response.status_code == 200
     body = response.json()
 
-    # 未传递 variant → 默认 eastmoney；未传递 adjust → 股票默认 qfq
+    # 未传递 variant → 按 default_variant 解析为 eastmoney；未传递 adjust → 股票默认 qfq
     operation, kwargs = akshare_stub.calls[0]
     assert operation == "stock_zh_a_hist"
     assert kwargs["adjust"] == "qfq"
     assert kwargs["period"] == "daily"
+    assert body["meta"]["variant"] == "eastmoney"
 
     data = body["data"]
     assert data["instrument"] == "CN-SSE-600000"

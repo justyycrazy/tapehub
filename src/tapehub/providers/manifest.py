@@ -52,7 +52,7 @@ class ManifestCapability(BaseModel):
     markets: list[str]
     asset_types: list[AssetType]
     delivery: list[Delivery]
-    variants: list[DataVariant] = Field(default_factory=lambda: [DataVariant.EASTMONEY])
+    variants: list[DataVariant]
     intervals: list[ManifestInterval]
     adjustments: list[Adjust]
     fields: list[str]
@@ -94,10 +94,20 @@ class ManifestOperation(BaseModel):
 
 
 class ProviderManifest(BaseModel):
+    """Provider manifest。
+
+    ``default_variant`` 声明「Provider × 资产类型」级缺省变体：请求未表达
+    ``variant`` 偏好时使用。声明为标量时作用于全部资产类型；声明为映射时
+    必须覆盖 capabilities 中出现的每个 asset_type，且每个值必须属于该
+    资产类型下实际声明的 variants。有 capabilities 就必须显式声明，
+    不做任何隐式推断；无 capabilities 的空壳 manifest（占位/测试桩）允许省略。
+    """
+
     model_config = ConfigDict(extra="forbid")
 
     provider: str = Field(pattern=r"^[a-z0-9][a-z0-9-]{0,63}$")
     enabled: bool = False
+    default_variant: DataVariant | dict[AssetType, DataVariant] | None = None
     capabilities: list[ManifestCapability] = Field(default_factory=list)
     operations: list[ManifestOperation] = Field(default_factory=list)
 
@@ -111,6 +121,49 @@ class ProviderManifest(BaseModel):
                 raise ValueError(f"duplicate operation match for {key}")
             seen.add(key)
         return self
+
+    @model_validator(mode="after")
+    def _default_variant_covers_capabilities(self) -> "ProviderManifest":
+        declared: dict[AssetType, set[DataVariant]] = {}
+        for cap in self.capabilities:
+            for asset_type in cap.asset_types:
+                declared.setdefault(asset_type, set()).update(cap.variants)
+        if not declared:
+            if self.default_variant is not None:
+                raise ValueError("default_variant declared but no capabilities exist")
+            return self
+        if self.default_variant is None:
+            raise ValueError(
+                "default_variant is required when capabilities are declared; "
+                "declare a scalar covering all asset types or a per-asset-type mapping"
+            )
+        if isinstance(self.default_variant, DataVariant):
+            resolved = dict.fromkeys(declared, self.default_variant)
+        else:
+            resolved = dict(self.default_variant)
+        missing = sorted(set(declared) - set(resolved), key=lambda item: item.value)
+        if missing:
+            names = ", ".join(item.value for item in missing)
+            raise ValueError(f"default_variant mapping misses asset types: {names}")
+        for asset_type, variant in resolved.items():
+            if variant not in declared[asset_type]:
+                raise ValueError(
+                    f"default_variant {variant.value!r} for asset type "
+                    f"{asset_type.value!r} is not among declared variants "
+                    f"{sorted(v.value for v in declared[asset_type])}"
+                )
+        return self
+
+    def resolved_default_variants(self) -> dict[AssetType, DataVariant]:
+        """归一化为 ``{asset_type: variant}`` 映射；仅可在校验通过的实例上调用。"""
+        if self.default_variant is None:
+            return {}
+        if isinstance(self.default_variant, DataVariant):
+            covered: set[AssetType] = set()
+            for cap in self.capabilities:
+                covered.update(cap.asset_types)
+            return dict.fromkeys(covered, self.default_variant)
+        return dict(self.default_variant)
 
     def to_domain_capabilities(self) -> list[Capability]:
         return [cap.to_domain() for cap in self.capabilities]

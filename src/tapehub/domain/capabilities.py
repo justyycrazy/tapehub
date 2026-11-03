@@ -6,7 +6,7 @@
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, field_validator
 
 from tapehub.domain.intervals import Interval
 from tapehub.domain.models import Adjust, AssetType, DataType, DataVariant, Delivery, ensure_utc
@@ -46,7 +46,7 @@ class Capability(BaseModel):
     markets: list[str]
     asset_types: list[AssetType]
     delivery: list[Delivery]
-    variants: list[DataVariant] = Field(default_factory=lambda: [DataVariant.EASTMONEY])
+    variants: list[DataVariant]
     intervals: list[IntervalEntry]
     adjustments: list[Adjust]
     fields: list[str]
@@ -59,16 +59,20 @@ class Capability(BaseModel):
         asset_type: AssetType,
         interval: Interval,
         adjust: Adjust,
-        variant: DataVariant,
+        variant: DataVariant | None,
     ) -> bool:
-        """完整能力维度匹配：data_type × market × asset_type × interval × adjust × variant。"""
+        """完整能力维度匹配：data_type × market × asset_type × interval × adjust × variant。
+
+        ``variant=None`` 表示请求未表达变体偏好，该维度不参与匹配；
+        具体化（默认变体解析）由 ProviderRecord 完成，本方法不做默认值推断。
+        """
         if data_type != self.data_type:
             return False
         if market not in self.markets:
             return False
         if asset_type not in self.asset_types:
             return False
-        if variant not in self.variants:
+        if variant is not None and variant not in self.variants:
             return False
         if not any(entry.code == interval for entry in self.intervals):
             return False

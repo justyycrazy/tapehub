@@ -19,7 +19,7 @@ FOREX_PARAMS = {
     "interval": "P1D",
     "start": "2026-01-01",
     "end": "2026-01-10",
-    # Twelve Data 变体为其自身数据服务，非默认 eastmoney，须显式传递
+    # 显式传 variant=twelvedata（缺省时按 default_variant 解析为同名变体）
     "variant": "twelvedata",
 }
 
@@ -110,3 +110,15 @@ def test_crypto_chain(twelvedata_client: TestClient, monkeypatch: pytest.MonkeyP
 
     assert StubTDClient.instances[-1].calls[0]["symbol"] == "BTC/USD"
     assert response.json()["meta"]["provider"] == "twelvedata"
+
+
+def test_default_variant_routes_to_declared_default(
+    twelvedata_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """缺省 variant：按 manifest default_variant（twelvedata）具体化并回显 meta。"""
+    preset_values(monkeypatch, forex_values_rows(["2026-01-02 00:00:00"]))
+
+    params = {k: v for k, v in FOREX_PARAMS.items() if k != "variant"}
+    response = twelvedata_client.get("/v1/market/bars", params=params)
+    assert response.status_code == 200
+    assert response.json()["meta"]["variant"] == "twelvedata"

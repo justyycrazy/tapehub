@@ -22,7 +22,7 @@ BASE_PARAMS = {
     "interval": "P1D",
     "start": "2026-01-01",
     "end": "2026-01-10",
-    # TickFlow 变体为其自身数据服务，非默认 eastmoney，须显式传递
+    # 显式传 variant=tickflow（缺省时按 default_variant 解析为同名变体）
     "variant": "tickflow",
 }
 
@@ -136,3 +136,15 @@ def test_adjust_hfq_maps_to_backward(
     )
     assert response.status_code == 200
     assert StubTickFlow.instances[-1].calls[0]["adjust"] == "backward"
+
+
+def test_default_variant_routes_to_declared_default(
+    tickflow_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """缺省 variant：按 manifest default_variant（tickflow）具体化并回显 meta。"""
+    preset_payload(monkeypatch, klines_payload(["2026-01-02"]))
+
+    params = {k: v for k, v in BASE_PARAMS.items() if k != "variant"}
+    response = tickflow_client.get("/v1/market/bars", params=params)
+    assert response.status_code == 200
+    assert response.json()["meta"]["variant"] == "tickflow"
