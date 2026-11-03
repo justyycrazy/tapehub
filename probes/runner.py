@@ -412,11 +412,15 @@ async def _run_adjust_diff(ctx: RunContext, case: ChainCase, base: CaseResult) -
 
 async def _run_history_depth(ctx: RunContext, case: ChainCase, base: CaseResult) -> CaseResult:
     fetch = _make_fetcher(ctx, case)
+    # 滚动保留的数据边界不可能超过当前时刻；target 窗口终点若写在未来，
+    # 超出 now 的搜索区间对「窗口非空」谓词不单调（未来与边界前同样为空），
+    # 会把二分诱入未来空窗而误报「无数据」——搜索终点裁剪到 now。
+    latest = min(case.window_end, datetime.now(UTC))
     try:
         result = await analysis.run_history_depth(
             fetch,
             earliest=case.window_start,
-            latest=case.window_end,
+            latest=latest,
             era_step_years=case.era_step_years,
             probe_span_days=case.probe_span_days,
             max_calls=case.expected_calls,

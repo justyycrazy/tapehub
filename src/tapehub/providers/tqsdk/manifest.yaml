@@ -33,7 +33,9 @@
 #   现货三类一致、期货两类一致），以 retention_days 声明——覆盖
 #   「now − N 天 → now」，边界随时间前移，不声明固定起点；
 #   取整规则（向下取，留安全余量）：不足 90 天取 7 的倍数（周），
-#   不小于 90 天取 30 的倍数（月）；contract 随挂牌期限，全 null 不编造；
+#   不小于 90 天取 30 的倍数（月）；六周期折算根数均落在 5000 根量级，
+#   与单次上限（data_length 5000）一致——保留深度即序列存储上限；
+#   PT30M/PT1H 于 2026-11-03 第三轮探针补测；contract 随挂牌期限，全 null 不编造；
 # - 单接口 Provider：变体与 default_variant 均为 tqsdk（官方 SDK 包名，
 #   背后为天勤 TianQin 行情平台，与东方财富无关）：缺省请求即可路由，
 #   也可显式传 variant=tqsdk。
@@ -67,8 +69,8 @@ capabilities:
       - {code: PT1M, history: {retention_days: 14, end: null}}
       - {code: PT5M, history: {retention_days: 84, end: null}}
       - {code: PT15M, history: {retention_days: 240, end: null}}
-      - {code: PT30M, history: {start: null, end: null}}
-      - {code: PT1H, history: {start: null, end: null}}
+      - {code: PT30M, history: {retention_days: 450, end: null}}
+      - {code: PT1H, history: {retention_days: 840, end: null}}
       # 探针 limit case 实测最早一根（cu 主连日线，UTC 即北京时间 2016-01-05）
       - {code: P1D, history: {start: "2016-01-04T16:00:00Z", end: null}}
     adjustments: [none]
@@ -82,8 +84,8 @@ capabilities:
       - {code: PT1M, history: {retention_days: 7, end: null}}
       - {code: PT5M, history: {retention_days: 70, end: null}}
       - {code: PT15M, history: {retention_days: 180, end: null}}
-      - {code: PT30M, history: {start: null, end: null}}
-      - {code: PT1H, history: {start: null, end: null}}
+      - {code: PT30M, history: {retention_days: 390, end: null}}
+      - {code: PT1H, history: {retention_days: 690, end: null}}
       # 探针二分估计（2026-11-03 第二轮，粒度 5 天）：au 加权日线最早 ≈2016-01-05
       - {code: P1D, history: {start: "2016-01-04T16:00:00Z", end: null}}
     adjustments: [none]
@@ -98,8 +100,8 @@ capabilities:
       - {code: PT1M, history: {retention_days: 35, end: null}}
       - {code: PT5M, history: {retention_days: 150, end: null}}
       - {code: PT15M, history: {retention_days: 450, end: null}}
-      - {code: PT30M, history: {start: null, end: null}}
-      - {code: PT1H, history: {start: null, end: null}}
+      - {code: PT30M, history: {retention_days: 930, end: null}}
+      - {code: PT1H, history: {retention_days: 1500, end: null}}
       # 探针二分估计（粒度 90 天）：600000 日线最早 ≈2018-01-02
       - {code: P1D, history: {start: "2018-01-01T16:00:00Z", end: null}}
     adjustments: [none, qfq, hfq]
@@ -115,8 +117,8 @@ capabilities:
       - {code: PT1M, history: {retention_days: 35, end: null}}
       - {code: PT5M, history: {retention_days: 150, end: null}}
       - {code: PT15M, history: {retention_days: 450, end: null}}
-      - {code: PT30M, history: {start: null, end: null}}
-      - {code: PT1H, history: {start: null, end: null}}
+      - {code: PT30M, history: {retention_days: 930, end: null}}
+      - {code: PT1H, history: {retention_days: 1500, end: null}}
       # 探针二分估计（粒度 90 天）：000016 日线最早 ≈2018-01-02
       - {code: P1D, history: {start: "2018-01-01T16:00:00Z", end: null}}
     adjustments: [none]
@@ -131,8 +133,8 @@ capabilities:
       - {code: PT1M, history: {retention_days: 35, end: null}}
       - {code: PT5M, history: {retention_days: 150, end: null}}
       - {code: PT15M, history: {retention_days: 450, end: null}}
-      - {code: PT30M, history: {start: null, end: null}}
-      - {code: PT1H, history: {start: null, end: null}}
+      - {code: PT30M, history: {retention_days: 930, end: null}}
+      - {code: PT1H, history: {retention_days: 1500, end: null}}
       # 探针二分估计（2026-11-03 第二轮，粒度 5 天）：510050 日线最早 ≈2018-01-02
       - {code: P1D, history: {start: "2018-01-01T16:00:00Z", end: null}}
     adjustments: [none, qfq, hfq]
