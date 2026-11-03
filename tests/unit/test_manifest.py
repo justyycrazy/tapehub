@@ -1,5 +1,7 @@
 """manifest 加载与校验测试。"""
 
+from datetime import datetime
+
 import pytest
 
 from tapehub.domain.errors import ManifestError
@@ -253,6 +255,50 @@ def test_default_provider_declared_without_capabilities_rejected() -> None:
         "enabled": False,
         "default_provider": ["stock"],
         "capabilities": [],
+        "operations": [],
+    }
+    with pytest.raises(ManifestError):
+        manifest_from_dict(data)
+
+
+def test_retention_days_declaration_roundtrip() -> None:
+    """retention_days（滚动保留天数）声明加载与领域透传。"""
+    cap = _capability_data(["eastmoney"], ["stock"])
+    cap["intervals"] = [
+        {"code": "PT1M", "history": {"retention_days": 35, "end": None}},
+        {"code": "P1D", "history": {"start": "2018-01-01T16:00:00Z", "end": None}},
+    ]
+    data = {
+        "provider": "rolling",
+        "enabled": True,
+        "default_variant": "eastmoney",
+        "default_provider": ["stock"],
+        "capabilities": [cap],
+        "operations": [],
+    }
+    manifest = manifest_from_dict(data)
+    entry = manifest.to_domain_capabilities()[0].intervals
+    assert entry[0].history.retention_days == 35
+    assert entry[0].history.start is None
+    assert entry[1].history.start == datetime.fromisoformat("2018-01-01T16:00:00+00:00")
+    assert entry[1].history.retention_days is None
+
+
+def test_start_and_retention_days_mutually_exclusive() -> None:
+    """start 与 retention_days 同时声明：加载失败（语义互斥）。"""
+    cap = _capability_data(["eastmoney"], ["stock"])
+    cap["intervals"] = [
+        {
+            "code": "PT1M",
+            "history": {"start": "2025-01-01T00:00:00Z", "retention_days": 35, "end": None},
+        }
+    ]
+    data = {
+        "provider": "both",
+        "enabled": True,
+        "default_variant": "eastmoney",
+        "default_provider": ["stock"],
+        "capabilities": [cap],
         "operations": [],
     }
     with pytest.raises(ManifestError):

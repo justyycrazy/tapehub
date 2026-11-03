@@ -55,7 +55,10 @@ def test_fake_provider_entry(fake_client) -> None:  # type: ignore[no-untyped-de
     assert cap["asset_types"] == ["stock", "etf", "index", "contract"]
     assert cap["variants"] == ["eastmoney"]
     assert [i["code"] for i in cap["intervals"]] == ["P1D", "PT1M"]
-    assert all(i["history"] == {"start": None, "end": None} for i in cap["intervals"])
+    assert all(
+        i["history"] == {"start": None, "end": None, "retention_days": None}
+        for i in cap["intervals"]
+    )
     assert cap["adjustments"] == ["none"]
 
 

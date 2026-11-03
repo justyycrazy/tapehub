@@ -19,10 +19,13 @@ from tapehub.domain.models import Adjust, AssetType, DataType, DataVariant, Deli
 
 
 class ManifestHistory(BaseModel):
+    """历史覆盖声明：``start``（固定起点）与 ``retention_days``（滚动保留天数）互斥。"""
+
     model_config = ConfigDict(extra="forbid")
 
     start: datetime | None = None
     end: datetime | None = None
+    retention_days: int | None = Field(default=None, ge=1)
 
     @field_validator("start", "end")
     @classmethod
@@ -30,6 +33,12 @@ class ManifestHistory(BaseModel):
         if value is None:
             return None
         return ensure_utc(value, "history boundary")
+
+    @model_validator(mode="after")
+    def _start_and_retention_mutually_exclusive(self) -> "ManifestHistory":
+        if self.start is not None and self.retention_days is not None:
+            raise ValueError("history start and retention_days are mutually exclusive")
+        return self
 
 
 class ManifestInterval(BaseModel):
@@ -41,7 +50,11 @@ class ManifestInterval(BaseModel):
     def to_domain(self) -> IntervalEntry:
         return IntervalEntry(
             code=self.code,
-            history=IntervalHistory(start=self.history.start, end=self.history.end),
+            history=IntervalHistory(
+                start=self.history.start,
+                end=self.history.end,
+                retention_days=self.history.retention_days,
+            ),
         )
 
 

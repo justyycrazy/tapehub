@@ -362,15 +362,19 @@ TqSdk（官方 SDK `tqsdk`：`TqApi(auth=TqAuth(...)).get_kline_serial(...)`）�
   升级套餐后需重新实证）；当返回数量达到上限且最早一根仍晚于请求 `start` 时，
   更早数据取不到，响应 `meta.partial=true` 且 `warnings` 提示；
 - **分钟线为滚动保留**（2026-11-03 探针实测边界，精度 ±5 天，随时间前移）：
-  `history` 不声明固定起点。边界按数据类划分——现货三类（stock/index/etf）逐一相同，
-  期货两类（continuous/weighted-index）各自一致：**1m** 现货 ≈5 周、期货 ≈2 周；
-  **5m** 现货 ≈5 个月、期货 ≈3 个月；**15m** 现货 ≈15.5 个月、期货 ≈8 个月
-  （折算约 8000 根量级，疑似按固定根数滚动）；
+  `history` 以 `retention_days` 声明——覆盖「now − N 天 → now」，客户端按查询
+  时点自行换算。取值向下取整留安全余量：不足 90 天取 7 的倍数（周）、
+  不小于 90 天取 30 的倍数（月）。边界按数据类划分——现货三类逐一相同，
+  期货两类各自一致：**1m** 现货 35 天、期货 14 天；**5m** 现货 150 天、期货 84 天；
+  **15m** 现货 450 天、期货 240 天（实测原始值折算约 8000 根量级，
+  疑似按固定根数滚动，PT30M/PT1H 未探保持 null）；
 - `datetime` 为纳秒时间戳（绝对时间），标准化为 UTC；期货/指数无复权概念，`adjust` 仅声明 none；
 - **复权实证**（2026-11-03 探针）：hfq 与 none 差异显著（生效）；分钟级 qfq 与 none 相同（天勤特性，如实标注）；日线 qfq/hfq 均有差异；
 - **history 回填**（2026-11-03 探针二分估计：首轮粒度 90 天、次轮 5 天）：
-  日线 continuous/weighted-index 自 2016-01-05、stock/index/etf 自 2018-01-02；
-  contract 随挂牌期限，保持 null；分钟级见上（滚动保留，不声明）；
+  日线以固定起点 `start` 声明——continuous/weighted-index 自 2016-01-05、
+  stock/index/etf 自 2018-01-02；contract 随挂牌期限，保持 null；
+  分钟级以滚动保留 `retention_days` 声明（见上）；
+  `/v1/capabilities` 的 interval history 字段按声明形式原样透出；
 - 代码映射（股票/指数/ETF 同期货格式）：`CN-SSE-600000 → SSE.600000`、`CN-SZSE-000001 → SZSE.000001`、`CN-SSE-000016 → SSE.000016`、`CN-SSE-510050 → SSE.510050`（mddatas 文档示例口径；指数仅核实 SSE/SZSE 发布的代码）；
 - 每次请求在线程池中独立创建并关闭 TqApi 实例（官方约定一个线程一个实例）；
 - 上游 SDK 异常类型未在文档中核实，统一包装为 `UPSTREAM_ERROR`。

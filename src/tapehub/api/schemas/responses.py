@@ -26,6 +26,8 @@ class HealthResponse(BaseModel):
 class IntervalHistoryOut(BaseModel):
     start: UtcDatetime | None = None
     end: UtcDatetime | None = None
+    # 滚动保留天数：覆盖「now − N 天 → now」，与 start 互斥（声明二选一）
+    retention_days: int | None = None
 
 
 class IntervalEntryOut(BaseModel):
@@ -118,7 +120,11 @@ def capability_to_out(cap: Capability) -> CapabilityOut:
         intervals=[
             IntervalEntryOut(
                 code=entry.code.code,
-                history=IntervalHistoryOut(start=entry.history.start, end=entry.history.end),
+                history=IntervalHistoryOut(
+                    start=entry.history.start,
+                    end=entry.history.end,
+                    retention_days=entry.history.retention_days,
+                ),
             )
             for entry in cap.intervals
         ],
