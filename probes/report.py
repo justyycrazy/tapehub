@@ -68,14 +68,19 @@ def to_json_dict(run: RunResult) -> dict[str, Any]:
 
 
 def write_results(run: RunResult, results_dir: Path) -> tuple[Path, Path]:
-    """写入 JSON 证据与 Markdown 报告，返回 (json_path, md_path)。"""
+    """写入 JSON 证据与 Markdown 报告，返回 (json_path, md_path)。
+
+    ``default=str`` 是最后防线：万一观测里混入未转换的 datetime 等对象，
+    宁可降级为字符串表示，也绝不让整轮探针的证据丢失。
+    """
     provider_dir = results_dir / run.provider
     provider_dir.mkdir(parents=True, exist_ok=True)
     stamp = run.started_at.strftime("%Y%m%dT%H%M%SZ")
     json_path = provider_dir / f"{stamp}.json"
     md_path = results_dir / f"report-{run.provider}-{stamp}.md"
     json_path.write_text(
-        json.dumps(to_json_dict(run), ensure_ascii=False, indent=2), encoding="utf-8"
+        json.dumps(to_json_dict(run), ensure_ascii=False, indent=2, default=str),
+        encoding="utf-8",
     )
     md_path.write_text(render_markdown(run), encoding="utf-8")
     return json_path, md_path

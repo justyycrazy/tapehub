@@ -17,7 +17,7 @@ import json
 import os
 import re
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
@@ -361,6 +361,19 @@ async def _run_availability(ctx: RunContext, case: ChainCase, base: CaseResult) 
     return base
 
 
+def _series_compare_dict(result: "analysis.SeriesCompare") -> dict[str, Any]:
+    """SeriesCompare → JSON 安全字典（datetime 一律转 ISO 字符串）。"""
+    return {
+        "field": result.field,
+        "compared": result.compared,
+        "identical": result.identical,
+        "max_abs_diff": result.max_abs_diff,
+        "first_divergence": (
+            result.first_divergence.isoformat() if result.first_divergence else None
+        ),
+    }
+
+
 async def _run_adjust_diff(ctx: RunContext, case: ChainCase, base: CaseResult) -> CaseResult:
     assert case.compared_adjust is not None
     fetch_baseline = _make_fetcher(ctx, case, adjust=case.adjust)
@@ -382,7 +395,7 @@ async def _run_adjust_diff(ctx: RunContext, case: ChainCase, base: CaseResult) -
         "compared_adjust": case.compared_adjust.value,
         "baseline_count": len(baseline),
         "compared_count": len(compared),
-        "compares": [asdict(c) for c in compares],
+        "compares": [_series_compare_dict(c) for c in compares],
     }
     if any(c.compared == 0 for c in compares):
         base.verdict = CaseVerdict.SUSPECT.value
@@ -507,19 +520,10 @@ async def _run_variant_consistency(
             result = analysis.compare_price_series(
                 series[left_name], series[right_name], field_name
             )
-            comparisons.append(
-                {
-                    "a": left_name,
-                    "b": right_name,
-                    "field": result.field,
-                    "compared": result.compared,
-                    "identical": result.identical,
-                    "max_abs_diff": result.max_abs_diff,
-                    "first_divergence": (
-                        result.first_divergence.isoformat() if result.first_divergence else None
-                    ),
-                }
-            )
+            entry = _series_compare_dict(result)
+            entry["a"] = left_name
+            entry["b"] = right_name
+            comparisons.append(entry)
     per_variant = {
         name: {
             "count": len(bars),

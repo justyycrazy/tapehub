@@ -318,3 +318,35 @@ def test_variant_consistency_suspect_on_divergence() -> None:
     diffs = [c for c in result.cases if c.kind == "adjust_diff"]
     assert len(diffs) == 2
     assert all(c.verdict == "confirmed" for c in diffs)
+
+
+def test_run_result_is_fully_json_serializable() -> None:
+    """运行结果（含 adjust_diff 的 first_divergence datetime）必须整体可序列化。
+
+    回归守卫：此前 adjust_diff 观测里的 datetime 导致 json.dumps 在落盘
+    最后一步崩溃，整轮真实上游探针的证据丢失。
+    """
+    import json
+
+    from probes.report import to_json_dict
+
+    registry = _registry_for("multi_variant.yaml")
+    probe = _multi_var_probe(
+        "multi-var",
+        {
+            "adjust_diff": {
+                "targets": ["stock"],
+                "window": {"start": "2025-01-01", "end": "2025-03-31"},
+                "pairs": [["none", "qfq"]],
+            },
+            "variant_consistency": {
+                "targets": ["stock"],
+                "window": {"start": "2025-01-01", "end": "2025-03-31"},
+            },
+            "history_depth": {"targets": ["stock"], "earliest": "2024-01-01", "max_calls": 2},
+        },
+    )
+    result = asyncio.run(run_provider_probe(probe, registry, _settings()))
+    payload = json.dumps(to_json_dict(result), ensure_ascii=False)
+    assert '"adjust_diff"' in payload
+    assert "first_divergence" in payload
