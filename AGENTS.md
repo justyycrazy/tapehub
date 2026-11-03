@@ -69,7 +69,8 @@ Provider 适配器实现 Domain Port。
 - `asset_type` 必填不推断：stock/index/etf/contract/continuous/weighted-index/option/forex/crypto；
 - `adjust` 声明默认值按资产类型：stock → `qfq`（前复权），其余 → `none`；
 - 时间范围闭区间 `[start, end]`；输入时间必须带时区偏移（拒绝裸时间与仅日期）；
-  响应时间按标的所属市场的规范时区输出：CN → 北京时间（`+08:00`），其余 → UTC（`Z` 结尾）；
+  项目内部统一北京时间：服务级时间戳一律北京时间（`+08:00`）；行情数据时间戳
+  CN → 北京时间，GLOBAL（twelvedata 等）暂维持 UTC（待探针确认后统一）；
 - 结果先按 timestamp 升序排序，再应用 offset/limit；不返回 total。
 
 ## 安全与诚实边界

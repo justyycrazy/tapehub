@@ -28,11 +28,16 @@ from probes.schema import (
 )
 from tapehub.domain.capabilities import Capability
 from tapehub.domain.intervals import Interval
-from tapehub.domain.models import Adjust, AssetType, DataType, DataVariant, Instrument
+from tapehub.domain.models import (
+    CN_TIMEZONE,
+    Adjust,
+    AssetType,
+    DataType,
+    DataVariant,
+    Instrument,
+)
 from tapehub.providers.manifest import ProviderManifest, load_builtin_manifest
 from tapehub.providers.registry import BUILTIN_PROVIDERS
-
-UTC = dt.timezone.utc
 
 
 @dataclass(frozen=True, slots=True)
@@ -111,8 +116,9 @@ def load_probe_files(cases_dir: Path) -> list[ProbeFile]:
     return [by_name[name] for name in BUILTIN_PROVIDERS]
 
 
-def _to_utc(day: dt.date) -> dt.datetime:
-    return dt.datetime(day.year, day.month, day.day, tzinfo=UTC)
+def _to_beijing(day: dt.date) -> dt.datetime:
+    """裸日期统一按北京时间零点解释（项目内部时间约定）。"""
+    return dt.datetime(day.year, day.month, day.day, tzinfo=CN_TIMEZONE)
 
 
 def capabilities_of(capabilities: list[Capability], asset_type: AssetType) -> list[Capability]:
@@ -169,8 +175,8 @@ def _adjust_diff_cases(
                             variant=variant,
                             compared_adjust=compared,
                             compare_fields=tuple(config.fields),
-                            window_start=_to_utc(config.window.start),
-                            window_end=_to_utc(config.window.end),
+                            window_start=_to_beijing(config.window.start),
+                            window_end=_to_beijing(config.window.end),
                             expected_calls=2,
                             skip_reason=skip_reason,
                         )
@@ -201,7 +207,7 @@ def _history_depth_cases(
                         interval=interval,
                         adjust=_fallback_adjust(capability),
                         variant=variant,
-                        window_start=_to_utc(config.earliest),
+                        window_start=_to_beijing(config.earliest),
                         era_step_years=config.era_step_years,
                         probe_span_days=config.probe_span_days,
                         expected_calls=config.max_calls,
@@ -279,8 +285,8 @@ def _variant_consistency_cases(
                 variant=ordered[0],
                 variants=ordered,
                 compare_fields=tuple(config.fields),
-                window_start=_to_utc(config.window.start),
-                window_end=_to_utc(config.window.end),
+                window_start=_to_beijing(config.window.start),
+                window_end=_to_beijing(config.window.end),
                 expected_calls=len(ordered),
                 skip_reason=skip_reason,
             )
@@ -316,8 +322,8 @@ def _availability_case(
         adjust=adjust,
         variant=variant,
         instrument=target.instrument,
-        window_start=_to_utc(target.window.start),
-        window_end=_to_utc(target.window.end),
+        window_start=_to_beijing(target.window.start),
+        window_end=_to_beijing(target.window.end),
         min_bars=target.min_bars,
         required_fields=tuple(target.required_fields),
         declared_history_start=next(
@@ -374,8 +380,8 @@ def expand_probe(probe: ProbeFile, manifest: ProviderManifest) -> ExpandedProbe:
                 # 取首条能力的第一个声明变体，不假设任何具体数据源
                 variant=caps[0].variants[0],
                 instrument=target.instrument,
-                window_start=_to_utc(target.window.start),
-                window_end=_to_utc(target.window.end),
+                window_start=_to_beijing(target.window.start),
+                window_end=_to_beijing(target.window.end),
             )
             return base, caps
 

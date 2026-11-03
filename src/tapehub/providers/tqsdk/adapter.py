@@ -16,11 +16,11 @@
 - 上游 SDK 异常类型未在文档中核实，统一由应用层包装为 UPSTREAM_ERROR。
 """
 
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from tapehub.domain.errors import ProviderNotImplementedError
-from tapehub.domain.models import BarBatch, BarQuery
+from tapehub.domain.models import CN_TIMEZONE, BarBatch, BarQuery
 from tapehub.providers.base import BaseProviderAdapter, call_in_thread
 from tapehub.providers.pagination import paginate_bars
 from tapehub.providers.tqsdk.request_mapper import UPSTREAM_MAX_BARS, build_request
@@ -77,7 +77,7 @@ class ProviderAdapter(BaseProviderAdapter):
             interval=query.interval,
             bars=page,
             provider=self.name,
-            received_at=datetime.now(timezone.utc),
+            received_at=datetime.now(CN_TIMEZONE),
             offset=query.offset,
             limit=query.limit,
             partial=partial,

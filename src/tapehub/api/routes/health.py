@@ -3,7 +3,7 @@
 from fastapi import APIRouter, Depends
 
 from tapehub.api.dependencies import get_settings
-from tapehub.api.schemas.responses import HealthResponse, utc_now
+from tapehub.api.schemas.responses import HealthResponse, beijing_now
 from tapehub.settings import Settings
 
 router = APIRouter(tags=["health"])
@@ -21,5 +21,5 @@ async def health(settings: Settings = Depends(get_settings)) -> HealthResponse:
         service="tapehub",
         version=settings.version,
         api_version=settings.api_version,
-        timestamp=utc_now(),
+        timestamp=beijing_now(),
     )

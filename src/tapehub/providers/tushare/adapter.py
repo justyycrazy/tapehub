@@ -16,11 +16,11 @@
   UPSTREAM_ERROR（40203 等积分错误码待核实后补充）。
 """
 
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from tapehub.domain.errors import ProviderNotImplementedError
-from tapehub.domain.models import BarBatch, BarQuery
+from tapehub.domain.models import CN_TIMEZONE, BarBatch, BarQuery
 from tapehub.providers.base import BaseProviderAdapter, call_in_thread
 from tapehub.providers.pagination import paginate_bars
 from tapehub.providers.tushare.request_mapper import FUT_DAILY_MAX_ROWS, build_request
@@ -71,7 +71,7 @@ class ProviderAdapter(BaseProviderAdapter):
             interval=query.interval,
             bars=page,
             provider=self.name,
-            received_at=datetime.now(timezone.utc),
+            received_at=datetime.now(CN_TIMEZONE),
             offset=query.offset,
             limit=query.limit,
             partial=partial,

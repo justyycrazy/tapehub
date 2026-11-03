@@ -9,8 +9,8 @@ from tapehub.api.schemas.responses import (
     CapabilitiesMeta,
     CapabilitiesResponse,
     ProviderCapabilitiesResponse,
+    beijing_now,
     provider_view_to_out,
-    utc_now,
 )
 from tapehub.application.capability_service import CapabilityService, parse_capability_filters
 from tapehub.domain.models import AssetType, DataType, DataVariant
@@ -47,7 +47,7 @@ async def list_capabilities(
         data=[provider_view_to_out(view) for view in views],
         meta=CapabilitiesMeta(
             request_id=request_id,
-            generated_at=utc_now(),
+            generated_at=beijing_now(),
             catalog_version=settings.catalog_version,
         ),
     )
@@ -69,7 +69,7 @@ async def get_provider_capabilities(
         data=provider_view_to_out(view),
         meta=CapabilitiesMeta(
             request_id=request_id,
-            generated_at=utc_now(),
+            generated_at=beijing_now(),
             catalog_version=settings.catalog_version,
         ),
     )

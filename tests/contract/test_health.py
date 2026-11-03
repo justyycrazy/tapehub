@@ -11,7 +11,7 @@ def test_health_returns_ok(default_client) -> None:  # type: ignore[no-untyped-d
     assert body["service"] == "tapehub"
     assert body["version"] == __version__
     assert body["api_version"] == "v1"
-    assert body["timestamp"].endswith("Z")
+    assert body["timestamp"].endswith("+08:00")  # 项目内部统一北京时间
 
 
 def test_health_has_request_id_header(default_client) -> None:  # type: ignore[no-untyped-def]

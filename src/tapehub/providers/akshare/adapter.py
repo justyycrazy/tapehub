@@ -10,11 +10,11 @@
   上游按日期过滤的边界由适配器在标准化后按闭区间 [start, end] 精确复核。
 """
 
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any
 
 from tapehub.domain.errors import ProviderNotImplementedError
-from tapehub.domain.models import BarBatch, BarQuery
+from tapehub.domain.models import CN_TIMEZONE, BarBatch, BarQuery
 from tapehub.providers.akshare.request_mapper import build_request
 from tapehub.providers.akshare.response_mapper import to_standard_bars
 from tapehub.providers.base import BaseProviderAdapter, call_in_thread
@@ -42,7 +42,7 @@ class ProviderAdapter(BaseProviderAdapter):
             interval=query.interval,
             bars=page,
             provider=self.name,
-            received_at=datetime.now(timezone.utc),
+            received_at=datetime.now(CN_TIMEZONE),
             offset=query.offset,
             limit=query.limit,
         )

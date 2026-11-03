@@ -2,25 +2,28 @@
 
 时间字段分两类：
 
-- ``UtcDatetime``：服务级时间戳（健康检查、能力目录 generated_at），UTC、Z 结尾；
-- ``MarketDatetime``：行情数据时间（bar/quote timestamp、received_at 等），
-  已由领域层归一化到标的所属市场的规范时区（CN → 北京时间 +08:00），
+- ``BeijingDatetime``：服务级时间戳（健康检查 timestamp、能力目录 generated_at），
+  项目内部统一北京时间（+08:00）；
+- ``MarketDatetime``：行情数据时间（bar timestamp、received_at 等），
+  已由领域层归一化到标的所属市场的规范时区（CN → 北京时间 +08:00；
+  GLOBAL/twelvedata 暂维持 UTC，待数据探针确认后统一），
   序列化原样保留偏移。
 """
 
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel
 
-from tapehub.api.schemas.common import MarketDatetime, UtcDatetime
+from tapehub.api.schemas.common import BeijingDatetime, MarketDatetime
 from tapehub.application.capability_service import ProviderCapabilitiesView
 from tapehub.domain.capabilities import Capability
-from tapehub.domain.models import BarBatch, BarQuery
+from tapehub.domain.models import CN_TIMEZONE, BarBatch, BarQuery
 
 
-def utc_now() -> datetime:
-    return datetime.now(timezone.utc)
+def beijing_now() -> datetime:
+    """当前时刻（项目统一北京时间）。"""
+    return datetime.now(CN_TIMEZONE)
 
 
 class HealthResponse(BaseModel):
@@ -28,7 +31,7 @@ class HealthResponse(BaseModel):
     service: str
     version: str
     api_version: str
-    timestamp: UtcDatetime
+    timestamp: BeijingDatetime
 
 
 class IntervalHistoryOut(BaseModel):
@@ -67,7 +70,7 @@ class ProviderCapabilitiesOut(BaseModel):
 
 class CapabilitiesMeta(BaseModel):
     request_id: str
-    generated_at: UtcDatetime
+    generated_at: BeijingDatetime
     catalog_version: str
 
 

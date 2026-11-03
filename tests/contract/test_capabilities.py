@@ -39,7 +39,7 @@ def test_default_catalog_lists_all_builtin_providers(default_client) -> None:  #
         assert len(entry["capabilities"]) >= 1
     meta = body["meta"]
     assert meta["request_id"].startswith("req_")
-    assert meta["generated_at"].endswith("Z")
+    assert meta["generated_at"].endswith("+08:00")  # 项目内部统一北京时间
 
 
 def test_fake_provider_entry(fake_client) -> None:  # type: ignore[no-untyped-def]

@@ -10,7 +10,6 @@
 """
 
 import os
-from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -99,5 +98,3 @@ def counting_client(
     return TestClient(create_app(settings=test_settings, registry=registry))
 
 
-def utc(year: int, month: int, day: int) -> datetime:
-    return datetime(year, month, day, tzinfo=timezone.utc)
