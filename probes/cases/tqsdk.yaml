@@ -10,8 +10,9 @@ requires:
 pacing:
   call_interval_s: 3.0
   timeout_s: 120
-  # 可用性 60 + adjust_diff 24 case×2 调用 + history_depth 20 case×~13 + limit 1
-  max_calls: 430
+  # 可用性 60 + adjust_diff 24 case×2 调用 + history_depth 30 case×~13 + limit 1
+  # （深度探针全周期同轮测量：保留边界随时间前移，矩阵须同一时点）
+  max_calls: 600
 
 targets:
   contract:
@@ -60,7 +61,7 @@ chain:
     earliest: 2000-01-01
     era_step_years: 5
     max_calls: 16
-    intervals: [P1D, PT1M, PT5M, PT15M]
+    intervals: [P1D, PT1M, PT5M, PT15M, PT30M, PT1H]
     probe_span_days: 5
   limit_truncation:
     targets: [continuous]
