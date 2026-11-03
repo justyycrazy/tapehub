@@ -12,6 +12,7 @@ from probes.schema import ProbeFile
 from tapehub.providers.manifest import load_manifest_file
 from tapehub.providers.registry import ProviderRegistry, build_provider_record
 from tapehub.settings import Settings
+from tests.conftest import make_settings
 
 FIXTURES = Path(__file__).parents[2] / "fixtures"
 
@@ -46,7 +47,7 @@ def _probe(**chain: object) -> ProbeFile:
 
 
 def _settings() -> Settings:
-    return Settings(max_limit=1000, catalog_version="test")
+    return make_settings(max_limit=1000, catalog_version="test")
 
 
 def test_availability_confirmed() -> None:

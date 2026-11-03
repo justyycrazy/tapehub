@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 
 from tapehub.api.app import create_app
 from tapehub.providers.registry import build_default_registry
-from tapehub.settings import Settings
+from tests.conftest import make_settings
 from tests.fixtures.providers.stub_tickflow import (
     StubTickFlow,
     install,
@@ -39,7 +39,7 @@ def preset_payload(monkeypatch: pytest.MonkeyPatch, payload: Any) -> None:
 @pytest.fixture()
 def tickflow_client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     install(monkeypatch)
-    settings = Settings(max_limit=1000, tickflow_api_key="test-key")
+    settings = make_settings(max_limit=1000, tickflow_api_key="test-key")
     return TestClient(create_app(settings=settings, registry=build_default_registry(settings)))
 
 

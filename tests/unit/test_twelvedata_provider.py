@@ -13,6 +13,7 @@ from tapehub.domain.models import Adjust, AssetType, BarQuery, DataVariant, Inst
 from tapehub.providers.manifest import load_builtin_manifest
 from tapehub.providers.registry import build_provider_record
 from tapehub.settings import Settings
+from tests.conftest import make_settings
 from tests.fixtures.providers.stub_twelvedata import (
     forex_values_rows,
     install,
@@ -47,7 +48,7 @@ def _adapter(settings: Settings | None = None) -> Any:
         "twelvedata",
         manifest,
         ProviderAdapter,
-        settings=settings or Settings(twelvedata_api_key="k"),
+        settings=settings or make_settings(twelvedata_api_key="k"),
     )
     return record.adapter
 
@@ -57,7 +58,7 @@ def test_request_and_response_mapping(monkeypatch: pytest.MonkeyPatch) -> None:
     preset_values(
         monkeypatch, forex_values_rows(["2026-01-05 00:00:00", "2026-01-06 00:00:00"])
     )
-    adapter = _adapter(Settings(twelvedata_api_key="test-key"))
+    adapter = _adapter(make_settings(twelvedata_api_key="test-key"))
 
     batch = asyncio.run(adapter.fetch_bars(_query()))
 
@@ -164,7 +165,7 @@ def test_unsupported_interval_rejected_by_operation_routing(
 
 
 def test_missing_api_key() -> None:
-    adapter = _adapter(Settings(twelvedata_api_key=""))
+    adapter = _adapter(make_settings(twelvedata_api_key=""))
     with pytest.raises(ProviderNotImplementedError) as excinfo:
         asyncio.run(adapter.fetch_bars(_query()))
     assert "API key" in str(excinfo.value)
@@ -172,7 +173,7 @@ def test_missing_api_key() -> None:
 
 def test_missing_sdk(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setitem(sys.modules, "twelvedata", None)  # 模拟 SDK 未安装
-    adapter = _adapter(Settings(twelvedata_api_key="k"))
+    adapter = _adapter(make_settings(twelvedata_api_key="k"))
     with pytest.raises(ProviderNotImplementedError) as excinfo:
         asyncio.run(adapter.fetch_bars(_query()))
     assert "not installed" in str(excinfo.value)

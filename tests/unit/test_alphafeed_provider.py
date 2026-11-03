@@ -13,6 +13,7 @@ from tapehub.domain.models import Adjust, AssetType, BarQuery, DataVariant, Inst
 from tapehub.providers.manifest import load_builtin_manifest
 from tapehub.providers.registry import build_provider_record
 from tapehub.settings import Settings
+from tests.conftest import make_settings
 from tests.fixtures.providers.stub_alphafeed import (
     install,
     klines_payload,
@@ -44,14 +45,17 @@ def _adapter(settings: Settings | None = None) -> Any:
 
     manifest = load_builtin_manifest("alphafeed")
     record = build_provider_record(
-        "alphafeed", manifest, ProviderAdapter, settings=settings or Settings(alphafeed_api_key="k")
+        "alphafeed",
+        manifest,
+        ProviderAdapter,
+        settings=settings or make_settings(alphafeed_api_key="k"),
     )
     return record.adapter
 
 
 def test_request_mapping(monkeypatch: pytest.MonkeyPatch) -> None:
     clients = install(monkeypatch)
-    adapter = _adapter(Settings(alphafeed_api_key="test-key"))
+    adapter = _adapter(make_settings(alphafeed_api_key="test-key"))
     batch = asyncio.run(adapter.fetch_bars(_query()))
 
     created = clients[-1]
@@ -151,7 +155,7 @@ def test_adjust_codes(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_missing_api_key() -> None:
-    adapter = _adapter(Settings(alphafeed_api_key=""))
+    adapter = _adapter(make_settings(alphafeed_api_key=""))
     with pytest.raises(ProviderNotImplementedError) as excinfo:
         asyncio.run(adapter.fetch_bars(_query()))
     assert "API key" in str(excinfo.value)
@@ -159,7 +163,7 @@ def test_missing_api_key() -> None:
 
 def test_missing_sdk(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setitem(sys.modules, "alphafeed", None)  # import 失败，模拟 SDK 未安装
-    adapter = _adapter(Settings(alphafeed_api_key="k"))
+    adapter = _adapter(make_settings(alphafeed_api_key="k"))
     with pytest.raises(ProviderNotImplementedError) as excinfo:
         asyncio.run(adapter.fetch_bars(_query()))
     assert "not installed" in str(excinfo.value)

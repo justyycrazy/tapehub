@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 
 from tapehub.api.app import create_app
 from tapehub.providers.registry import build_default_registry
-from tapehub.settings import Settings
+from tests.conftest import make_settings
 from tests.fixtures.providers.stub_tqsdk import (
     StubTqApi,
     install,
@@ -27,7 +27,7 @@ BASE_PARAMS = {
 @pytest.fixture()
 def tqsdk_client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     install(monkeypatch)
-    settings = Settings(
+    settings = make_settings(
         max_limit=1000, tqsdk_auth_user="user@qq.com", tqsdk_auth_password="secret"
     )
     return TestClient(create_app(settings=settings, registry=build_default_registry(settings)))

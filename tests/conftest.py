@@ -1,5 +1,15 @@
-"""pytest 共享 fixture。"""
+"""pytest 共享 fixture。
 
+测试与本地环境完全解耦：
+
+- ``make_settings`` 构造的 Settings 不读 ``.env``（``_env_file=None``），
+  本地凭据文件不会影响任何测试；
+- autouse fixture 清空进程环境中的 ``TAPEHUB_*`` 变量，
+  外壳里配置的真实凭据同样不会泄漏进测试；
+- 需要凭据的测试一律通过 ``make_settings`` 显式传参。
+"""
+
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -17,6 +27,22 @@ FIXTURES_DIR = Path(__file__).parent / "fixtures"
 BUILTIN_PROVIDER_NAMES = list(BUILTIN_PROVIDERS)
 
 
+def make_settings(**overrides: object) -> Settings:
+    """测试专用 Settings 构造：不读 ``.env``，显式传参优先。
+
+    进程环境变量仍然生效（pydantic-settings 语义），由 autouse 的
+    ``isolated_tapehub_env`` 保证测试运行环境中没有 ``TAPEHUB_*`` 变量。
+    """
+    return Settings(_env_file=None, **overrides)  # type: ignore[arg-type]
+
+
+@pytest.fixture(autouse=True)
+def isolated_tapehub_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """清空进程环境中的 ``TAPEHUB_*`` 变量，隔离外壳里配置的真实凭据。"""
+    for key in [name for name in os.environ if name.startswith("TAPEHUB_")]:
+        monkeypatch.delenv(key, raising=False)
+
+
 class CountingProvider:
     """包装适配器并统计调用次数，用于验证某些接口不访问 Provider。"""
 
@@ -31,7 +57,7 @@ class CountingProvider:
 
 @pytest.fixture()
 def test_settings() -> Settings:
-    return Settings(max_limit=1000, catalog_version="test")
+    return make_settings(max_limit=1000, catalog_version="test")
 
 
 def build_fake_record() -> object:
@@ -53,8 +79,8 @@ def fake_client(fake_registry: ProviderRegistry, test_settings: Settings) -> Tes
 
 @pytest.fixture()
 def default_client() -> TestClient:
-    """不含 Fake Provider 的默认应用（仅五个内置 Provider，全部禁用）。"""
-    return TestClient(create_app())
+    """不含 Fake Provider 的默认应用（仅内置 Provider，凭据视为未配置）。"""
+    return TestClient(create_app(settings=make_settings()))
 
 
 @pytest.fixture()

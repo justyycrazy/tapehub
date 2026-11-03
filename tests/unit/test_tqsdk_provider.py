@@ -13,6 +13,7 @@ from tapehub.domain.models import Adjust, AssetType, BarQuery, DataVariant, Inst
 from tapehub.providers.manifest import load_builtin_manifest
 from tapehub.providers.registry import build_provider_record
 from tapehub.settings import Settings
+from tests.conftest import make_settings
 from tests.fixtures.providers.stub_tqsdk import (
     install,
     klines_rows,
@@ -48,7 +49,7 @@ def _adapter(settings: Settings | None = None) -> Any:
         manifest,
         ProviderAdapter,
         settings=settings
-        or Settings(tqsdk_auth_user="user@qq.com", tqsdk_auth_password="secret"),
+        or make_settings(tqsdk_auth_user="user@qq.com", tqsdk_auth_password="secret"),
     )
     return record.adapter
 
@@ -56,7 +57,7 @@ def _adapter(settings: Settings | None = None) -> Any:
 def test_request_and_response_mapping(monkeypatch: pytest.MonkeyPatch) -> None:
     StubTqApi = install(monkeypatch)
     preset_rows(monkeypatch, klines_rows(["2026-01-05", "2026-01-06"]))
-    adapter = _adapter(Settings(tqsdk_auth_user="user@qq.com", tqsdk_auth_password="secret"))
+    adapter = _adapter(make_settings(tqsdk_auth_user="user@qq.com", tqsdk_auth_password="secret"))
 
     batch = asyncio.run(adapter.fetch_bars(_query()))
 
@@ -145,14 +146,14 @@ def test_kline_symbols(
 
 
 def test_missing_user() -> None:
-    adapter = _adapter(Settings(tqsdk_auth_user="", tqsdk_auth_password="pwd"))
+    adapter = _adapter(make_settings(tqsdk_auth_user="", tqsdk_auth_password="pwd"))
     with pytest.raises(ProviderNotImplementedError) as excinfo:
         asyncio.run(adapter.fetch_bars(_query()))
     assert excinfo.value.details["missing"] == ["user"]
 
 
 def test_missing_password() -> None:
-    adapter = _adapter(Settings(tqsdk_auth_user="user@qq.com", tqsdk_auth_password=""))
+    adapter = _adapter(make_settings(tqsdk_auth_user="user@qq.com", tqsdk_auth_password=""))
     with pytest.raises(ProviderNotImplementedError) as excinfo:
         asyncio.run(adapter.fetch_bars(_query()))
     assert excinfo.value.details["missing"] == ["password"]
@@ -161,7 +162,7 @@ def test_missing_password() -> None:
 def test_missing_sdk(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setitem(sys.modules, "tqsdk", None)  # import 失败，模拟 SDK 未安装
     adapter = _adapter(
-        Settings(tqsdk_auth_user="user@qq.com", tqsdk_auth_password="secret")
+        make_settings(tqsdk_auth_user="user@qq.com", tqsdk_auth_password="secret")
     )
     with pytest.raises(ProviderNotImplementedError) as excinfo:
         asyncio.run(adapter.fetch_bars(_query()))

@@ -21,6 +21,10 @@ uv run ruff check .                 # lint（line-length 100，规则 E/F/I 含 
 uv run uvicorn tapehub.api.app:app --reload   # 本地启动 127.0.0.1:8000
 ```
 
+测试与本地环境解耦：测试代码一律用 `tests.conftest.make_settings` 构造 Settings
+（不读 `.env`），autouse fixture 会清空进程环境中的 `TAPEHUB_*` 变量；本地
+`.env` 里的真实凭据不影响 `uv run pytest`。服务运行路径不受影响（仍读 `.env`）。
+
 ## 架构边界（tests/contract/test_architecture.py 用源码扫描静态强制）
 
 依赖方向：API 层（`api/`）→ Application 层（`application/`）→ Domain 层（`domain/`）；

@@ -13,6 +13,7 @@ from tapehub.domain.models import Adjust, AssetType, BarQuery, DataVariant, Inst
 from tapehub.providers.manifest import load_builtin_manifest
 from tapehub.providers.registry import build_provider_record
 from tapehub.settings import Settings
+from tests.conftest import make_settings
 from tests.fixtures.providers.stub_tushare import futures_rows, install, stock_rows
 
 UTC = timezone.utc
@@ -39,7 +40,7 @@ def _adapter(settings: Settings | None = None) -> Any:
 
     manifest = load_builtin_manifest("tushare")
     record = build_provider_record(
-        "tushare", manifest, ProviderAdapter, settings=settings or Settings(tushare_token="k")
+        "tushare", manifest, ProviderAdapter, settings=settings or make_settings(tushare_token="k")
     )
     return record.adapter
 
@@ -47,7 +48,7 @@ def _adapter(settings: Settings | None = None) -> Any:
 def test_stock_request_and_response_mapping(monkeypatch: pytest.MonkeyPatch) -> None:
     stub = install(monkeypatch)
     stub.pro_bar_rows = stock_rows(["2026-01-05", "2026-01-06"])
-    adapter = _adapter(Settings(tushare_token="test-token"))
+    adapter = _adapter(make_settings(tushare_token="test-token"))
 
     batch = asyncio.run(adapter.fetch_bars(_query()))
 
@@ -169,7 +170,7 @@ def test_unsupported_stock_exchange(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_missing_token() -> None:
-    adapter = _adapter(Settings(tushare_token=""))
+    adapter = _adapter(make_settings(tushare_token=""))
     with pytest.raises(ProviderNotImplementedError) as excinfo:
         asyncio.run(adapter.fetch_bars(_query()))
     assert "token" in str(excinfo.value).lower()
@@ -177,7 +178,7 @@ def test_missing_token() -> None:
 
 def test_missing_sdk(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setitem(sys.modules, "tushare", None)  # import 失败，模拟 SDK 未安装
-    adapter = _adapter(Settings(tushare_token="k"))
+    adapter = _adapter(make_settings(tushare_token="k"))
     with pytest.raises(ProviderNotImplementedError) as excinfo:
         asyncio.run(adapter.fetch_bars(_query()))
     assert "not installed" in str(excinfo.value)

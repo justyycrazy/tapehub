@@ -13,7 +13,7 @@ from fastapi.testclient import TestClient
 
 from tapehub.api.app import create_app
 from tapehub.providers.registry import build_default_registry
-from tapehub.settings import Settings
+from tests.conftest import make_settings
 from tests.fixtures.providers.stub_akshare import (
     StubAkshare,
     em_stock_rows,
@@ -31,7 +31,7 @@ def akshare_stub(monkeypatch: pytest.MonkeyPatch) -> StubAkshare:
 
 @pytest.fixture()
 def akshare_client(akshare_stub: StubAkshare) -> TestClient:
-    settings = Settings(max_limit=1000, catalog_version="test")
+    settings = make_settings(max_limit=1000, catalog_version="test")
     return TestClient(create_app(settings=settings, registry=build_default_registry(settings)))
 
 

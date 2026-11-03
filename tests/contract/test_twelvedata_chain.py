@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 
 from tapehub.api.app import create_app
 from tapehub.providers.registry import build_default_registry
-from tapehub.settings import Settings
+from tests.conftest import make_settings
 from tests.fixtures.providers.stub_twelvedata import (
     forex_values_rows,
     install,
@@ -25,7 +25,7 @@ FOREX_PARAMS = {
 @pytest.fixture()
 def twelvedata_client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     install(monkeypatch)
-    settings = Settings(max_limit=1000, twelvedata_api_key="test-key")
+    settings = make_settings(max_limit=1000, twelvedata_api_key="test-key")
     return TestClient(create_app(settings=settings, registry=build_default_registry(settings)))
 
 

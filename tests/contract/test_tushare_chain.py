@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 
 from tapehub.api.app import create_app
 from tapehub.providers.registry import build_default_registry
-from tapehub.settings import Settings
+from tests.conftest import make_settings
 from tests.fixtures.providers.stub_tushare import futures_rows, install, stock_rows
 
 BASE_PARAMS = {
@@ -27,7 +27,7 @@ def preset_rows(module: Any, rows: list[dict[str, Any]]) -> None:
 @pytest.fixture()
 def tushare_client(monkeypatch: pytest.MonkeyPatch) -> tuple[TestClient, Any]:
     stub = install(monkeypatch)
-    settings = Settings(max_limit=1000, tushare_token="test-token")
+    settings = make_settings(max_limit=1000, tushare_token="test-token")
     client = TestClient(create_app(settings=settings, registry=build_default_registry(settings)))
     return client, stub
 
