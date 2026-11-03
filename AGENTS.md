@@ -75,6 +75,20 @@ Provider 适配器实现 Domain Port。
   异常统一包装为 `UPSTREAM_ERROR`）；绝不返回写死的模拟行情；
 - 日志不记录 Provider 密钥与完整行情响应；SDK 异常不穿透 API。
 
+## 数据探针（probes/）
+
+- `probes/` 是独立的离线诊断工具：用真实上游调用实证核实能力目录声明，
+  产物写入 `probes/results/`（gitignore，不入库）；
+- 不属于服务运行时，不进入 CI：`uv run pytest` 保持零网络、零真实凭据
+  （探针框架自身测试在 `tests/unit/probes/`，全部离线）；
+- 运行：`uv run python -m probes.cli list`（零网络）／
+  `run --provider <name> --dry-run` ／ `run --provider <name> --yes`（真实调用，消耗配额）；
+- 探针文件规范与类型语义见 `probes/README.md`；新增 Provider 需同步新增
+  `probes/cases/<name>.yaml`；框架代码保持 Provider 无关，Provider 专属事实
+  只允许出现在 cases 文件里；
+- 探针只产出报告；manifest 能力回填必须人工确认后单独提交；
+- 凭据只经环境变量；结果文件不记录凭据值（只记布尔），样本数据每 case 最多 3 根 bar。
+
 ## 语言与提交
 
 - 代码注释、docstring、README、commit message 均使用中文；

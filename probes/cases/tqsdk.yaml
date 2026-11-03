@@ -1,0 +1,50 @@
+# TqSdk 数据探针：合约/主连/加权可用性、data_length 上限实测裁决（8000 vs 10000）。
+# TqApi 实例创建较慢，pacing 显著放宽。
+probe: tqsdk
+version: 1
+
+requires:
+  extras: [tqsdk]
+  env: [TAPEHUB_TQSDK_AUTH_USER, TAPEHUB_TQSDK_AUTH_PASSWORD]
+
+pacing:
+  call_interval_s: 3.0
+  timeout_s: 120
+  max_calls: 60
+
+targets:
+  contract:
+    # au2606 为示例合约：运行前请按上期所挂牌信息核对，探针失败会如实记录
+    instrument: CN-SHFE-au2606
+    window: {start: 2026-01-01, end: 2026-05-31}
+    min_bars: 30
+  continuous:
+    instrument: CN-SHFE-cu
+    window: {start: 2025-01-01, end: 2025-06-30}
+    min_bars: 60
+  weighted-index:
+    instrument: CN-SHFE-au
+    window: {start: 2025-01-01, end: 2025-06-30}
+    min_bars: 60
+
+chain:
+  include_declared: true
+  skip: []
+  history_depth:
+    targets: [continuous]
+    earliest: 2000-01-01
+    era_step_years: 5
+    max_calls: 16
+  limit_truncation:
+    targets: [continuous]
+    interval: P1D
+    # 40 年窗口确保超过 8000/10000 根日线，实测裁决两种文档口径
+    max_range: P40Y
+
+raw: []
+
+notes: >
+  文档对单次上限存在两种口径（data_length 每序列上限 10000，使用说明另有 8000 根
+  表述，以 API 参考为准），limit_truncation 不设 documented_max，以实测裁决；
+  TqAuth 需要构造 SDK 对象，声明式 raw 探针（仅支持标量 kwargs）无法表达，
+  凭据链路已由 chain 探针覆盖；期货无复权概念，不配置 adjust_diff。

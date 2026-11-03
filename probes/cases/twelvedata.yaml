@@ -1,0 +1,91 @@
+# Twelve Data 数据探针：外汇/加密货币可用性、历史深度、单次上限与未声明周期探测。
+# 免费档限频 8 次/分钟，pacing 设为 8 秒。
+probe: twelvedata
+version: 1
+
+requires:
+  extras: [twelvedata]
+  env: [TAPEHUB_TWELVEDATA_API_KEY]
+
+pacing:
+  call_interval_s: 8.0
+  timeout_s: 60
+  max_calls: 60
+
+targets:
+  forex:
+    instrument: GLOBAL-OTC-EUR/USD
+    window: {start: 2025-06-01, end: 2025-12-31}
+    min_bars: 80
+  crypto:
+    instrument: GLOBAL-CRYPTO-BTC/USD
+    window: {start: 2025-06-01, end: 2025-12-31}
+    min_bars: 80
+
+chain:
+  include_declared: true
+  skip: []
+  history_depth:
+    targets: [forex]
+    earliest: 2000-01-01
+    era_step_years: 5
+    max_calls: 16
+  limit_truncation:
+    targets: [forex]
+    interval: PT1M
+    max_range: P1Y
+    documented_max: 5000   # 适配器显式传 outputsize=5000（上游默认仅 30）
+
+raw:
+  # 上游完整支持 45min/2h/4h/8h，能力目录暂未声明；仅观察，人工确认后再扩 manifest
+  - id: td-45min-interval
+    purpose: 探测未声明周期 45min 是否可用（声明外）
+    assert: false
+    module: twelvedata
+    client: {attr: TDClient, kwargs: {apikey: "$TAPEHUB_TWELVEDATA_API_KEY"}}
+    call:
+      - {method: time_series, kwargs: {symbol: "EUR/USD", interval: "45min", outputsize: 10}}
+      - {method: as_json, kwargs: {}}
+    expect: {status: ok, min_rows: 1}
+  - id: td-2h-interval
+    purpose: 探测未声明周期 2h 是否可用（声明外）
+    assert: false
+    module: twelvedata
+    client: {attr: TDClient, kwargs: {apikey: "$TAPEHUB_TWELVEDATA_API_KEY"}}
+    call:
+      - {method: time_series, kwargs: {symbol: "EUR/USD", interval: "2h", outputsize: 10}}
+      - {method: as_json, kwargs: {}}
+    expect: {status: ok, min_rows: 1}
+  - id: td-4h-interval
+    purpose: 探测未声明周期 4h 是否可用（声明外）
+    assert: false
+    module: twelvedata
+    client: {attr: TDClient, kwargs: {apikey: "$TAPEHUB_TWELVEDATA_API_KEY"}}
+    call:
+      - {method: time_series, kwargs: {symbol: "EUR/USD", interval: "4h", outputsize: 10}}
+      - {method: as_json, kwargs: {}}
+    expect: {status: ok, min_rows: 1}
+  - id: td-8h-interval
+    purpose: 探测未声明周期 8h 是否可用（声明外）
+    assert: false
+    module: twelvedata
+    client: {attr: TDClient, kwargs: {apikey: "$TAPEHUB_TWELVEDATA_API_KEY"}}
+    call:
+      - {method: time_series, kwargs: {symbol: "EUR/USD", interval: "8h", outputsize: 10}}
+      - {method: as_json, kwargs: {}}
+    expect: {status: ok, min_rows: 1}
+  # 错误指纹仅观察：采集无效 API Key 的原始报错，供 UPSTREAM 细分错误码参考
+  - id: td-invalid-key-fingerprint
+    purpose: 采集无效 API Key 的错误指纹（字面量假 Key，非真实凭据；仅观察）
+    assert: false
+    module: twelvedata
+    client: {attr: TDClient, kwargs: {apikey: "probe-invalid-key-not-a-credential"}}
+    call:
+      - {method: time_series, kwargs: {symbol: "EUR/USD", interval: "1min", outputsize: 1}}
+      - {method: as_json, kwargs: {}}
+    expect: {status: error, error_contains: ""}
+
+notes: >
+  crypto 的 volume 上游可能缺失（→ null），从 availability 的 null_rates 核对；
+  45min/2h/4h/8h 若实测可用，人工确认后可在 manifest 中补充声明；
+  上游 values 默认倒序，适配器已统一升序，报告首尾时间戳应体现这一点。

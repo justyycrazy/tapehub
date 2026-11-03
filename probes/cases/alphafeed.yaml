@@ -1,0 +1,45 @@
+# AlphaFeed 数据探针：全声明维度可用性、复权生效性、历史深度与单次上限实测。
+probe: alphafeed
+version: 1
+
+requires:
+  extras: [alphafeed]
+  env: [TAPEHUB_ALPHAFEED_API_KEY]
+
+pacing:
+  call_interval_s: 1.0
+  timeout_s: 60
+  max_calls: 90
+
+targets:
+  stock:
+    instrument: CN-SSE-600000
+    window: {start: 2025-01-01, end: 2025-12-31}
+    min_bars: 100
+    required_fields: [open, high, low, close, volume]
+
+chain:
+  include_declared: true
+  skip: []
+  adjust_diff:
+    targets: [stock]
+    window: {start: 2024-06-01, end: 2024-08-31}   # 分红除权高发窗口
+    pairs: [[none, qfq], [none, hfq]]
+    fields: [close]
+  history_depth:
+    targets: [stock]
+    earliest: 2000-01-01
+    era_step_years: 5
+    max_calls: 16
+  limit_truncation:
+    targets: [stock]
+    interval: PT1M
+    max_range: P1Y
+    documented_max: 10000
+
+raw: []
+
+notes: >
+  上游无 10m 周期（能力目录已不声明 PT10M），「声明缺失」的实证性 raw 探针待
+  SDK 客户端构造方式核实后补充；分钟级周期需上游套餐开通分钟 K 线权限
+  （403 → 统一包装为 UPSTREAM_ERROR），实测时如遇权限问题会在报告中如实记录。

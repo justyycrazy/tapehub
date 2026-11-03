@@ -1,0 +1,45 @@
+# TickFlow 数据探针：全声明维度可用性、复权生效性、历史深度与单次上限实测。
+probe: tickflow
+version: 1
+
+requires:
+  extras: [tickflow]
+  env: [TAPEHUB_TICKFLOW_API_KEY]
+
+pacing:
+  call_interval_s: 1.0
+  timeout_s: 60
+  max_calls: 90
+
+targets:
+  stock:
+    instrument: CN-SSE-600000
+    window: {start: 2025-01-01, end: 2025-12-31}
+    min_bars: 100
+    required_fields: [open, high, low, close, volume]
+
+chain:
+  include_declared: true
+  skip: []
+  adjust_diff:
+    targets: [stock]
+    window: {start: 2024-06-01, end: 2024-08-31}   # 分红除权高发窗口
+    pairs: [[none, qfq], [none, hfq]]
+    fields: [close]
+  history_depth:
+    targets: [stock]
+    earliest: 2000-01-01
+    era_step_years: 5
+    max_calls: 16
+  limit_truncation:
+    targets: [stock]
+    interval: PT1M
+    max_range: P1Y
+    documented_max: 10000
+
+raw: []
+
+notes: >
+  上游限频 429 与分钟权限 403 的错误指纹待 SDK 客户端构造方式按官方文档核实后
+  补充 raw 探针；当前以 availability/adjust_diff/history_depth/limit_truncation
+  覆盖全部声明维度。

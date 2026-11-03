@@ -1,0 +1,52 @@
+# akshare 数据探针：三源可用性、复权生效性、历史深度与字段语义核对。
+# 无凭据要求；上游为公开站点，pacing 放宽防限流。
+probe: akshare
+version: 1
+
+requires:
+  extras: [akshare]
+
+pacing:
+  call_interval_s: 2.0
+  timeout_s: 60
+  max_calls: 80
+
+targets:
+  stock:
+    instrument: CN-SSE-600000
+    window: {start: 2025-01-01, end: 2025-12-31}
+    min_bars: 100
+    required_fields: [open, high, low, close, volume]
+  index:
+    instrument: CN-SSE-000001
+    window: {start: 2025-01-01, end: 2025-12-31}
+    min_bars: 100
+  contract:
+    instrument: CN-SHFE-RB2410
+    window: {start: 2024-06-01, end: 2024-09-30}
+    min_bars: 20
+  continuous:
+    instrument: CN-SHFE-RB
+    window: {start: 2025-01-01, end: 2025-06-30}
+    min_bars: 60
+
+chain:
+  include_declared: true
+  skip: []
+  adjust_diff:
+    targets: [stock]
+    window: {start: 2024-06-01, end: 2024-08-31}   # 分红除权高发窗口
+    pairs: [[none, qfq], [none, hfq]]
+    fields: [close]
+  history_depth:
+    targets: [stock, index]
+    earliest: 1991-01-01
+    era_step_years: 5
+    max_calls: 20
+
+notes: >
+  指数腾讯源的 amount 列语义为成交量（映射到 volume），新浪/腾讯指数的 amount
+  应全为 null，从 availability 的 null_rates 核对；新浪期货接口无日期参数，
+  适配器每次调用拉全量历史后内存过滤，因此 contract/continuous 不参与
+  history_depth（代价过高）；三源 close 一致性通过 availability 各 variant
+  行的首尾时间戳与样本 bar 人工比对。

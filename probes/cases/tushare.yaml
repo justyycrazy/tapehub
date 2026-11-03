@@ -1,0 +1,87 @@
+# tushare 数据探针：周/月线复权生效性（当前最紧迫存疑点）、期货后缀扩展、
+# 单次上限实测与积分错误指纹。
+probe: tushare
+version: 1
+
+requires:
+  extras: [tushare]
+  env: [TAPEHUB_TUSHARE_TOKEN]
+
+pacing:
+  call_interval_s: 1.5
+  timeout_s: 60
+  max_calls: 100
+
+targets:
+  stock:
+    instrument: CN-SSE-600000
+    window: {start: 2025-01-01, end: 2025-12-31}
+    min_bars: 100
+    required_fields: [open, high, low, close, volume, amount]
+  contract:
+    instrument: CN-SHFE-CU2401
+    window: {start: 2023-09-01, end: 2023-12-29}
+    min_bars: 20
+
+chain:
+  include_declared: true
+  skip: []
+  adjust_diff:
+    targets: [stock]
+    window: {start: 2024-01-01, end: 2024-12-31}   # 含分红除权日
+    pairs: [[none, qfq], [none, hfq]]
+    fields: [close]
+  history_depth:
+    targets: [stock]
+    earliest: 1991-01-01
+    era_step_years: 5
+    max_calls: 20
+  limit_truncation:
+    targets: [contract]
+    interval: P1D
+    max_range: P1Y
+    documented_max: 2000
+
+raw:
+  # 以下期货所后缀均未在能力目录声明（.SHF 之外未核实），探测可用性以决定是否扩容
+  - id: fut-dce-suffix
+    purpose: 探测大商所后缀（.DCE，声明外）
+    module: tushare
+    client: {attr: pro_api, kwargs: {token: "$TAPEHUB_TUSHARE_TOKEN"}}
+    call:
+      - {method: fut_daily, kwargs: {ts_code: "M2409.DCE", start_date: "20240801", end_date: "20240831"}}
+    expect: {status: ok, min_rows: 1}
+  - id: fut-czce-suffix
+    purpose: 探测郑商所后缀（.CZCE 三位年码，声明外）
+    module: tushare
+    client: {attr: pro_api, kwargs: {token: "$TAPEHUB_TUSHARE_TOKEN"}}
+    call:
+      - {method: fut_daily, kwargs: {ts_code: "SR409.CZCE", start_date: "20240801", end_date: "20240831"}}
+    expect: {status: ok, min_rows: 1}
+  - id: fut-ine-suffix
+    purpose: 探测上期能源后缀（小写 sc.INE，声明外）
+    module: tushare
+    client: {attr: pro_api, kwargs: {token: "$TAPEHUB_TUSHARE_TOKEN"}}
+    call:
+      - {method: fut_daily, kwargs: {ts_code: "sc2409.INE", start_date: "20240801", end_date: "20240831"}}
+    expect: {status: ok, min_rows: 1}
+  - id: fut-cffex-suffix
+    purpose: 探测中金所后缀（.CFFEX，声明外）
+    module: tushare
+    client: {attr: pro_api, kwargs: {token: "$TAPEHUB_TUSHARE_TOKEN"}}
+    call:
+      - {method: fut_daily, kwargs: {ts_code: "IF2409.CFFEX", start_date: "20240801", end_date: "20240831"}}
+    expect: {status: ok, min_rows: 1}
+  # 错误指纹仅观察：采集“接口不存在/无权限”类原始报错文本，供错误码细分参考
+  - id: unknown-api-fingerprint
+    purpose: 采集未知接口名的原始错误指纹（仅观察，不判定）
+    assert: false
+    module: tushare
+    client: {attr: pro_api, kwargs: {token: "$TAPEHUB_TUSHARE_TOKEN"}}
+    call:
+      - {method: query, kwargs: {api_name: "probe_nonexistent_api_for_fingerprint"}}
+    expect: {status: error, error_contains: ""}
+
+notes: >
+  官方文档注解 adj「仅日线复权」，manifest 中周线/月线声明的 qfq/hfq 以
+  adjust_diff 实证；若复权为 no-op，人工将 P1W/P1M 的 adjustments 收敛为 [none]。
