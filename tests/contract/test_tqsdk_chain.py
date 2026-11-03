@@ -75,12 +75,22 @@ def test_capability_catalog(tqsdk_client: TestClient) -> None:  # type: ignore[n
     entry = response.json()["data"][0]
     assert entry["provider"] == "tqsdk"
     assert entry["enabled"] is True
-    # Provider × 资产类型级缺省变体在能力目录透出
+    # Provider × 资产类型级缺省变体在能力目录透出（标量声明 → 覆盖全部资产类型）
     assert entry["default_variant"] == {
         "contract": "tqsdk",
         "continuous": "tqsdk",
         "weighted-index": "tqsdk",
+        "stock": "tqsdk",
+        "index": "tqsdk",
+        "etf": "tqsdk",
     }
+    assert entry["default_provider"] == [
+        "contract",
+        "continuous",
+        "weighted-index",
+        "etf",
+    ]
+    assert len(entry["capabilities"]) == 4
     cap = entry["capabilities"][0]
     assert cap["asset_types"] == ["contract", "continuous", "weighted-index"]
     assert cap["variants"] == ["tqsdk"]
@@ -108,12 +118,12 @@ def test_missing_auth_returns_clear_error(default_client) -> None:  # type: igno
     assert error["details"]["missing"] == ["user", "password"]
 
 
-def test_unsupported_stock(tqsdk_client: TestClient) -> None:  # type: ignore[no-untyped-def]
-    # TqSdk 仅声明期货行情：股票请求在能力目录即拒绝
+def test_unsupported_option(tqsdk_client: TestClient) -> None:  # type: ignore[no-untyped-def]
+    # TqSdk 未声明期权：请求在能力目录即拒绝
     params = {
         **BASE_PARAMS,
-        "asset_type": "stock",
-        "instrument": "CN-SSE-600000",
+        "asset_type": "option",
+        "instrument": "CN-SSE-10004512",
     }
     response = tqsdk_client.get("/v1/market/bars", params=params)
     assert response.status_code == 422
@@ -144,3 +154,47 @@ def test_default_variant_routes_to_declared_default(
     response = tqsdk_client.get("/v1/market/bars", params=params)
     assert response.status_code == 200
     assert response.json()["meta"]["variant"] == "tqsdk"
+
+
+def test_stock_chain_with_qfq_adjust(
+    tqsdk_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """股票链路：SSE.600000 代码映射 + adj_type 前复权（需专业版权限，探针实证）。"""
+    preset_rows(monkeypatch, klines_rows(["2026-01-02", "2026-01-05"]))
+
+    params = {
+        **BASE_PARAMS,
+        "asset_type": "stock",
+        "instrument": "CN-SSE-600000",
+        "adjust": "qfq",
+    }
+    response = tqsdk_client.get("/v1/market/bars", params=params)
+    assert response.status_code == 200
+
+    api = StubTqApi.instances[-1]
+    assert api.calls[0]["symbol"] == "SSE.600000"
+    assert api.calls[0]["adj_type"] == "F"
+
+    data = response.json()["data"]
+    # 股票行无持仓量列 → extensions 缺省为 null，不编造
+    assert data["bars"][0]["amount"] is None
+
+
+def test_etf_default_routes_to_declared_default_provider(
+    tqsdk_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """ETF 是 tqsdk 声明的缺省资产类型：auto 路由命中并回显 meta.variant。"""
+    preset_rows(monkeypatch, klines_rows(["2026-01-02"]))
+
+    params = {
+        **BASE_PARAMS,
+        "asset_type": "etf",
+        "instrument": "CN-SSE-510050",
+    }
+    params.pop("provider")
+    response = tqsdk_client.get("/v1/market/bars", params=params)
+    assert response.status_code == 200
+    meta = response.json()["meta"]
+    assert meta["provider"] == "tqsdk"
+    assert meta["variant"] == "tqsdk"
+    assert StubTqApi.instances[-1].calls[0]["symbol"] == "SSE.510050"

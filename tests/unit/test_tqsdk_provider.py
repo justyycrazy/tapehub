@@ -74,6 +74,7 @@ def test_request_and_response_mapping(monkeypatch: pytest.MonkeyPatch) -> None:
         "symbol": "SHFE.cu2607",
         "duration_seconds": 86400,
         "data_length": 10000,
+        "adj_type": None,  # 期货无复权概念，显式传 None
     }
 
     assert batch.provider == "tqsdk"
@@ -127,6 +128,11 @@ def test_unsupported_interval_rejected_by_operation_routing(
         (AssetType.CONTRACT, "CN-CZCE-SR609", "CZCE.SR609"),
         (AssetType.CONTINUOUS, "CN-SHFE-cu", "KQ.m@SHFE.cu"),
         (AssetType.WEIGHTED_INDEX, "CN-SHFE-bu", "KQ.i@SHFE.bu"),
+        (AssetType.STOCK, "CN-SSE-600000", "SSE.600000"),
+        (AssetType.STOCK, "CN-SZSE-000001", "SZSE.000001"),
+        (AssetType.INDEX, "CN-SSE-000016", "SSE.000016"),
+        (AssetType.ETF, "CN-SSE-510050", "SSE.510050"),
+        (AssetType.ETF, "CN-SZSE-159919", "SZSE.159919"),
     ],
 )
 def test_kline_symbols(
@@ -220,3 +226,32 @@ def test_partial_false_when_bars_cover_start(monkeypatch: pytest.MonkeyPatch) ->
     batch = asyncio.run(adapter.fetch_bars(query))
     # 最早一根早于 start：窗口完整覆盖，即使达到数量上限也不标记 partial
     assert batch.partial is False
+
+
+def test_adj_type_mapping_for_stock(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """股票复权映射：none→None、qfq→F、hfq→B；adj_type 始终显式传递。"""
+    install(monkeypatch)
+    adapter = _adapter()
+    from tests.fixtures.providers.stub_tqsdk import StubTqApi
+
+    for adjust, expected in ((Adjust.NONE, None), (Adjust.QFQ, "F"), (Adjust.HFQ, "B")):
+        query = _query(
+            asset_type=AssetType.STOCK,
+            instrument=Instrument.parse("CN-SSE-600000"),
+            adjust=adjust,
+        )
+        asyncio.run(adapter.fetch_bars(query))
+        assert StubTqApi.instances[-1].calls[0]["adj_type"] == expected
+
+
+def test_futures_adj_type_always_none(monkeypatch: pytest.MonkeyPatch) -> None:
+    """期货无复权概念：adj_type 恒为 None（显式传参，不依赖上游默认值）。"""
+    install(monkeypatch)
+    adapter = _adapter()
+    asyncio.run(adapter.fetch_bars(_query(asset_type=AssetType.CONTRACT)))
+
+    from tests.fixtures.providers.stub_tqsdk import StubTqApi
+
+    assert StubTqApi.instances[-1].calls[0]["adj_type"] is None

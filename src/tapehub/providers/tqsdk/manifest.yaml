@@ -8,13 +8,17 @@
 # - 合约代码格式 交易所.合约（交易所全大写，品种代码大小写遵从交易所规定，
 #   如 SHFE.cu2607 / CZCE.SR609）；主力连续 KQ.m@<交易所>.<品种>；
 #   指数连续（加权）KQ.i@<交易所>.<品种>；
-# - get_kline_serial(symbol, duration_seconds, data_length)：
+# - get_kline_serial(symbol, duration_seconds, data_length, adj_type)：
 #   周期为不超过 1 日的任意秒数（日线 86400）；data_length 默认 200，
 #   API 参考注明每序列最大 10000（使用文档另有 8000 根的说明，以 API 参考为准）；
+#   adj_type 仅对股票/基金有效（F=前复权、B=后复权、None=不复权），
+#   期货/指数无复权概念，始终传 None；
 # - 返回列 id/datetime/open/high/low/close/volume/open_oi/close_oi：
 #   datetime 为纳秒时间戳；无成交额字段，标准 amount 恒为 null；
-#   持仓量 open_oi/close_oi 进入受控 extensions；volume 保持手；
-# - 期货无复权概念，adjust 仅声明 none（adj_type 仅对股票/基金有效）；
+#   持仓量 open_oi/close_oi 进入受控 extensions（股票/指数/ETF 无此列 → null）；
+#   期货 volume 保持手；股票/ETF 的 volume 单位文档未写明，原样透出待探针实证；
+# - 权限边界（usage/mddatas 原文）：免费版仅期货/期权与四大指数实时行情；
+#   A股股票实时与历史行情需专业版（付费）；ETF 权限口径未核实；
 # - 每次请求独立创建并关闭 TqApi 实例（在线程池中执行，一个线程一个实例）；
 # - 上游返回“从最新一根往回”的序列：当返回数量达到上限且最早一根仍晚于
 #   请求 start 时，无法覆盖请求窗口，标记 partial=true；
@@ -23,7 +27,7 @@
 #   背后为天勤 TianQin 行情平台，与东方财富无关）：缺省请求即可路由，
 #   也可显式传 variant=tqsdk。
 provider: tqsdk
-default_provider: [contract, continuous, weighted-index]
+default_provider: [contract, continuous, weighted-index, etf]
 default_variant: tqsdk
 enabled: true
 
@@ -41,6 +45,52 @@ capabilities:
       - {code: PT1H, history: {start: null, end: null}}
       - {code: P1D, history: {start: null, end: null}}
     adjustments: [none]
+    fields: [open, high, low, close, volume]
+  # 股票：adj_type 支持 F/B（API 参考）；实时与历史行情需专业版权限
+  - data_type: bars
+    markets: [CN]
+    asset_types: [stock]
+    delivery: [rest]
+    variants: [tqsdk]
+    intervals:
+      - {code: PT1M, history: {start: null, end: null}}
+      - {code: PT5M, history: {start: null, end: null}}
+      - {code: PT15M, history: {start: null, end: null}}
+      - {code: PT30M, history: {start: null, end: null}}
+      - {code: PT1H, history: {start: null, end: null}}
+      - {code: P1D, history: {start: null, end: null}}
+    adjustments: [none, qfq, hfq]
+    fields: [open, high, low, close, volume]
+  # 指数：adj_type 对指数无效，仅 none；免费版仅四大指数（上证50/沪深300/
+  # 中证500/中证1000）实时，历史权限未核实
+  - data_type: bars
+    markets: [CN]
+    asset_types: [index]
+    delivery: [rest]
+    variants: [tqsdk]
+    intervals:
+      - {code: PT1M, history: {start: null, end: null}}
+      - {code: PT5M, history: {start: null, end: null}}
+      - {code: PT15M, history: {start: null, end: null}}
+      - {code: PT30M, history: {start: null, end: null}}
+      - {code: PT1H, history: {start: null, end: null}}
+      - {code: P1D, history: {start: null, end: null}}
+    adjustments: [none]
+    fields: [open, high, low, close, volume]
+  # ETF：属基金大类，adj_type 有效（F/B）；权限口径未核实，探针实证
+  - data_type: bars
+    markets: [CN]
+    asset_types: [etf]
+    delivery: [rest]
+    variants: [tqsdk]
+    intervals:
+      - {code: PT1M, history: {start: null, end: null}}
+      - {code: PT5M, history: {start: null, end: null}}
+      - {code: PT15M, history: {start: null, end: null}}
+      - {code: PT30M, history: {start: null, end: null}}
+      - {code: PT1H, history: {start: null, end: null}}
+      - {code: P1D, history: {start: null, end: null}}
+    adjustments: [none, qfq, hfq]
     fields: [open, high, low, close, volume]
 
 operations:
@@ -81,4 +131,88 @@ operations:
   - match: {data_type: bars, market: CN, asset_type: weighted-index, interval: PT1H, adjust: none, variant: tqsdk}
     operation: get_kline_serial
   - match: {data_type: bars, market: CN, asset_type: weighted-index, interval: P1D, adjust: none, variant: tqsdk}
+    operation: get_kline_serial
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: PT1M, adjust: none, variant: tqsdk}
+    operation: get_kline_serial
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: PT5M, adjust: none, variant: tqsdk}
+    operation: get_kline_serial
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: PT15M, adjust: none, variant: tqsdk}
+    operation: get_kline_serial
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: PT30M, adjust: none, variant: tqsdk}
+    operation: get_kline_serial
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: PT1H, adjust: none, variant: tqsdk}
+    operation: get_kline_serial
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: P1D, adjust: none, variant: tqsdk}
+    operation: get_kline_serial
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: PT1M, adjust: qfq, variant: tqsdk}
+    operation: get_kline_serial
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: PT5M, adjust: qfq, variant: tqsdk}
+    operation: get_kline_serial
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: PT15M, adjust: qfq, variant: tqsdk}
+    operation: get_kline_serial
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: PT30M, adjust: qfq, variant: tqsdk}
+    operation: get_kline_serial
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: PT1H, adjust: qfq, variant: tqsdk}
+    operation: get_kline_serial
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: P1D, adjust: qfq, variant: tqsdk}
+    operation: get_kline_serial
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: PT1M, adjust: hfq, variant: tqsdk}
+    operation: get_kline_serial
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: PT5M, adjust: hfq, variant: tqsdk}
+    operation: get_kline_serial
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: PT15M, adjust: hfq, variant: tqsdk}
+    operation: get_kline_serial
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: PT30M, adjust: hfq, variant: tqsdk}
+    operation: get_kline_serial
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: PT1H, adjust: hfq, variant: tqsdk}
+    operation: get_kline_serial
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: P1D, adjust: hfq, variant: tqsdk}
+    operation: get_kline_serial
+  - match: {data_type: bars, market: CN, asset_type: etf, interval: PT1M, adjust: none, variant: tqsdk}
+    operation: get_kline_serial
+  - match: {data_type: bars, market: CN, asset_type: etf, interval: PT5M, adjust: none, variant: tqsdk}
+    operation: get_kline_serial
+  - match: {data_type: bars, market: CN, asset_type: etf, interval: PT15M, adjust: none, variant: tqsdk}
+    operation: get_kline_serial
+  - match: {data_type: bars, market: CN, asset_type: etf, interval: PT30M, adjust: none, variant: tqsdk}
+    operation: get_kline_serial
+  - match: {data_type: bars, market: CN, asset_type: etf, interval: PT1H, adjust: none, variant: tqsdk}
+    operation: get_kline_serial
+  - match: {data_type: bars, market: CN, asset_type: etf, interval: P1D, adjust: none, variant: tqsdk}
+    operation: get_kline_serial
+  - match: {data_type: bars, market: CN, asset_type: etf, interval: PT1M, adjust: qfq, variant: tqsdk}
+    operation: get_kline_serial
+  - match: {data_type: bars, market: CN, asset_type: etf, interval: PT5M, adjust: qfq, variant: tqsdk}
+    operation: get_kline_serial
+  - match: {data_type: bars, market: CN, asset_type: etf, interval: PT15M, adjust: qfq, variant: tqsdk}
+    operation: get_kline_serial
+  - match: {data_type: bars, market: CN, asset_type: etf, interval: PT30M, adjust: qfq, variant: tqsdk}
+    operation: get_kline_serial
+  - match: {data_type: bars, market: CN, asset_type: etf, interval: PT1H, adjust: qfq, variant: tqsdk}
+    operation: get_kline_serial
+  - match: {data_type: bars, market: CN, asset_type: etf, interval: P1D, adjust: qfq, variant: tqsdk}
+    operation: get_kline_serial
+  - match: {data_type: bars, market: CN, asset_type: etf, interval: PT1M, adjust: hfq, variant: tqsdk}
+    operation: get_kline_serial
+  - match: {data_type: bars, market: CN, asset_type: etf, interval: PT5M, adjust: hfq, variant: tqsdk}
+    operation: get_kline_serial
+  - match: {data_type: bars, market: CN, asset_type: etf, interval: PT15M, adjust: hfq, variant: tqsdk}
+    operation: get_kline_serial
+  - match: {data_type: bars, market: CN, asset_type: etf, interval: PT30M, adjust: hfq, variant: tqsdk}
+    operation: get_kline_serial
+  - match: {data_type: bars, market: CN, asset_type: etf, interval: PT1H, adjust: hfq, variant: tqsdk}
+    operation: get_kline_serial
+  - match: {data_type: bars, market: CN, asset_type: etf, interval: P1D, adjust: hfq, variant: tqsdk}
+    operation: get_kline_serial
+  - match: {data_type: bars, market: CN, asset_type: index, interval: PT1M, adjust: none, variant: tqsdk}
+    operation: get_kline_serial
+  - match: {data_type: bars, market: CN, asset_type: index, interval: PT5M, adjust: none, variant: tqsdk}
+    operation: get_kline_serial
+  - match: {data_type: bars, market: CN, asset_type: index, interval: PT15M, adjust: none, variant: tqsdk}
+    operation: get_kline_serial
+  - match: {data_type: bars, market: CN, asset_type: index, interval: PT30M, adjust: none, variant: tqsdk}
+    operation: get_kline_serial
+  - match: {data_type: bars, market: CN, asset_type: index, interval: PT1H, adjust: none, variant: tqsdk}
+    operation: get_kline_serial
+  - match: {data_type: bars, market: CN, asset_type: index, interval: P1D, adjust: none, variant: tqsdk}
     operation: get_kline_serial

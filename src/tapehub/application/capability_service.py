@@ -29,6 +29,8 @@ class ProviderCapabilitiesView:
     capabilities: list[Capability] = field(default_factory=list)
     # 「Provider × 资产类型」级缺省变体（manifest default_variant 归一化）
     default_variants: dict[AssetType, DataVariant] = field(default_factory=dict)
+    # 声明为缺省数据源的资产类型（manifest default_provider，保持声明顺序）
+    default_provider: list[AssetType] = field(default_factory=list)
 
 
 class CapabilityService:
@@ -78,6 +80,7 @@ class CapabilityService:
                         runtime_status=RUNTIME_STATUS_UNKNOWN,
                         capabilities=capabilities,
                         default_variants=record.default_variants,
+                        default_provider=list(record.manifest.default_provider or ()),
                     )
                 )
         return views
@@ -96,6 +99,7 @@ class CapabilityService:
             runtime_status=RUNTIME_STATUS_UNKNOWN,
             capabilities=list(record.capabilities),
             default_variants=record.default_variants,
+            default_provider=list(record.manifest.default_provider or ()),
         )
 
 

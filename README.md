@@ -275,7 +275,7 @@ API 层 → Application 层 → Domain 层
   `default_provider` 声明 > 注册顺序（兜底）。每个 Provider 必填声明
   `default_provider`（资产类型列表，`[]` 表示对任何类型都不是缺省），注册表构建期
   强制校验**每个被覆盖的资产类型恰好一个缺省**（0 个或多个都拒绝启动）。
-  当前声明：akshare `[stock, index]`、tqsdk `[contract, continuous, weighted-index]`、
+  当前声明：akshare `[stock, index]`、tqsdk `[contract, continuous, weighted-index, etf]`、
   twelvedata `[forex, crypto]`、tushare/alphafeed/tickflow `[]`；
 - **manifest 属于配置**：缺失、格式错误或校验失败直接启动失败（fail-fast）；
   适配器导入失败（可选 SDK 未安装等）仍单 Provider 隔离，不影响启动；
@@ -340,19 +340,32 @@ TqSdk（官方 SDK `tqsdk`：`TqApi(auth=TqAuth(...)).get_kline_serial(...)`）�
 | 资产类型 | 变体 | 上游接口 | 周期 | adjust | 标准字段 |
 | --- | --- | --- | --- | --- | --- |
 | contract / continuous / weighted-index | tqsdk（默认） | `api.get_kline_serial` | PT1M/PT5M/PT15M/PT30M/PT1H、P1D | none | 无 amount（上游无成交额列；extensions: open_oi/close_oi） |
+| stock | tqsdk | `api.get_kline_serial`（adj_type） | PT1M/PT5M/PT15M/PT30M/PT1H、P1D | none/qfq/hfq | 无 amount；volume 单位未核实，原样透出 |
+| index | tqsdk | `api.get_kline_serial` | PT1M/PT5M/PT15M/PT30M/PT1H、P1D | none（adj_type 对指数无效） | 无 amount；无持仓量列 → extensions null |
+| etf | tqsdk（默认） | `api.get_kline_serial`（adj_type） | PT1M/PT5M/PT15M/PT30M/PT1H、P1D | none/qfq/hfq | 无 amount；volume 单位未核实，原样透出 |
 
 - 变体与 default_variant 均为 `tqsdk`（与 Provider 同名，官方 SDK 包名；背后为天勤行情平台，与东方财富无关）：缺省请求即可路由，也可显式传 `variant=tqsdk`；
+- `default_provider` 声明：`[contract, continuous, weighted-index, etf]`（ETF 为唯一声明者）；
+  stock/index 仅声明能力，缺省仍由 akshare 承担，tqsdk 股票/指数需显式 `provider=tqsdk`；
+- **权限边界（usage/mddatas 原文，诚实标注）**：免费版仅期货/期权与四大指数
+  （上证50/沪深300/中证500/中证1000）实时行情；A股股票实时与历史行情需
+  专业版（付费）；ETF 权限口径未核实——无权限时请求失败包装为 `UPSTREAM_ERROR`，
+  由探针实证后回填；
+- 复权映射（API 参考 `adj_type` 仅对股票/基金有效）：`qfq→F`、`hfq→B`、`none→None`
+  （期货/指数恒为 None，显式传参不依赖上游默认值）；上游「暂不支持复权获取多合约 K 线」
+  与本适配器单合约调用不冲突；
 - 快期账户凭据（`TqAuth(用户名, 密码)`，必填）通过环境变量 `TAPEHUB_TQSDK_AUTH_USER` / `TAPEHUB_TQSDK_AUTH_PASSWORD` 提供并传入 SDK 客户端，禁止写入代码/manifest/日志；任一未配置时能力目录正常，数据请求返回 `PROVIDER_NOT_IMPLEMENTED`；
 - 合约代码映射（交易所全大写，品种代码大小写遵从交易所规定）：`CN-SHFE-cu2607 → SHFE.cu2607`、`CN-CZCE-SR609 → CZCE.SR609`；主力连续 `CN-SHFE-cu → KQ.m@SHFE.cu`；指数连续/加权 `CN-SHFE-bu → KQ.i@SHFE.bu`（标准 symbol 允许小写品种代码，如 tqsdk 的小写品种约定）；
 - 周期映射（周期为不超过 1 日的任意秒数）：`PT1M→60`、`PT5M→300`、`PT15M→900`、`PT30M→1800`、`PT1H→3600`、`P1D→86400`；
 - 上游按“最新 N 根”返回（`data_length`，每序列上限 10000，使用文档另有 8000 根的说明、以 API 参考为准）：当返回数量达到上限且最早一根仍晚于请求 `start` 时，更早数据取不到，响应 `meta.partial=true` 且 `warnings` 提示；
-- `datetime` 为纳秒时间戳（绝对时间），标准化为 UTC；期货无复权概念，`adjust` 仅声明 none；
+- `datetime` 为纳秒时间戳（绝对时间），标准化为 UTC；期货/指数无复权概念，`adjust` 仅声明 none；
+- 代码映射（股票/指数/ETF 同期货格式）：`CN-SSE-600000 → SSE.600000`、`CN-SZSE-000001 → SZSE.000001`、`CN-SSE-000016 → SSE.000016`、`CN-SSE-510050 → SSE.510050`（mddatas 文档示例口径；指数仅核实 SSE/SZSE 发布的代码）；
 - 每次请求在线程池中独立创建并关闭 TqApi 实例（官方约定一个线程一个实例）；
 - 上游 SDK 异常类型未在文档中核实，统一包装为 `UPSTREAM_ERROR`。
 
 单位约定（按官方文档）：
 
-- 个股 `volume` 统一为**股**：东财接口返回手，适配器 ×100 换算；新浪/腾讯为股，原样返回；
+- 个股 `volume` 统一为**股**：东财接口返回手，适配器 ×100 换算；新浪/腾讯为股，原样返回；TqSdk 股票/ETF 的 volume 单位文档未写明，**原样透出，待探针实证后修正**；
 - `amount` 统一为**元**；指数/期货的上游未标注单位时原样返回（见各接口文档）；
 - 交易所映射（已核实部分）：个股/指数 `SSE→sh`、`SZSE→sz`；指数东财另支持 `CSI→csi`、`BSE→bj`；期货合约符号原样传递（如 `RB2410`），主力连续为品种代码+`0`（如 `RB`→`RB0`）。
 

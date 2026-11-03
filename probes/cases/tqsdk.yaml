@@ -10,7 +10,8 @@ requires:
 pacing:
   call_interval_s: 3.0
   timeout_s: 120
-  max_calls: 60
+  # 可用性 case 随股票/指数/ETF 扩容（60 条），加分析探针预算
+  max_calls: 120
 
 targets:
   contract:
@@ -26,10 +27,31 @@ targets:
     instrument: CN-SHFE-au
     window: {start: 2025-01-01, end: 2025-06-30}
     min_bars: 60
+  stock:
+    # A股股票实时与历史行情需专业版权限：无权限时探针如实记录失败
+    instrument: CN-SSE-600000
+    window: {start: 2025-01-01, end: 2025-06-30}
+    min_bars: 60
+  index:
+    # 免费版仅四大指数实时；历史权限未核实，失败如实记录
+    instrument: CN-SSE-000016
+    window: {start: 2025-01-01, end: 2025-06-30}
+    min_bars: 60
+  etf:
+    # ETF 权限口径未核实，失败如实记录
+    instrument: CN-SSE-510050
+    window: {start: 2025-01-01, end: 2025-06-30}
+    min_bars: 60
 
 chain:
   include_declared: true
   skip: []
+  adjust_diff:
+    # 股票 adj_type F/B 实证：前/后复权序列应与不复权存在差异（分红除权期）
+    targets: [stock]
+    window: {start: 2024-06-01, end: 2024-08-31}
+    pairs: [[none, qfq], [none, hfq]]
+    fields: [close]
   history_depth:
     targets: [continuous]
     earliest: 2000-01-01
@@ -48,4 +70,6 @@ notes: >
   文档对单次上限存在两种口径（data_length 每序列上限 10000，使用说明另有 8000 根
   表述，以 API 参考为准），limit_truncation 不设 documented_max，以实测裁决；
   TqAuth 需要构造 SDK 对象，声明式 raw 探针（仅支持标量 kwargs）无法表达，
-  凭据链路已由 chain 探针覆盖；期货无复权概念，不配置 adjust_diff。
+  凭据链路已由 chain 探针覆盖；期货/指数无复权概念，adjust_diff 仅配股票
+  （实证 adj_type F/B 是否生效）；股票/ETF 的 volume 单位与 ETF/指数历史权限
+  待本轮探针实证后回填 README。

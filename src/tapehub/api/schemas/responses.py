@@ -50,6 +50,8 @@ class ProviderCapabilitiesOut(BaseModel):
     runtime_status: str
     # 「Provider × 资产类型」级缺省变体：variant 缺省时的解析依据
     default_variant: dict[str, str]
+    # 声明为缺省数据源的资产类型：auto 路由优先级的依据（排序在前）
+    default_provider: list[str]
     capabilities: list[CapabilityOut]
 
 
@@ -134,6 +136,7 @@ def provider_view_to_out(view: ProviderCapabilitiesView) -> ProviderCapabilities
             asset_type.value: variant.value
             for asset_type, variant in view.default_variants.items()
         },
+        default_provider=[item.value for item in view.default_provider],
         capabilities=[capability_to_out(cap) for cap in view.capabilities],
     )
 

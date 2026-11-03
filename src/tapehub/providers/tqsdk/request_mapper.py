@@ -2,20 +2,25 @@
 
 接口签名均已按官方文档核实：
 
-- 合约代码（交易所全大写，品种代码遵从交易所大小写约定）：
-  单一合约 ``SHFE.cu2607``；主力连续 ``KQ.m@SHFE.cu``；
+- 合约代码统一为 ``交易所代码.品种代码``（交易所全大写，品种代码遵从交易所
+  大小写约定）：单一合约 ``SHFE.cu2607``；主力连续 ``KQ.m@SHFE.cu``；
   指数连续/加权 ``KQ.i@SHFE.bu``；
-- ``get_kline_serial(symbol, duration_seconds, data_length)``：
+- 股票/指数/ETF 同格式：``SSE.600000`` / ``SZSE.000001``、指数 ``SSE.000016``、
+  ETF ``SSE.510050``（usage/mddatas 文档示例）；
+- ``get_kline_serial(symbol, duration_seconds, data_length, adj_type)``：
   duration_seconds 为不超过 1 日的任意秒数（P1D=86400）；
   data_length 默认 200，每序列最大 10000（API 参考）；
-- 期货无复权概念（adj_type 仅对股票/基金有效），请求不含复权参数。
+  ``adj_type`` 仅对股票/基金类型有效（F=前复权、B=后复权、None=不复权），
+  指数无复权概念，始终传 None；
+- 权限边界（诚实声明）：免费版仅期货/期权与四大指数实时行情；
+  A股股票实时与历史行情需专业版，ETF 权限口径未核实，由探针实证。
 """
 
 from typing import Any
 
 from tapehub.domain.errors import UnsupportedCapabilityError
 from tapehub.domain.intervals import Interval
-from tapehub.domain.models import AssetType, BarQuery
+from tapehub.domain.models import Adjust, AssetType, BarQuery
 
 # 单次请求上限（API 参考：每个序列最大支持请求 10000 个数据）
 UPSTREAM_MAX_BARS = 10000
@@ -33,6 +38,13 @@ _DURATION_SECONDS: dict[Interval, int] = {
 _CONTINUOUS_PREFIX = "KQ.m@"
 _WEIGHTED_PREFIX = "KQ.i@"
 
+# 复权映射（API 参考：adj_type 只对股票和基金类型合约有效）
+_ADJ_TYPE: dict[Adjust, str | None] = {
+    Adjust.NONE: None,
+    Adjust.QFQ: "F",
+    Adjust.HFQ: "B",
+}
+
 
 def kline_symbol(query: BarQuery) -> str:
     """标准标的 → TqSdk 合约代码。"""
@@ -43,6 +55,8 @@ def kline_symbol(query: BarQuery) -> str:
         return f"{_CONTINUOUS_PREFIX}{base}"
     if query.asset_type == AssetType.WEIGHTED_INDEX:
         return f"{_WEIGHTED_PREFIX}{base}"
+    if query.asset_type in (AssetType.STOCK, AssetType.INDEX, AssetType.ETF):
+        return base
     raise UnsupportedCapabilityError(
         f"TqSdk does not support asset type {query.asset_type.value}.",
         details={
@@ -64,6 +78,11 @@ def duration_seconds(interval: Interval) -> int:
     return seconds
 
 
+def adj_type(adjust: Adjust) -> str | None:
+    """复权方式 → adj_type（none→None、qfq→F、hfq→B）；显式传参不依赖默认值。"""
+    return _ADJ_TYPE[adjust]
+
+
 def build_request(query: BarQuery) -> dict[str, Any]:
     """构造 get_kline_serial 的关键字参数；所有相关参数显式传递。
 
@@ -75,7 +94,14 @@ def build_request(query: BarQuery) -> dict[str, Any]:
         "symbol": kline_symbol(query),
         "duration_seconds": duration_seconds(query.interval),
         "data_length": UPSTREAM_MAX_BARS,
+        "adj_type": adj_type(query.adjust),
     }
 
 
-__all__ = ["UPSTREAM_MAX_BARS", "build_request", "duration_seconds", "kline_symbol"]
+__all__ = [
+    "UPSTREAM_MAX_BARS",
+    "adj_type",
+    "build_request",
+    "duration_seconds",
+    "kline_symbol",
+]
