@@ -2,8 +2,11 @@
 
 - availability / adjust_diff / history_depth / limit_truncation 走统一链路
   （adapter.fetch_bars），框架不含任何 Provider 专属逻辑；
-- raw 探针按声明式配置反射调用 SDK（延迟导入），仅支持标量 kwargs 与
-  ``$ENV`` 环境变量引用，凭据值不落任何结果文件；
+- raw 探针按声明式配置反射调用 SDK（延迟导入）；kwargs 支持 ``$ENV``
+  环境变量引用、``$ctor``（嵌套轻量对象构造，如认证对象）与
+  ``$deadline_s``（相对秒数 → unix epoch）；凭据值不落任何结果文件；
+- connection 探针表达「创建 → 首次取数 → 释放」的客户端生命周期计时
+  与并发共存验证（同样纯声明式，无 Provider 专属代码）；
 - 全程遵守 pacing 节流与 ``max_calls`` 调用预算，预算耗尽即停止并如实记录。
 """
 
@@ -17,15 +20,16 @@ import json
 import os
 import re
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
 from probes import analysis
 from probes.analysis import BudgetExhausted
-from probes.loader import ChainCase, ExpandedProbe, RawPlan, expand_probe
+from probes.loader import ChainCase, ConnectionPlan, ExpandedProbe, RawPlan, expand_probe
 from probes.report import CaseResult, RunResult, sample_bars_of
-from probes.schema import CaseVerdict, PacingSpec, ProbeFile, RawCaseSpec
+from probes.schema import CaseVerdict, CtorSpec, PacingSpec, ProbeFile, RawCaseSpec
 from tapehub.domain.errors import TapehubError, UpstreamError
 from tapehub.domain.models import Bar, BarBatch, BarQuery, DataVariant, Instrument
 from tapehub.providers.registry import ProviderRecord, ProviderRegistry
@@ -127,6 +131,7 @@ async def run_provider_probe(
         if not execute:
             cases = [_dry_run_result(case) for case in expanded.chain_cases]
             cases += [_dry_run_result_raw(plan) for plan in expanded.raw_cases]
+            cases += [_dry_run_result_connection(plan) for plan in expanded.connection_cases]
         elif file_skip is None:
             assert record is not None  # file_skip 为 None 时 record 必然存在
             budget = CallBudget(probe.pacing.max_calls)
@@ -141,10 +146,16 @@ async def run_provider_probe(
                 cases.append(await _run_chain_case(ctx, case))
             for plan in expanded.raw_cases:
                 cases.append(await _run_raw_case(ctx, plan))
+            for plan in expanded.connection_cases:
+                cases.append(await _run_connection_case(ctx, plan))
             budget_used = budget.used
         else:
             cases = [_skipped_result(case, file_skip) for case in expanded.chain_cases]
             cases += [_skipped_result_raw(plan, file_skip) for plan in expanded.raw_cases]
+            cases += [
+                _skipped_result_connection(plan, file_skip)
+                for plan in expanded.connection_cases
+            ]
 
     return RunResult(
         provider=probe.probe,
@@ -572,8 +583,15 @@ async def _run_variant_consistency(
 # ---------------------------------------------------------------------------
 
 
-def _interpolate(value: Any) -> Any:
-    """递归解析 ``$ENV`` 引用；引用缺失抛 MissingEnvError（值绝不回传）。"""
+def _interpolate(value: Any, default_module: str | None = None) -> Any:
+    """递归解析 kwargs 引用；引用缺失抛 MissingEnvError（值绝不回传）。
+
+    - ``"$ENV_NAME"``：环境变量引用；
+    - ``{"$ctor": {attr, module?, kwargs}}``：轻量 SDK 对象构造（如认证对象），
+      ``module`` 缺省继承所在 case 的 module；仅用于本地构造，不做网络调用；
+    - ``{"$deadline_s": 秒数}``：相对当前时刻的秒数 → unix epoch 秒
+      （供 wait/deadline 类上游参数使用）。
+    """
     if isinstance(value, str):
         match = _ENV_REF.match(value)
         if match is not None:
@@ -584,9 +602,18 @@ def _interpolate(value: Any) -> Any:
             return resolved
         return value
     if isinstance(value, dict):
-        return {key: _interpolate(item) for key, item in value.items()}
+        if set(value.keys()) == {"$ctor"}:
+            spec = CtorSpec.model_validate(value["$ctor"])
+            module = importlib.import_module(spec.module or default_module or "")
+            constructor = _resolve_attr(module, spec.attr)
+            return constructor(**_interpolate(spec.kwargs, default_module))
+        if set(value.keys()) == {"$deadline_s"} and isinstance(
+            value["$deadline_s"], (int, float)
+        ):
+            return time.time() + float(value["$deadline_s"])
+        return {key: _interpolate(item, default_module) for key, item in value.items()}
     if isinstance(value, list):
-        return [_interpolate(item) for item in value]
+        return [_interpolate(item, default_module) for item in value]
     return value
 
 
@@ -620,7 +647,11 @@ def _sample_of(result: Any, limit: int = 3) -> list[Any]:
 
 
 def _raw_verdict(
-    spec: RawCaseSpec, *, error: BaseException | None, rows: int | None
+    spec: RawCaseSpec,
+    *,
+    error: BaseException | None,
+    rows: int | None,
+    fields_ok: bool | None = None,
 ) -> tuple[CaseVerdict, str]:
     if error is not None:
         matched = (
@@ -628,18 +659,28 @@ def _raw_verdict(
             and spec.expect.error_contains is not None
             and spec.expect.error_contains in str(error)
         )
+    elif spec.expect.status == "ok" and spec.expect.min_rows is not None:
+        matched = rows is not None and rows >= spec.expect.min_rows
+    elif spec.expect.status == "ok" and spec.expect.min_fields:
+        matched = fields_ok is True
     else:
-        matched = spec.expect.status == "ok" and rows is not None and rows >= (
-            spec.expect.min_rows or 0
-        )
+        matched = False
     if not spec.assert_:
         return CaseVerdict.OBSERVE, f"observe-only: expectation matched={matched}"
     if matched:
         return CaseVerdict.CONFIRMED, "expectation matched"
     return CaseVerdict.FAILED, (
         f"expectation not matched (status={spec.expect.status}, "
-        f"error={type(error).__name__ if error else None}, rows={rows})"
+        f"error={type(error).__name__ if error else None}, rows={rows}, "
+        f"fields_ok={fields_ok})"
     )
+
+
+def _fields_present(result: Any, fields: list[str]) -> bool:
+    """mapping 形结果（如快照对象）是否包含全部期望字段名。"""
+    if not isinstance(result, Mapping):
+        return False
+    return all(field_name in result for field_name in fields)
 
 
 async def _run_raw_case(ctx: RunContext, plan: RawPlan) -> CaseResult:
@@ -652,8 +693,10 @@ async def _run_raw_case(ctx: RunContext, plan: RawPlan) -> CaseResult:
         dims={"module": spec.module, "purpose": spec.purpose},
     )
     try:
-        client_kwargs = _interpolate(spec.client.kwargs) if spec.client else {}
-        call_kwargs = [_interpolate(call.kwargs) for call in spec.call]
+        client_kwargs = (
+            _interpolate(spec.client.kwargs, spec.module) if spec.client else {}
+        )
+        call_kwargs = [_interpolate(call.kwargs, spec.module) for call in spec.call]
     except MissingEnvError as exc:
         base.reason = f"env missing: {exc.name}"
         return base
@@ -680,6 +723,7 @@ async def _run_raw_case(ctx: RunContext, plan: RawPlan) -> CaseResult:
         except Exception as exc:  # noqa: BLE001 - 构造失败按期望匹配处理
             error = exc
 
+    owner: Any = target
     result: Any = target
     if error is None:
         for call, kwargs in zip(spec.call, call_kwargs, strict=True):
@@ -689,8 +733,9 @@ async def _run_raw_case(ctx: RunContext, plan: RawPlan) -> CaseResult:
                 return base
             calls_made += 1
             try:
+                root = owner if call.target == "client" else result
                 func = (
-                    getattr(result, call.method)
+                    getattr(root, call.method)
                     if call.method
                     else _resolve_attr(module, call.module_func or "")
                 )
@@ -702,7 +747,8 @@ async def _run_raw_case(ctx: RunContext, plan: RawPlan) -> CaseResult:
                 break
 
     rows = None if error is not None else _count_rows(result)
-    verdict, reason = _raw_verdict(spec, error=error, rows=rows)
+    fields_ok = None if error is not None else _fields_present(result, spec.expect.min_fields)
+    verdict, reason = _raw_verdict(spec, error=error, rows=rows, fields_ok=fields_ok)
     base.verdict = verdict.value
     base.reason = reason
     base.observation = {
@@ -712,6 +758,131 @@ async def _run_raw_case(ctx: RunContext, plan: RawPlan) -> CaseResult:
             {"type": type(error).__name__, "text": str(error)[:500]} if error is not None else None
         ),
         "sample": [] if error is not None else _sample_of(result),
+    }
+    return base
+
+
+class _BudgetAbort(Exception):
+    """连接探针内部信号：调用预算耗尽，中止当前 case。"""
+
+
+async def _run_connection_case(ctx: RunContext, plan: ConnectionPlan) -> CaseResult:
+    """连接探针：每轮并发创建客户端 → 各自首次取数 → 逐个释放，全程计时。"""
+    spec = plan.spec
+    total = spec.rounds * spec.concurrent
+    base = CaseResult(
+        case_id=spec.id,
+        kind="connection",
+        verdict=CaseVerdict.SKIPPED.value,
+        reason="",
+        dims={
+            "module": spec.module,
+            "purpose": spec.purpose,
+            "rounds": str(spec.rounds),
+            "concurrent": str(spec.concurrent),
+        },
+    )
+    try:
+        client_kwargs = _interpolate(spec.client.kwargs, spec.module)
+        first_kwargs = _interpolate(spec.first_call.kwargs, spec.module)
+        close_kwargs = _interpolate(spec.close.kwargs, spec.module)
+    except MissingEnvError as exc:
+        base.reason = f"env missing: {exc.name}"
+        return base
+
+    try:
+        module = importlib.import_module(spec.module)
+    except ModuleNotFoundError:
+        base.reason = f"module not installed: {spec.module}"
+        return base
+
+    timeout = ctx.pacing.timeout_s
+    timings: list[dict[str, Any]] = []
+    errors: list[dict[str, str]] = []
+    created = first_ok = closed = 0
+
+    async def _spawn(round_index: int, instance_index: int) -> dict[str, Any]:
+        """创建单个客户端并完成首次取数，返回计时观测（含未释放的 client）。"""
+        if not await ctx.take_call():
+            raise _BudgetAbort()
+        t0 = time.perf_counter()
+        constructor = _resolve_attr(module, spec.client.attr)
+        client = await asyncio.wait_for(
+            asyncio.to_thread(constructor, **client_kwargs), timeout
+        )
+        create_ms = round((time.perf_counter() - t0) * 1000, 1)
+        if not await ctx.take_call():
+            raise _BudgetAbort()
+        t1 = time.perf_counter()
+        func = getattr(client, spec.first_call.method or "")
+        await asyncio.wait_for(asyncio.to_thread(func, **first_kwargs), timeout)
+        first_ms = round((time.perf_counter() - t1) * 1000, 1)
+        return {
+            "round": round_index,
+            "instance": instance_index,
+            "create_ms": create_ms,
+            "first_call_ms": first_ms,
+            "_client": client,
+        }
+
+    for round_index in range(1, spec.rounds + 1):
+        try:
+            spawned = await asyncio.gather(
+                *[_spawn(round_index, i) for i in range(1, spec.concurrent + 1)],
+                return_exceptions=True,
+            )
+        except _BudgetAbort:
+            base.reason = "call budget exhausted"
+            base.observation = {"timings": timings[:24], "errors": errors[:6]}
+            return base
+        for item in spawned:
+            if isinstance(item, BaseException):
+                if isinstance(item, _BudgetAbort):
+                    base.reason = "call budget exhausted"
+                    base.observation = {"timings": timings[:24], "errors": errors[:6]}
+                    return base
+                errors.append({"type": type(item).__name__, "text": str(item)[:300]})
+                continue
+            client = item.pop("_client")
+            created += 1
+            try:
+                if not await ctx.take_call():
+                    raise _BudgetAbort()
+                t2 = time.perf_counter()
+                closer = getattr(client, spec.close.method or "")
+                await asyncio.wait_for(
+                    asyncio.to_thread(closer, **close_kwargs), timeout
+                )
+                item["close_ms"] = round((time.perf_counter() - t2) * 1000, 1)
+                closed += 1
+            except Exception as exc:  # noqa: BLE001 - 释放失败如实记录
+                errors.append({"type": type(exc).__name__, "text": str(exc)[:300]})
+            timings.append(item)
+
+    first_ok = sum(1 for row in timings if row.get("first_call_ms") is not None)
+    all_ok = (
+        created == total and first_ok == total and closed == total and not errors
+    )
+    if not spec.assert_:
+        base.verdict = CaseVerdict.OBSERVE.value
+        base.reason = f"observe-only: created={created}/{total}, closed={closed}/{total}"
+    elif all_ok:
+        base.verdict = CaseVerdict.CONFIRMED.value
+        base.reason = f"all {total} instance(s) created, first-called and closed"
+    else:
+        base.verdict = CaseVerdict.FAILED.value
+        base.reason = (
+            f"lifecycle incomplete: created={created}/{total}, "
+            f"first_call={first_ok}/{total}, closed={closed}/{total}, "
+            f"errors={len(errors)}"
+        )
+    base.observation = {
+        "instances_expected": total,
+        "created": created,
+        "first_call_ok": first_ok,
+        "closed": closed,
+        "timings": timings[:24],
+        "errors": errors[:6],
     }
     return base
 
@@ -742,6 +913,21 @@ def _dry_run_result_raw(plan: RawPlan) -> CaseResult:
     )
 
 
+def _dry_run_result_connection(plan: ConnectionPlan) -> CaseResult:
+    return CaseResult(
+        case_id=plan.spec.id,
+        kind="connection",
+        verdict=CaseVerdict.SKIPPED.value,
+        reason=f"dry-run (planned {plan.expected_calls} calls)",
+        dims={
+            "module": plan.spec.module,
+            "purpose": plan.spec.purpose,
+            "rounds": str(plan.spec.rounds),
+            "concurrent": str(plan.spec.concurrent),
+        },
+    )
+
+
 def _skipped_result(case: ChainCase, reason: str) -> CaseResult:
     return CaseResult(
         case_id=case.case_id,
@@ -759,4 +945,18 @@ def _skipped_result_raw(plan: RawPlan, reason: str) -> CaseResult:
         verdict=CaseVerdict.SKIPPED.value,
         reason=reason,
         dims={"module": plan.spec.module},
+    )
+
+
+def _skipped_result_connection(plan: ConnectionPlan, reason: str) -> CaseResult:
+    return CaseResult(
+        case_id=plan.spec.id,
+        kind="connection",
+        verdict=CaseVerdict.SKIPPED.value,
+        reason=reason,
+        dims={
+            "module": plan.spec.module,
+            "rounds": str(plan.spec.rounds),
+            "concurrent": str(plan.spec.concurrent),
+        },
     )

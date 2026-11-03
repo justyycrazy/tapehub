@@ -26,3 +26,18 @@ def test_autouse_fixture_clears_tapehub_env() -> None:
     autouse fixture 已在 setup 阶段将其清空，本断言同样是解耦的守卫。
     """
     assert not [name for name in os.environ if name.startswith("TAPEHUB_")]
+
+
+def test_deployment_mode_defaults_to_single() -> None:
+    """守门字段缺省为 single（单进程、单用户最小运行模式）。"""
+    assert make_settings().deployment_mode == "single"
+
+
+def test_deployment_mode_rejects_unknown_values() -> None:
+    """非 single 值启动即失败：守门字段不承诺未实现的能力。"""
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        make_settings(deployment_mode="cluster")
+    with pytest.raises(ValidationError):
+        make_settings(deployment_mode="")

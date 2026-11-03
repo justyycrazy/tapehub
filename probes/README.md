@@ -76,6 +76,16 @@ chain:                             # ── 统一链路探针（经 adapter.fet
     max_range: P1Y
     documented_max: 2000           # 可选：不写则只观察
 
+connection:                        # ── 连接生命周期：创建→首调→释放 计时与共存 ──
+  - id: connect-latency
+    purpose: 建连+鉴权+首数据耗时（重复计时）
+    module: tqsdk
+    client: {attr: TqApi, kwargs: {auth: {"$ctor": {attr: TqAuth, kwargs: {user: "$U", password: "$P"}}}}}
+    first_call: {method: get_kline_serial, kwargs: {symbol: "SHFE.au2612", duration_seconds: 86400, data_length: 2}}
+    close: {method: close}         # 必填：连接类探针必须显式声明释放方式
+    rounds: 3                      # 顺序轮数
+    concurrent: 4                  # 每轮同时创建的实例数（共存验证）
+
 raw:                               # ── 声明外探索 / 错误指纹（SDK 反射）──
   - id: fut-dce-suffix
     purpose: 探测大商所后缀（声明外）
@@ -99,7 +109,9 @@ notes: 本探针要回答的问题与已知存疑点。
 | **分析探针全量展开** | adjust_diff 按 (interval × variant × pair)、history_depth / limit_truncation 按 (interval × variant) 在声明矩阵上**全量展开**，不与「声明顺序第一组维度」绑定；`intervals` 字段可显式收敛 interval 维度以控制预算（variant 维度永不收敛） |
 | **跨 variant 一致性** | `variant_consistency` 对同一 (asset_type, interval, adjust) 在**跨能力聚合的全部声明 variant** 下重放同一查询；任何不一致（数值差异 / 无重叠 / 预算中断）都判 suspect，并记录差异幅度与首个分歧时间戳 |
 | skip 必须带 reason | 防止静默漏探 |
-| 环境引用 | `$TAPEHUB_*` 只允许出现在 raw 的 kwargs；运行时注入，值绝不落盘 |
+| kwargs 引用 | `$TAPEHUB_*` 环境变量（raw/connection 的 kwargs）；`{"$ctor": {attr, module?, kwargs}}` 轻量 SDK 对象构造（如认证对象，仅本地构造不做网络调用，module 缺省继承所在 case）；`{"$deadline_s": 秒数}` 相对当前时刻 → unix epoch。运行时注入，凭据值绝不落盘 |
+| raw call 作用对象 | 首条作用于 client、后续作用于上一条结果（链式）；`target: client` 显式强制回到客户端 |
+| 跨 kind id 唯一 | raw / connection 与 chain 的 case id 全局唯一；重复在加载期拒绝 |
 
 ## 探针类型语义
 
@@ -110,7 +122,8 @@ notes: 本探针要回答的问题与已知存疑点。
 | history_depth | chain | 5 年档回溯 + 90 天窗口二分（按 interval × variant 全量展开） | 恒为 observe；报告给出 `earliest_estimate`（**近似值**，粒度 = 窗口宽度） |
 | limit_truncation | chain | 最小周期 + 超长窗口数 bar（按 variant 全量展开） | 实测 = documented_max → confirmed；不等 → suspect；未设 → observe |
 | variant_consistency | chain | 同一 (interval, adjust) 查询在跨能力聚合的全部 variant 下重放并两两对比 | 全部一致 → confirmed；任何不一致（差异 / 无重叠 / 预算中断）→ suspect，记录 max_abs_diff 与 first_divergence |
-| raw | SDK 反射 | 声明外能力探测、错误指纹 | 期望匹配 → confirmed / 不匹配 → failed；`assert: false` → observe |
+| raw | SDK 反射 | 声明外能力探测、错误指纹、快照字段矩阵（`min_fields` 验证 mapping 字段存在性） | 期望匹配 → confirmed / 不匹配 → failed；`assert: false` → observe |
+| connection | SDK 反射 | 客户端「创建 → 首次取数 → 释放」生命周期计时与并发共存验证（rounds × concurrent） | 全部实例创建/首调/释放成功 → confirmed；任一异常 → failed；`assert: false` → observe。观测值：每实例 create/first_call/close 毫秒 |
 
 判定枚举：`confirmed` / `failed` / `suspect` / `skipped` / `observe`。
 

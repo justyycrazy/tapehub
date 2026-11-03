@@ -81,8 +81,15 @@ def cmd_list(args: argparse.Namespace) -> int:
                 f"  [raw]   {plan.spec.id:<46} {'module=' + plan.spec.module:<22} "
                 f"{plan.expected_calls} call(s)"
             )
+        for plan in expanded.connection_cases:
+            mark = (
+                f"rounds={plan.spec.rounds} x concurrent={plan.spec.concurrent} "
+                f"| {plan.expected_calls} call(s)"
+            )
+            print(f"  [conn]  {plan.spec.id:<46} {'module=' + plan.spec.module:<22} {mark}")
         planned = sum(c.expected_calls for c in expanded.chain_cases if not c.skip_reason)
         planned += sum(p.expected_calls for p in expanded.raw_cases)
+        planned += sum(p.expected_calls for p in expanded.connection_cases)
         print(f"  合计计划调用：{planned}")
     return 0
 

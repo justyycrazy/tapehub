@@ -34,11 +34,15 @@
 - **Twelve Data Provider 已接入**（外汇与加密货币，官方 Python 库 `twelvedata`，API Key 从 `.env` 读取）；
 - 基于 Fake Provider 与 Mock SDK 的完整链路验证与单元/契约测试。
 
-明确不实现（第一版）：
+明确不实现（当前版本）：
 
-- 数据库、Redis、行情缓存、CSV/Parquet 等行情落盘；
-- 定时任务、全量转储 Worker、消息队列、WebSocket/SSE 实时订阅；
-- 实时行情、快照、逐笔、盘口、标的元数据等其它查询接口；
+- 数据库、Redis、行情缓存、CSV/Parquet 等行情落盘
+  （实时链路的**进程内最新快照**除外——那是订阅状态，不是持久化）；
+- 定时任务、全量转储 Worker、消息队列、双向 WebSocket；
+- 逐笔、标的元数据等其它查询接口（tqsdk 实时快照与 SSE 流式订阅
+  属本期交付范围，限 `TAPEHUB_DEPLOYMENT_MODE=single` 模式）；
+- 多进程/分布式部署（`TAPEHUB_DEPLOYMENT_MODE` 为守门字段，当前仅支持
+  `single`，其他值启动即失败；未来以组件级配置形式提供，不预设）；
 - Docker 与前端页面。
 
 ## 快速开始

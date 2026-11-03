@@ -10,9 +10,10 @@ requires:
 pacing:
   call_interval_s: 3.0
   timeout_s: 120
-  # 可用性 60 + adjust_diff 24 case×2 调用 + history_depth 30 case×~13 + limit 1
+  # 可用性 36 + adjust_diff 24 case×2 调用 + history_depth 30 case×~13 + limit 1
+  # + connection 9+12（创建+首调+释放）+ raw quote 6 case×2 调用 ≈ 622
   # （深度探针全周期同轮测量：保留边界随时间前移，矩阵须同一时点）
-  max_calls: 600
+  max_calls: 700
 
 targets:
   contract:
@@ -69,12 +70,158 @@ chain:
     # 40 年窗口确保超过 8000/10000 根日线，实测裁决两种文档口径
     max_range: P40Y
 
-raw: []
+connection:
+  # ── P1：建连+鉴权+首数据耗时（单实例重复计时，量化长连接单实例化收益）──
+  # 共享客户端参数（auth 经 $ctor 构造 TqAuth；凭据只经环境变量注入）
+  - id: tqsdk-connect-latency
+    purpose: 建连+鉴权+首数据耗时，单实例 3 轮重复计时
+    module: tqsdk
+    client:
+      attr: TqApi
+      kwargs:
+        auth:
+          $ctor:
+            attr: TqAuth
+            kwargs:
+              user: "$TAPEHUB_TQSDK_AUTH_USER"
+              password: "$TAPEHUB_TQSDK_AUTH_PASSWORD"
+        disable_print: true
+    first_call: {method: get_kline_serial, kwargs: {symbol: "SHFE.au2612", duration_seconds: 86400, data_length: 2}}
+    close: {method: close}
+    rounds: 3
+  # ── P2：并发实例共存验证（免费账户并发连接上限实证，回答现状每请求
+  # 建连在并发下是否已踩线、单实例化后连接预算如何定）──
+  - id: tqsdk-concurrent-instances-4
+    purpose: 并发 4 实例同时创建+首数据+释放，验证账户并发连接上限
+    module: tqsdk
+    client:
+      attr: TqApi
+      kwargs:
+        auth:
+          $ctor:
+            attr: TqAuth
+            kwargs:
+              user: "$TAPEHUB_TQSDK_AUTH_USER"
+              password: "$TAPEHUB_TQSDK_AUTH_PASSWORD"
+        disable_print: true
+    first_call: {method: get_kline_serial, kwargs: {symbol: "SHFE.au2612", duration_seconds: 86400, data_length: 2}}
+    close: {method: close}
+    rounds: 1
+    concurrent: 4
+
+raw:
+  # ── P5：get_quote 字段/权限矩阵（实时快照链路的 manifest 声明基础）──
+  # Quote 在首包前字段为 NaN：min_fields 只验证「订阅成功且字段键存在」，
+  # 权限不足的表现（报错 vs 静默 NaN）由 sample 与判定如实记录；
+  # 有文档依据的（期货/四大指数免费）断言，权限未核实的只观察不判定。
+  - id: quote-contract
+    purpose: 期货合约实时快照字段可用性（免费版权限有据，断言）
+    module: tqsdk
+    client:
+      attr: TqApi
+      kwargs:
+        auth:
+          $ctor:
+            attr: TqAuth
+            kwargs:
+              user: "$TAPEHUB_TQSDK_AUTH_USER"
+              password: "$TAPEHUB_TQSDK_AUTH_PASSWORD"
+        disable_print: true
+    call:
+      - {method: get_quote, kwargs: {symbol: "SHFE.au2612"}}
+    expect: {status: ok, min_fields: [last_price, bid_price1, ask_price1, volume]}
+  - id: quote-continuous
+    purpose: 主力连续实时快照字段可用性（断言）
+    module: tqsdk
+    client:
+      attr: TqApi
+      kwargs:
+        auth:
+          $ctor:
+            attr: TqAuth
+            kwargs:
+              user: "$TAPEHUB_TQSDK_AUTH_USER"
+              password: "$TAPEHUB_TQSDK_AUTH_PASSWORD"
+        disable_print: true
+    call:
+      - {method: get_quote, kwargs: {symbol: "KQ.m@SHFE.cu"}}
+    expect: {status: ok, min_fields: [last_price, bid_price1, ask_price1, volume]}
+  - id: quote-index-sse50
+    purpose: 上证50 实时快照（免费版四大指数有文档依据，断言）
+    module: tqsdk
+    client:
+      attr: TqApi
+      kwargs:
+        auth:
+          $ctor:
+            attr: TqAuth
+            kwargs:
+              user: "$TAPEHUB_TQSDK_AUTH_USER"
+              password: "$TAPEHUB_TQSDK_AUTH_PASSWORD"
+        disable_print: true
+    call:
+      - {method: get_quote, kwargs: {symbol: "SSE.000016"}}
+    expect: {status: ok, min_fields: [last_price, bid_price1, ask_price1, volume]}
+  - id: quote-stock
+    purpose: A股个股实时快照（免费版无权限，只观察实际表现）
+    module: tqsdk
+    client:
+      attr: TqApi
+      kwargs:
+        auth:
+          $ctor:
+            attr: TqAuth
+            kwargs:
+              user: "$TAPEHUB_TQSDK_AUTH_USER"
+              password: "$TAPEHUB_TQSDK_AUTH_PASSWORD"
+        disable_print: true
+    call:
+      - {method: get_quote, kwargs: {symbol: "SSE.600000"}}
+    expect: {status: ok, min_fields: [last_price]}
+    assert: false
+  - id: quote-etf
+    purpose: ETF 实时快照权限口径未核实，只观察
+    module: tqsdk
+    client:
+      attr: TqApi
+      kwargs:
+        auth:
+          $ctor:
+            attr: TqAuth
+            kwargs:
+              user: "$TAPEHUB_TQSDK_AUTH_USER"
+              password: "$TAPEHUB_TQSDK_AUTH_PASSWORD"
+        disable_print: true
+    call:
+      - {method: get_quote, kwargs: {symbol: "SSE.510050"}}
+    expect: {status: ok, min_fields: [last_price]}
+    assert: false
+  - id: quote-weighted-index
+    purpose: 商品加权指数实时快照权限口径未核实，只观察
+    module: tqsdk
+    client:
+      attr: TqApi
+      kwargs:
+        auth:
+          $ctor:
+            attr: TqAuth
+            kwargs:
+              user: "$TAPEHUB_TQSDK_AUTH_USER"
+              password: "$TAPEHUB_TQSDK_AUTH_PASSWORD"
+        disable_print: true
+    call:
+      - {method: get_quote, kwargs: {symbol: "KQ.i@SHFE.au"}}
+    expect: {status: ok, min_fields: [last_price]}
+    assert: false
 
 notes: >
   文档对单次上限存在两种口径（data_length 每序列上限 10000，使用说明另有 8000 根
   表述，以 API 参考为准），limit_truncation 不设 documented_max，以实测裁决；
-  TqAuth 需要构造 SDK 对象，声明式 raw 探针（仅支持标量 kwargs）无法表达，
-  凭据链路已由 chain 探针覆盖；期货/指数无复权概念，adjust_diff 仅配股票
-  （实证 adj_type F/B 是否生效）；股票/ETF 的 volume 单位与 ETF/指数历史权限
-  待本轮探针实证后回填 README。
+  connection 探针（P1 建连耗时 / P2 并发 4 实例共存）为单实例化改造提供连接
+  预算依据，P3（单连接并发 await 延迟）/P4（历史大请求下的推送抖动）/P6（订阅
+  累积）/P7（协程重建重订阅）依赖运行时语义，随 M1/M2 的 Runtime 实现一并
+  验证；raw quote 探针（P5）验证订阅成功与字段键存在，NaN 与实际值差异看
+  sample（Quote 首包前字段为 NaN 属正常，休市时段值不前进）；get_quote 未配
+  wait_update，避免声明式探针阻塞——字段键存在性判定与权限报错捕获不受影响；
+  期货/指数无复权概念，adjust_diff 仅配股票/ETF（实证 adj_type F/B 是否生效）；
+  股票/ETF 的 volume 单位与 ETF/指数历史权限待本轮探针实证后回填 README。

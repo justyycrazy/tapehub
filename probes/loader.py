@@ -20,6 +20,7 @@ import yaml
 from probes.analysis import window_back as _window_back
 from probes.schema import (
     AdjustDiffSpec,
+    ConnectionCaseSpec,
     HistoryDepthSpec,
     LimitTruncationSpec,
     ProbeFile,
@@ -80,6 +81,17 @@ class RawPlan:
 
 
 @dataclass(frozen=True, slots=True)
+class ConnectionPlan:
+    """展开后的一条连接探针。
+
+    调用预算 = 每实例（创建 + 首次取数 + 释放）× rounds × concurrent。
+    """
+
+    spec: ConnectionCaseSpec
+    expected_calls: int
+
+
+@dataclass(frozen=True, slots=True)
 class ExpandedProbe:
     """一个 Provider 的完整展开结果。"""
 
@@ -87,6 +99,7 @@ class ExpandedProbe:
     manifest: ProviderManifest
     chain_cases: list[ChainCase] = field(default_factory=list)
     raw_cases: list[RawPlan] = field(default_factory=list)
+    connection_cases: list[ConnectionPlan] = field(default_factory=list)
 
 
 def load_probe_file(path: Path) -> ProbeFile:
@@ -405,8 +418,20 @@ def expand_probe(probe: ProbeFile, manifest: ProviderManifest) -> ExpandedProbe:
         for case in probe.raw
     ]
 
+    connection_cases = [
+        ConnectionPlan(
+            spec=case,
+            expected_calls=case.rounds * case.concurrent * 3,  # 创建+首调+释放
+        )
+        for case in probe.connection
+    ]
+
     expanded = ExpandedProbe(
-        probe=probe, manifest=manifest, chain_cases=chain_cases, raw_cases=raw_cases
+        probe=probe,
+        manifest=manifest,
+        chain_cases=chain_cases,
+        raw_cases=raw_cases,
+        connection_cases=connection_cases,
     )
     _ensure_unique_case_ids(expanded)
     return expanded
@@ -426,4 +451,8 @@ def _ensure_unique_case_ids(expanded: ExpandedProbe) -> None:
     for plan in expanded.raw_cases:
         if plan.spec.id in seen:
             raise ValueError(f"raw case id collides with chain case id: {plan.spec.id}")
+        seen.add(plan.spec.id)
+    for plan in expanded.connection_cases:
+        if plan.spec.id in seen:
+            raise ValueError(f"connection case id collides with existing id: {plan.spec.id}")
         seen.add(plan.spec.id)

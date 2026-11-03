@@ -56,7 +56,7 @@ class PacingSpec(_Strict):
 
 
 class WindowSpec(_Strict):
-    """闭区间时间窗口（按日期解释，UTC 0 点起算）。"""
+    """闭区间时间窗口（按日期解释，北京时间零点起算）。"""
 
     start: dt.date
     end: dt.date
@@ -150,7 +150,9 @@ class ChainSpec(_Strict):
 class ClientSpec(_Strict):
     """SDK 客户端构造：``<module>.attr(**kwargs)``。
 
-    ``module`` 写在 raw case 顶层；kwargs 支持 ``$ENV`` 环境变量引用。
+    ``module`` 写在 case 顶层；kwargs 支持 ``$ENV`` 环境变量引用、
+    ``$ctor``（嵌套 SDK 对象构造，如凭据对象）与 ``$deadline_s``
+    （相对当前时刻的秒数 → unix epoch）三类引用，语义见 probes/README.md。
     """
 
     attr: str
@@ -158,11 +160,16 @@ class ClientSpec(_Strict):
 
 
 class CallSpec(_Strict):
-    """单次 SDK 调用：首条作用于 client，后续条作用于上一条的结果（支持链式）。"""
+    """单次 SDK 调用：首条作用于 client，后续条作用于上一条的结果（支持链式）。
+
+    ``target`` 显式覆盖作用对象：``client`` 强制作用于本 case 自建的客户端，
+    ``result`` 强制作用于上一条结果；缺省（None）保持既有链式语义。
+    """
 
     method: str | None = None
     module_func: str | None = None
     kwargs: dict[str, Any] = Field(default_factory=dict)
+    target: Literal["client", "result"] | None = None
 
     @model_validator(mode="after")
     def _one_target(self) -> "CallSpec":
@@ -171,19 +178,36 @@ class CallSpec(_Strict):
         return self
 
 
+class CtorSpec(_Strict):
+    """``$ctor`` 嵌套构造引用：``<module>.attr(**kwargs)``。
+
+    仅用于轻量的凭据/配置对象（如认证对象）；不做网络调用，
+    连接类行为必须用 connection / call 表达。``module`` 缺省继承所在 case。
+    """
+
+    attr: str
+    module: str | None = None
+    kwargs: dict[str, Any] = Field(default_factory=dict)
+
+
 class ExpectSpec(_Strict):
-    """raw 探针期望。``error_contains`` 传空串表示任意错误均可。"""
+    """raw 探针期望。``error_contains`` 传空串表示任意错误均可。
+
+    ``ok`` 期望至少给出一个验证点：``min_rows``（行数下限）或
+    ``min_fields``（mapping 结果必须包含的字段名）。
+    """
 
     status: Literal["ok", "error"] = "ok"
     min_rows: int | None = Field(default=None, ge=0)
+    min_fields: list[str] = Field(default_factory=list)
     error_contains: str | None = None
 
     @model_validator(mode="after")
     def _consistent(self) -> "ExpectSpec":
         if self.status == "error" and self.error_contains is None:
             raise ValueError("error expectation requires error_contains")
-        if self.status == "ok" and self.min_rows is None:
-            raise ValueError("ok expectation requires min_rows")
+        if self.status == "ok" and self.min_rows is None and not self.min_fields:
+            raise ValueError("ok expectation requires min_rows or min_fields")
         return self
 
 
@@ -202,6 +226,38 @@ class RawCaseSpec(_Strict):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
 
+class ConnectionCaseSpec(_Strict):
+    """连接探针：客户端「创建 → 首次取数 → 释放」的生命周期计时与共存验证。
+
+    - ``rounds``：顺序轮数；每轮同时创建 ``concurrent`` 个客户端并各自取数；
+    - ``first_call`` / ``close`` 必须是客户端方法（``method``）；
+      ``close`` 必填——连接类探针必须显式声明释放方式，防止连接泄漏；
+    - 判定：全部步骤无异常 → confirmed（``assert`` false 时 observe）；
+      任一异常 → failed。观测值：每实例的 create/first_call/close 毫秒耗时。
+    """
+
+    id: str = Field(pattern=r"^[A-Za-z][A-Za-z0-9._-]*$")
+    purpose: str = ""
+    module: str
+    client: ClientSpec
+    first_call: CallSpec
+    close: CallSpec
+    rounds: int = Field(default=1, ge=1)
+    concurrent: int = Field(default=1, ge=1)
+    assert_: bool = Field(default=True, alias="assert")
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    @model_validator(mode="after")
+    def _calls_are_client_methods(self) -> "ConnectionCaseSpec":
+        for name, call in (("first_call", self.first_call), ("close", self.close)):
+            if call.module_func is not None:
+                raise ValueError(f"{name} must be a client method (method), not module_func")
+            if call.target is not None:
+                raise ValueError(f"{name} target is implicit (always the case's own client)")
+        return self
+
+
 class ProbeFile(_Strict):
     """探针文件顶层模型，与 ``cases/<provider>.yaml`` 一一对应。"""
 
@@ -212,6 +268,7 @@ class ProbeFile(_Strict):
     targets: dict[AssetType, TargetSpec] = Field(min_length=1)
     chain: ChainSpec | None = None
     raw: list[RawCaseSpec] = Field(default_factory=list)
+    connection: list[ConnectionCaseSpec] = Field(default_factory=list)
     notes: str = ""
 
     @model_validator(mode="after")
@@ -221,9 +278,15 @@ class ProbeFile(_Strict):
                 f"unsupported probe file version {self.version!r}; "
                 f"expected {PROBE_SCHEMA_VERSION}"
             )
-        if self.chain is None and not self.raw:
-            raise ValueError("probe file must define chain and/or raw cases")
+        if self.chain is None and not self.raw and not self.connection:
+            raise ValueError("probe file must define chain and/or raw and/or connection cases")
         raw_ids = [case.id for case in self.raw]
         if len(raw_ids) != len(set(raw_ids)):
             raise ValueError("duplicate raw case ids")
+        conn_ids = [case.id for case in self.connection]
+        if len(conn_ids) != len(set(conn_ids)):
+            raise ValueError("duplicate connection case ids")
+        overlap = set(raw_ids) & set(conn_ids)
+        if overlap:
+            raise ValueError(f"raw/connection case id overlap: {sorted(overlap)}")
         return self
