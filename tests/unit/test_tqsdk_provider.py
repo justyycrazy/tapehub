@@ -32,7 +32,7 @@ def _query(**overrides: Any) -> BarQuery:
         "start": datetime(2026, 1, 1, tzinfo=UTC),
         "end": datetime(2026, 1, 10, tzinfo=UTC),
         "adjust": Adjust.NONE,
-        "variant": DataVariant.EASTMONEY,
+        "variant": DataVariant.TQSDK,
         "offset": 0,
         "limit": 500,
     }

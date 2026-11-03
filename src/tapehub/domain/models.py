@@ -50,13 +50,20 @@ class AssetType(StrEnum):
 class DataVariant(StrEnum):
     """数据源变体：同一 Provider 下同一资产类型的多个上游接口。
 
-    取值是中立的站点名而不是上游函数名；具体映射由各 Provider 的
+    取值是中立的数据源站点名而不是上游函数名；具体映射由各 Provider 的
     manifest operations 完成。默认使用东方财富（eastmoney）。
     """
 
     EASTMONEY = "eastmoney"
     SINA = "sina"
     TENCENT = "tencent"
+    # TqSdk（快期 Shinny Tech 官方 SDK 包名，背后为天勤 TianQin 行情平台）
+    TQSDK = "tqsdk"
+    # 以下为独立数据服务体系，数据源即上游服务自身，与东方财富无关
+    TUSHARE = "tushare"
+    ALPHAFEED = "alphafeed"
+    TICKFLOW = "tickflow"
+    TWELVEDATA = "twelvedata"
 
 
 DEFAULT_VARIANT = DataVariant.EASTMONEY

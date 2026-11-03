@@ -21,6 +21,8 @@ BASE_PARAMS = {
     "interval": "P1D",
     "start": "2026-01-01",
     "end": "2026-01-10",
+    # TqSdk 变体与其 Provider 同名（官方 SDK 包名），非默认 eastmoney，须显式传递
+    "variant": "tqsdk",
 }
 
 
@@ -40,12 +42,9 @@ def test_full_chain_continuous(
     preset_rows(monkeypatch, klines_rows(["2026-01-02", "2026-01-05"]))
 
     params = {
-        "provider": "tqsdk",
+        **BASE_PARAMS,
         "asset_type": "continuous",
         "instrument": "CN-SHFE-cu",
-        "interval": "P1D",
-        "start": "2026-01-01",
-        "end": "2026-01-10",
     }
     response = tqsdk_client.get("/v1/market/bars", params=params)
     assert response.status_code == 200
@@ -78,6 +77,7 @@ def test_capability_catalog(tqsdk_client: TestClient) -> None:  # type: ignore[n
     assert entry["enabled"] is True
     cap = entry["capabilities"][0]
     assert cap["asset_types"] == ["contract", "continuous", "weighted-index"]
+    assert cap["variants"] == ["tqsdk"]
     assert [i["code"] for i in cap["intervals"]] == [
         "PT1M", "PT5M", "PT15M", "PT30M", "PT1H", "P1D",
     ]
@@ -119,12 +119,9 @@ def test_weighted_index_chain(
 ) -> None:
     preset_rows(monkeypatch, klines_rows(["2026-01-02"]))
     params = {
-        "provider": "tqsdk",
+        **BASE_PARAMS,
         "asset_type": "weighted-index",
         "instrument": "CN-SHFE-bu",
-        "interval": "P1D",
-        "start": "2026-01-01",
-        "end": "2026-01-10",
     }
     response = tqsdk_client.get("/v1/market/bars", params=params)
     assert response.status_code == 200

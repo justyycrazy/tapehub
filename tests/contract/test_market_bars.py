@@ -250,6 +250,8 @@ class TestRoutingErrors:
             "provider": "tqsdk",
             "asset_type": "contract",
             "instrument": "CN-SHFE-cu2607",
+            # TqSdk 变体与其 Provider 同名（官方 SDK 包名），须显式传递才能路由到该 Provider
+            "variant": "tqsdk",
         }
         response = default_client.get("/v1/market/bars", params=params)
         assert response.status_code == 501

@@ -17,6 +17,8 @@ BASE_PARAMS = {
     "interval": "P1D",
     "start": "2026-01-01",
     "end": "2026-01-10",
+    # Tushare 变体为其自身数据服务，非默认 eastmoney，须显式传递
+    "variant": "tushare",
 }
 
 
@@ -71,12 +73,9 @@ def test_futures_chain(
     stub.set_rows("fut_daily", futures_rows(["2026-01-02"]))
 
     params = {
-        "provider": "tushare",
+        **BASE_PARAMS,
         "asset_type": "contract",
         "instrument": "CN-SHFE-CU2401",
-        "interval": "P1D",
-        "start": "2026-01-01",
-        "end": "2026-01-10",
     }
     response = http.get("/v1/market/bars", params=params)
     assert response.status_code == 200
@@ -112,6 +111,7 @@ def test_capability_catalog(tushare_client: tuple[TestClient, Any]) -> None:  # 
     assert entry["enabled"] is True
     assert len(entry["capabilities"]) == 2
     stock_cap = next(cap for cap in entry["capabilities"] if cap["asset_types"] == ["stock"])
+    assert stock_cap["variants"] == ["tushare"]
     assert [i["code"] for i in stock_cap["intervals"]] == ["P1D", "P1W", "P1M"]
     assert stock_cap["adjustments"] == ["none", "qfq", "hfq"]
     contract_cap = next(cap for cap in entry["capabilities"] if cap["asset_types"] == ["contract"])

@@ -22,6 +22,8 @@ BASE_PARAMS = {
     "interval": "P1D",
     "start": "2026-01-01",
     "end": "2026-01-10",
+    # AlphaFeed 变体为其自身数据服务，非默认 eastmoney，须显式传递
+    "variant": "alphafeed",
 }
 
 
@@ -109,6 +111,7 @@ def test_capability_catalog(alphafeed_client: TestClient) -> None:  # type: igno
     assert entry["enabled"] is True
     cap = entry["capabilities"][0]
     assert cap["asset_types"] == ["stock"]
+    assert cap["variants"] == ["alphafeed"]
     # AlphaFeed 周期枚举没有 10m
     assert [i["code"] for i in cap["intervals"]] == [
         "PT1M", "PT5M", "PT15M", "PT30M", "PT1H", "P1D", "P1W", "P1M", "P1Y",

@@ -19,6 +19,8 @@ FOREX_PARAMS = {
     "interval": "P1D",
     "start": "2026-01-01",
     "end": "2026-01-10",
+    # Twelve Data 变体为其自身数据服务，非默认 eastmoney，须显式传递
+    "variant": "twelvedata",
 }
 
 
@@ -77,6 +79,7 @@ def test_capability_catalog(twelvedata_client: TestClient) -> None:  # type: ign
     asset_types = {tuple(cap["asset_types"]) for cap in entry["capabilities"]}
     assert asset_types == {("forex",), ("crypto",)}
     for cap in entry["capabilities"]:
+        assert cap["variants"] == ["twelvedata"]
         assert cap["markets"] == ["GLOBAL"]
         assert [i["code"] for i in cap["intervals"]] == [
             "PT1M", "PT5M", "PT15M", "PT30M", "PT1H", "P1D", "P1W", "P1M",
@@ -96,12 +99,9 @@ def test_crypto_chain(twelvedata_client: TestClient, monkeypatch: pytest.MonkeyP
     preset_values(monkeypatch, forex_values_rows(["2026-01-02 00:00:00"]))
 
     params = {
-        "provider": "twelvedata",
+        **FOREX_PARAMS,
         "asset_type": "crypto",
         "instrument": "GLOBAL-CRYPTO-BTC/USD",
-        "interval": "P1D",
-        "start": "2026-01-01",
-        "end": "2026-01-10",
     }
     response = twelvedata_client.get("/v1/market/bars", params=params)
     assert response.status_code == 200
