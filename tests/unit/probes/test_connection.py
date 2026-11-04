@@ -8,6 +8,7 @@
 """
 
 import asyncio
+import json
 import sys
 import time
 import types
@@ -328,3 +329,93 @@ def test_raw_call_target_client_and_min_fields(
     # min_fields 缺失字段：failed
     assert by_id["raw-min-fields-missing"].verdict == "failed"
     assert "fields_ok=False" in by_id["raw-min-fields-missing"].reason
+
+
+def test_lookup_env_falls_back_to_settings(
+    fake_module: types.ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """TAPEHUB_* 引用在进程环境缺失时回退 Settings（含 .env），非该前缀不回退。"""
+    from probes import runner
+
+    monkeypatch.setattr(
+        runner,
+        "_settings_env",
+        make_settings(tqsdk_auth_user="user-from-env-file", tqsdk_auth_password="p"),
+    )
+    monkeypatch.delenv("TAPEHUB_TQSDK_AUTH_USER", raising=False)
+    assert runner._lookup_env("TAPEHUB_TQSDK_AUTH_USER") == "user-from-env-file"
+    # 非 TAPEHUB_ 前缀不做 Settings 回退
+    monkeypatch.setenv("FAKE_PLAIN", "shell")
+    assert runner._lookup_env("FAKE_PLAIN") == "shell"
+    assert runner._lookup_env("NOT_SET_ANYWHERE_XYZ") is None
+
+
+def test_bad_case_kwargs_isolated_not_fatal(
+    fake_module: types.ModuleType,
+) -> None:
+    """单条 case 的 kwargs 配置错误只跳过该 case，不中止整轮运行。"""
+    raw = [
+        {
+            "id": "raw-bad-ctor",
+            "module": "fake_tqsdk",
+            "client": {
+                "attr": "FakeTqApi",
+                "kwargs": {"auth": {"$ctor": {"attr": "NoSuchClass", "kwargs": {}}}},
+            },
+            "call": [{"method": "wait", "kwargs": {}}],
+            "expect": {"status": "ok", "min_rows": 1},
+        },
+        {
+            "id": "raw-good",
+            "module": "fake_tqsdk",
+            "call": [{"module_func": "FakeTqApi", "kwargs": {}}],
+            "expect": {"status": "ok", "min_rows": 1},
+            "assert": False,
+        },
+    ]
+    result = asyncio.run(run_provider_probe(_probe([], raw=raw), _registry(), make_settings()))
+    by_id = {c.case_id: c for c in result.cases if c.kind == "raw"}
+    assert by_id["raw-bad-ctor"].verdict == "skipped"
+    assert "kwargs resolve failed" in by_id["raw-bad-ctor"].reason
+    # 后续 case 正常执行
+    assert by_id["raw-good"].verdict == "observe"
+
+
+def test_write_results_survives_unserializable_observation(
+    fake_module: types.ModuleType, tmp_path: Path
+) -> None:
+    """观测混入不可深拷贝对象（SDK 内部句柄/asyncio Future）时证据照常落盘。
+
+    回归背景：真实 tqsdk 探针曾因 to_json_dict 用 dataclasses.asdict 深拷贝
+    观测树触发 cannot pickle '_asyncio.Future'，整轮运行的证据全部丢失。
+    """
+    from datetime import datetime, timezone
+
+    from probes.report import CaseResult, RunResult, write_results
+
+    class UnDeepCopyable:
+        """模拟 SDK 内部句柄/asyncio Future：asdict 深拷贝即崩（pickle 失败）。"""
+
+        def __deepcopy__(self, memo: dict[int, object]) -> object:
+            raise TypeError("cannot pickle '_asyncio.Future' object")
+
+    fut = UnDeepCopyable()
+    case = CaseResult(
+        case_id="polluted",
+        kind="raw",
+        verdict="confirmed",
+        reason="expectation matched",
+        observation={"handle": fut, "rows": 2},
+    )
+    run = RunResult(
+        provider="fake-provider",
+        started_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        finished_at=datetime(2026, 1, 1, second=1, tzinfo=timezone.utc),
+        cases=[case],
+    )
+    json_path, md_path = write_results(run, tmp_path)
+    payload = json.loads(json_path.read_text(encoding="utf-8"))
+    assert payload["cases"][0]["observation"]["rows"] == 2
+    # 不可序列化对象降级为字符串表示，而不是让整轮证据丢失
+    assert isinstance(payload["cases"][0]["observation"]["handle"], str)
+    assert md_path.exists()

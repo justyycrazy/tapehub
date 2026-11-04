@@ -85,10 +85,37 @@ class RunContext:
         return True
 
 
+# ``.env`` 回退查找的懒加载缓存；测试可 monkeypatch 此变量注入受控值
+_settings_env: Settings | None = None
+
+
+def _lookup_env(name: str) -> str | None:
+    """环境变量查找：进程环境优先，``TAPEHUB_*`` 回退到 Settings（含 ``.env``）。
+
+    pydantic-settings 读取 ``.env`` 不会导出到进程环境，而探针凭据的本地
+    注入路径是 ``.env``（见 probes/README.md），因此对 ``TAPEHUB_*`` 前缀的
+    引用做一次 Settings 回退；值绝不写入结果文件。
+    """
+    resolved = os.environ.get(name)
+    if resolved:
+        return resolved
+    global _settings_env
+    if name.startswith("TAPEHUB_"):
+        if _settings_env is None:
+            try:
+                _settings_env = Settings()
+            except Exception:  # noqa: BLE001 - 本地 .env 非法时退化为空查找
+                _settings_env = Settings(_env_file=None)
+        value = getattr(_settings_env, name[len("TAPEHUB_"):].lower(), None)
+        if value:
+            return str(value)
+    return None
+
+
 def check_requirements(probe: ProbeFile) -> tuple[dict[str, Any], str | None]:
     """检查可选依赖与环境变量；返回（环境布尔, 缺失原因或 None）。"""
     extras = {name: _module_available(name) for name in probe.requires.extras}
-    env = {name: bool(os.environ.get(name)) for name in probe.requires.env}
+    env = {name: bool(_lookup_env(name)) for name in probe.requires.env}
     missing = [name for name, ok in extras.items() if not ok]
     missing += [name for name, ok in env.items() if not ok]
     environment: dict[str, Any] = {"extras": extras, "env": env}
@@ -596,7 +623,7 @@ def _interpolate(value: Any, default_module: str | None = None) -> Any:
         match = _ENV_REF.match(value)
         if match is not None:
             name = match.group(1)
-            resolved = os.environ.get(name)
+            resolved = _lookup_env(name)
             if not resolved:
                 raise MissingEnvError(name)
             return resolved
@@ -700,6 +727,9 @@ async def _run_raw_case(ctx: RunContext, plan: RawPlan) -> CaseResult:
     except MissingEnvError as exc:
         base.reason = f"env missing: {exc.name}"
         return base
+    except Exception as exc:  # noqa: BLE001 - 单条 case 配置错误不中止整轮运行
+        base.reason = f"kwargs resolve failed: {exc}"
+        return base
 
     try:
         module = importlib.import_module(spec.module)
@@ -788,6 +818,9 @@ async def _run_connection_case(ctx: RunContext, plan: ConnectionPlan) -> CaseRes
         close_kwargs = _interpolate(spec.close.kwargs, spec.module)
     except MissingEnvError as exc:
         base.reason = f"env missing: {exc.name}"
+        return base
+    except Exception as exc:  # noqa: BLE001 - 单条 case 配置错误不中止整轮运行
+        base.reason = f"kwargs resolve failed: {exc}"
         return base
 
     try:

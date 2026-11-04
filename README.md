@@ -356,10 +356,12 @@ TqSdk（官方 SDK `tqsdk`：`TqApi(auth=TqAuth(...)).get_kline_serial(...)`）�
 - 变体与 default_variant 均为 `tqsdk`（与 Provider 同名，官方 SDK 包名；背后为天勤行情平台，与东方财富无关）：缺省请求即可路由，也可显式传 `variant=tqsdk`；
 - `default_provider` 声明：`[contract, continuous, weighted-index, etf]`（ETF 为唯一声明者）；
   stock/index 仅声明能力，缺省仍由 akshare 承担，tqsdk 股票/指数需显式 `provider=tqsdk`；
-- **权限边界（usage/mddatas 原文，诚实标注）**：免费版仅期货/期权与四大指数
-  （上证50/沪深300/中证500/中证1000）实时行情；A股股票实时与历史行情需
-  专业版（付费）；ETF 权限口径未核实——无权限时请求失败包装为 `UPSTREAM_ERROR`，
-  由探针实证后回填；
+- **权限说明（usage/mddatas 原文，诚实标注）**：数据可见性由**天勤平台账户
+  档位**决定（免费版/专业版），与 SDK 及其版本无关。免费版账户仅期货/期权
+  与四大指数（上证50/沪深300/中证500/中证1000）实时行情，A股股票/ETF 实时
+  与历史需专业版账户。**当前部署所用快期账户为专业版**（2026-11-04 确认，
+  探针盘中实测：股票/ETF 实时五档可用、ETF 历史日线可用）；若换用免费版
+  账户，无权限请求失败包装为 `UPSTREAM_ERROR`，不视为能力缺口；
 - 复权映射（API 参考 `adj_type` 仅对股票/基金有效）：`qfq→F`、`hfq→B`、`none→None`
   （期货/指数恒为 None，显式传参不依赖上游默认值）；上游「暂不支持复权获取多合约 K 线」
   与本适配器单合约调用不冲突；

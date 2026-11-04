@@ -6,15 +6,37 @@
 
 from __future__ import annotations
 
+import dataclasses
 import datetime as dt
 import json
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field, fields
 from pathlib import Path
 from typing import Any
 
 from tapehub.domain.models import Bar
 
 SAMPLE_BAR_LIMIT = 3
+
+
+def _json_safe(value: Any) -> Any:
+    """递归转 JSON 安全结构；未识别对象降级为字符串表示。
+
+    ``dataclasses.asdict`` 会深拷贝全树，观测里一旦混入不可拷贝对象
+    （如 SDK 内部句柄/asyncio Future）会在写证据时崩溃，丢掉整轮运行——
+    因此这里只做浅层遍历 + 兜底字符串化，证据绝不因序列化失败而丢失。
+    """
+    if value is None or isinstance(value, (str, bool, int, float)):
+        return value
+    if isinstance(value, dict):
+        return {str(key): _json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(item) for item in value]
+    if isinstance(value, dt.datetime):
+        return value.isoformat()
+    # dataclass 保持结构化展开（与旧 asdict 行为一致，如 SeriesCompare）
+    if dataclasses.is_dataclass(value) and not isinstance(value, type):
+        return _json_safe({f.name: getattr(value, f.name) for f in dataclasses.fields(value)})
+    return str(value)
 
 
 @dataclass(slots=True)
@@ -61,10 +83,8 @@ def sample_bars_of(bars: list[Bar], limit: int = SAMPLE_BAR_LIMIT) -> list[dict[
 
 
 def to_json_dict(run: RunResult) -> dict[str, Any]:
-    payload = asdict(run)
-    payload["started_at"] = run.started_at.isoformat()
-    payload["finished_at"] = run.finished_at.isoformat()
-    return payload
+    """浅层提取 + ``_json_safe`` 消毒；不做深拷贝，不可序列化对象降级为字符串。"""
+    return _json_safe({f.name: getattr(run, f.name) for f in fields(run)})
 
 
 def write_results(run: RunResult, results_dir: Path) -> tuple[Path, Path]:
@@ -135,6 +155,45 @@ def render_markdown(run: RunResult) -> str:
         lines.append("| --- | --- |")
         for case in failed:
             lines.append(f"| {case.case_id} | {case.reason} |")
+    else:
+        lines.append("（无）")
+    lines.append("")
+
+    raws = [c for c in run.cases if c.kind == "raw"]
+    conns = [c for c in run.cases if c.kind == "connection"]
+
+    lines.append("## 连接探针（connection）")
+    lines.append("")
+    if conns:
+        lines.append(
+            "| case | 判定 | 实例 | created/首调/释放 | create_ms | first_call_ms | close_ms |"
+        )
+        lines.append("| --- | --- | --- | --- | --- | --- | --- |")
+        for case in conns:
+            obs = case.observation
+            t = obs.get("timings", [])
+            creates = [r.get("create_ms") for r in t]
+            firsts = [r.get("first_call_ms") for r in t]
+            closes = [r.get("close_ms") for r in t]
+            lines.append(
+                f"| {case.case_id} | {case.verdict} | rounds×concurrent="
+                f"{case.dims.get('rounds')}×{case.dims.get('concurrent')} "
+                f"| {obs.get('created')}/{obs.get('first_call_ok')}/{obs.get('closed')} "
+                f"| {creates} | {firsts} | {closes} |"
+            )
+    else:
+        lines.append("（无）")
+    lines.append("")
+
+    lines.append("## raw 探针（声明外探索 / 快照矩阵）")
+    lines.append("")
+    if raws:
+        lines.append("| case | 判定 | 首样本（截断） |")
+        lines.append("| --- | --- | --- |")
+        for case in raws:
+            sample = case.observation.get("sample", [])
+            first = str(sample[0])[:120] if sample else "—"
+            lines.append(f"| {case.case_id} | {case.verdict} | {first} |")
     else:
         lines.append("（无）")
     lines.append("")

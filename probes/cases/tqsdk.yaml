@@ -30,12 +30,12 @@ targets:
     window: {start: 2026-07-01, end: 2026-11-30}
     min_bars: 60
   stock:
-    # A股股票实时与历史行情需专业版权限：无权限时探针如实记录失败
+    # A股实时与历史行情需专业版账户（权限属账户，与 SDK 无关）：当前账户即专业版
     instrument: CN-SSE-600000
     window: {start: 2026-07-01, end: 2026-11-30}
     min_bars: 60
   index:
-    # 免费版仅四大指数实时；历史权限未核实，失败如实记录
+    # 指数历史权限经专业版实测可用；失败如实记录
     instrument: CN-SSE-000016
     window: {start: 2026-07-01, end: 2026-11-30}
     min_bars: 60
@@ -83,7 +83,7 @@ connection:
           $ctor:
             attr: TqAuth
             kwargs:
-              user: "$TAPEHUB_TQSDK_AUTH_USER"
+              user_name: "$TAPEHUB_TQSDK_AUTH_USER"
               password: "$TAPEHUB_TQSDK_AUTH_PASSWORD"
         disable_print: true
     first_call: {method: get_kline_serial, kwargs: {symbol: "SHFE.au2612", duration_seconds: 86400, data_length: 2}}
@@ -101,7 +101,7 @@ connection:
           $ctor:
             attr: TqAuth
             kwargs:
-              user: "$TAPEHUB_TQSDK_AUTH_USER"
+              user_name: "$TAPEHUB_TQSDK_AUTH_USER"
               password: "$TAPEHUB_TQSDK_AUTH_PASSWORD"
         disable_print: true
     first_call: {method: get_kline_serial, kwargs: {symbol: "SHFE.au2612", duration_seconds: 86400, data_length: 2}}
@@ -115,7 +115,7 @@ raw:
   # 权限不足的表现（报错 vs 静默 NaN）由 sample 与判定如实记录；
   # 有文档依据的（期货/四大指数免费）断言，权限未核实的只观察不判定。
   - id: quote-contract
-    purpose: 期货合约实时快照字段可用性（免费版权限有据，断言）
+    purpose: 期货合约实时快照字段可用性（免费版权限亦有据，断言）
     module: tqsdk
     client:
       attr: TqApi
@@ -124,7 +124,7 @@ raw:
           $ctor:
             attr: TqAuth
             kwargs:
-              user: "$TAPEHUB_TQSDK_AUTH_USER"
+              user_name: "$TAPEHUB_TQSDK_AUTH_USER"
               password: "$TAPEHUB_TQSDK_AUTH_PASSWORD"
         disable_print: true
     call:
@@ -140,7 +140,7 @@ raw:
           $ctor:
             attr: TqAuth
             kwargs:
-              user: "$TAPEHUB_TQSDK_AUTH_USER"
+              user_name: "$TAPEHUB_TQSDK_AUTH_USER"
               password: "$TAPEHUB_TQSDK_AUTH_PASSWORD"
         disable_print: true
     call:
@@ -156,14 +156,14 @@ raw:
           $ctor:
             attr: TqAuth
             kwargs:
-              user: "$TAPEHUB_TQSDK_AUTH_USER"
+              user_name: "$TAPEHUB_TQSDK_AUTH_USER"
               password: "$TAPEHUB_TQSDK_AUTH_PASSWORD"
         disable_print: true
     call:
       - {method: get_quote, kwargs: {symbol: "SSE.000016"}}
     expect: {status: ok, min_fields: [last_price, bid_price1, ask_price1, volume]}
   - id: quote-stock
-    purpose: A股个股实时快照（免费版无权限，只观察实际表现）
+    purpose: A股个股实时快照（需专业版账户；当前账户盘中实测可得实时五档）
     module: tqsdk
     client:
       attr: TqApi
@@ -172,7 +172,7 @@ raw:
           $ctor:
             attr: TqAuth
             kwargs:
-              user: "$TAPEHUB_TQSDK_AUTH_USER"
+              user_name: "$TAPEHUB_TQSDK_AUTH_USER"
               password: "$TAPEHUB_TQSDK_AUTH_PASSWORD"
         disable_print: true
     call:
@@ -180,7 +180,7 @@ raw:
     expect: {status: ok, min_fields: [last_price]}
     assert: false
   - id: quote-etf
-    purpose: ETF 实时快照权限口径未核实，只观察
+    purpose: ETF 实时快照（当前专业版账户盘中实测可得实时五档）
     module: tqsdk
     client:
       attr: TqApi
@@ -189,7 +189,7 @@ raw:
           $ctor:
             attr: TqAuth
             kwargs:
-              user: "$TAPEHUB_TQSDK_AUTH_USER"
+              user_name: "$TAPEHUB_TQSDK_AUTH_USER"
               password: "$TAPEHUB_TQSDK_AUTH_PASSWORD"
         disable_print: true
     call:
@@ -206,7 +206,7 @@ raw:
           $ctor:
             attr: TqAuth
             kwargs:
-              user: "$TAPEHUB_TQSDK_AUTH_USER"
+              user_name: "$TAPEHUB_TQSDK_AUTH_USER"
               password: "$TAPEHUB_TQSDK_AUTH_PASSWORD"
         disable_print: true
     call:
