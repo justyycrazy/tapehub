@@ -13,14 +13,16 @@ pacing:
   max_calls: 60
 
 targets:
+  # min_bars 按资产类型统一生效、覆盖全部声明周期：窗口取两年、下限取 20，
+  # 以最稀的月线为标定（约 24 根），避免周/月线被日线口径误伤（同 2ce00f5 的假阳性）
   forex:
     instrument: GLOBAL-OTC-EUR/USD
-    window: {start: 2025-06-01, end: 2025-12-31}
-    min_bars: 80
+    window: {start: 2024-01-01, end: 2025-12-31}
+    min_bars: 20
   crypto:
     instrument: GLOBAL-CRYPTO-BTC/USD
-    window: {start: 2025-06-01, end: 2025-12-31}
-    min_bars: 80
+    window: {start: 2024-01-01, end: 2025-12-31}
+    min_bars: 20
 
 chain:
   include_declared: true
