@@ -1,5 +1,5 @@
 # Twelve Data 数据探针：外汇/加密货币可用性、历史深度、单次上限与未声明周期探测。
-# 免费档限频 8 次/分钟，pacing 设为 8 秒。
+# 免费档限频 8 次/分钟、800 次/天，pacing 设为 10 秒（任意 60 秒窗口最多 6 次，留安全余量）。
 probe: twelvedata
 version: 1
 
@@ -8,7 +8,7 @@ requires:
   env: [TAPEHUB_TWELVEDATA_API_KEY]
 
 pacing:
-  call_interval_s: 8.0
+  call_interval_s: 10.0
   timeout_s: 60
   max_calls: 60
 
