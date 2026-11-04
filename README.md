@@ -421,7 +421,7 @@ Twelve Data（官方库 `twelvedata`（twelvedata-python）：`TDClient(apikey=.
 - API Key 通过环境变量 `TAPEHUB_TWELVEDATA_API_KEY` 提供并传入 `TDClient(apikey=...)`，禁止写入代码/manifest/日志；未配置时能力目录正常，数据请求返回 `PROVIDER_NOT_IMPLEMENTED`；
 - 标的代码约定（symbol 段允许斜杠，对应上游货币对写法）：外汇 `GLOBAL-OTC-EUR/USD → EUR/USD`（ISO 4217，OTC 场外聚合报价）；加密货币 `GLOBAL-CRYPTO-BTC/USD → BTC/USD`（聚合对；交易所专属对与 `exchange` 筛选参数暂不支持）；
 - interval 枚举（上游完整支持 1min/5min/15min/30min/45min/1h/2h/4h/8h/1day/1week/1month）：本适配器声明全部 12 个周期 `PT1M/PT5M/PT15M/PT30M/PT45M/PT1H/PT2H/PT4H/PT8H/P1D/P1W/P1M`（45min/2h/4h/8h 经数据探针实测可用后补充声明，报告 20261104T061857Z）；
-- 历史覆盖范围（`history`）：forex P1D 已由数据探针实测回填 `start=2000-01-01+08:00`（2026-11-04，搜索下限触底、真实最早点更早，待精化）；其余周期/资产类型未实测，保持 `null`；
+- 历史覆盖范围（`history`）已由全量深度探针实测回填（2026-11-04，粒度 90 天，approx）：日内周期 forex `≈2020-01-31~04-08`、crypto `≈2020-01-07~04-07`；forex 日/周/月触底 `2000-01-01`（真实更早、待精化）；crypto 日/周 `≈2017-08-29`、月 `≈2017-08-02`；
 - 外汇/加密货币的 bar 时间按 **UTC**（官方文档明确）；`start_date`/`end_date` 显式传 `YYYY-MM-DDTHH:MM:SS`；`outputsize` 显式传上限 5000（上游默认仅 30）；
 - 上游 `values` 默认倒序（最新在前），适配器统一按升序排序输出；`values` 字段为字符串，标准化为数值；
 - 区间无数据行为（2026-11-04 探针实测核实）：上游返回 400 `BadRequestError` "No data is available on the specified dates" 而非空列表，适配器按指纹归一化为空结果；

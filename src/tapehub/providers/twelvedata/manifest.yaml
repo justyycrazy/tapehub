@@ -18,9 +18,10 @@
 # - 外汇/加密货币通常无 volume 字段：标准 volume 为 null（能力 fields
 #   不含 volume）；无复权概念，adjust 仅声明 none；
 # - 响应 values 默认倒序（最新在前），由共享分页组件统一升序排序；
-# - 历史覆盖范围：forex P1D 由数据探针实测回填 start=2000-01-01+08:00
-#   （报告 20261104T061857Z；搜索下限触底，真实最早点更早、待精化）；
-#   其余周期/资产类型未实测，保持 null，不编造；
+# - 历史覆盖范围（history.start）由全量深度探针实测回填（报告 20261104T072650Z、
+#   20261104T084302Z，人工确认）：日内周期 forex ≈2020-01-31~04-08、crypto
+#   ≈2020-01-07~04-07（粒度 90 天，approx，回填值取估计日零点）；forex P1D/P1W/P1M
+#   触底 2000-01-01（真实更早、待精化）；crypto 日/周 ≈2017-08-29、月 ≈2017-08-02；
 # - 区间无数据行为（2026-11-04 探针实测核实，报告 20261104T065529Z）：上游返回
 #   400 BadRequestError "No data is available on the specified dates" 而非空列表，
 #   适配器按指纹归一化为空结果；其余未核实异常统一由应用层包装为 UPSTREAM_ERROR；
@@ -38,18 +39,18 @@ capabilities:
     delivery: [rest]
     variants: [twelvedata]
     intervals:
-      - {code: PT1M, history: {start: null, end: null}}
-      - {code: PT5M, history: {start: null, end: null}}
-      - {code: PT15M, history: {start: null, end: null}}
-      - {code: PT30M, history: {start: null, end: null}}
-      - {code: PT45M, history: {start: null, end: null}}
-      - {code: PT1H, history: {start: null, end: null}}
-      - {code: PT2H, history: {start: null, end: null}}
-      - {code: PT4H, history: {start: null, end: null}}
-      - {code: PT8H, history: {start: null, end: null}}
+      - {code: PT1M, history: {start: 2020-04-08T00:00:00+08:00, end: null}}
+      - {code: PT5M, history: {start: 2020-03-19T00:00:00+08:00, end: null}}
+      - {code: PT15M, history: {start: 2020-01-31T00:00:00+08:00, end: null}}
+      - {code: PT30M, history: {start: 2020-01-31T00:00:00+08:00, end: null}}
+      - {code: PT45M, history: {start: 2020-01-31T00:00:00+08:00, end: null}}
+      - {code: PT1H, history: {start: 2020-01-31T00:00:00+08:00, end: null}}
+      - {code: PT2H, history: {start: 2020-01-31T00:00:00+08:00, end: null}}
+      - {code: PT4H, history: {start: 2020-01-31T00:00:00+08:00, end: null}}
+      - {code: PT8H, history: {start: 2020-01-31T00:00:00+08:00, end: null}}
       - {code: P1D, history: {start: 2000-01-01T00:00:00+08:00, end: null}}
-      - {code: P1W, history: {start: null, end: null}}
-      - {code: P1M, history: {start: null, end: null}}
+      - {code: P1W, history: {start: 2000-01-01T00:00:00+08:00, end: null}}
+      - {code: P1M, history: {start: 2000-01-01T00:00:00+08:00, end: null}}
     adjustments: [none]
     fields: [open, high, low, close]
 
@@ -60,18 +61,18 @@ capabilities:
     delivery: [rest]
     variants: [twelvedata]
     intervals:
-      - {code: PT1M, history: {start: null, end: null}}
-      - {code: PT5M, history: {start: null, end: null}}
-      - {code: PT15M, history: {start: null, end: null}}
-      - {code: PT30M, history: {start: null, end: null}}
-      - {code: PT45M, history: {start: null, end: null}}
-      - {code: PT1H, history: {start: null, end: null}}
-      - {code: PT2H, history: {start: null, end: null}}
-      - {code: PT4H, history: {start: null, end: null}}
-      - {code: PT8H, history: {start: null, end: null}}
-      - {code: P1D, history: {start: null, end: null}}
-      - {code: P1W, history: {start: null, end: null}}
-      - {code: P1M, history: {start: null, end: null}}
+      - {code: PT1M, history: {start: 2020-04-07T00:00:00+08:00, end: null}}
+      - {code: PT5M, history: {start: 2020-03-25T00:00:00+08:00, end: null}}
+      - {code: PT15M, history: {start: 2020-02-19T00:00:00+08:00, end: null}}
+      - {code: PT30M, history: {start: 2020-01-07T00:00:00+08:00, end: null}}
+      - {code: PT45M, history: {start: 2020-01-07T00:00:00+08:00, end: null}}
+      - {code: PT1H, history: {start: 2020-01-07T00:00:00+08:00, end: null}}
+      - {code: PT2H, history: {start: 2020-01-07T00:00:00+08:00, end: null}}
+      - {code: PT4H, history: {start: 2020-01-07T00:00:00+08:00, end: null}}
+      - {code: PT8H, history: {start: 2020-01-07T00:00:00+08:00, end: null}}
+      - {code: P1D, history: {start: 2017-08-29T00:00:00+08:00, end: null}}
+      - {code: P1W, history: {start: 2017-08-29T00:00:00+08:00, end: null}}
+      - {code: P1M, history: {start: 2017-08-02T00:00:00+08:00, end: null}}
     adjustments: [none]
     fields: [open, high, low, close]
 

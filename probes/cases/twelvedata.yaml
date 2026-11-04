@@ -10,7 +10,9 @@ requires:
 pacing:
   call_interval_s: 10.0
   timeout_s: 60
-  max_calls: 60
+  # 常态全量深度覆盖（2026-11-04 人工确认保留）：固定 28（24 availability + 1 limit + 1 raw×3）
+  # + 24 条 history_depth case × 16 = 412 最坏；单轮最多约一半日配额（免费档 800/天）
+  max_calls: 420
 
 targets:
   # min_bars 按资产类型统一生效、覆盖全部声明周期：窗口取两年、下限取 20，
@@ -28,11 +30,11 @@ chain:
   include_declared: true
   skip: []
   history_depth:
-    targets: [forex]
-    earliest: 2000-01-01   # 2026-11-04 实测下限触底（真实最早点更早），精化需前推 earliest 再跑
+    targets: [forex, crypto]
+    earliest: 2000-01-01   # forex 粗周期已实测触底（≥2000-01-01，真实更早），维持该下限
     era_step_years: 5
-    max_calls: 16
-    intervals: [P1D]     # 分钟级历史深度成本高（1min 数据量大），收敛到日线
+    max_calls: 16        # 每条 case 的预算：6 纪元回溯 + 二分（约 11 探 + 1 验证）
+    intervals: [PT1M, PT5M, PT15M, PT30M, PT45M, PT1H, PT2H, PT4H, PT8H, P1D, P1W, P1M]
   limit_truncation:
     targets: [forex]
     interval: PT1M
@@ -55,4 +57,6 @@ notes: >
   crypto 的 volume 上游可能缺失（→ null），从 availability 的 null_rates 核对；
   45min/2h/4h/8h 已于 2026-11-04 经实测确认可用并回填 manifest 声明
   （报告 20261104T061857Z），对应 raw 探针随之移除、由 availability 链路覆盖；
+  24 个周期 history.start 已按全量深度实测回填（报告 20261104T072650Z、
+  20261104T084302Z；粒度 90 天 approx，forex 粗周期触底待精化）；
   上游 values 默认倒序，适配器已统一升序，报告首尾时间戳应体现这一点。
