@@ -107,6 +107,19 @@ class TestBarQuery:
         assert query.end.tzinfo == CN
         assert query.end.hour == 8
 
+    def test_global_bounds_normalized_to_beijing(self) -> None:
+        # GLOBAL 标的（如 twelvedata 外汇）同样统一归一化为北京时间
+        query = self._query(
+            asset_type="forex",
+            instrument="GLOBAL-OTC-EUR/USD",
+            start=datetime(2026, 1, 1, tzinfo=UTC),
+            end=datetime(2026, 1, 31, tzinfo=UTC),
+        )
+        assert query.start.tzinfo == CN
+        assert query.start.hour == 8
+        assert query.end.tzinfo == CN
+        assert query.end.hour == 8
+
     def test_naive_bounds_rejected(self) -> None:
         with pytest.raises(ValidationError):
             self._query(start=datetime(2026, 1, 1), end=datetime(2026, 1, 31, tzinfo=UTC))
@@ -124,3 +137,18 @@ class TestBarBatch:
             limit=500,
         )
         assert batch.count == 2
+
+    def test_global_batch_normalized_to_beijing(self) -> None:
+        # GLOBAL 市场（twelvedata 外汇/加密货币）批次同样统一归一化为北京时间
+        batch = BarBatch(
+            instrument="GLOBAL-CRYPTO-BTC/USD",
+            interval="P1D",
+            bars=[_bar("2026-01-01T00:00:00+00:00"), _bar("2026-01-02T00:00:00+00:00")],
+            provider="fake-provider",
+            received_at=datetime(2026, 2, 1, tzinfo=UTC),
+            offset=0,
+            limit=500,
+        )
+        assert batch.bars[0].timestamp == datetime.fromisoformat("2026-01-01T08:00:00+08:00")
+        assert batch.bars[1].timestamp == datetime.fromisoformat("2026-01-02T08:00:00+08:00")
+        assert batch.received_at == datetime.fromisoformat("2026-02-01T08:00:00+08:00")

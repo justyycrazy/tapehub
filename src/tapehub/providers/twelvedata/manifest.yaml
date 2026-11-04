@@ -12,8 +12,13 @@
 # - interval 枚举 1min/5min/15min/30min/45min/1h/2h/4h/8h/1day/1week/1month，
 #   本适配器声明全部 12 个周期（45min/2h/4h/8h 经数据探针实测可用后补充声明，
 #   报告 20261104T061857Z）；
-# - 外汇/加密货币的 datetime 按 UTC（官方文档明确）；start_date/end_date
-#   格式 YYYY-MM-DD 或 YYYY-MM-DDTHH:MM:SS；outputsize 上限 5000，
+# - datetime 墙钟口径按资产类型区分（2026-11-04 实测 + 官方文档
+#   https://twelvedata.com/exchanges/physical_currency|digital_currency）：
+#   外汇按 Australia/Sydney（AEDT/AEST 随夏令时切换）、加密货币按 UTC；
+#   start_date/end_date 格式 YYYY-MM-DD 或 YYYY-MM-DDTHH:MM:SS（无时区
+#   后缀，按同口径解释），适配器负责北京时间 ↔ 上游墙钟的双向转换；
+#   另实测发现外汇 1h 与 1day 数据源不一致（1h 无法聚合还原 1day OHLC），
+#   需要日线时应直接请求 P1D；outputsize 上限 5000，
 #   采用覆盖判定：返回数量达上限且最早一根晚于请求 start 时标记 partial=true；
 # - 外汇/加密货币通常无 volume 字段：标准 volume 为 null（能力 fields
 #   不含 volume）；无复权概念，adjust 仅声明 none；

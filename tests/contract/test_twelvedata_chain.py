@@ -45,7 +45,8 @@ def test_forex_chain(twelvedata_client: TestClient, monkeypatch: pytest.MonkeyPa
     assert len(data["bars"]) == 8
     timestamps = [bar["timestamp"] for bar in data["bars"]]
     assert timestamps == sorted(timestamps)  # 上游倒序 → 统一升序
-    assert data["bars"][0]["timestamp"] == "2026-01-02T00:00:00Z"
+    # 外汇墙钟按悉尼解释，全市场统一输出北京时间：悉尼 01-02 00:00 = 北京 01-01 21:00
+    assert data["bars"][0]["timestamp"] == "2026-01-01T21:00:00+08:00"
     assert data["bars"][0]["close"] == 1.0855
     assert data["bars"][0]["volume"] is None  # 外汇无 volume 字段
 

@@ -1,12 +1,12 @@
 """统一领域模型。
 
 Domain 不依赖 FastAPI、PyYAML 或任何 Provider SDK；
-时间字段一律要求带时区偏移，输出按标的所属市场的规范时区：
-国内（CN）行情统一北京时间（+08:00），其余市场统一 UTC。
+时间字段一律要求带时区偏移，全市场统一归一化为北京时间（+08:00）
+（2026-11-04 数据探针确认上游口径后统一，见 README「时间边界与时区」）。
 """
 
 import re
-from datetime import datetime, timezone
+from datetime import datetime
 from enum import StrEnum
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -15,14 +15,8 @@ from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validat
 
 from tapehub.domain.intervals import Interval
 
-UTC = timezone.utc
-# 国内行情数据的规范时区：中国无夏令时，Asia/Shanghai 恒为 +08:00
+# 项目规范时区：中国无夏令时，Asia/Shanghai 恒为 +08:00；全市场统一使用
 CN_TIMEZONE = ZoneInfo("Asia/Shanghai")
-
-
-def market_zone(market: str) -> ZoneInfo:
-    """市场的规范时区：国内（CN）→ 北京时间，其余市场 → UTC。"""
-    return CN_TIMEZONE if market == "CN" else UTC
 
 
 def ensure_aware(value: datetime, field: str) -> datetime:
@@ -30,11 +24,6 @@ def ensure_aware(value: datetime, field: str) -> datetime:
     if value.tzinfo is None or value.tzinfo.utcoffset(value) is None:
         raise ValueError(f"{field} must include a timezone")
     return value
-
-
-def normalize_market_time(value: datetime, market: str, field: str) -> datetime:
-    """要求时区感知并归一化到该市场的规范时区（CN → 北京时间，其余 → UTC）。"""
-    return ensure_aware(value, field).astimezone(market_zone(market))
 
 # 标准标的代码：{market}-{exchange}-{symbol}，例如 CN-SSE-600000。
 # market/exchange 必须大写；symbol 大小写与字符集遵从交易所/Provider 约定：
@@ -181,8 +170,8 @@ class Bar(BaseModel):
 class BarQuery(BaseModel):
     """统一历史 K 线查询。时间范围采用闭区间 [start, end]。
 
-    输入边界只要求时区感知（偏移任意，CN 标的推荐 +08:00）；
-    构造完成后统一归一化到标的市场的规范时区（CN → 北京时间）。
+    输入边界只要求时区感知（偏移任意，推荐 +08:00）；
+    构造完成后全市场统一归一化为北京时间（+08:00）。
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -214,9 +203,9 @@ class BarQuery(BaseModel):
 
     @model_validator(mode="after")
     def _bounds_market_zone(self) -> "BarQuery":
-        zone = market_zone(self.instrument.market)
-        self.start = self.start.astimezone(zone)
-        self.end = self.end.astimezone(zone)
+        # 全市场统一北京时间（含 GLOBAL：twelvedata 外汇/加密货币等）
+        self.start = self.start.astimezone(CN_TIMEZONE)
+        self.end = self.end.astimezone(CN_TIMEZONE)
         return self
 
 
@@ -227,7 +216,7 @@ class BarBatch(BaseModel):
     适配器返回前必须完成排序与切片，Application 层不得再次切片。
 
     构造完成后，批次内全部时间字段（bar timestamp、source_time、received_at）
-    统一归一化到标的市场的规范时区（CN → 北京时间，其余 → UTC）。
+    全市场统一归一化为北京时间（+08:00）。
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -257,12 +246,12 @@ class BarBatch(BaseModel):
 
     @model_validator(mode="after")
     def _market_zone(self) -> "BarBatch":
-        zone = market_zone(self.instrument.market)
-        self.received_at = self.received_at.astimezone(zone)
+        # 全市场统一北京时间（含 GLOBAL：twelvedata 外汇/加密货币等）
+        self.received_at = self.received_at.astimezone(CN_TIMEZONE)
         if self.source_time is not None:
-            self.source_time = self.source_time.astimezone(zone)
+            self.source_time = self.source_time.astimezone(CN_TIMEZONE)
         for bar in self.bars:
-            bar.timestamp = bar.timestamp.astimezone(zone)
+            bar.timestamp = bar.timestamp.astimezone(CN_TIMEZONE)
         return self
 
     @computed_field  # type: ignore[prop-decorator]

@@ -5,9 +5,8 @@
 - ``BeijingDatetime``：服务级时间戳（健康检查 timestamp、能力目录 generated_at），
   项目内部统一北京时间（+08:00）；
 - ``MarketDatetime``：行情数据时间（bar timestamp、received_at 等），
-  已由领域层归一化到标的所属市场的规范时区（CN → 北京时间 +08:00；
-  GLOBAL/twelvedata 暂维持 UTC，待数据探针确认后统一），
-  序列化原样保留偏移。
+  已由领域层全市场统一归一化为北京时间（+08:00，2026-11-04 数据探针
+  确认上游口径后统一），序列化原样保留偏移。
 """
 
 from datetime import datetime

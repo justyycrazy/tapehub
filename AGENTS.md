@@ -71,7 +71,8 @@ Provider 适配器实现 Domain Port。
 - `adjust` 声明默认值按资产类型：stock → `qfq`（前复权），其余 → `none`；
 - 时间范围闭区间 `[start, end]`；输入时间必须带时区偏移（拒绝裸时间与仅日期）；
   项目内部统一北京时间：服务级时间戳一律北京时间（`+08:00`）；行情数据时间戳
-  CN → 北京时间，GLOBAL（twelvedata 等）暂维持 UTC（待探针确认后统一）；
+  全市场统一北京时间（GLOBAL 上游墙钟口径由适配器解析转换，如 twelvedata
+  外汇 Australia/Sydney、加密货币 UTC，2026-11-04 探针实测确认）；
 - 结果先按 timestamp 升序排序，再应用 offset/limit；不返回 total。
 
 ## 安全与诚实边界

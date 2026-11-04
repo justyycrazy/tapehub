@@ -9,6 +9,9 @@
   （pydantic-settings），只经内存传给 TDClient，禁止写入代码、manifest、
   日志或异常响应；
 - 官方库为同步 SDK：调用通过 ``call_in_thread`` 隔离到线程池；
+- 上游 datetime 墙钟口径按资产类型区分（2026-11-04 实测 + 官方文档）：
+  外汇 Australia/Sydney（AEDT/AEST），加密货币 UTC；解析见 response_mapper，
+  统一北京时间归一化由领域层 BarBatch 完成；
 - 上游 outputsize 上限 5000 且按“最新一根”往回返回：采用覆盖判定——
   返回数量达到上限且最早一根仍晚于请求 start 时标记 partial=true，
   API 层据此在 warnings 中提示可能截断；
@@ -60,7 +63,7 @@ class ProviderAdapter(BaseProviderAdapter):
 
     def _fetch_sync(self, api_key: str, operation: str, query: BarQuery) -> BarBatch:
         rows = self._fetch_rows(api_key, query)
-        bars = to_standard_bars(rows)
+        bars = to_standard_bars(rows, query.asset_type)
         # 上游按日期范围过滤，这里按闭区间 [start, end] 精确复核统一时间语义
         window = [bar for bar in bars if query.start <= bar.timestamp <= query.end]
         # 覆盖不足：返回数量达到上限且最早一根仍晚于请求 start，更早的数据取不到

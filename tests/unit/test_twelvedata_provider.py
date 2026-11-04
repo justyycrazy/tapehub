@@ -9,7 +9,14 @@ import pytest
 
 from tapehub.domain.errors import ProviderNotImplementedError, UnsupportedCapabilityError
 from tapehub.domain.intervals import Interval
-from tapehub.domain.models import Adjust, AssetType, BarQuery, DataVariant, Instrument
+from tapehub.domain.models import (
+    CN_TIMEZONE,
+    Adjust,
+    AssetType,
+    BarQuery,
+    DataVariant,
+    Instrument,
+)
 from tapehub.providers.manifest import load_builtin_manifest
 from tapehub.providers.registry import build_provider_record
 from tapehub.settings import Settings
@@ -72,19 +79,21 @@ def test_request_and_response_mapping(monkeypatch: pytest.MonkeyPatch) -> None:
     client = StubTDClient.instances[-1]
     assert client.apikey == "test-key"  # settings 注入链路
     kwargs = client.calls[0]
-    # 所有参数显式传递（上游 outputsize 默认 30，必须显式传上限）
+    # 所有参数显式传递（上游 outputsize 默认 30，必须显式传上限）；
+    # 边界从北京时间转悉尼墙钟（1 月悉尼 AEDT=UTC+11，比北京快 3 小时）
     assert kwargs == {
         "symbol": "EUR/USD",
         "interval": "1day",
         "outputsize": 5000,
-        "start_date": "2026-01-01T00:00:00",
-        "end_date": "2026-01-10T00:00:00",
+        "start_date": "2026-01-01T11:00:00",
+        "end_date": "2026-01-10T11:00:00",
     }
 
     assert batch.provider == "twelvedata"
     assert batch.count == 2
     bar = batch.bars[0]
-    assert bar.timestamp == datetime(2026, 1, 5, tzinfo=UTC)  # 外汇按 UTC
+    # 外汇墙钟按悉尼解释：悉尼 2026-01-05 00:00 = 北京 2026-01-04 21:00
+    assert bar.timestamp == datetime(2026, 1, 4, 21, tzinfo=CN_TIMEZONE)
     assert bar.close == 1.0855
     assert bar.volume is None  # 外汇无 volume 字段
     assert bar.amount is None  # 上游无成交额字段
@@ -99,7 +108,7 @@ def test_values_order_desc_normalized_ascending(monkeypatch: pytest.MonkeyPatch)
     batch = asyncio.run(adapter.fetch_bars(_query()))
     timestamps = [bar.timestamp for bar in batch.bars]
     assert timestamps == sorted(timestamps)
-    assert timestamps[0] == datetime(2026, 1, 5, tzinfo=UTC)
+    assert timestamps[0] == datetime(2026, 1, 4, 21, tzinfo=CN_TIMEZONE)
 
 
 @pytest.mark.parametrize(
@@ -139,11 +148,13 @@ def test_crypto_symbol(monkeypatch: pytest.MonkeyPatch) -> None:
         asset_type=AssetType.CRYPTO,
         instrument=Instrument.parse("GLOBAL-CRYPTO-BTC/USD"),
     )
-    asyncio.run(adapter.fetch_bars(query))
+    batch = asyncio.run(adapter.fetch_bars(query))
 
     from tests.fixtures.providers.stub_twelvedata import StubTDClient
 
     assert StubTDClient.instances[-1].calls[0]["symbol"] == "BTC/USD"
+    # 加密货币墙钟按 UTC 解释（区别于外汇的 Sydney）：UTC 00:00 = 北京 08:00
+    assert batch.bars[0].timestamp == datetime(2026, 1, 5, 8, tzinfo=CN_TIMEZONE)
 
 
 def test_no_data_window_normalized_to_empty(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -232,7 +243,8 @@ def test_closed_interval_filter_and_pagination(
 
     assert batch.count == 1
     assert batch.offset == 1
-    assert batch.bars[0].timestamp == datetime(2026, 1, 3, tzinfo=UTC)
+    # 窗内悉尼日 2026-01-02/03 → 北京 2026-01-01/02 21:00，offset=1 取第二根
+    assert batch.bars[0].timestamp == datetime(2026, 1, 2, 21, tzinfo=CN_TIMEZONE)
 
 
 def test_partial_when_window_not_covered(monkeypatch: pytest.MonkeyPatch) -> None:

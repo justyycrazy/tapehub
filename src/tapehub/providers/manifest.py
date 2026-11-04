@@ -17,13 +17,13 @@ from tapehub.domain.capabilities import Capability, IntervalEntry, IntervalHisto
 from tapehub.domain.errors import ManifestError
 from tapehub.domain.intervals import Interval
 from tapehub.domain.models import (
+    CN_TIMEZONE,
     Adjust,
     AssetType,
     DataType,
     DataVariant,
     Delivery,
     ensure_aware,
-    market_zone,
 )
 
 
@@ -81,9 +81,8 @@ class ManifestCapability(BaseModel):
     fields: list[str]
 
     def to_domain(self) -> Capability:
-        # 历史边界归一化到市场规范时区（单市场声明时，CN → 北京时间）；
-        # 多市场声明不做单一归一，保持 manifest 作者提供的偏移
-        zone = market_zone(self.markets[0]) if len(self.markets) == 1 else None
+        # 历史边界统一归一化为北京时间（全市场统一口径）
+        zone = CN_TIMEZONE
         intervals = [
             IntervalEntry(
                 code=entry.code,

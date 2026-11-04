@@ -226,10 +226,12 @@ GET /v1/market/bars?provider=akshare&asset_type=stock&instrument=CN-SSE-600000&i
 - 时间边界**必须携带时区偏移**（国内标的推荐 `+08:00`，如
   `2026-01-05T00:00:00+08:00`）；纯日期（`2026-01-01`）与无时区的裸时间
   一律拒绝，不做隐式时区解释；
-- **项目内部统一北京时间**：服务级时间戳（健康检查 `timestamp`、能力目录
-  `generated_at`）一律北京时间（`+08:00` 后缀）；行情数据时间戳按标的所属
-  市场输出——国内（CN）统一北京时间（`+08:00`）；GLOBAL（twelvedata 等）
-  暂维持 UTC（`Z` 结尾），待数据探针确认上游口径后统一为北京时间；
+- **项目内部统一北京时间（全市场）**：服务级时间戳（健康检查 `timestamp`、
+  能力目录 `generated_at`）一律北京时间（`+08:00` 后缀）；行情数据时间戳
+  亦全市场统一输出北京时间——2026-11-04 数据探针实测确认 twelvedata 上游
+  口径（外汇墙钟为 Australia/Sydney、加密货币为 UTC）后，GLOBAL 标的不再
+  维持 UTC 输出，与国内（CN）标的一致；上游墙钟的解析与转换由各适配器
+  负责（见各 Provider 映射表）；
 - 上游只支持按日期过滤时，适配器在标准化后按 `[start, end]` 闭区间精确复核。
 
 ### 分页语义
@@ -422,7 +424,8 @@ Twelve Data（官方库 `twelvedata`（twelvedata-python）：`TDClient(apikey=.
 - 标的代码约定（symbol 段允许斜杠，对应上游货币对写法）：外汇 `GLOBAL-OTC-EUR/USD → EUR/USD`（ISO 4217，OTC 场外聚合报价）；加密货币 `GLOBAL-CRYPTO-BTC/USD → BTC/USD`（聚合对；交易所专属对与 `exchange` 筛选参数暂不支持）；
 - interval 枚举（上游完整支持 1min/5min/15min/30min/45min/1h/2h/4h/8h/1day/1week/1month）：本适配器声明全部 12 个周期 `PT1M/PT5M/PT15M/PT30M/PT45M/PT1H/PT2H/PT4H/PT8H/P1D/P1W/P1M`（45min/2h/4h/8h 经数据探针实测可用后补充声明，报告 20261104T061857Z）；
 - 历史覆盖范围（`history`）已由全量深度探针实测回填（2026-11-04，粒度 90 天，approx）：日内周期 forex `≈2020-01-31~04-08`、crypto `≈2020-01-07~04-07`；forex 日/周/月触底 `2000-01-01`（真实更早、待精化）；crypto 日/周 `≈2017-08-29`、月 `≈2017-08-02`；
-- 外汇/加密货币的 bar 时间按 **UTC**（官方文档明确）；`start_date`/`end_date` 显式传 `YYYY-MM-DDTHH:MM:SS`；`outputsize` 显式传上限 5000（上游默认仅 30）；
+- bar 时间墙钟口径按资产类型区分（2026-11-04 实测 + [官方文档](https://twelvedata.com/exchanges/physical_currency)）：外汇按 **Australia/Sydney**（AEDT/AEST 随夏令时切换，用 `ZoneInfo` 解析）、加密货币按 **UTC**；适配器将墙钟解析为对应时区的 aware 时间后，由领域层统一归一化为北京时间输出；`start_date`/`end_date` 为上游口径墙钟 `YYYY-MM-DDTHH:MM:SS`，由适配器从北京时间转换后显式传递；`outputsize` 显式传上限 5000（上游默认仅 30）；
+- 实测注意（2026-11-04）：外汇 `1h` 与 `1day` 数据源不一致——任何日切窗口（Sydney/UTC/纽约 17:00 ET）的 1h 聚合都无法精确还原 `1day` 的 OHLC，需要日线时请直接请求 `P1D`；加密货币 `1h` 聚合可完美还原 `1day`（UTC 0 点日切）；
 - 上游 `values` 默认倒序（最新在前），适配器统一按升序排序输出；`values` 字段为字符串，标准化为数值；
 - 区间无数据行为（2026-11-04 探针实测核实）：上游返回 400 `BadRequestError` "No data is available on the specified dates" 而非空列表，适配器按指纹归一化为空结果；
 - 其余上游 SDK/HTTP 异常类型与限频规则未在所引文档中核实，统一包装为 `UPSTREAM_ERROR`。
