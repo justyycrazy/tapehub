@@ -1,5 +1,6 @@
 """FastAPI 应用工厂与组合根。"""
 
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -26,6 +27,9 @@ def create_app(
     """
     settings = settings or Settings()
     registry = registry or build_default_registry(settings)
+
+    # 服务路径：让 tapehub.* 生命周期日志（如 tqsdk runtime 代际/回收）可见
+    logging.basicConfig(level=logging.INFO)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:

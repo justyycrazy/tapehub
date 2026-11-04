@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import asyncio
 import concurrent.futures
+import logging
 import queue
 import threading
 import time
@@ -42,6 +43,9 @@ from tapehub.domain.models import CN_TIMEZONE
 _WATCHDOG_STREAK_LIMIT = 3
 # 新一代重建退避（秒）：上游不可用时避免密集重试
 _REBUILD_BACKOFF_SECONDS = 2.0
+
+
+logger = logging.getLogger("tapehub.tqsdk.runtime")
 
 
 class _GenerationReset(Exception):
@@ -193,6 +197,8 @@ class TqSdkRuntime:
             with self._lock:
                 self._last_error = exc
                 self._status = RuntimeStatus.FATAL
+            logger.error("tqsdk runtime thread died: %r", exc)
+            self._ready.set()  # 唤醒 start() 的等待（否则空等 construct_timeout）
             self._fail_all_jobs(f"tqsdk runtime thread died: {exc!r}")
 
     def _thread_main_inner(self) -> None:
@@ -203,6 +209,7 @@ class TqSdkRuntime:
             if backoff:
                 time.sleep(backoff)
             self._status = RuntimeStatus.RECYCLING
+            _construct_t0 = time.perf_counter()
             # 每代一个显式循环并设为线程 current loop：
             # SDK/close 内部的 asyncio.gather、get_event_loop 都依赖它
             gen_loop = asyncio.SelectorEventLoop()
@@ -220,6 +227,7 @@ class TqSdkRuntime:
                 with self._lock:
                     self._last_error = exc
                     self._status = RuntimeStatus.FATAL
+                logger.error("tqsdk runtime construction failed: %r", exc)
                 self._ready.set()
                 self._fail_all_jobs("tqsdk runtime construction failed")
                 return
@@ -227,6 +235,11 @@ class TqSdkRuntime:
                 self._generation += 1
                 self._status = RuntimeStatus.READY
                 self._last_error = None
+            logger.info(
+                "tqsdk runtime generation %d ready (construct %.2fs)",
+                self._generation,
+                time.perf_counter() - _construct_t0,
+            )
             self._ready.set()
             next_recycle = self._next_recycle_ts()
             try:
@@ -261,6 +274,7 @@ class TqSdkRuntime:
         while not self._stop_requested:
             self._drain_jobs(api)
             if time.time() >= next_recycle:
+                logger.info("tqsdk runtime cross-trading-day recycle triggered (CN 04:00)")
                 raise _GenerationReset("cross-trading-day recycle (CN 04:00)")
             try:
                 api.wait_update(deadline=time.time() + self._tick_seconds)
@@ -271,6 +285,10 @@ class TqSdkRuntime:
                     wait_exc_streak += 1
                     self._last_error = exc
                 if wait_exc_streak >= _WATCHDOG_STREAK_LIMIT:
+                    logger.warning(
+                        "tqsdk runtime watchdog: %d consecutive wait_update failures, rebuilding",
+                        wait_exc_streak,
+                    )
                     raise _GenerationReset("watchdog: consecutive wait_update failures") from exc
 
     def _drain_jobs(self, api: Any) -> None:
