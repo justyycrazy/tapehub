@@ -15,7 +15,8 @@ targets:
   stock:
     instrument: CN-SSE-600000
     window: {start: 2025-01-01, end: 2025-12-31}
-    min_bars: 100
+    # 跨周期下限（D≈243 / W≈53 / M≈12 根），只用于拦截空结果；按日线标定会产生周/月假阳性
+    min_bars: 10
     required_fields: [open, high, low, close, volume]
   index:
     instrument: CN-SSE-000001
