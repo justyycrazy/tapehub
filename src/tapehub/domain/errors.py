@@ -17,6 +17,7 @@ class ErrorCode(str, Enum):
     PROVIDER_NOT_IMPLEMENTED = "PROVIDER_NOT_IMPLEMENTED"
     UNSUPPORTED_CAPABILITY = "UNSUPPORTED_CAPABILITY"
     NO_PROVIDER_AVAILABLE = "NO_PROVIDER_AVAILABLE"
+    CONCURRENCY_LIMIT = "CONCURRENCY_LIMIT"
     UPSTREAM_TIMEOUT = "UPSTREAM_TIMEOUT"
     UPSTREAM_RATE_LIMITED = "UPSTREAM_RATE_LIMITED"
     UPSTREAM_ERROR = "UPSTREAM_ERROR"
@@ -68,6 +69,13 @@ class UnsupportedCapabilityError(TapehubError):
 class NoProviderAvailableError(TapehubError):
     code = ErrorCode.NO_PROVIDER_AVAILABLE
     default_message = "No provider available for the requested capability."
+
+
+class ConcurrencyLimitError(TapehubError):
+    """网关侧并发闸门：共享运行时的在飞请求已达上限（防脚本失控）。"""
+
+    code = ErrorCode.CONCURRENCY_LIMIT
+    default_message = "Provider concurrency limit reached, retry later."
 
 
 class UpstreamTimeoutError(TapehubError):

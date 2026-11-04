@@ -41,3 +41,13 @@ def test_deployment_mode_rejects_unknown_values() -> None:
         make_settings(deployment_mode="cluster")
     with pytest.raises(ValidationError):
         make_settings(deployment_mode="")
+
+
+def test_tqsdk_conn_mode_default_and_validation() -> None:
+    """tqsdk 连接模式缺省 per_request；非法值启动失败。"""
+    from pydantic import ValidationError
+
+    assert make_settings().tqsdk_conn_mode == "per_request"
+    assert make_settings(tqsdk_conn_mode="shared").tqsdk_conn_mode == "shared"
+    with pytest.raises(ValidationError):
+        make_settings(tqsdk_conn_mode="pool")

@@ -1,5 +1,8 @@
 """FastAPI 应用工厂与组合根。"""
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 
 from tapehub.api.exception_handlers import register_exception_handlers
@@ -24,10 +27,20 @@ def create_app(
     settings = settings or Settings()
     registry = registry or build_default_registry(settings)
 
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        yield
+        # 停机：关闭持有长连接的适配器运行时（鸭子类型，不感知具体 Provider）
+        for record in app.state.registry.list_records():
+            shutdown = getattr(record.adapter, "shutdown_runtime", None)
+            if shutdown is not None:
+                shutdown()
+
     app = FastAPI(
         title="tapehub",
         version=settings.version,
-        description="通用行情数据网关（第一版：历史 K 线查询）",
+        description="通用行情数据网关（历史 K 线查询；tqsdk 实时行情接入中）",
+        lifespan=lifespan,
     )
     app.state.settings = settings
     app.state.registry = registry
