@@ -1876,6 +1876,7 @@ dependencies = [
     { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "pyyaml" },
+    { name = "tzdata", marker = "sys_platform == 'win32'" },
     { name = "uvicorn" },
 ]
 
@@ -1918,6 +1919,7 @@ requires-dist = [
     { name = "tqsdk", marker = "extra == 'tqsdk'" },
     { name = "tushare", marker = "extra == 'tushare'" },
     { name = "twelvedata", marker = "extra == 'twelvedata'" },
+    { name = "tzdata", marker = "sys_platform == 'win32'", specifier = ">=2024.1" },
     { name = "uvicorn", specifier = ">=0.30" },
 ]
 provides-extras = ["akshare", "tickflow", "alphafeed", "tushare", "tqsdk", "twelvedata"]
