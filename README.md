@@ -424,7 +424,8 @@ Twelve Data（官方库 `twelvedata`（twelvedata-python）：`TDClient(apikey=.
 - 历史覆盖范围（`history`）：forex P1D 已由数据探针实测回填 `start=2000-01-01+08:00`（2026-11-04，搜索下限触底、真实最早点更早，待精化）；其余周期/资产类型未实测，保持 `null`；
 - 外汇/加密货币的 bar 时间按 **UTC**（官方文档明确）；`start_date`/`end_date` 显式传 `YYYY-MM-DDTHH:MM:SS`；`outputsize` 显式传上限 5000（上游默认仅 30）；
 - 上游 `values` 默认倒序（最新在前），适配器统一按升序排序输出；`values` 字段为字符串，标准化为数值；
-- 上游 SDK/HTTP 异常类型与限频规则未在所引文档中核实，统一包装为 `UPSTREAM_ERROR`。
+- 区间无数据行为（2026-11-04 探针实测核实）：上游返回 400 `BadRequestError` "No data is available on the specified dates" 而非空列表，适配器按指纹归一化为空结果；
+- 其余上游 SDK/HTTP 异常类型与限频规则未在所引文档中核实，统一包装为 `UPSTREAM_ERROR`。
 
 六个内置 Provider（akshare、tickflow、alphafeed、tushare、tqsdk、twelvedata）均已接入，接口签名与数据口径按各自官方文档核实；未配置凭据或未安装 SDK 时数据请求返回 `PROVIDER_NOT_IMPLEMENTED`，`provider=auto` 在无可用候选时返回 `NO_PROVIDER_AVAILABLE`，也**绝不返回写死的模拟行情**。
 

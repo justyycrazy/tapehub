@@ -14,6 +14,8 @@ class StubTimeSeries:
 
     def as_json(self) -> Any:
         self._client.calls.append(dict(self._kwargs))
+        if self._client.error is not None:
+            raise self._client.error
         return self._client.payload
 
 
@@ -27,6 +29,7 @@ class StubTDClient:
         self.kwargs = kwargs
         self.calls: list[dict[str, Any]] = []
         self.payload: Any = []
+        self.error: BaseException | None = None
         StubTDClient.instances.append(self)
 
     def time_series(self, **kwargs: Any) -> StubTimeSeries:
@@ -54,6 +57,17 @@ def preset_values(monkeypatch: Any, values: list[dict[str, Any]]) -> None:
         self.payload = values
 
     monkeypatch.setattr(StubTDClient, "__init__", init_with_payload)
+
+
+def preset_error(monkeypatch: Any, error: BaseException) -> None:
+    """让每个新建的桩客户端的 as_json 抛出指定异常（须在 install 之后调用）。"""
+    original_init = StubTDClient.__init__
+
+    def init_with_error(self: StubTDClient, *args: Any, **kwargs: Any) -> None:
+        original_init(self, *args, **kwargs)
+        self.error = error
+
+    monkeypatch.setattr(StubTDClient, "__init__", init_with_error)
 
 
 def values_rows(datetimes: list[str]) -> list[dict[str, Any]]:

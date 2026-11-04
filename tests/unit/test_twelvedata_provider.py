@@ -17,11 +17,16 @@ from tests.conftest import make_settings
 from tests.fixtures.providers.stub_twelvedata import (
     forex_values_rows,
     install,
+    preset_error,
     preset_values,
     sized_values_rows,
 )
 
 UTC = timezone.utc
+
+
+class BadRequestError(Exception):
+    """模拟 twelvedata SDK 的 400 异常（适配器按类型名 + 实测指纹识别）。"""
 
 
 def _query(**overrides: Any) -> BarQuery:
@@ -139,6 +144,35 @@ def test_crypto_symbol(monkeypatch: pytest.MonkeyPatch) -> None:
     from tests.fixtures.providers.stub_twelvedata import StubTDClient
 
     assert StubTDClient.instances[-1].calls[0]["symbol"] == "BTC/USD"
+
+
+def test_no_data_window_normalized_to_empty(monkeypatch: pytest.MonkeyPatch) -> None:
+    """实测核实的空窗指纹（区间无数据 → 400）归一化为空结果，不作为错误上抛。"""
+    install(monkeypatch)
+    preset_error(
+        monkeypatch,
+        BadRequestError(
+            '{"code":400,"message":"No data is available on the specified dates. '
+            'Try setting different start/end dates.","status":"error"}'
+        ),
+    )
+    adapter = _adapter()
+    batch = asyncio.run(adapter.fetch_bars(_query()))
+
+    assert batch.bars == []
+    assert batch.partial is False
+
+
+def test_other_bad_request_still_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    """指纹外的其余 400 不属于空窗结论：照常上抛，由应用层包装为 UPSTREAM_ERROR。"""
+    install(monkeypatch)
+    preset_error(
+        monkeypatch,
+        BadRequestError('{"code":400,"message":"invalid symbol","status":"error"}'),
+    )
+    adapter = _adapter()
+    with pytest.raises(BadRequestError):
+        asyncio.run(adapter.fetch_bars(_query()))
 
 
 def test_wrong_exchange_namespace_rejected(monkeypatch: pytest.MonkeyPatch) -> None:

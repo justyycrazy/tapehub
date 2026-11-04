@@ -21,6 +21,9 @@
 # - 历史覆盖范围：forex P1D 由数据探针实测回填 start=2000-01-01+08:00
 #   （报告 20261104T061857Z；搜索下限触底，真实最早点更早、待精化）；
 #   其余周期/资产类型未实测，保持 null，不编造；
+# - 区间无数据行为（2026-11-04 探针实测核实，报告 20261104T065529Z）：上游返回
+#   400 BadRequestError "No data is available on the specified dates" 而非空列表，
+#   适配器按指纹归一化为空结果；其余未核实异常统一由应用层包装为 UPSTREAM_ERROR；
 # - 单接口 Provider：变体与 default_variant 均为 twelvedata（数据源即上游服务自身，与东方财富无关）：缺省请求即可路由，也可显式传 variant=twelvedata。
 provider: twelvedata
 default_provider: [forex, crypto]

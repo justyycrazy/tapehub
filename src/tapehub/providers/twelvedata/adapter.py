@@ -14,7 +14,10 @@
   API 层据此在 warnings 中提示可能截断；
 - values 默认倒序，统一升序排序与分页由共享 ``paginate_bars`` 完成，
   闭区间 [start, end] 在标准化后复核；
-- 上游 SDK/HTTP 异常类型未在文档中核实，统一由应用层包装为 UPSTREAM_ERROR。
+- 上游 SDK/HTTP 异常类型未在文档中核实，统一由应用层包装为 UPSTREAM_ERROR；
+  唯一实测核实的例外（2026-11-04 探针实测）：区间内无数据时上游返回 400
+  BadRequestError（指纹见 request_mapper.UPSTREAM_NO_DATA_FINGERPRINT），
+  属上游权威的无数据结论，适配器归一化为空列表而非报错。
 """
 
 from datetime import datetime
@@ -24,7 +27,11 @@ from tapehub.domain.errors import ProviderNotImplementedError
 from tapehub.domain.models import CN_TIMEZONE, BarBatch, BarQuery
 from tapehub.providers.base import BaseProviderAdapter, call_in_thread
 from tapehub.providers.pagination import paginate_bars
-from tapehub.providers.twelvedata.request_mapper import UPSTREAM_MAX_BARS, build_request
+from tapehub.providers.twelvedata.request_mapper import (
+    UPSTREAM_MAX_BARS,
+    UPSTREAM_NO_DATA_FINGERPRINT,
+    build_request,
+)
 from tapehub.providers.twelvedata.response_mapper import to_standard_bars
 
 if TYPE_CHECKING:
@@ -84,7 +91,15 @@ class ProviderAdapter(BaseProviderAdapter):
             ) from exc
         client = TDClient(apikey=api_key)
         series = client.time_series(**kwargs)
-        payload = series.as_json()
+        try:
+            payload = series.as_json()
+        except Exception as exc:  # noqa: BLE001 - 仅按实测指纹归一化空窗，其余照常上抛
+            if (
+                type(exc).__name__ == "BadRequestError"
+                and UPSTREAM_NO_DATA_FINGERPRINT in str(exc)
+            ):
+                return []
+            raise
         if payload is None:
             return []
         return list(payload)

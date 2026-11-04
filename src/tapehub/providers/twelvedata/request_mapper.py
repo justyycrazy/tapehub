@@ -20,6 +20,10 @@ from tapehub.domain.models import AssetType, BarQuery
 # 单次请求上限（官方文档：outputsize 范围 1~5000）
 UPSTREAM_MAX_BARS = 5000
 
+# 区间无数据指纹（2026-11-04 数据探针实测核实，报告 20261104T065529Z）：
+# 查询区间内无数据时上游返回 400 BadRequestError，报文含此句，而非空列表
+UPSTREAM_NO_DATA_FINGERPRINT = "No data is available on the specified dates"
+
 _INTERVAL_CODES: dict[Interval, str] = {
     Interval.parse("PT1M"): "1min",
     Interval.parse("PT5M"): "5min",
@@ -96,4 +100,10 @@ def build_request(query: BarQuery) -> dict[str, Any]:
     }
 
 
-__all__ = ["UPSTREAM_MAX_BARS", "build_request", "interval_code", "td_symbol"]
+__all__ = [
+    "UPSTREAM_MAX_BARS",
+    "UPSTREAM_NO_DATA_FINGERPRINT",
+    "build_request",
+    "interval_code",
+    "td_symbol",
+]
