@@ -10,14 +10,17 @@
 #   加密货币 GLOBAL-CRYPTO-BTC/USD → symbol "BTC/USD"（聚合对，
 #   交易所专属对暂不支持）；
 # - interval 枚举 1min/5min/15min/30min/45min/1h/2h/4h/8h/1day/1week/1month，
-#   本适配器声明 PT1M~PT1H、P1D/P1W/P1M（45min/2h/4h/8h 暂不声明）；
+#   本适配器声明全部 12 个周期（45min/2h/4h/8h 经数据探针实测可用后补充声明，
+#   报告 20261104T061857Z）；
 # - 外汇/加密货币的 datetime 按 UTC（官方文档明确）；start_date/end_date
 #   格式 YYYY-MM-DD 或 YYYY-MM-DDTHH:MM:SS；outputsize 上限 5000，
 #   采用覆盖判定：返回数量达上限且最早一根晚于请求 start 时标记 partial=true；
 # - 外汇/加密货币通常无 volume 字段：标准 volume 为 null（能力 fields
 #   不含 volume）；无复权概念，adjust 仅声明 none；
 # - 响应 values 默认倒序（最新在前），由共享分页组件统一升序排序；
-# - 历史覆盖范围（history）未核实，保持 null，不编造；
+# - 历史覆盖范围：forex P1D 由数据探针实测回填 start=2000-01-01+08:00
+#   （报告 20261104T061857Z；搜索下限触底，真实最早点更早、待精化）；
+#   其余周期/资产类型未实测，保持 null，不编造；
 # - 单接口 Provider：变体与 default_variant 均为 twelvedata（数据源即上游服务自身，与东方财富无关）：缺省请求即可路由，也可显式传 variant=twelvedata。
 provider: twelvedata
 default_provider: [forex, crypto]
@@ -36,8 +39,12 @@ capabilities:
       - {code: PT5M, history: {start: null, end: null}}
       - {code: PT15M, history: {start: null, end: null}}
       - {code: PT30M, history: {start: null, end: null}}
+      - {code: PT45M, history: {start: null, end: null}}
       - {code: PT1H, history: {start: null, end: null}}
-      - {code: P1D, history: {start: null, end: null}}
+      - {code: PT2H, history: {start: null, end: null}}
+      - {code: PT4H, history: {start: null, end: null}}
+      - {code: PT8H, history: {start: null, end: null}}
+      - {code: P1D, history: {start: 2000-01-01T00:00:00+08:00, end: null}}
       - {code: P1W, history: {start: null, end: null}}
       - {code: P1M, history: {start: null, end: null}}
     adjustments: [none]
@@ -54,7 +61,11 @@ capabilities:
       - {code: PT5M, history: {start: null, end: null}}
       - {code: PT15M, history: {start: null, end: null}}
       - {code: PT30M, history: {start: null, end: null}}
+      - {code: PT45M, history: {start: null, end: null}}
       - {code: PT1H, history: {start: null, end: null}}
+      - {code: PT2H, history: {start: null, end: null}}
+      - {code: PT4H, history: {start: null, end: null}}
+      - {code: PT8H, history: {start: null, end: null}}
       - {code: P1D, history: {start: null, end: null}}
       - {code: P1W, history: {start: null, end: null}}
       - {code: P1M, history: {start: null, end: null}}
@@ -72,7 +83,15 @@ operations:
     operation: time_series
   - match: {data_type: bars, market: GLOBAL, asset_type: forex, interval: PT30M, adjust: none, variant: twelvedata}
     operation: time_series
+  - match: {data_type: bars, market: GLOBAL, asset_type: forex, interval: PT45M, adjust: none, variant: twelvedata}
+    operation: time_series
   - match: {data_type: bars, market: GLOBAL, asset_type: forex, interval: PT1H, adjust: none, variant: twelvedata}
+    operation: time_series
+  - match: {data_type: bars, market: GLOBAL, asset_type: forex, interval: PT2H, adjust: none, variant: twelvedata}
+    operation: time_series
+  - match: {data_type: bars, market: GLOBAL, asset_type: forex, interval: PT4H, adjust: none, variant: twelvedata}
+    operation: time_series
+  - match: {data_type: bars, market: GLOBAL, asset_type: forex, interval: PT8H, adjust: none, variant: twelvedata}
     operation: time_series
   - match: {data_type: bars, market: GLOBAL, asset_type: forex, interval: P1D, adjust: none, variant: twelvedata}
     operation: time_series
@@ -88,7 +107,15 @@ operations:
     operation: time_series
   - match: {data_type: bars, market: GLOBAL, asset_type: crypto, interval: PT30M, adjust: none, variant: twelvedata}
     operation: time_series
+  - match: {data_type: bars, market: GLOBAL, asset_type: crypto, interval: PT45M, adjust: none, variant: twelvedata}
+    operation: time_series
   - match: {data_type: bars, market: GLOBAL, asset_type: crypto, interval: PT1H, adjust: none, variant: twelvedata}
+    operation: time_series
+  - match: {data_type: bars, market: GLOBAL, asset_type: crypto, interval: PT2H, adjust: none, variant: twelvedata}
+    operation: time_series
+  - match: {data_type: bars, market: GLOBAL, asset_type: crypto, interval: PT4H, adjust: none, variant: twelvedata}
+    operation: time_series
+  - match: {data_type: bars, market: GLOBAL, asset_type: crypto, interval: PT8H, adjust: none, variant: twelvedata}
     operation: time_series
   - match: {data_type: bars, market: GLOBAL, asset_type: crypto, interval: P1D, adjust: none, variant: twelvedata}
     operation: time_series

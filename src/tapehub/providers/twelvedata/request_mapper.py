@@ -5,7 +5,7 @@
 - ``td.time_series(symbol, interval, outputsize, start_date, end_date).as_json()``；
 - symbol 为斜杠分隔货币对：外汇 ``EUR/USD``（ISO 4217）、加密 ``BTC/USD``；
 - interval 枚举 1min/5min/15min/30min/45min/1h/2h/4h/8h/1day/1week/1month，
-  本适配器声明 PT1M~PT1H、P1D/P1W/P1M；
+  本适配器声明全部 12 个周期（45min/2h/4h/8h 经探针实测后补充声明）；
 - 外汇/加密货币的 datetime 按 UTC（官方文档明确）；
   start_date/end_date 格式 YYYY-MM-DD 或 YYYY-MM-DDTHH:MM:SS；
 - outputsize 范围 1~5000：显式传最大值 5000（不依赖上游默认 30）。
@@ -25,7 +25,11 @@ _INTERVAL_CODES: dict[Interval, str] = {
     Interval.parse("PT5M"): "5min",
     Interval.parse("PT15M"): "15min",
     Interval.parse("PT30M"): "30min",
+    Interval.parse("PT45M"): "45min",
     Interval.parse("PT1H"): "1h",
+    Interval.parse("PT2H"): "2h",
+    Interval.parse("PT4H"): "4h",
+    Interval.parse("PT8H"): "8h",
     Interval.parse("P1D"): "1day",
     Interval.parse("P1W"): "1week",
     Interval.parse("P1M"): "1month",

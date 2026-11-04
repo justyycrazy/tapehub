@@ -82,7 +82,8 @@ def test_capability_catalog(twelvedata_client: TestClient) -> None:  # type: ign
         assert cap["variants"] == ["twelvedata"]
         assert cap["markets"] == ["GLOBAL"]
         assert [i["code"] for i in cap["intervals"]] == [
-            "PT1M", "PT5M", "PT15M", "PT30M", "PT1H", "P1D", "P1W", "P1M",
+            "PT1M", "PT5M", "PT15M", "PT30M", "PT45M", "PT1H",
+            "PT2H", "PT4H", "PT8H", "P1D", "P1W", "P1M",
         ]
         assert cap["adjustments"] == ["none"]
         assert cap["fields"] == ["open", "high", "low", "close"]

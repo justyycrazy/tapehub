@@ -1,4 +1,4 @@
-# Twelve Data 数据探针：外汇/加密货币可用性、历史深度、单次上限与未声明周期探测。
+# Twelve Data 数据探针：外汇/加密货币可用性、历史深度、单次上限与错误指纹探测。
 # 免费档限频 8 次/分钟、800 次/天，pacing 设为 10 秒（任意 60 秒窗口最多 6 次，留安全余量）。
 probe: twelvedata
 version: 1
@@ -29,7 +29,7 @@ chain:
   skip: []
   history_depth:
     targets: [forex]
-    earliest: 2000-01-01
+    earliest: 2000-01-01   # 2026-11-04 实测下限触底（真实最早点更早），精化需前推 earliest 再跑
     era_step_years: 5
     max_calls: 16
     intervals: [P1D]     # 分钟级历史深度成本高（1min 数据量大），收敛到日线
@@ -40,43 +40,6 @@ chain:
     documented_max: 5000   # 适配器显式传 outputsize=5000（上游默认仅 30）
 
 raw:
-  # 上游完整支持 45min/2h/4h/8h，能力目录暂未声明；仅观察，人工确认后再扩 manifest
-  - id: td-45min-interval
-    purpose: 探测未声明周期 45min 是否可用（声明外）
-    assert: false
-    module: twelvedata
-    client: {attr: TDClient, kwargs: {apikey: "$TAPEHUB_TWELVEDATA_API_KEY"}}
-    call:
-      - {method: time_series, kwargs: {symbol: "EUR/USD", interval: "45min", outputsize: 10}}
-      - {method: as_json, kwargs: {}}
-    expect: {status: ok, min_rows: 1}
-  - id: td-2h-interval
-    purpose: 探测未声明周期 2h 是否可用（声明外）
-    assert: false
-    module: twelvedata
-    client: {attr: TDClient, kwargs: {apikey: "$TAPEHUB_TWELVEDATA_API_KEY"}}
-    call:
-      - {method: time_series, kwargs: {symbol: "EUR/USD", interval: "2h", outputsize: 10}}
-      - {method: as_json, kwargs: {}}
-    expect: {status: ok, min_rows: 1}
-  - id: td-4h-interval
-    purpose: 探测未声明周期 4h 是否可用（声明外）
-    assert: false
-    module: twelvedata
-    client: {attr: TDClient, kwargs: {apikey: "$TAPEHUB_TWELVEDATA_API_KEY"}}
-    call:
-      - {method: time_series, kwargs: {symbol: "EUR/USD", interval: "4h", outputsize: 10}}
-      - {method: as_json, kwargs: {}}
-    expect: {status: ok, min_rows: 1}
-  - id: td-8h-interval
-    purpose: 探测未声明周期 8h 是否可用（声明外）
-    assert: false
-    module: twelvedata
-    client: {attr: TDClient, kwargs: {apikey: "$TAPEHUB_TWELVEDATA_API_KEY"}}
-    call:
-      - {method: time_series, kwargs: {symbol: "EUR/USD", interval: "8h", outputsize: 10}}
-      - {method: as_json, kwargs: {}}
-    expect: {status: ok, min_rows: 1}
   # 错误指纹仅观察：采集无效 API Key 的原始报错，供 UPSTREAM 细分错误码参考
   - id: td-invalid-key-fingerprint
     purpose: 采集无效 API Key 的错误指纹（字面量假 Key，非真实凭据；仅观察）
@@ -90,5 +53,6 @@ raw:
 
 notes: >
   crypto 的 volume 上游可能缺失（→ null），从 availability 的 null_rates 核对；
-  45min/2h/4h/8h 若实测可用，人工确认后可在 manifest 中补充声明；
+  45min/2h/4h/8h 已于 2026-11-04 经实测确认可用并回填 manifest 声明
+  （报告 20261104T061857Z），对应 raw 探针随之移除、由 availability 链路覆盖；
   上游 values 默认倒序，适配器已统一升序，报告首尾时间戳应体现这一点。

@@ -104,7 +104,11 @@ def test_values_order_desc_normalized_ascending(monkeypatch: pytest.MonkeyPatch)
         ("PT5M", "5min"),
         ("PT15M", "15min"),
         ("PT30M", "30min"),
+        ("PT45M", "45min"),
         ("PT1H", "1h"),
+        ("PT2H", "2h"),
+        ("PT4H", "4h"),
+        ("PT8H", "8h"),
         ("P1D", "1day"),
         ("P1W", "1week"),
         ("P1M", "1month"),  # 月线，区别于分钟 PT1M
