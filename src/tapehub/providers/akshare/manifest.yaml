@@ -3,7 +3,9 @@
 #
 # 说明：
 # - variant 为数据源变体：eastmoney=东方财富（默认）、sina=新浪、tencent=腾讯；
-# - 历史覆盖范围（history）未核实，保持 null，不编造；
+# - 历史覆盖范围（history.start）由数据探针实测回填（报告 20261104T041657Z）：
+#   个股各源 ≈2001-01-01、指数各源 ≈1991-01-01；窗口粒度 90 天（approx），
+#   个股为预算耗尽近似（complete=False），待精化；期货未实测，保持 null；
 # - 期货东财接口 futures_hist_em 需要中文合约名（如“热卷主连”），无法从
 #   标准标的代码映射，第一版不接入；
 # - “加权”在上列接口文档中没有对应符号说明，暂不声明 weighted-index 能力；
@@ -25,9 +27,9 @@ capabilities:
     delivery: [rest]
     variants: [eastmoney]
     intervals:
-      - {code: P1D, history: {start: null, end: null}}
-      - {code: P1W, history: {start: null, end: null}}
-      - {code: P1M, history: {start: null, end: null}}
+      - {code: P1D, history: {start: 2001-01-01T00:00:00+08:00, end: null}}
+      - {code: P1W, history: {start: 2001-01-01T00:00:00+08:00, end: null}}
+      - {code: P1M, history: {start: 2001-01-01T00:00:00+08:00, end: null}}
     adjustments: [none, qfq, hfq]
     fields: [open, high, low, close, volume, amount]
 
@@ -38,7 +40,7 @@ capabilities:
     delivery: [rest]
     variants: [sina]
     intervals:
-      - {code: P1D, history: {start: null, end: null}}
+      - {code: P1D, history: {start: 2001-01-01T00:00:00+08:00, end: null}}
     adjustments: [none, qfq, hfq]
     fields: [open, high, low, close, volume, amount]
 
@@ -49,7 +51,7 @@ capabilities:
     delivery: [rest]
     variants: [tencent]
     intervals:
-      - {code: P1D, history: {start: null, end: null}}
+      - {code: P1D, history: {start: 2001-01-01T00:00:00+08:00, end: null}}
     adjustments: [none, qfq, hfq]
     fields: [open, high, low, close, volume, amount]
 
@@ -60,7 +62,7 @@ capabilities:
     delivery: [rest]
     variants: [eastmoney]
     intervals:
-      - {code: P1D, history: {start: null, end: null}}
+      - {code: P1D, history: {start: 1991-01-01T00:00:00+08:00, end: null}}
     adjustments: [none]
     fields: [open, high, low, close, volume, amount]
 
@@ -71,7 +73,7 @@ capabilities:
     delivery: [rest]
     variants: [sina]
     intervals:
-      - {code: P1D, history: {start: null, end: null}}
+      - {code: P1D, history: {start: 1991-01-01T00:00:00+08:00, end: null}}
     adjustments: [none]
     fields: [open, high, low, close, volume]
 
@@ -82,7 +84,7 @@ capabilities:
     delivery: [rest]
     variants: [tencent]
     intervals:
-      - {code: P1D, history: {start: null, end: null}}
+      - {code: P1D, history: {start: 1991-01-01T00:00:00+08:00, end: null}}
     adjustments: [none]
     fields: [open, high, low, close, volume]
 

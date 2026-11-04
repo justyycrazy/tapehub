@@ -409,7 +409,7 @@ TqSdk（官方 SDK `tqsdk`：`TqApi(auth=TqAuth(...)).get_kline_serial(...)`）�
 
 - `futures_hist_em`（东财期货）需要**中文合约名**（如“热卷主连”），无法从标准代码映射，第一版不接入；
 - 加权（`weighted-index`）在上述接口文档中没有符号说明，暂不声明能力；
-- 历史覆盖范围（`history`）未核实，能力目录中保持 `null`。
+- 历史覆盖范围（`history`）已由数据探针实测回填（2026-11-04，窗口粒度 90 天，approx）：个股各源 `≈2001-01-01`（complete=False，预算耗尽近似，待精化）、指数各源 `≈1991-01-01`；期货未实测，保持 `null`。
 
 Twelve Data（官方库 `twelvedata`（twelvedata-python）：`TDClient(apikey=...).time_series(...).as_json()`）：
 
