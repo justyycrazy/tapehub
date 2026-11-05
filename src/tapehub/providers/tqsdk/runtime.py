@@ -269,17 +269,35 @@ class TqSdkRuntime:
                 self._last_error = exc
 
     def _tick_loop(self, api: Any, next_recycle: float) -> None:
-        """tick 驱动循环：收割完成请求 → 接新请求 → wait_update 驱动一切。"""
+        """tick 驱动循环：收割完成请求 → 接新请求 → wait_update 驱动一切。
+
+        **peek 门闩复位（关键）**：tqsdk 的推送协议要求客户端发出
+        ``peek_message`` 后才推送数据；``wait_update`` 仅在**收到数据**时
+        复位 ``_pending_peek`` 门闩（api.py _fetch_msg）。deadline 到期且
+        无数据的静默 tick 会把门闩留在 True——后续 tick 不再发 peek，
+        服务器停止推送，整个连接变聋（实测：夜盘数据断流、新订阅挂起）。
+        因此每个 tick 主动复位门闩，等价于活跃策略主循环的持续
+        wait_update 行为；``_fetch_msg`` 残留任务由每日 04:00 回收清理。
+        """
         wait_exc_streak = 0
+        silent_ticks = 0
         while not self._stop_requested:
             self._drain_jobs(api)
             if time.time() >= next_recycle:
                 logger.info("tqsdk runtime cross-trading-day recycle triggered (CN 04:00)")
                 raise _GenerationReset("cross-trading-day recycle (CN 04:00)")
+            # peek 门闩复位（见 docstring）
+            api._pending_peek = False
+            # 自适应 tick：有在飞请求 50ms（低延迟收数）；数据静默期逐步放宽
+            # 至 2s（限制静默期 _fetch_msg 残留任务累积，由每日回收清理）
+            with self._lock:
+                busy = self._inflight > 0 or not self._jobs.empty()
+            tick = 0.05 if busy else (0.5 if silent_ticks < 3 else 2.0)
             try:
-                api.wait_update(deadline=time.time() + self._tick_seconds)
+                got_data = api.wait_update(deadline=time.time() + tick)
                 with self._lock:
                     wait_exc_streak = 0
+                silent_ticks = 0 if got_data else min(silent_ticks + 1, 4)
             except Exception as exc:  # noqa: BLE001 - 连续异常触发重建，单次只记录
                 with self._lock:
                     wait_exc_streak += 1

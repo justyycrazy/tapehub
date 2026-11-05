@@ -30,8 +30,12 @@ BASE_PARAMS = {
 @pytest.fixture()
 def tqsdk_client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     install(monkeypatch)
+    # sync stub 仅覆盖 per_request 路径；shared 语义由 tests/unit/test_tqsdk_runtime.py 覆盖
     settings = make_settings(
-        max_limit=1000, tqsdk_auth_user="user@qq.com", tqsdk_auth_password="secret"
+        max_limit=1000,
+        tqsdk_conn_mode="per_request",
+        tqsdk_auth_user="user@qq.com",
+        tqsdk_auth_password="secret",
     )
     return TestClient(create_app(settings=settings, registry=build_default_registry(settings)))
 

@@ -19,9 +19,9 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="TAPEHUB_", env_file=".env", extra="ignore")
 
     deployment_mode: Literal["single"] = "single"
-    # tqsdk 连接模式：per_request（每请求独立 TqApi 实例，默认）/
-    # shared（进程内唯一长连接 Runtime，懒启动）
-    tqsdk_conn_mode: Literal["per_request", "shared"] = "per_request"
+    # tqsdk 连接模式：shared（进程内唯一长连接 Runtime，懒启动；2026-11-05
+    # 15.3h 观察期验证后为默认）／ per_request（每请求独立实例，回滚配置）
+    tqsdk_conn_mode: Literal["per_request", "shared"] = "shared"
     # shared 模式的在飞取数上限（并发闸门，超出返回 CONCURRENCY_LIMIT）
     tqsdk_max_inflight_fetch: int = Field(default=16, ge=1)
     version: str = "0.1.0"
