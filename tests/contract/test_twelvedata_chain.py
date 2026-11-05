@@ -11,6 +11,7 @@ from tests.fixtures.providers.stub_twelvedata import (
     forex_values_rows,
     install,
     preset_values,
+    values_rows,
 )
 
 FOREX_PARAMS = {
@@ -85,19 +86,38 @@ def test_capability_catalog(twelvedata_client: TestClient) -> None:  # type: ign
     entry = response.json()["data"][0]
     assert entry["provider"] == "twelvedata"
     assert entry["enabled"] is True
-    assert len(entry["capabilities"]) == 3
+    assert len(entry["capabilities"]) == 5
 
     bars_caps = [c for c in entry["capabilities"] if c["data_type"] == "bars"]
-    assert {tuple(cap["asset_types"]) for cap in bars_caps} == {("forex",), ("crypto",)}
+    assert {tuple(cap["asset_types"]) for cap in bars_caps} == {
+        ("forex",),
+        ("crypto",),
+        ("stock",),
+        ("etf",),
+    }
     for cap in bars_caps:
         assert cap["variants"] == ["twelvedata"]
-        assert cap["markets"] == ["GLOBAL"]
         assert [i["code"] for i in cap["intervals"]] == [
             "PT1M", "PT5M", "PT15M", "PT30M", "PT45M", "PT1H",
             "PT2H", "PT4H", "PT8H", "P1D", "P1W", "P1M",
         ]
-        assert cap["adjustments"] == ["none"]
-        assert cap["fields"] == ["open", "high", "low", "close"]
+
+    # 外汇/加密货币（GLOBAL）：无 volume（fields 不含），无复权概念
+    for cap in bars_caps:
+        if cap["markets"] == ["GLOBAL"]:
+            assert cap["adjustments"] == ["none"]
+            assert cap["fields"] == ["open", "high", "low", "close"]
+
+    # 美股 stock/etf（US market）：volume 有值；stock 的 qfq 仅拆股复权
+    # （上游 adj=dividends 未生效，2026-11-06 探针实证，README 标注口径）
+    us_caps = {tuple(cap["asset_types"])[0]: cap for cap in bars_caps if cap["markets"] == ["US"]}
+    assert set(us_caps) == {"stock", "etf"}
+    assert us_caps["stock"]["adjustments"] == ["none", "qfq"]
+    assert us_caps["etf"]["adjustments"] == ["none"]
+    for cap in us_caps.values():
+        assert cap["fields"] == ["open", "high", "low", "close", "volume"]
+        # history 待探针回填：声明周期无历史覆盖（不编造）
+        assert all(i["history"]["start"] is None for i in cap["intervals"])
 
     # 实时快照：无周期/复权维度（显式空），fields 首版三项（extensions 待探针回填）
     quote_caps = [c for c in entry["capabilities"] if c["data_type"] == "quotes"]
@@ -135,6 +155,121 @@ def test_crypto_chain(twelvedata_client: TestClient, monkeypatch: pytest.MonkeyP
 
     assert StubTDClient.instances[-1].calls[0]["symbol"] == "BTC/USD"
     assert response.json()["meta"]["provider"] == "twelvedata"
+
+
+# ---------------------------------------------------------------------------
+# 美股 stock/etf（US market）：exchange/adj 显式传参、纽约墙钟统一北京时间
+# ---------------------------------------------------------------------------
+
+US_STOCK_PARAMS = {
+    "provider": "twelvedata",
+    "asset_type": "stock",
+    "instrument": "US-NASDAQ-AAPL",
+    "interval": "P1D",
+    "start": "2026-01-01T00:00:00Z",
+    "end": "2026-01-10T00:00:00Z",
+}
+
+
+def test_us_stock_chain_default_qfq(
+    twelvedata_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """缺省 adjust（stock 全局默认 qfq）：路由成功，上游显式收 adj="splits"。"""
+    preset_values(monkeypatch, values_rows(["2026-01-05", "2026-01-06"]))
+
+    response = twelvedata_client.get("/v1/market/bars", params=US_STOCK_PARAMS)
+    assert response.status_code == 200
+    body = response.json()
+
+    from tests.fixtures.providers.stub_twelvedata import StubTDClient
+
+    kwargs = StubTDClient.instances[-1].calls[0]
+    assert kwargs["symbol"] == "AAPL"
+    assert kwargs["exchange"] == "NASDAQ"  # 显式传 exchange 消歧
+    assert kwargs["adj"] == "splits"  # qfq → 仅拆股复权（口径见 README）
+
+    data = body["data"]
+    assert data["instrument"] == "US-NASDAQ-AAPL"
+    assert data["asset_type"] == "stock"
+    # 美股墙钟按纽约解释（1 月 EST=UTC-5）：纽约 01-05 00:00 = 北京 01-05 13:00
+    assert data["bars"][0]["timestamp"] == "2026-01-05T13:00:00+08:00"
+    assert data["bars"][0]["volume"] == 12345.0  # 美股 volume 有值
+    assert data["bars"][0]["amount"] is None
+    assert body["meta"]["provider"] == "twelvedata"
+
+
+def test_us_stock_adjust_none_explicit(
+    twelvedata_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    preset_values(monkeypatch, values_rows(["2026-01-05"]))
+
+    response = twelvedata_client.get(
+        "/v1/market/bars", params={**US_STOCK_PARAMS, "adjust": "none"}
+    )
+    assert response.status_code == 200
+
+    from tests.fixtures.providers.stub_twelvedata import StubTDClient
+
+    assert StubTDClient.instances[-1].calls[0]["adj"] == "none"
+
+
+def test_us_stock_hfq_422(twelvedata_client: TestClient) -> None:  # type: ignore[no-untyped-def]
+    """后复权上游无等价物：能力目录即不声明，请求返回 422。"""
+    response = twelvedata_client.get(
+        "/v1/market/bars", params={**US_STOCK_PARAMS, "adjust": "hfq"}
+    )
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "UNSUPPORTED_CAPABILITY"
+
+
+def test_us_stock_auto_routes(
+    twelvedata_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """缺省 provider：US 市场股票 bars 唯一候选是 twelvedata，auto 自然路由。"""
+    preset_values(monkeypatch, values_rows(["2026-01-05"]))
+
+    params = {k: v for k, v in US_STOCK_PARAMS.items() if k != "provider"}
+    response = twelvedata_client.get("/v1/market/bars", params=params)
+    assert response.status_code == 200
+    meta = response.json()["meta"]
+    assert meta["provider"] == "twelvedata"
+    assert meta["variant"] == "twelvedata"
+    # 缺省按 stock → qfq 具体化：由上游收到的 adj="splits" 间接证明
+    from tests.fixtures.providers.stub_twelvedata import StubTDClient
+
+    assert StubTDClient.instances[-1].calls[0]["adj"] == "splits"
+
+
+def test_us_etf_chain_default_none(
+    twelvedata_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """美股 ETF：缺省 adjust=none（etf 无 qfq 缺省），exchange 段白名单含 NYSE。"""
+    preset_values(monkeypatch, values_rows(["2026-01-05"]))
+
+    params = {
+        **US_STOCK_PARAMS,
+        "asset_type": "etf",
+        "instrument": "US-NYSE-SPY",
+    }
+    response = twelvedata_client.get("/v1/market/bars", params=params)
+    assert response.status_code == 200
+
+    from tests.fixtures.providers.stub_twelvedata import StubTDClient
+
+    kwargs = StubTDClient.instances[-1].calls[0]
+    assert kwargs["symbol"] == "SPY"
+    assert kwargs["exchange"] == "NYSE"
+    assert kwargs["adj"] == "none"  # etf 缺省 adjust=none（无 qfq 缺省）
+
+
+def test_us_otc_exchange_rejected_422(twelvedata_client: TestClient) -> None:  # type: ignore[no-untyped-def]
+    """OTC 粉单不在美股 exchange 白名单：明确拒绝而非透传上游。"""
+    response = twelvedata_client.get(
+        "/v1/market/bars",
+        params={**US_STOCK_PARAMS, "instrument": "US-OTC-AABB"},
+    )
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "UNSUPPORTED_CAPABILITY"
 
 
 def test_default_variant_routes_to_declared_default(

@@ -47,7 +47,31 @@
 # - 并发订阅上限：免费版 8 个 WS credit = 8 个并发 symbol，达限急切
 #   返回 UPSTREAM_SUBSCRIPTION_LIMIT（429），由 TAPEHUB_TWELVEDATA_
 #   SUBSCRIPTION_LIMIT 配置（升档后调大）；
+# - 美股 stock/etf 历史 K 线（US market，2026-11-05/06 探针实证，报告
+#   probes/results/twelvedata/catalog-coverage-*.json、plan-dist-3-*.json、
+#   adj-diff-4-*.json、dividend-check-5-*.json，不入库）：
+#   目录覆盖 US stock 20,471（NYSE 3,063 / NASDAQ 4,517 / OTC 12,824 /
+#   IEX 65 / CBOE 1）、US etf 11,474（NASDAQ 6,619 / NYSE 3,107 / CBOE 1,502），
+#   免费档（Basic）US 全量可用；exchange 段白名单 NYSE/NASDAQ/CBOE——
+#   OTC（粉单，数据质量差）与 IEX（65 个标的）不接入，CBOE 经探针准入
+#   核实（case td-cboe-etf）；
+# - 美股 adjust 口径（重要）：上游 adj=splits（拆股复权）实测生效、
+#   adj=dividends 实测全年零效果（分红复权未生效，2026-11-06 探针实证），
+#   故 qfq 只能映射 adj=splits（仅拆股复权）——与国内「前复权含分红」
+#   口径不同，README 已显著标注；hfq 上游无等价物不声明；etf 仅声明 none；
+# - 美股墙钟口径 America/New_York（官方 https://twelvedata.com/exchanges/stocks，
+#   EST/EDT 夏令时由 ZoneInfo 处理）；日线/周线/月线上游强制返回交易所
+#   本地 date-only 时间；volume 有值、amount 上游无字段恒 null；
+# - CN/HK 不声明（2026-11-05 探针实证）：目录虽有 China stock 5,433 /
+#   etf 1,745、Hong Kong stock 11,201 / etf 442，但免费档 Basic 可用标的
+#   仅 China stock 000001、China etf 511880、HK stock 1299 各 1 个（其余
+#   Pro 门槛，404 指纹 "This symbol is available starting with the Pro or
+#   Venture plan"）；且官方交易所页标注 XSHG/XSHE Delay=EOD（任何计划
+#   档位均无日内）。升档后按探针流程实测再回填；
 # - 单接口 Provider：变体与 default_variant 均为 twelvedata（数据源即上游服务自身，与东方财富无关）：缺省请求即可路由，也可显式传 variant=twelvedata。
+#   default_provider 维持 [forex, crypto]：stock 缺省归 akshare、etf 归 tqsdk
+#   （registry 强制每个资产类型恰一缺省），US stock/etf 作为唯一候选时
+#   provider=auto 自然路由到本 Provider。
 provider: twelvedata
 default_provider: [forex, crypto]
 default_variant: twelvedata
@@ -97,6 +121,52 @@ capabilities:
       - {code: P1M, history: {start: 2017-08-02T00:00:00+08:00, end: null}}
     adjustments: [none]
     fields: [open, high, low, close]
+
+  # 美股个股：exchange 段白名单 NYSE/NASDAQ/CBOE；qfq = 上游 adj=splits
+  # （仅拆股复权，分红复权上游未生效——口径与国内不同，见头部注释与 README）；
+  # volume 有值、amount 无字段；history 待探针回填（保持 null）
+  - data_type: bars
+    markets: [US]
+    asset_types: [stock]
+    delivery: [rest]
+    variants: [twelvedata]
+    intervals:
+      - {code: PT1M, history: {start: null, end: null}}
+      - {code: PT5M, history: {start: null, end: null}}
+      - {code: PT15M, history: {start: null, end: null}}
+      - {code: PT30M, history: {start: null, end: null}}
+      - {code: PT45M, history: {start: null, end: null}}
+      - {code: PT1H, history: {start: null, end: null}}
+      - {code: PT2H, history: {start: null, end: null}}
+      - {code: PT4H, history: {start: null, end: null}}
+      - {code: PT8H, history: {start: null, end: null}}
+      - {code: P1D, history: {start: null, end: null}}
+      - {code: P1W, history: {start: null, end: null}}
+      - {code: P1M, history: {start: null, end: null}}
+    adjustments: [none, qfq]
+    fields: [open, high, low, close, volume]
+
+  # 美股 ETF：复权仅声明 none（上游 ETF 复权行为未核实，不编造能力）
+  - data_type: bars
+    markets: [US]
+    asset_types: [etf]
+    delivery: [rest]
+    variants: [twelvedata]
+    intervals:
+      - {code: PT1M, history: {start: null, end: null}}
+      - {code: PT5M, history: {start: null, end: null}}
+      - {code: PT15M, history: {start: null, end: null}}
+      - {code: PT30M, history: {start: null, end: null}}
+      - {code: PT45M, history: {start: null, end: null}}
+      - {code: PT1H, history: {start: null, end: null}}
+      - {code: PT2H, history: {start: null, end: null}}
+      - {code: PT4H, history: {start: null, end: null}}
+      - {code: PT8H, history: {start: null, end: null}}
+      - {code: P1D, history: {start: null, end: null}}
+      - {code: P1W, history: {start: null, end: null}}
+      - {code: P1M, history: {start: null, end: null}}
+    adjustments: [none]
+    fields: [open, high, low, close, volume]
 
   # 实时快照与快照流（WS 订阅推送，M2 缓存读取 + M3 SSE 同源）：无周期/
   # 复权维度（两维度声明为空，路由与能力匹配跳过）；五档盘口/amount/
@@ -163,6 +233,81 @@ operations:
   - match: {data_type: bars, market: GLOBAL, asset_type: crypto, interval: P1W, adjust: none, variant: twelvedata}
     operation: time_series
   - match: {data_type: bars, market: GLOBAL, asset_type: crypto, interval: P1M, adjust: none, variant: twelvedata}
+    operation: time_series
+  # 美股个股：同一上游接口 td.time_series，显式传 exchange 与 adj
+  # （qfq→splits / none→none，见 request_mapper）
+  - match: {data_type: bars, market: US, asset_type: stock, interval: PT1M, adjust: qfq, variant: twelvedata}
+    operation: time_series
+  - match: {data_type: bars, market: US, asset_type: stock, interval: PT5M, adjust: qfq, variant: twelvedata}
+    operation: time_series
+  - match: {data_type: bars, market: US, asset_type: stock, interval: PT15M, adjust: qfq, variant: twelvedata}
+    operation: time_series
+  - match: {data_type: bars, market: US, asset_type: stock, interval: PT30M, adjust: qfq, variant: twelvedata}
+    operation: time_series
+  - match: {data_type: bars, market: US, asset_type: stock, interval: PT45M, adjust: qfq, variant: twelvedata}
+    operation: time_series
+  - match: {data_type: bars, market: US, asset_type: stock, interval: PT1H, adjust: qfq, variant: twelvedata}
+    operation: time_series
+  - match: {data_type: bars, market: US, asset_type: stock, interval: PT2H, adjust: qfq, variant: twelvedata}
+    operation: time_series
+  - match: {data_type: bars, market: US, asset_type: stock, interval: PT4H, adjust: qfq, variant: twelvedata}
+    operation: time_series
+  - match: {data_type: bars, market: US, asset_type: stock, interval: PT8H, adjust: qfq, variant: twelvedata}
+    operation: time_series
+  - match: {data_type: bars, market: US, asset_type: stock, interval: P1D, adjust: qfq, variant: twelvedata}
+    operation: time_series
+  - match: {data_type: bars, market: US, asset_type: stock, interval: P1W, adjust: qfq, variant: twelvedata}
+    operation: time_series
+  - match: {data_type: bars, market: US, asset_type: stock, interval: P1M, adjust: qfq, variant: twelvedata}
+    operation: time_series
+  - match: {data_type: bars, market: US, asset_type: stock, interval: PT1M, adjust: none, variant: twelvedata}
+    operation: time_series
+  - match: {data_type: bars, market: US, asset_type: stock, interval: PT5M, adjust: none, variant: twelvedata}
+    operation: time_series
+  - match: {data_type: bars, market: US, asset_type: stock, interval: PT15M, adjust: none, variant: twelvedata}
+    operation: time_series
+  - match: {data_type: bars, market: US, asset_type: stock, interval: PT30M, adjust: none, variant: twelvedata}
+    operation: time_series
+  - match: {data_type: bars, market: US, asset_type: stock, interval: PT45M, adjust: none, variant: twelvedata}
+    operation: time_series
+  - match: {data_type: bars, market: US, asset_type: stock, interval: PT1H, adjust: none, variant: twelvedata}
+    operation: time_series
+  - match: {data_type: bars, market: US, asset_type: stock, interval: PT2H, adjust: none, variant: twelvedata}
+    operation: time_series
+  - match: {data_type: bars, market: US, asset_type: stock, interval: PT4H, adjust: none, variant: twelvedata}
+    operation: time_series
+  - match: {data_type: bars, market: US, asset_type: stock, interval: PT8H, adjust: none, variant: twelvedata}
+    operation: time_series
+  - match: {data_type: bars, market: US, asset_type: stock, interval: P1D, adjust: none, variant: twelvedata}
+    operation: time_series
+  - match: {data_type: bars, market: US, asset_type: stock, interval: P1W, adjust: none, variant: twelvedata}
+    operation: time_series
+  - match: {data_type: bars, market: US, asset_type: stock, interval: P1M, adjust: none, variant: twelvedata}
+    operation: time_series
+  # 美股 ETF：仅 none（复权其他口径未核实不声明）
+  - match: {data_type: bars, market: US, asset_type: etf, interval: PT1M, adjust: none, variant: twelvedata}
+    operation: time_series
+  - match: {data_type: bars, market: US, asset_type: etf, interval: PT5M, adjust: none, variant: twelvedata}
+    operation: time_series
+  - match: {data_type: bars, market: US, asset_type: etf, interval: PT15M, adjust: none, variant: twelvedata}
+    operation: time_series
+  - match: {data_type: bars, market: US, asset_type: etf, interval: PT30M, adjust: none, variant: twelvedata}
+    operation: time_series
+  - match: {data_type: bars, market: US, asset_type: etf, interval: PT45M, adjust: none, variant: twelvedata}
+    operation: time_series
+  - match: {data_type: bars, market: US, asset_type: etf, interval: PT1H, adjust: none, variant: twelvedata}
+    operation: time_series
+  - match: {data_type: bars, market: US, asset_type: etf, interval: PT2H, adjust: none, variant: twelvedata}
+    operation: time_series
+  - match: {data_type: bars, market: US, asset_type: etf, interval: PT4H, adjust: none, variant: twelvedata}
+    operation: time_series
+  - match: {data_type: bars, market: US, asset_type: etf, interval: PT8H, adjust: none, variant: twelvedata}
+    operation: time_series
+  - match: {data_type: bars, market: US, asset_type: etf, interval: P1D, adjust: none, variant: twelvedata}
+    operation: time_series
+  - match: {data_type: bars, market: US, asset_type: etf, interval: P1W, adjust: none, variant: twelvedata}
+    operation: time_series
+  - match: {data_type: bars, market: US, asset_type: etf, interval: P1M, adjust: none, variant: twelvedata}
     operation: time_series
   # 实时快照：全部资产类型调用同一上游接口 td.quote；
   # 周期/复权对快照无意义，显式声明 null（只与无该维度的 quote 查询匹配）

@@ -5,12 +5,17 @@ bars（REST time-series）结构已按官方文档核实：
 - time-series：values 数组，默认倒序=最新在前。每个元素字段：datetime
   （bar 开盘时间，墙钟时间无时区后缀）、open/high/low/close/volume，
   均为**字符串**类型；
-- datetime 的墙钟口径按资产类型区分（2026-11-04 实测 + 官方文档
-  https://twelvedata.com/exchanges/physical_currency|digital_currency）：
-  外汇按 Australia/Sydney（AEDT/AEST 随夏令时切换），加密货币按 UTC；
-  解析为对应时区的 aware datetime，到统一北京时间的归一化由领域层完成；
+- datetime 的墙钟口径按资产类型区分（外汇/加密 2026-11-04 实测 + 官方文档
+  https://twelvedata.com/exchanges/physical_currency|digital_currency；
+  美股 2026-11-05 实测 meta.exchange_timezone + 官方文档
+  https://twelvedata.com/exchanges/stocks）：外汇按 Australia/Sydney
+  （AEDT/AEST 随夏令时切换）、加密货币按 UTC、美股按 America/New_York
+  （EST/EDT 随夏令时切换）；解析为对应时区的 aware datetime，到统一
+  北京时间的归一化由领域层完成；美股日线/周线/月线上游强制返回交易所
+  本地 date-only 时间（零点），归一化后落在北京时间当日 12:00/13:00
+  （随夏令时）；
 - 外汇/加密货币通常无 volume 字段：缺失时标准 volume 为 null，
-  不用 0 冒充（bars 能力目录 fields 亦不含 volume）；
+  不用 0 冒充（其能力目录 fields 亦不含 volume）；美股 volume 有值；
 - 缺失值与 NaN 统一映射为 null。
 
 quote（WS 实时流 price 事件，2026-11-05 探针实证，报告
@@ -43,6 +48,11 @@ from tapehub.domain.models import AssetType, Bar, Quote
 # Australia/Sydney timezone；ZoneInfo 自动处理 AEDT/AEST 夏令时切换）
 SYDNEY_TIMEZONE = ZoneInfo("Australia/Sydney")
 
+# 美股 datetime 的显示时区（官方文档 https://twelvedata.com/exchanges/stocks：
+# All times are displayed in the America/New_York timezone；ZoneInfo 自动
+# 处理 EST/EDT 夏令时切换）
+NEW_YORK_TIMEZONE = ZoneInfo("America/New_York")
+
 # WS price 事件 extensions 白名单（2026-11-05 探针实证）：仅透出实测
 # 稳定出现的字符串元数据字段；数值字段经 _to_float 转换，None 不透出
 _PRICE_EXTENSIONS_FIELDS = ("currency_base", "currency_quote", "exchange", "type")
@@ -62,11 +72,13 @@ def _to_float(value: Any) -> float | None:
 
 
 def display_zone(asset_type: AssetType) -> timezone | ZoneInfo:
-    """上游 datetime 墙钟的显示时区：外汇 Sydney，加密货币 UTC。"""
+    """上游 datetime 墙钟的显示时区：外汇 Sydney、加密货币 UTC、美股 New York。"""
     if asset_type is AssetType.FOREX:
         return SYDNEY_TIMEZONE
     if asset_type is AssetType.CRYPTO:
         return timezone.utc
+    if asset_type in (AssetType.STOCK, AssetType.ETF):
+        return NEW_YORK_TIMEZONE
     raise ValueError(f"Twelve Data unsupported asset type: {asset_type.value}")
 
 

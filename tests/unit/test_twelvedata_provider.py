@@ -31,6 +31,7 @@ from tests.fixtures.providers.stub_twelvedata import (
     preset_error,
     preset_values,
     sized_values_rows,
+    values_rows,
 )
 
 
@@ -169,6 +170,185 @@ def test_crypto_symbol(monkeypatch: pytest.MonkeyPatch) -> None:
     assert batch.bars[0].timestamp == datetime(2026, 1, 5, 8, tzinfo=CN_TIMEZONE)
 
 
+# ---------------------------------------------------------------------------
+# 美股 stock/etf（US market）：exchange/adj 显式传参、纽约墙钟、白名单
+# ---------------------------------------------------------------------------
+
+
+def _us_query(**overrides: Any) -> BarQuery:
+    base: dict[str, Any] = {
+        "asset_type": AssetType.STOCK,
+        "instrument": Instrument.parse("US-NASDAQ-AAPL"),
+        "interval": Interval.parse("P1D"),
+        "start": datetime(2026, 1, 1, tzinfo=CN_TIMEZONE),
+        "end": datetime(2026, 1, 10, tzinfo=CN_TIMEZONE),
+        "adjust": Adjust.QFQ,
+        "variant": DataVariant.TWELVEDATA,
+        "offset": 0,
+        "limit": 500,
+    }
+    base.update(overrides)
+    return BarQuery(**base)
+
+
+def test_us_stock_request_mapping_qfq(monkeypatch: pytest.MonkeyPatch) -> None:
+    """美股显式传 exchange（消歧）与 adj：qfq → "splits"（仅拆股复权）。"""
+    install(monkeypatch)
+    preset_values(monkeypatch, values_rows(["2026-01-05"]))
+    adapter = _adapter()
+
+    asyncio.run(adapter.fetch_bars(_us_query()))
+
+    from tests.fixtures.providers.stub_twelvedata import StubTDClient
+
+    kwargs = StubTDClient.instances[-1].calls[0]
+    # 边界从北京时间转纽约墙钟（1 月纽约 EST=UTC-5，比北京慢 13 小时）
+    assert kwargs == {
+        "symbol": "AAPL",
+        "interval": "1day",
+        "outputsize": 5000,
+        "start_date": "2025-12-31T11:00:00",
+        "end_date": "2026-01-09T11:00:00",
+        "exchange": "NASDAQ",
+        "adj": "splits",
+    }
+
+
+def test_us_stock_request_boundary_edt(monkeypatch: pytest.MonkeyPatch) -> None:
+    """夏令时（EDT=UTC-4）边界换算：北京 7 月 1 日零点 → 纽约 6 月 30 日 12:00。"""
+    install(monkeypatch)
+    preset_values(monkeypatch, values_rows(["2026-07-01"]))
+    adapter = _adapter()
+
+    asyncio.run(
+        adapter.fetch_bars(
+            _us_query(
+                start=datetime(2026, 7, 1, tzinfo=CN_TIMEZONE),
+                end=datetime(2026, 7, 10, tzinfo=CN_TIMEZONE),
+            )
+        )
+    )
+
+    from tests.fixtures.providers.stub_twelvedata import StubTDClient
+
+    kwargs = StubTDClient.instances[-1].calls[0]
+    assert kwargs["start_date"] == "2026-06-30T12:00:00"
+    assert kwargs["end_date"] == "2026-07-09T12:00:00"
+
+
+def test_us_stock_request_adjust_none(monkeypatch: pytest.MonkeyPatch) -> None:
+    """adjust=none 显式映射 adj="none"（原始价）。"""
+    install(monkeypatch)
+    preset_values(monkeypatch, values_rows(["2026-01-05"]))
+    adapter = _adapter()
+
+    asyncio.run(adapter.fetch_bars(_us_query(adjust=Adjust.NONE)))
+
+    from tests.fixtures.providers.stub_twelvedata import StubTDClient
+
+    assert StubTDClient.instances[-1].calls[0]["adj"] == "none"
+
+
+def test_us_stock_hfq_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
+    """上游无后复权等价物：hfq 在 operation 二级路由拒绝（能力目录即未声明）。"""
+    install(monkeypatch)
+    adapter = _adapter()
+    with pytest.raises(UnsupportedCapabilityError):
+        asyncio.run(adapter.fetch_bars(_us_query(adjust=Adjust.HFQ)))
+
+
+def test_us_stock_response_mapping_date_only(monkeypatch: pytest.MonkeyPatch) -> None:
+    """美股日线 date-only 按纽约零点解释：EST 期落北京 13:00、EDT 期落 12:00。"""
+    install(monkeypatch)
+    preset_values(monkeypatch, values_rows(["2026-01-05", "2026-07-01"]))
+    adapter = _adapter()
+
+    batch = asyncio.run(
+        adapter.fetch_bars(
+            _us_query(end=datetime(2026, 7, 31, tzinfo=CN_TIMEZONE))
+        )
+    )
+
+    assert [bar.timestamp for bar in batch.bars] == [
+        datetime(2026, 1, 5, 13, tzinfo=CN_TIMEZONE),  # EST（UTC-5）
+        datetime(2026, 7, 1, 12, tzinfo=CN_TIMEZONE),  # EDT（UTC-4）
+    ]
+    bar = batch.bars[0]
+    assert bar.volume == 12345.0  # 美股 volume 有值（区别于外汇/加密货币）
+    assert bar.amount is None  # 上游无成交额字段
+
+
+def test_us_etf_chain(monkeypatch: pytest.MonkeyPatch) -> None:
+    """美股 ETF：exchange 白名单含 NYSE，复权仅声明 none。"""
+    install(monkeypatch)
+    preset_values(monkeypatch, values_rows(["2026-01-05"]))
+    adapter = _adapter()
+
+    asyncio.run(
+        adapter.fetch_bars(
+            _us_query(
+                asset_type=AssetType.ETF,
+                instrument=Instrument.parse("US-NYSE-SPY"),
+                adjust=Adjust.NONE,
+            )
+        )
+    )
+
+    from tests.fixtures.providers.stub_twelvedata import StubTDClient
+
+    kwargs = StubTDClient.instances[-1].calls[0]
+    assert kwargs["symbol"] == "SPY"
+    assert kwargs["exchange"] == "NYSE"
+    assert kwargs["adj"] == "none"
+
+
+def test_us_etf_qfq_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
+    """ETF 复权未核实不声明：qfq 请求在二级路由拒绝。"""
+    install(monkeypatch)
+    adapter = _adapter()
+    with pytest.raises(UnsupportedCapabilityError):
+        asyncio.run(
+            adapter.fetch_bars(
+                _us_query(asset_type=AssetType.ETF, instrument=Instrument.parse("US-NYSE-SPY"))
+            )
+        )
+
+
+def test_us_cboe_exchange_allowed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """CBOE 在美股白名单内（目录 1,502 个 ETF；准入经探针核实）。"""
+    install(monkeypatch)
+    preset_values(monkeypatch, values_rows(["2026-01-05"]))
+    adapter = _adapter()
+
+    asyncio.run(
+        adapter.fetch_bars(
+            _us_query(
+                asset_type=AssetType.ETF,
+                instrument=Instrument.parse("US-CBOE-AAAA"),
+                adjust=Adjust.NONE,
+            )
+        )
+    )
+
+    from tests.fixtures.providers.stub_twelvedata import StubTDClient
+
+    assert StubTDClient.instances[-1].calls[0]["exchange"] == "CBOE"
+
+
+@pytest.mark.parametrize("instrument", ["US-OTC-AABB", "US-IEX-AAC"])
+def test_us_exchange_whitelist_rejected(
+    instrument: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """OTC（粉单）与 IEX 不在美股白名单：exchange 段校验明确拒绝。"""
+    install(monkeypatch)
+    adapter = _adapter()
+    query = _us_query(asset_type=AssetType.STOCK, instrument=Instrument.parse(instrument))
+    with pytest.raises(UnsupportedCapabilityError) as excinfo:
+        asyncio.run(adapter.fetch_bars(query))
+    # 错误信息列出全部允许的 exchange 段
+    assert "NYSE" in str(excinfo.value)
+
+
 def test_no_data_window_normalized_to_empty(monkeypatch: pytest.MonkeyPatch) -> None:
     """实测核实的空窗指纹（区间无数据 → 400）归一化为空结果，不作为错误上抛。"""
     install(monkeypatch)
@@ -208,7 +388,18 @@ def test_wrong_exchange_namespace_rejected(monkeypatch: pytest.MonkeyPatch) -> N
 
 
 def test_unsupported_asset_type(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Twelve Data 仅声明外汇/加密货币：股票请求在映射层拒绝。"""
+    """Twelve Data 仅声明外汇/加密货币/美股股票与 ETF：期货请求在映射层拒绝。"""
+    install(monkeypatch)
+    adapter = _adapter()
+    query = _query(
+        asset_type=AssetType.CONTRACT, instrument=Instrument.parse("CN-SHFE-RB2412")
+    )
+    with pytest.raises(UnsupportedCapabilityError):
+        asyncio.run(adapter.fetch_bars(query))
+
+
+def test_cn_market_stock_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
+    """股票能力仅声明 US 市场：CN-SSE 标的在 operation 二级路由拒绝。"""
     install(monkeypatch)
     adapter = _adapter()
     query = _query(asset_type=AssetType.STOCK, instrument=Instrument.parse("CN-SSE-600000"))
