@@ -224,8 +224,9 @@ notes: >
   期货/指数无复权概念，adjust_diff 仅配股票/ETF（实证 adj_type F/B 是否生效）；
   股票/ETF 的 volume 单位与 ETF/指数历史权限已在 2026-11-03/04 探针回填 README。
   P3/P4/P6/P7 四项运行时基准已于 2026-11-05 用 Runtime 集成基准脚本实证
-  （probes/results/runtime-bench-20261105T161229Z.md 与 memory_curve.py 产物，
-  脚本随产物保存于 probes/results/、不入库；真实上游、默认配置
+  （probes/results/runtime-bench-20261105T161229+0800.md 与
+  memory-curve-20261105T161708+0800.md（脚本随产物保存于 probes/results/、
+  不入库；真实上游、默认配置
   max_inflight=16/subscription_limit=64）：P3 同连接并发 await 矩阵——
   并发 1/2/4/8 各 5 轮全部成功，p50 187-750ms、max ≤750ms，并发 8 无退化
   （p50 266ms，上游并发有收益），统一实例设计成立；P4 历史大请求下的推送
