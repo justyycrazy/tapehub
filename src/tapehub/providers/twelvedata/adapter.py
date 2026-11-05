@@ -29,10 +29,10 @@
   加密货币 UTC、美股 America/New_York（EST/EDT）；解析见 response_mapper，
   统一北京时间归一化由领域层 BarBatch 完成；
 - 美股 stock/etf（US market）：exchange 段白名单 NYSE/NASDAQ/CBOE，
-  上游请求显式传 exchange（消歧）与 adj（none→"none"、qfq→"splits"
-  仅拆股复权——分红复权上游未生效，2026-11-06 探针实证，README 已
-  标注口径差异）；volume 有值、amount 恒 null；CN/HK 因计划门槛与
-  EOD-only 产品形态不声明（事实见 manifest 注释）；
+  上游请求显式传 exchange（消歧）与 adjust（none→"none"、qfq→"all"
+  拆股+分红前复权，与国内口径一致——2026-11-06 实证；上游参数名只认
+  adjust，传 adj 会被静默忽略落回默认 splits）；volume 有值、amount 恒
+  null；CN/HK 因计划门槛与 EOD-only 产品形态不声明（事实见 manifest 注释）；
 - 上游 outputsize 上限 5000 且按“最新一根”往回返回：采用覆盖判定——
   返回数量达到上限且最早一根仍晚于请求 start 时标记 partial=true，
   API 层据此在 warnings 中提示可能截断；

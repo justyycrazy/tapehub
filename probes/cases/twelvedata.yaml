@@ -80,13 +80,13 @@ raw:
       - {method: as_json, kwargs: {}}
     expect: {status: ok, min_fields: [symbol, datetime, timestamp, last_quote_at, close]}
   - id: td-quote-crypto
-    purpose: 加密货币实时快照字段矩阵（含 volume 与 crypto 专属 rolling 字段形态）
+    purpose: 加密货币实时快照字段矩阵（2026-11-05 实测无 volume；含 crypto 专属 rolling 字段形态）
     module: twelvedata
     client: {attr: TDClient, kwargs: {apikey: "$TAPEHUB_TWELVEDATA_API_KEY"}}
     call:
       - {method: quote, kwargs: {symbol: "BTC/USD", interval: "1day", timezone: "UTC", eod: false}}
       - {method: as_json, kwargs: {}}
-    expect: {status: ok, min_fields: [symbol, datetime, timestamp, last_quote_at, close, volume]}
+    expect: {status: ok, min_fields: [symbol, datetime, timestamp, last_quote_at, close]}
   - id: td-quote-invalid-symbol-fingerprint
     purpose: 采集无效标的的 quote 错误指纹（仅供 UPSTREAM 细分错误码参考；观察）
     assert: false
@@ -134,11 +134,14 @@ notes: >
   实测≈墙钟实时（快照新鲜度口径成立）；forex PT8H 深度 case 瞬时
   ReadTimeout（该周期 2026-11-04 报告已确认，本轮其余 23 条深度 case 全
   过，未重跑）；实测 exchange 值 forex="Forex"、crypto="Binance"；
-  美股 stock/etf（2026-11-06 接入，首轮探针待跑）：目录/计划门槛/adj
-  语义/时区已由 catalog-coverage-*、plan-dist-3-*、adj-diff-4-*、
-  dividend-check-5-* 报告实证（探针目录外脚本，不入库）；本轮 availability
+  美股 stock/etf（2026-11-06 接入）：目录/计划门槛/adjust 语义/时区已由
+  catalog-coverage-*、plan-dist-3-* 与 20261106T004624+0800 轮次的后续
+  纠偏实证确认（探针目录外脚本，不入库）——**参数名陷阱**：上游 REST 只认
+  adjust，传 adj 会被静默忽略落回默认（=splits 仅拆股）；adjust=dividends
+  实测生效（AAPL 2026 年 150/212 天与 none 有差异），qfq → adjust=all
+  （拆股+分红，与国内口径一致），none → adjust=none；不传时上游默认
+  splits（AAPL 2006 深度实证），适配器始终显式传参；本轮 availability
   验证 12 周期 × 复权矩阵（stock 24 + etf 12 case）、history_depth 回填
   24 个周期的 history.start（预算 780 见 pacing 注释，截断则次日续跑）；
-  qfq 断言口径：上游 adj=splits（AAPL 2006 拆股复权实证生效），
-  adj=dividends 全年零差异（分红复权未生效）——qfq case 数据应与 none
-  case 在无拆股窗口内一致，属预期非缺陷。
+  qfq 与 none case 在有分红的窗口内数据**应存在差异**（除息回溯调整），
+  无差异反而说明复权未生效需排查。

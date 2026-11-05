@@ -20,10 +20,13 @@
   https://twelvedata.com/exchanges/stocks + meta.exchange_timezone 实测，
   2026-11-05）：start_date/end_date 无时区后缀，格式 YYYY-MM-DD 或
   YYYY-MM-DDTHH:MM:SS，故北京时间边界须先转换为对应口径的墙钟再传递；
-- adj（仅美股传，2026-11-06 探针实证）：``none``→``"none"``（原始价）、
-  ``qfq``→``"splits"``（仅拆股复权——上游 ``adj=dividends`` 实测全年零
-  效果，分红复权未生效，与国内前复权口径不同，README 已标注）；
-  外汇/加密货币无复权概念不传；
+- adjust（仅美股传，2026-11-06 探针实证并纠正此前结论）：``none``→
+  ``"none"``（原始价）、``qfq``→``"all"``（拆股+分红前复权，与国内口径
+  一致——adjust=dividends 实测对除息日前历史回溯调整生效，150/212 天
+  有差异）。**上游参数名陷阱**：REST 只认 ``adjust``，传 ``adj`` 会被
+  静默忽略落回默认（=splits 仅拆股）——官方 SDK 的参数名即 ``adjust``，
+  经 SDK 传递天然正确；不传 adjust 时上游默认 ``splits``（AAPL 2006
+  深度数据实证），故美股必须显式传参。外汇/加密货币无复权概念不传；
 - outputsize 范围 1~5000：显式传最大值 5000（不依赖上游默认 30）。
 """
 
@@ -60,10 +63,10 @@ _INTERVAL_CODES: dict[Interval, str] = {
     Interval.parse("P1M"): "1month",
 }
 
-# 统一复权 → 上游 adj 取值（仅美股资产类型使用；口径见模块 docstring）
+# 统一复权 → 上游 adjust 取值（仅美股资产类型使用；口径见模块 docstring）
 _ADJUST_CODES: dict[Adjust, str] = {
     Adjust.NONE: "none",
-    Adjust.QFQ: "splits",
+    Adjust.QFQ: "all",  # 拆股+分红前复权，与国内 qfq 口径一致
 }
 
 # 标准代码中 exchange 段的约定命名空间（美股为白名单集合：
@@ -116,7 +119,7 @@ def interval_code(interval: Interval) -> str:
 
 
 def adjust_code(adjust: Adjust) -> str:
-    """统一复权 → 上游 adj 取值（hfq 上游无等价物，能力目录即不声明）。"""
+    """统一复权 → 上游 adjust 取值（hfq 上游无等价物，能力目录即不声明）。"""
     code = _ADJUST_CODES.get(adjust)
     if code is None:
         raise UnsupportedCapabilityError(
@@ -135,9 +138,10 @@ def build_request(query: BarQuery) -> dict[str, Any]:
     """构造 td.time_series 的关键字参数；所有相关参数显式传递。
 
     不依赖上游默认值：interval 默认参数缺省时上游行为未知、
-    outputsize 默认 30、美股 adj 默认 splits，均显式指定；边界从北京
-    时间转换为上游按资产类型解释的墙钟口径（外汇 Sydney、加密货币 UTC、
-    美股 New York）。美股额外显式传 exchange（同名 ticker 消歧）。
+    outputsize 默认 30、美股 adjust 缺省时上游默认 splits（仅拆股），
+    均显式指定；边界从北京时间转换为上游按资产类型解释的墙钟口径
+    （外汇 Sydney、加密货币 UTC、美股 New York）。美股额外显式传
+    exchange（同名 ticker 消歧）与 adjust。
     """
     zone = display_zone(query.asset_type)
     kwargs: dict[str, Any] = {
@@ -149,7 +153,7 @@ def build_request(query: BarQuery) -> dict[str, Any]:
     }
     if query.asset_type in _US_EQUITY_TYPES:
         kwargs["exchange"] = query.instrument.exchange
-        kwargs["adj"] = adjust_code(query.adjust)
+        kwargs["adjust"] = adjust_code(query.adjust)
     return kwargs
 
 

@@ -192,7 +192,7 @@ def _us_query(**overrides: Any) -> BarQuery:
 
 
 def test_us_stock_request_mapping_qfq(monkeypatch: pytest.MonkeyPatch) -> None:
-    """美股显式传 exchange（消歧）与 adj：qfq → "splits"（仅拆股复权）。"""
+    """美股显式传 exchange（消歧）与 adjust：qfq → "all"（拆股+分红前复权）。"""
     install(monkeypatch)
     preset_values(monkeypatch, values_rows(["2026-01-05"]))
     adapter = _adapter()
@@ -210,7 +210,7 @@ def test_us_stock_request_mapping_qfq(monkeypatch: pytest.MonkeyPatch) -> None:
         "start_date": "2025-12-31T11:00:00",
         "end_date": "2026-01-09T11:00:00",
         "exchange": "NASDAQ",
-        "adj": "splits",
+        "adjust": "all",
     }
 
 
@@ -237,7 +237,7 @@ def test_us_stock_request_boundary_edt(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_us_stock_request_adjust_none(monkeypatch: pytest.MonkeyPatch) -> None:
-    """adjust=none 显式映射 adj="none"（原始价）。"""
+    """adjust=none 显式映射 adjust="none"（原始价）。"""
     install(monkeypatch)
     preset_values(monkeypatch, values_rows(["2026-01-05"]))
     adapter = _adapter()
@@ -246,7 +246,7 @@ def test_us_stock_request_adjust_none(monkeypatch: pytest.MonkeyPatch) -> None:
 
     from tests.fixtures.providers.stub_twelvedata import StubTDClient
 
-    assert StubTDClient.instances[-1].calls[0]["adj"] == "none"
+    assert StubTDClient.instances[-1].calls[0]["adjust"] == "none"
 
 
 def test_us_stock_hfq_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -299,7 +299,7 @@ def test_us_etf_chain(monkeypatch: pytest.MonkeyPatch) -> None:
     kwargs = StubTDClient.instances[-1].calls[0]
     assert kwargs["symbol"] == "SPY"
     assert kwargs["exchange"] == "NYSE"
-    assert kwargs["adj"] == "none"
+    assert kwargs["adjust"] == "none"
 
 
 def test_us_etf_qfq_rejected(monkeypatch: pytest.MonkeyPatch) -> None:

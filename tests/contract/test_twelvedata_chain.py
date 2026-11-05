@@ -108,8 +108,8 @@ def test_capability_catalog(twelvedata_client: TestClient) -> None:  # type: ign
             assert cap["adjustments"] == ["none"]
             assert cap["fields"] == ["open", "high", "low", "close"]
 
-    # 美股 stock/etf（US market）：volume 有值；stock 的 qfq 仅拆股复权
-    # （上游 adj=dividends 未生效，2026-11-06 探针实证，README 标注口径）
+    # 美股 stock/etf（US market）：volume 有值；stock 的 qfq 映射
+    # adjust=all（拆股+分红前复权，与国内口径一致，2026-11-06 探针实证）
     us_caps = {tuple(cap["asset_types"])[0]: cap for cap in bars_caps if cap["markets"] == ["US"]}
     assert set(us_caps) == {"stock", "etf"}
     assert us_caps["stock"]["adjustments"] == ["none", "qfq"]
@@ -174,7 +174,7 @@ US_STOCK_PARAMS = {
 def test_us_stock_chain_default_qfq(
     twelvedata_client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """缺省 adjust（stock 全局默认 qfq）：路由成功，上游显式收 adj="splits"。"""
+    """缺省 adjust（stock 全局默认 qfq）：路由成功，上游显式收 adjust="all"。"""
     preset_values(monkeypatch, values_rows(["2026-01-05", "2026-01-06"]))
 
     response = twelvedata_client.get("/v1/market/bars", params=US_STOCK_PARAMS)
@@ -186,7 +186,7 @@ def test_us_stock_chain_default_qfq(
     kwargs = StubTDClient.instances[-1].calls[0]
     assert kwargs["symbol"] == "AAPL"
     assert kwargs["exchange"] == "NASDAQ"  # 显式传 exchange 消歧
-    assert kwargs["adj"] == "splits"  # qfq → 仅拆股复权（口径见 README）
+    assert kwargs["adjust"] == "all"  # qfq → 拆股+分红前复权（口径见 README）
 
     data = body["data"]
     assert data["instrument"] == "US-NASDAQ-AAPL"
@@ -210,7 +210,7 @@ def test_us_stock_adjust_none_explicit(
 
     from tests.fixtures.providers.stub_twelvedata import StubTDClient
 
-    assert StubTDClient.instances[-1].calls[0]["adj"] == "none"
+    assert StubTDClient.instances[-1].calls[0]["adjust"] == "none"
 
 
 def test_us_stock_hfq_422(twelvedata_client: TestClient) -> None:  # type: ignore[no-untyped-def]
@@ -234,10 +234,10 @@ def test_us_stock_auto_routes(
     meta = response.json()["meta"]
     assert meta["provider"] == "twelvedata"
     assert meta["variant"] == "twelvedata"
-    # 缺省按 stock → qfq 具体化：由上游收到的 adj="splits" 间接证明
+    # 缺省按 stock → qfq 具体化：由上游收到的 adjust="all" 间接证明
     from tests.fixtures.providers.stub_twelvedata import StubTDClient
 
-    assert StubTDClient.instances[-1].calls[0]["adj"] == "splits"
+    assert StubTDClient.instances[-1].calls[0]["adjust"] == "all"
 
 
 def test_us_etf_chain_default_none(
@@ -259,7 +259,7 @@ def test_us_etf_chain_default_none(
     kwargs = StubTDClient.instances[-1].calls[0]
     assert kwargs["symbol"] == "SPY"
     assert kwargs["exchange"] == "NYSE"
-    assert kwargs["adj"] == "none"  # etf 缺省 adjust=none（无 qfq 缺省）
+    assert kwargs["adjust"] == "none"  # etf 缺省 adjust=none（无 qfq 缺省）
 
 
 def test_us_otc_exchange_rejected_422(twelvedata_client: TestClient) -> None:  # type: ignore[no-untyped-def]

@@ -55,10 +55,13 @@
 #   免费档（Basic）US 全量可用；exchange 段白名单 NYSE/NASDAQ/CBOE——
 #   OTC（粉单，数据质量差）与 IEX（65 个标的）不接入，CBOE 经探针准入
 #   核实（case td-cboe-etf）；
-# - 美股 adjust 口径（重要）：上游 adj=splits（拆股复权）实测生效、
-#   adj=dividends 实测全年零效果（分红复权未生效，2026-11-06 探针实证），
-#   故 qfq 只能映射 adj=splits（仅拆股复权）——与国内「前复权含分红」
-#   口径不同，README 已显著标注；hfq 上游无等价物不声明；etf 仅声明 none；
+# - 美股 adjust 口径（2026-11-06 探针实证并纠正此前错误结论）：qfq 映射
+#   上游 adjust="all"（拆股+分红前复权，与国内口径一致——adjust=dividends
+#   对除息日前历史回溯调整实测生效，150/212 天有差异）；none → "none"。
+#   **参数名陷阱**：REST 只认 adjust，传 adj 会被静默忽略落回默认
+#   （=splits 仅拆股）——此前「分红复权未生效」的错误结论即源于此；
+#   不传时上游默认 splits，故美股必须显式传参。hfq 上游无等价物不声明；
+#   etf 复权行为未核实，仅声明 none；
 # - 美股墙钟口径 America/New_York（官方 https://twelvedata.com/exchanges/stocks，
 #   EST/EDT 夏令时由 ZoneInfo 处理）；日线/周线/月线上游强制返回交易所
 #   本地 date-only 时间；volume 有值、amount 上游无字段恒 null；
@@ -122,9 +125,9 @@ capabilities:
     adjustments: [none]
     fields: [open, high, low, close]
 
-  # 美股个股：exchange 段白名单 NYSE/NASDAQ/CBOE；qfq = 上游 adj=splits
-  # （仅拆股复权，分红复权上游未生效——口径与国内不同，见头部注释与 README）；
-  # volume 有值、amount 无字段；history 待探针回填（保持 null）
+  # 美股个股：exchange 段白名单 NYSE/NASDAQ/CBOE；qfq = 上游 adjust=all
+  # （拆股+分红前复权，与国内口径一致，2026-11-06 实证）；volume 有值、
+  # amount 无字段；history 待探针回填（保持 null）
   - data_type: bars
     markets: [US]
     asset_types: [stock]
@@ -234,8 +237,8 @@ operations:
     operation: time_series
   - match: {data_type: bars, market: GLOBAL, asset_type: crypto, interval: P1M, adjust: none, variant: twelvedata}
     operation: time_series
-  # 美股个股：同一上游接口 td.time_series，显式传 exchange 与 adj
-  # （qfq→splits / none→none，见 request_mapper）
+  # 美股个股：同一上游接口 td.time_series，显式传 exchange 与 adjust
+  # （qfq→all / none→none，见 request_mapper）
   - match: {data_type: bars, market: US, asset_type: stock, interval: PT1M, adjust: qfq, variant: twelvedata}
     operation: time_series
   - match: {data_type: bars, market: US, asset_type: stock, interval: PT5M, adjust: qfq, variant: twelvedata}

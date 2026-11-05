@@ -316,9 +316,10 @@ Accept: text/event-stream
 | `stock` | **`qfq`（前复权）** |
 | 其余（index、contract 等） | `none` |
 
-> **美股 qfq 口径警告（twelvedata）**：上游 Twelve Data 的分红复权经实测未生效
-> （`adj=dividends` 全年零差异，2026-11-06 探针实证），US stock 的 `qfq` 实际映射
-> 上游 `adj=splits`——**仅拆股复权**，与国内「前复权含分红」口径不同。需要原始价
+> **美股 qfq 口径说明（twelvedata）**：US stock 的 `qfq` 映射上游 `adjust=all`
+> （拆股 + 分红前复权，除息日前历史回溯调整，2026-11-06 探针实证生效）——与国内
+> 「前复权含分红」口径**一致**。注意上游参数名只认 `adjust`，传 `adj` 会被静默忽略
+> 落回默认（仅拆股）；不传时上游默认仅拆股复权，适配器因此始终显式传参。需要原始价
 > 请显式传 `adjust=none`。详见下文 Twelve Data 映射表。
 
 通用参数转换的原则是：**所有相关参数都显式传递给上游，不依赖上游默认值**。例如 akshare `stock_zh_a_hist` 的 `adjust` 默认 `""`（不复权），与 tapehub 的声明默认值（个股 qfq）不一致，因此适配器始终显式传参，保证「接口默认行为」与「上游实际行为」一致。
@@ -590,7 +591,7 @@ Twelve Data（官方库 `twelvedata`（twelvedata-python）：`TDClient(apikey=.
 
 - API Key 通过环境变量 `TAPEHUB_TWELVEDATA_API_KEY` 提供并传入 `TDClient(apikey=...)`，禁止写入代码/manifest/日志；未配置时能力目录正常，数据请求返回 `PROVIDER_NOT_IMPLEMENTED`；
 - 标的代码约定（symbol 段允许斜杠，对应上游货币对写法）：外汇 `GLOBAL-OTC-EUR/USD → EUR/USD`（ISO 4217，OTC 场外聚合报价）；加密货币 `GLOBAL-CRYPTO-BTC/USD → BTC/USD`（聚合对；交易所专属对与 `exchange` 筛选参数暂不支持）；美股 `US-NASDAQ-AAPL → symbol=AAPL&exchange=NASDAQ`（原生 ticker + 显式 exchange 消歧，exchange 段白名单 **NYSE/NASDAQ/CBOE**——OTC 粉单与 IEX 不接入，2026-11-05 目录探针实证分布后收敛）；
-- **美股 adjust 口径（重要）**：`qfq` 映射上游 `adj=splits`——**仅拆股复权**（AAPL 2006 年深度数据实证拆股复权生效）；上游 `adj=dividends` 实测全年零差异（**分红复权未生效**，2026-11-06 探针实证），故 qfq 与国内「前复权含分红」口径不同，无分红调整；`hfq` 上游无等价物不声明；etf 复权行为未核实，仅声明 `none`；
+- **美股 adjust 口径**：`qfq` 映射上游 `adjust=all`——**拆股+分红前复权，与国内口径一致**（2026-11-06 探针实证：`adjust=dividends` 对除息日前历史回溯调整生效，AAPL 2026 年 212 个交易日中 150 天与原始价有差异）；`none` → `adjust=none`（原始价）；**参数名陷阱**：上游 REST 只认 `adjust`，传 `adj` 会被静默忽略落回默认（=splits 仅拆股，AAPL 2006 深度数据实证）；`hfq` 上游无等价物不声明；etf 复权行为未核实，仅声明 `none`；
 - interval 枚举（上游完整支持 1min/5min/15min/30min/45min/1h/2h/4h/8h/1day/1week/1month）：本适配器声明全部 12 个周期 `PT1M/PT5M/PT15M/PT30M/PT45M/PT1H/PT2H/PT4H/PT8H/P1D/P1W/P1M`（45min/2h/4h/8h 经数据探针实测可用后补充声明，报告 20261104T061857Z）；
 - 历史覆盖范围（`history`）已由全量深度探针实测回填（2026-11-04，粒度 90 天，approx）：日内周期 forex `≈2020-01-31~04-08`、crypto `≈2020-01-07~04-07`；forex 日/周/月触底 `2000-01-01`（真实更早、待精化）；crypto 日/周 `≈2017-08-29`、月 `≈2017-08-02`；**美股各周期 history 待首轮探针回填**（AAPL 日线已实测可见至 2006-12-20，受 outputsize 5000 上限约束）；
 - bar 时间墙钟口径按资产类型区分（外汇/加密 2026-11-04、美股 2026-11-05 实测 + [官方文档](https://twelvedata.com/exchanges/physical_currency)、[美股交易所页](https://twelvedata.com/exchanges/stocks)）：外汇按 **Australia/Sydney**（AEDT/AEST 随夏令时切换，用 `ZoneInfo` 解析）、加密货币按 **UTC**、美股按 **America/New_York**（EST/EDT 随夏令时切换；日线/周线/月线上游强制返回交易所本地 date-only 时间）；适配器将墙钟解析为对应时区的 aware 时间后，由领域层统一归一化为北京时间输出；`start_date`/`end_date` 为上游口径墙钟 `YYYY-MM-DDTHH:MM:SS`，由适配器从北京时间转换后显式传递；`outputsize` 显式传上限 5000（上游默认仅 30）；
