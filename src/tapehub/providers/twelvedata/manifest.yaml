@@ -30,14 +30,23 @@
 # - 区间无数据行为（2026-11-04 探针实测核实，报告 20261104T065529Z）：上游返回
 #   400 BadRequestError "No data is available on the specified dates" 而非空列表，
 #   适配器按指纹归一化为空结果；其余未核实异常统一由应用层包装为 UPSTREAM_ERROR；
-# - 实时快照（REST /quote 同步应答，官方库调用形态 td.quote(symbol,
-#   interval, timezone, eod).as_json()）：按需请求路径——无订阅语义、无长
-#   连接、无流式（SSE 流请求返回 UNSUPPORTED_CAPABILITY）；interval 固定
-#   传 1day（volume 即当日累计，与快照口径对齐），timezone 显式传 UTC
-#   （datetime 字段口径固定，行情时间以 last_quote_at Unix 秒为准，
-#   2026-11-05 探针实测其≈墙钟实时）；实测 quote 响应均未返回 volume
-#   与 currency/mic_code（报告 20261105T184934+0800，人工确认）；
-#   extensions 白名单 9 个标量字段已按该报告回填；
+# - 实时快照与快照流（WS wss://ws.twelvedata.com/v1/quotes/price，
+#   websockets 库直连——官方 SDK 的 td.websocket 为固定 symbols + 阻塞
+#   keep_alive 模型，不适配共享连接动态增删）：行为按 2026-11-05 探针
+#   实证（报告 probes/results/twelvedata/ws-behavior-20261105T221000+0800.md，
+#   不入库，人工确认）——WS credit = 当前活跃订阅 symbol 数（免费版 8：
+#   退订即时释放、重订重连免费），退订有 unsubscribe-status 显式确认
+#   （与确认间存在在途事件竞态，以确认为准），heartbeat 每 ~10s 有应答；
+#   price 事件 timestamp 为分钟桶 Unix 秒（非 tick 时刻，新鲜度以
+#   meta.received_at 表达），外汇（EUR/USD）无 exchange/bid/ask、加密
+#   （BTC/USD）有 exchange——两者均无 volume，标准字段只有
+#   timestamp + last_price（与下方 quotes fields 声明一致）；上游拒订
+#   （subscribe-status.fails）以 upstream_disconnected 显式事件收尾，
+#   断线经退避重连自动重订恢复（无代际回收，不产生 recycling 事件）；
+#   原 REST /quote 按需路径已退役（2026-11-05，M2/M3 统一 WS 订阅源）；
+# - 并发订阅上限：免费版 8 个 WS credit = 8 个并发 symbol，达限急切
+#   返回 UPSTREAM_SUBSCRIPTION_LIMIT（429），由 TAPEHUB_TWELVEDATA_
+#   SUBSCRIPTION_LIMIT 配置（升档后调大）；
 # - 单接口 Provider：变体与 default_variant 均为 twelvedata（数据源即上游服务自身，与东方财富无关）：缺省请求即可路由，也可显式传 variant=twelvedata。
 provider: twelvedata
 default_provider: [forex, crypto]
@@ -89,10 +98,12 @@ capabilities:
     adjustments: [none]
     fields: [open, high, low, close]
 
-  # 实时快照：REST 按需查询，无周期/复权维度（两维度声明为空，路由与能力
-  # 匹配跳过）；五档盘口/amount 上游无源字段恒 null；fields 声明以 2026-11-05
-  # quote 探针实证为准（报告 20261105T184934+0800，人工确认）：forex/crypto
-  # 响应均未返回 volume，故不声明（映射保留防御性处理，缺失 → null）
+  # 实时快照与快照流（WS 订阅推送，M2 缓存读取 + M3 SSE 同源）：无周期/
+  # 复权维度（两维度声明为空，路由与能力匹配跳过）；五档盘口/amount/
+  # volume 上游无源字段恒 null；fields 以 2026-11-05 WS 探针实证为准
+  # （报告 ws-behavior-20261105T221000+0800，人工确认）：外汇/加密货币
+  # price 事件均无 volume 与 bid/ask（文档 XAU/USD 示例不可推广），
+  # 故仅声明 timestamp + last_price（映射保留防御性处理，缺失 → null）
   - data_type: quotes
     markets: [GLOBAL]
     asset_types: [forex, crypto]

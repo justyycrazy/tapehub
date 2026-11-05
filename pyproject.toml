@@ -23,7 +23,9 @@ tickflow = ["tickflow"]
 alphafeed = ["alphafeed"]
 tushare = ["tushare"]
 tqsdk = ["tqsdk"]
-twelvedata = ["twelvedata"]
+# websockets：实时快照/快照流 WS 直连（td.websocket 封装不适配共享连接
+# 动态增删）；>=14 为新 asyncio 实现（websockets.connect 别名）
+twelvedata = ["twelvedata", "websockets>=14"]
 
 [dependency-groups]
 dev = [

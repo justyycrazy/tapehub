@@ -1898,6 +1898,7 @@ tushare = [
 ]
 twelvedata = [
     { name = "twelvedata" },
+    { name = "websockets" },
 ]
 
 [package.dev-dependencies]
@@ -1921,6 +1922,7 @@ requires-dist = [
     { name = "twelvedata", marker = "extra == 'twelvedata'" },
     { name = "tzdata", marker = "sys_platform == 'win32'", specifier = ">=2024.1" },
     { name = "uvicorn", specifier = ">=0.30" },
+    { name = "websockets", marker = "extra == 'twelvedata'", specifier = ">=14" },
 ]
 provides-extras = ["akshare", "tickflow", "alphafeed", "tushare", "tqsdk", "twelvedata"]
 

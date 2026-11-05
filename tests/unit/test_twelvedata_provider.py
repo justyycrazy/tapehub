@@ -10,7 +10,6 @@ import pytest
 from tapehub.domain.errors import (
     ProviderNotImplementedError,
     UnsupportedCapabilityError,
-    UpstreamError,
 )
 from tapehub.domain.intervals import Interval
 from tapehub.domain.models import (
@@ -27,12 +26,9 @@ from tapehub.providers.registry import build_provider_record
 from tapehub.settings import Settings
 from tests.conftest import make_settings
 from tests.fixtures.providers.stub_twelvedata import (
-    crypto_quote_payload,
-    forex_quote_payload,
     forex_values_rows,
     install,
     preset_error,
-    preset_quote,
     preset_values,
     sized_values_rows,
 )
@@ -292,106 +288,13 @@ def test_partial_false_when_bars_cover_start(monkeypatch: pytest.MonkeyPatch) ->
 
 
 # ---------------------------------------------------------------------------
-# 实时快照（REST /quote 同步应答，按需请求路径）
+# 实时快照：急切校验（快照/快照流已改走 WS 订阅源，链路用例见
+# test_twelvedata_ws_runtime.py 与 test_twelvedata_stream.py）
 # ---------------------------------------------------------------------------
 
 
-def test_quote_request_and_response_mapping(monkeypatch: pytest.MonkeyPatch) -> None:
-    install(monkeypatch)
-    preset_quote(monkeypatch, forex_quote_payload())
-    adapter = _adapter(make_settings(twelvedata_api_key="test-key"))
-
-    quote = asyncio.run(adapter.fetch_quote(_quote_query()))
-
-    from tests.fixtures.providers.stub_twelvedata import StubTDClient
-
-    client = StubTDClient.instances[-1]
-    assert client.apikey == "test-key"  # settings 注入链路
-    # 所有相关参数显式传递（interval/timezone/eod 上游默认值均不依赖）
-    assert client.quote_calls[0] == {
-        "symbol": "EUR/USD",
-        "interval": "1day",
-        "timezone": "UTC",
-        "eod": False,
-    }
-
-    assert quote.provider == "twelvedata"
-    # 行情时间取 last_quote_at（最后分钟 K 线）：UTC 2026-01-05 12:34 = 北京 20:34
-    assert quote.timestamp == datetime(2026, 1, 5, 20, 34, tzinfo=CN_TIMEZONE)
-    assert quote.last_price == 1.0855  # close 字符串 → float
-    assert quote.volume is None  # 实测 forex /quote 未返回 volume
-    assert quote.amount is None  # 上游无成交额字段
-    for i in range(1, 6):  # 上游无盘口：五档恒 null
-        assert getattr(quote, f"bid_price{i}") is None
-        assert getattr(quote, f"bid_volume{i}") is None
-        assert getattr(quote, f"ask_price{i}") is None
-        assert getattr(quote, f"ask_volume{i}") is None
-    # extensions 白名单（2026-11-05 探针实证回填）：数值字符串 → float
-    assert quote.extensions == {
-        "name": "Euro / US Dollar",
-        "exchange": "Forex",
-        "open": 1.085,
-        "high": 1.086,
-        "low": 1.084,
-        "previous_close": 1.086,
-        "change": -0.0005,
-        "percent_change": -0.046,
-        "is_market_open": True,
-    }
-    assert "fifty_two_week" not in quote.extensions  # 嵌套对象不透出
-
-
-def test_quote_crypto_volume_mapped(monkeypatch: pytest.MonkeyPatch) -> None:
-    install(monkeypatch)
-    preset_quote(monkeypatch, crypto_quote_payload())
-    adapter = _adapter()
-    query = _quote_query(
-        asset_type=AssetType.CRYPTO,
-        instrument=Instrument.parse("GLOBAL-CRYPTO-BTC/USD"),
-    )
-    quote = asyncio.run(adapter.fetch_quote(query))
-
-    assert quote.last_price == 43120.75
-    assert quote.volume == 12345.6  # 防御分支：volume 若返回则字符串 → float
-    assert "rolling_1d_change" not in quote.extensions  # crypto 专属字段不透出
-    assert quote.extensions["exchange"] == "Binance"  # 实测为聚合源交易所
-
-
-def test_quote_missing_timestamp_raises_upstream(monkeypatch: pytest.MonkeyPatch) -> None:
-    """last_quote_at 与 timestamp 皆缺属上游契约违背：抛 UPSTREAM_ERROR，不伪造时间。"""
-    install(monkeypatch)
-    payload = forex_quote_payload()
-    payload.pop("last_quote_at")
-    payload.pop("timestamp")
-    preset_quote(monkeypatch, payload)
-    adapter = _adapter()
-    with pytest.raises(UpstreamError):
-        asyncio.run(adapter.fetch_quote(_quote_query()))
-
-
-def test_quote_non_object_payload_raises_upstream(monkeypatch: pytest.MonkeyPatch) -> None:
-    install(monkeypatch)
-    preset_quote(monkeypatch, ["unexpected"])  # type: ignore[arg-type]
-    adapter = _adapter()
-    with pytest.raises(UpstreamError):
-        asyncio.run(adapter.fetch_quote(_quote_query()))
-
-
-def test_quote_upstream_error_propagates(monkeypatch: pytest.MonkeyPatch) -> None:
-    """上游 SDK 异常照常上抛（应用层统一包装 UPSTREAM_ERROR），适配器不吞。"""
-    install(monkeypatch)
-    preset_error(
-        monkeypatch,
-        BadRequestError('{"code":400,"message":"invalid symbol","status":"error"}'),
-    )
-    adapter = _adapter()
-    with pytest.raises(BadRequestError):
-        asyncio.run(adapter.fetch_quote(_quote_query()))
-
-
-def test_quote_unsupported_asset_type(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_quote_unsupported_asset_type() -> None:
     """quotes 能力仅声明 forex/crypto：股票快照请求在二级路由拒绝。"""
-    install(monkeypatch)
     adapter = _adapter()
     with pytest.raises(UnsupportedCapabilityError):
         adapter.resolve_quote_operation(
@@ -407,11 +310,3 @@ def test_quote_missing_api_key() -> None:
     with pytest.raises(ProviderNotImplementedError) as excinfo:
         asyncio.run(adapter.fetch_quote(_quote_query()))
     assert "API key" in str(excinfo.value)
-
-
-def test_quote_missing_sdk(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setitem(sys.modules, "twelvedata", None)  # 模拟 SDK 未安装
-    adapter = _adapter(make_settings(twelvedata_api_key="k"))
-    with pytest.raises(ProviderNotImplementedError) as excinfo:
-        asyncio.run(adapter.fetch_quote(_quote_query()))
-    assert "not installed" in str(excinfo.value)

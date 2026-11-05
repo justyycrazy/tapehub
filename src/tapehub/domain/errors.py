@@ -25,6 +25,8 @@ class ErrorCode(str, Enum):
     QUOTE_NOT_READY = "QUOTE_NOT_READY"
     # 行情流客户端数达到上限（服务容量闸门）
     STREAM_LIMIT_REACHED = "STREAM_LIMIT_REACHED"
+    # 上游并发订阅 symbol 数达到计划上限（如 Twelve Data WS credits）
+    UPSTREAM_SUBSCRIPTION_LIMIT = "UPSTREAM_SUBSCRIPTION_LIMIT"
     # 以下为框架补充错误码（非业务链路产生）
     NOT_FOUND = "NOT_FOUND"
     METHOD_NOT_ALLOWED = "METHOD_NOT_ALLOWED"
@@ -117,6 +119,18 @@ class StreamLimitReachedError(TapehubError):
 
     code = ErrorCode.STREAM_LIMIT_REACHED
     default_message = "Streaming client limit reached, retry later."
+
+
+class UpstreamSubscriptionLimitError(TapehubError):
+    """上游订阅上限：并发订阅 symbol 数已达上游计划上限。
+
+    2026-11-05 Twelve Data WS 探针实证：WS credit = 当前活跃订阅 symbol 数
+    （免费版 8 个），退订/断连即时释放。可重试限流：空闲退订释放额度后
+    重试，或提升上游计划档位并调大对应网关配置。
+    """
+
+    code = ErrorCode.UPSTREAM_SUBSCRIPTION_LIMIT
+    default_message = "Upstream concurrent subscription limit reached, retry later."
 
 
 class ManifestError(TapehubError):

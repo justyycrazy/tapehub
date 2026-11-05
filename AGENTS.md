@@ -4,9 +4,10 @@
 
 通用行情数据网关：对外统一 REST API（FastAPI），内部经适配器接入多个行情数据源
 （akshare、tushare、tickflow、alphafeed、tqsdk、twelvedata）。
-**当前版本做「历史 K 线查询」与「tqsdk 实时行情（快照 + SSE 流式，
-限 `TAPEHUB_DEPLOYMENT_MODE=single` 单进程单用户模式）」**：明确不做存储/缓存、
-定时任务、双向 WebSocket、多进程/分布式部署、Docker、前端。
+**当前版本做「历史 K 线查询」与「实时行情（tqsdk 订阅推送、twelvedata WS 订阅：
+快照 + SSE 流式，限 `TAPEHUB_DEPLOYMENT_MODE=single` 单进程单用户模式）」**：
+明确不做存储/缓存、定时任务、面向客户端的双向 WebSocket、多进程/分布式部署、
+Docker、前端（上游内部长连接不受此限，如 twelvedata WS）。
 
 `README.md` 是最完整的行为规范（API 参数约定、错误码表、各 Provider 上游映射表、
 单位换算），改动敏感区域前先读对应章节。
@@ -78,14 +79,20 @@ Provider 适配器实现 Domain Port。
   （快照是当前时点的订阅数据）；能力目录与 operations match 对无意义维度
   显式空/null，路由跳过对应维度；首包超时 `QUOTE_NOT_READY`（HTTP 408）；
   tqsdk 不支持取消订阅——Runtime 退订只停本地维护，休眠订阅累计到
-  `TAPEHUB_TQSDK_SUBSCRIPTION_LIMIT` 触发新一代重建清理（活跃订阅自动重订）。
+  `TAPEHUB_TQSDK_SUBSCRIPTION_LIMIT` 触发新一代重建清理（活跃订阅自动重订）；
+  twelvedata 走 WS 共享订阅（M2/M3 同源，探针实证 credit=并发活跃 symbol 数），
+  冷订阅等首包、活跃读缓存，引用归零延迟 60s 真退订释放 credit，
+  并发达 `TAPEHUB_TWELVEDATA_SUBSCRIPTION_LIMIT` 返回
+  `UPSTREAM_SUBSCRIPTION_LIMIT`（429）。
 - 实时快照流（`GET /v1/market/quotes/stream`，M3，SSE `text/event-stream`）：
   事件三类 `quote`/`status`（subscribed / upstream_disconnected / recycling /
   idle_unsubscribed）/`heartbeat`；断线与代际回收必须发明确 status 事件，
   **绝不静默断流**；coalesce 丢旧保新**只约束 quote 帧**（status 生命周期
   帧不丢）；心跳/空闲退订/客户端容量闸门（`STREAM_LIMIT_REACHED` 429）在
-  Application 层流服务（`QuoteStreamService`，Provider 无关）；仅 `shared`
-  连接模式支持；流关闭即本地退订（上游订阅保留至回收，同 M2 口径）。
+  Application 层流服务（`QuoteStreamService`，Provider 无关）；tqsdk 仅
+  `shared` 连接模式支持；twelvedata WS 支持逐 symbol 真退订（无代际回收、
+  不产生 `recycling` 事件），流关闭即本地退订（上游订阅按 Provider 语义：
+  tqsdk 保留至回收 / twelvedata 经 linger 真退订）。
 
 ## 安全与诚实边界
 

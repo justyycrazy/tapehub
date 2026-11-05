@@ -24,9 +24,11 @@
 - `GET /v1/capabilities`：全部 Provider 能力目录；
 - `GET /v1/providers/{provider}/capabilities`：单个 Provider 能力；
 - `GET /v1/market/bars`：统一历史 K 线查询；
-- `GET /v1/market/quotes`：tqsdk 实时快照（单标的，订阅-推送模型，限 `single` 模式）；
-- `GET /v1/market/quotes/stream`：tqsdk 实时快照 SSE 流（单标的订阅推送、
-  心跳与空闲退订、容量闸门，限 `single` 模式，仅 `shared` 连接模式）；
+- `GET /v1/market/quotes`：实时快照（单标的订阅模型，限 `single` 模式）：tqsdk
+  （订阅-推送 Runtime）与 twelvedata（WS 订阅缓存，GLOBAL 外汇/加密货币）；
+- `GET /v1/market/quotes/stream`：实时快照 SSE 流（单标的订阅推送、
+  心跳与空闲退订、容量闸门，限 `single` 模式）：tqsdk（仅 `shared` 连接模式）
+  与 twelvedata（WS 长连接，退订即释放上游订阅额度）；
 - Provider 注册、能力匹配与公共路由；Provider 内部二级操作路由的扩展机制；
 - 统一错误处理；
 - **akshare Provider 已接入**（接口签名按官方文档核实，见下文）；
@@ -153,7 +155,7 @@ GET /v1/market/quotes?provider=twelvedata&asset_type=forex&instrument=GLOBAL-OTC
 两类上游的交付模型不同，语义差异如实声明：
 
 - **tqsdk（订阅-推送）**：REST 快照从共享 Runtime 的订阅缓存即时读取（首包超时 `QUOTE_NOT_READY` 408，行为要点见下与 TqSdk 映射表）；
-- **twelvedata（REST 按需请求）**：`td.quote` 同步应答，是**分钟级聚合快照**（最近 bar 聚合，非 tick 推送，实时性弱于 tqsdk），每次请求消耗上游 credit（每 symbol 1 次）；无流式——`/v1/market/quotes/stream` 请求 twelvedata 返回 `UNSUPPORTED_CAPABILITY`（422），映射表见 Twelve Data 章节。
+- **twelvedata（WS 订阅缓存）**：快照与流同源，均来自 WS 共享订阅的实时 price 事件（2026-11-05 探针实证），冷订阅等待首包（超时同为 `QUOTE_NOT_READY` 408）、活跃订阅即时读缓存；上游 WS credit 按**并发活跃订阅 symbol** 计数（免费版 8），并发订阅达 `TAPEHUB_TWELVEDATA_SUBSCRIPTION_LIMIT` 返回 `UPSTREAM_SUBSCRIPTION_LIMIT`（429），映射表见 Twelve Data 章节。
 
 以下请求/响应示例与行为要点为 **tqsdk 链路**；twelvedata 链路的字段口径见其映射表。
 
@@ -193,10 +195,11 @@ tqsdk 行为要点：
   （M2 快照请求不退订，订阅累积由回收阈值管理，见 TqSdk 映射表）；
 - 指数类标的无盘口：`bid/ask` 价格为 `null`（不用 0 冒充）、量为 `0`，如实透出。
 
-### 实时行情流（SSE，tqsdk）
+### 实时行情流（SSE，tqsdk / twelvedata）
 
 ```http
 GET /v1/market/quotes/stream?provider=tqsdk&asset_type=contract&instrument=CN-SHFE-au2612
+GET /v1/market/quotes/stream?provider=twelvedata&asset_type=forex&instrument=GLOBAL-OTC-EUR/USD
 Accept: text/event-stream
 ```
 
@@ -204,14 +207,14 @@ Accept: text/event-stream
 `text/event-stream`（HTTP/1.1 chunked 流，零新依赖）。**行情推送是纯单向流，
 选 SSE 而非 WebSocket**（D8 决策）：复用 HTTP 鉴权/中间件/request_id，
 客户端 `curl -N` 即可消费。仅实现 `stream_quote` 的 Provider 可用
-（当前仅 tqsdk）；纯 REST 按需请求的 Provider（如 twelvedata）在受理阶段
-即返回 `UNSUPPORTED_CAPABILITY`（422）。
+（当前 tqsdk 与 twelvedata）；其余 Provider 在受理阶段即返回
+`UNSUPPORTED_CAPABILITY`（422）。
 
 三类事件帧（`event:` + `data:` JSON，帧间空行分隔）：
 
 | event | data 结构 | 语义 |
 | --- | --- | --- |
-| `status` | `{status, instrument, asset_type, provider}` | 流生命周期：`subscribed`（订阅确认，**首事件**，含已缓存快照场景）/ `upstream_disconnected`（上游连接异常或服务停机）/ `recycling`（Runtime 新一代重建：北京时间 04:00 跨交易日回收 / watchdog / 休眠订阅回收，活跃订阅自动重订，重订完成再发 `subscribed`）/ `idle_unsubscribed`（流空闲超时，服务端本地退订并结束流） |
+| `status` | `{status, instrument, asset_type, provider}` | 流生命周期：`subscribed`（订阅确认，**首事件**，含已缓存快照场景）/ `upstream_disconnected`（上游连接异常或服务停机；twelvedata 上游拒订同以此收尾）/ `recycling`（tqsdk 专属：Runtime 新一代重建——北京时间 04:00 跨交易日回收 / watchdog / 休眠订阅回收，活跃订阅自动重订，重订完成再发 `subscribed`；twelvedata 无代际回收，不产生此状态）/ `idle_unsubscribed`（流空闲超时，服务端本地退订并结束流） |
 | `quote` | `{instrument, asset_type, quote, provider, variant, received_at}` | 与快照响应同构（字段白名单同 P5 实证口径），`quote` 内为标准快照 |
 | `heartbeat` | `{type, request_id, ts}` | 空闲保活帧（默认 15s，仅出现在首事件之后），代理/负载均衡不至掐断空闲连接 |
 
@@ -224,15 +227,22 @@ Accept: text/event-stream
   （`TAPEHUB_STREAM_QUEUE_SIZE`，默认 64），行情 `quote` 帧满时丢弃最旧帧
   ——行情「最新」比「完整」有价值；`status` 生命周期帧稀有且关键，
   **不参与也不被** coalesce 丢弃；
-- **退订语义（诚实边界）**：流关闭（客户端断开/空闲超时/停机）即本地退订
-  （引用计数 -1、快照停止维护）；**tqsdk 协议不支持取消订阅**，上游订阅
-  仍保留至代际回收（休眠订阅累计到 `TAPEHUB_TQSDK_SUBSCRIPTION_LIMIT`
-  触发新一代重建清理），与快照接口的订阅生命周期一致；
+- **退订语义（诚实边界，按 Provider 区分）**：流关闭（客户端断开/空闲超时/停机）
+  即本地退订（引用计数 -1、快照停止维护）。**tqsdk 协议不支持取消订阅**，上游
+  订阅仍保留至代际回收（休眠订阅累计到 `TAPEHUB_TQSDK_SUBSCRIPTION_LIMIT`
+  触发新一代重建清理）；**twelvedata 支持逐 symbol 真退订**，引用归零延迟
+  60s（linger，兼顾轮询与快速重连免重订）后向上游发退订并即时释放 WS credit
+  （探针实证：credit = 并发活跃订阅 symbol 数，退订/断连即释放、重订重连免费）；
 - **容量闸门**：并发流数达 `TAPEHUB_STREAM_MAX_CLIENTS`（默认 8）返回
   `STREAM_LIMIT_REACHED`（HTTP 429）；受理阶段（响应头发出前）的错误统一
   JSON 错误结构，流中错误一律事件化收尾；
-- **仅 `shared` 连接模式支持**（流依赖长连接订阅）；`per_request` 回滚模式
-  返回 `UNSUPPORTED_CAPABILITY`（422）；
+- **仅 `shared` 连接模式支持**（tqsdk：流依赖长连接订阅；`per_request` 回滚
+  模式返回 `UNSUPPORTED_CAPABILITY` 422；twelvedata 恒为单共享 WS 连接，
+  无模式概念）；
+- **上游订阅容量闸门（twelvedata）**：并发订阅 symbol 数达
+  `TAPEHUB_TWELVEDATA_SUBSCRIPTION_LIMIT`（默认 8，免费版 WS credit 口径）
+  时，新 symbol 的流/快照请求在受理阶段返回 `UPSTREAM_SUBSCRIPTION_LIMIT`
+  （HTTP 429）；升档后调大该配置即可；
 - **访问日志口径**：SSE 请求的「耗时」= 连接时长（长连接期间不产生新日志行）；
 - 心跳与空闲退订由服务端管理：`TAPEHUB_STREAM_IDLE_TIMEOUT_SECONDS`
   （默认 300s）内无行情事件（心跳不算）即 `idle_unsubscribed` 收尾，
@@ -370,8 +380,9 @@ Accept: text/event-stream
 | `UPSTREAM_TIMEOUT` | 504 | 上游超时 |
 | `UPSTREAM_RATE_LIMITED` | 429 | 上游限频 |
 | `UPSTREAM_ERROR` | 502 | 上游其它错误 |
-| `QUOTE_NOT_READY` | 408 | 实时快照首包未就绪：订阅已建立但上游未在 `TAPEHUB_TQSDK_FIRST_SNAPSHOT_TIMEOUT` 内推送（标的不存在/无权限、非交易时段静默等），可稍后重试 |
+| `QUOTE_NOT_READY` | 408 | 实时快照首包未就绪：订阅已建立但上游未在首包超时窗口内推送（tqsdk `TAPEHUB_TQSDK_FIRST_SNAPSHOT_TIMEOUT` / twelvedata `TAPEHUB_TWELVEDATA_FIRST_SNAPSHOT_TIMEOUT`；常见于标的不存在/无权限、非交易时段静默），可稍后重试 |
 | `STREAM_LIMIT_REACHED` | 429 | 行情流并发客户端数已达 `TAPEHUB_STREAM_MAX_CLIENTS` 上限（服务容量闸门，可稍后重试或先断开空闲连接） |
+| `UPSTREAM_SUBSCRIPTION_LIMIT` | 429 | 上游并发订阅 symbol 数已达计划上限（twelvedata WS credit：`TAPEHUB_TWELVEDATA_SUBSCRIPTION_LIMIT`，默认 8）；空闲退订释放额度后可重试，或升档后调大配置 |
 
 SDK 异常不会穿透 API；日志不记录 Provider 密钥与完整行情响应。
 
@@ -574,29 +585,39 @@ Twelve Data（官方库 `twelvedata`（twelvedata-python）：`TDClient(apikey=.
 - 区间无数据行为（2026-11-04 探针实测核实）：上游返回 400 `BadRequestError` "No data is available on the specified dates" 而非空列表，适配器按指纹归一化为空结果；
 - 其余上游 SDK/HTTP 异常类型与限频规则未在所引文档中核实，统一包装为 `UPSTREAM_ERROR`；实测错误指纹（2026-11-05 探针）：无效 Key → 401 `InvalidApiKeyError` "apikey parameter is incorrect"、无效标的 → 404 `TwelveDataError` "symbol or figi parameter is missing or invalid"。
 
-实时快照（`GET /v1/market/quotes`，上游接口 `td.quote`，REST 按需请求——无订阅/长连接/流式）：
+实时快照与快照流（`GET /v1/market/quotes` / `GET /v1/market/quotes/stream`，上游 WS
+`wss://ws.twelvedata.com/v1/quotes/price`，共享单连接订阅推送——M2 快照读订阅缓存，
+M3 流同源；REST `td.quote` 按需路径已于 2026-11-05 退役）：
 
 | 资产类型 | 变体 | 上游接口 | 周期/复权 | 标准字段 |
 | --- | --- | --- | --- | --- |
-| forex | twelvedata（默认） | `td.quote` | 无（不适用） | timestamp/last_price（volume 实测未返回 → null） |
-| crypto | twelvedata | `td.quote` | 无（不适用） | timestamp/last_price（volume 实测未返回 → null） |
+| forex | twelvedata（默认） | WS `subscribe` price 事件 | 无（不适用） | timestamp/last_price |
+| crypto | twelvedata | WS `subscribe` price 事件 | 无（不适用） | timestamp/last_price |
 
-- 字段口径以 **quote 探针实证**（2026-11-05，probes/results/twelvedata/20261105T184934+0800）为准：
-  五档盘口（`bid/ask_price|volume1..5`）与 `amount` 上游无源字段，**恒 null**（不用 0 冒充）；
-  实测 forex（EUR/USD）与 crypto（BTC/USD）的 `/quote` 响应均未返回 `volume`
-  （官方文档称「部分品种可用」，实测两个标的皆无），能力目录 `fields` 不声明 volume，
-  标准 volume 为 null（映射保留防御性处理，若上游返回则正常映射）；
-- `extensions` 白名单已按同一探针报告人工确认回填：`name`/`exchange`/`open`/`high`/`low`/
-  `previous_close`/`change`/`percent_change`/`is_market_open` 九个标量字段（数值字符串转
-  float，非 None 才透出）；实测 `exchange` forex 为 `"Forex"`、crypto 为聚合源交易所
-  （如 `"Binance"`）；`fifty_two_week`（嵌套对象）与 crypto 专属 `rolling_*` 不透出；
-  文档列出但实测未返回的 `currency`/`mic_code`/`average_volume` 不声明；
-- 行情时间 `timestamp` 取上游 `last_quote_at`（最后一根分钟 K 线的 Unix 秒，快照新鲜度
-  口径，实测≈墙钟实时），缺失回退 `timestamp`（interval bar 开盘时刻）；Unix 秒按 UTC
-  解释，统一北京时间 `+08:00` 输出；两者皆缺属上游契约违背，返回 `UPSTREAM_ERROR`；
-- 请求参数显式传递：`interval=1day`（`volume` 是「当期 interval 累计量」，固定 1day 即当日累计）、`timezone=UTC`（上游 `datetime` 字段口径固定，映射层不解析该字符串）、`eod=false`（要最新盘中 bar 而非已收盘日）；`prepost`（付费计划参数）与 `dp`（仅影响字符串小数位）不传；
-- 语义边界：**分钟级聚合快照**（最近 bar 聚合，非 tick 推送，实时性弱于 tqsdk 订阅推送）；每次请求消耗上游 credit（每 symbol 1 次），不适合轮询；
-- 无流式能力：`GET /v1/market/quotes/stream` 请求本 Provider 在受理阶段返回 `UNSUPPORTED_CAPABILITY`（422）。
+- 上游行为以 **WS 探针实证**（2026-11-05，probes/results/twelvedata/
+  ws-behavior-20261105T221000+0800，不入库）为准：credit = **当前活跃订阅
+  symbol 数**（免费版 8）——退订即时释放、重订重连免费；退订有
+  `unsubscribe-status` 显式确认（与确认间存在在途事件竞态，以确认为准）；
+  heartbeat 每 ~10s 有应答；上游拒订（`subscribe-status.fails`）以
+  `upstream_disconnected` 显式收尾，绝不静默挂死；
+- 字段口径：五档盘口、`amount`、`volume` 上游 price 事件无源字段，**恒 null**
+  （不用 0 冒充）；`timestamp` 为**分钟桶** Unix 秒（对齐分钟边界，非 tick
+  时刻；事件到达频率实测约 1 条/秒，实时性远超原 REST 分钟聚合快照），
+  按 UTC 解释统一北京时间 `+08:00` 输出，快照新鲜度由 `meta.received_at`
+  表达；缺时间戳/缺价格属上游契约违背，返回 `UPSTREAM_ERROR`；
+- `extensions` 白名单（同一探针实证回填）：`currency_base`/`currency_quote`/
+  `exchange`/`type` 四个字符串字段（实测 EUR/USD 无 `exchange`、BTC/USD 有
+  且为聚合源交易所如 `"Binance"`；文档 XAU/USD 示例的 bid/ask 不可推广到
+  货币对，不透出）；
+- Runtime 形态：asyncio 原生共享单连接（免费版限 1 连接），per-symbol 引用
+  计数；引用归零延迟 60s（linger）真退订释放 credit；断连广播
+  `upstream_disconnected` 后退避重连自动重订（重订免费，探针实证 0.33s 内
+  恢复首包）；**无代际回收（不产生 `recycling` 事件）**，与 tqsdk 的差异
+  见「实时行情流」一节；
+- 并发订阅上限：`TAPEHUB_TWELVEDATA_SUBSCRIPTION_LIMIT`（默认 8，免费版
+  WS credit 口径），达限返回 `UPSTREAM_SUBSCRIPTION_LIMIT`（429），升档后
+  调大即可；冷订阅首包超时 `TAPEHUB_TWELVEDATA_FIRST_SNAPSHOT_TIMEOUT`
+  （默认 5s）返回 `QUOTE_NOT_READY`（408），活跃订阅即时读缓存。
 
 六个内置 Provider（akshare、tickflow、alphafeed、tushare、tqsdk、twelvedata）均已接入，接口签名与数据口径按各自官方文档核实；未配置凭据或未安装 SDK 时数据请求返回 `PROVIDER_NOT_IMPLEMENTED`，`provider=auto` 在无可用候选时返回 `NO_PROVIDER_AVAILABLE`，也**绝不返回写死的模拟行情**。
 

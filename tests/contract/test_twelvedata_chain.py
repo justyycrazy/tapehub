@@ -6,12 +6,10 @@ from fastapi.testclient import TestClient
 from tapehub.api.app import create_app
 from tapehub.providers.registry import build_default_registry
 from tests.conftest import make_settings
+from tests.fixtures.providers import fake_websockets as fake_ws
 from tests.fixtures.providers.stub_twelvedata import (
-    crypto_quote_payload,
-    forex_quote_payload,
     forex_values_rows,
     install,
-    preset_quote,
     preset_values,
 )
 
@@ -36,7 +34,8 @@ QUOTE_PARAMS = {
 
 @pytest.fixture()
 def twelvedata_client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
-    install(monkeypatch)
+    install(monkeypatch)  # REST 桩（bars）
+    fake_ws.install(monkeypatch)  # WS 假件（quotes：M2 快照走订阅缓存）
     settings = make_settings(max_limit=1000, twelvedata_api_key="test-key")
     return TestClient(create_app(settings=settings, registry=build_default_registry(settings)))
 
@@ -155,44 +154,38 @@ def test_default_variant_routes_to_declared_default(
 # ---------------------------------------------------------------------------
 
 
-def test_quote_chain_forex(
-    twelvedata_client: TestClient, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """外汇快照链路：symbol 映射 + last_quote_at 行情时间统一北京时间输出。"""
-    preset_quote(monkeypatch, forex_quote_payload())
-
+def test_quote_chain_forex(twelvedata_client: TestClient) -> None:  # type: ignore[no-untyped-def]
+    """外汇快照链路（WS 订阅缓存）：symbol 映射 + 分钟桶时间统一北京时间。"""
     response = twelvedata_client.get("/v1/market/quotes", params=QUOTE_PARAMS)
     assert response.status_code == 200
     body = response.json()
 
-    from tests.fixtures.providers.stub_twelvedata import StubTDClient
-
-    assert StubTDClient.instances[-1].quote_calls[0]["symbol"] == "EUR/USD"
+    ws = fake_ws.FakeWebSocket.instances[-1]
+    subscribes = [m for m in ws.sent if m.get("action") == "subscribe"]
+    assert subscribes and subscribes[0]["params"]["symbols"] == "EUR/USD"
 
     data = body["data"]
     assert data["instrument"] == "GLOBAL-OTC-EUR/USD"
     assert data["asset_type"] == "forex"
     quote = data["quote"]
-    # 行情时间取 last_quote_at：UTC 2026-01-05 12:34 = 北京 20:34
-    assert quote["timestamp"] == "2026-01-05T20:34:00+08:00"
-    assert quote["last_price"] == 1.0855
-    assert quote["volume"] is None  # 实测 forex /quote 未返回 volume
+    # WS price 事件 timestamp 为分钟桶 Unix 秒（探针实证），UTC → 北京时间
+    from datetime import datetime
+
+    from tapehub.domain.models import CN_TIMEZONE
+
+    expected = datetime.fromtimestamp(fake_ws.INITIAL_TIMESTAMP, tz=CN_TIMEZONE).isoformat()
+    assert quote["timestamp"] == expected
+    assert quote["last_price"] == fake_ws.INITIAL_PRICE
+    assert quote["volume"] is None  # WS price 事件无 volume（探针实证）
     assert quote["amount"] is None
     assert quote["bid_price1"] is None  # 上游无盘口：五档恒 null
     assert quote["ask_price5"] is None
-    # extensions 白名单（2026-11-05 探针实证回填，tqsdk P5 同款精确断言）
+    # extensions 白名单（2026-11-05 WS 探针实证回填）：4 个字符串字段
     assert quote["extensions"] == {
-        "name": "Euro / US Dollar",
-        "exchange": "Forex",
-        "open": 1.085,
-        "high": 1.086,
-        "low": 1.084,
-        "previous_close": 1.086,
-        "change": -0.0005,
-        "percent_change": -0.046,
-        "is_market_open": True,
+        "currency_base": "Euro",
+        "currency_quote": "US Dollar",
+        "type": "Physical Currency",  # EUR/USD price 事件无 exchange
     }
-    assert "fifty_two_week" not in quote["extensions"]
 
     meta = body["meta"]
     assert meta["provider"] == "twelvedata"
@@ -200,10 +193,20 @@ def test_quote_chain_forex(
     assert meta["received_at"].endswith("+08:00")
 
 
-def test_quote_chain_crypto(
-    twelvedata_client: TestClient, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    preset_quote(monkeypatch, crypto_quote_payload())
+def test_quote_chain_crypto(twelvedata_client: TestClient) -> None:  # type: ignore[no-untyped-def]
+    FakeWebSocket = fake_ws.FakeWebSocket
+    FakeWebSocket.initial_payloads = {
+        "BTC/USD": {
+            "event": "price",
+            "symbol": "BTC/USD",
+            "currency_base": "Bitcoin",
+            "currency_quote": "US Dollar",
+            "exchange": "Binance",  # 加密货币带 exchange（探针实证）
+            "type": "Digital Currency",
+            "timestamp": fake_ws.INITIAL_TIMESTAMP,
+            "price": 79838.73,
+        }
+    }
 
     params = {
         **QUOTE_PARAMS,
@@ -213,23 +216,24 @@ def test_quote_chain_crypto(
     response = twelvedata_client.get("/v1/market/quotes", params=params)
     assert response.status_code == 200
 
-    from tests.fixtures.providers.stub_twelvedata import StubTDClient
-
-    assert StubTDClient.instances[-1].quote_calls[0]["symbol"] == "BTC/USD"
+    ws = FakeWebSocket.instances[-1]
+    assert [m for m in ws.sent if m.get("action") == "subscribe"][0]["params"][
+        "symbols"
+    ] == "BTC/USD"
     quote = response.json()["data"]["quote"]
-    assert quote["last_price"] == 43120.75
-    assert quote["volume"] == 12345.6  # 防御分支：volume 若返回则映射
-    assert "rolling_1d_change" not in quote["extensions"]  # crypto 专属不透出
-    assert quote["extensions"]["exchange"] == "Binance"
+    assert quote["last_price"] == 79838.73
+    assert quote["volume"] is None  # WS 加密货币事件无 volume（探针实证）
+    assert quote["extensions"] == {
+        "currency_base": "Bitcoin",
+        "currency_quote": "US Dollar",
+        "exchange": "Binance",
+        "type": "Digital Currency",
+    }
     assert response.json()["meta"]["provider"] == "twelvedata"
 
 
-def test_quote_auto_routes(
-    twelvedata_client: TestClient, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_quote_auto_routes(twelvedata_client: TestClient) -> None:  # type: ignore[no-untyped-def]
     """缺省 provider/variant：auto 路由命中 twelvedata（GLOBAL 外汇快照唯一候选）。"""
-    preset_quote(monkeypatch, forex_quote_payload())
-
     params = {k: v for k, v in QUOTE_PARAMS.items() if k not in ("provider", "variant")}
     response = twelvedata_client.get("/v1/market/quotes", params=params)
     assert response.status_code == 200
@@ -253,10 +257,3 @@ def test_quote_missing_api_key_501(default_client) -> None:  # type: ignore[no-u
     error = response.json()["error"]
     assert error["code"] == "PROVIDER_NOT_IMPLEMENTED"
     assert error["details"]["setting"] == "TAPEHUB_TWELVEDATA_API_KEY"
-
-
-def test_sse_stream_unsupported_422(twelvedata_client: TestClient) -> None:  # type: ignore[no-untyped-def]
-    """Twelve Data 不实现 stream_quote（无流式能力）：SSE 受理阶段即 422。"""
-    response = twelvedata_client.get("/v1/market/quotes/stream", params=QUOTE_PARAMS)
-    assert response.status_code == 422
-    assert response.json()["error"]["code"] == "UNSUPPORTED_CAPABILITY"

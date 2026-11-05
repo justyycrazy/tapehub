@@ -31,6 +31,13 @@ class Settings(BaseSettings):
     # 上游推送仍在消耗带宽；休眠订阅累计到该值触发新一代重建清理
     # （仍被引用的订阅自动重订）
     tqsdk_subscription_limit: int = Field(default=64, ge=1)
+    # Twelve Data WS 并发订阅 symbol 上限（超出 UPSTREAM_SUBSCRIPTION_LIMIT 429）。
+    # 2026-11-05 探针实证：WS credit = 当前活跃订阅 symbol 数（免费版 8 个），
+    # 退订/断连即时释放；升档后调大该值即可
+    twelvedata_subscription_limit: int = Field(default=8, ge=1)
+    # Twelve Data 实时快照冷订阅首包等待超时（秒）：超时返回 QUOTE_NOT_READY
+    # （HTTP 408）；已活跃订阅直接读缓存即时返回
+    twelvedata_first_snapshot_timeout: float = Field(default=5.0, gt=0)
     # —— 实时快照流（SSE，M3）——
     # 并发流客户端上限（超出 STREAM_LIMIT_REACHED 429）
     stream_max_clients: int = Field(default=8, ge=1)

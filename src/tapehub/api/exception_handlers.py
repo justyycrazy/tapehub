@@ -35,6 +35,8 @@ _STATUS_BY_CODE: dict[ErrorCode, int] = {
     ErrorCode.QUOTE_NOT_READY: 408,
     # 行情流客户端上限（服务容量闸门）：与 CONCURRENCY_LIMIT 同为可重试限流
     ErrorCode.STREAM_LIMIT_REACHED: 429,
+    # 上游并发订阅上限（如 Twelve Data WS credits 计划额度）：可重试限流
+    ErrorCode.UPSTREAM_SUBSCRIPTION_LIMIT: 429,
     ErrorCode.NOT_FOUND: 404,
     ErrorCode.METHOD_NOT_ALLOWED: 405,
     ErrorCode.INTERNAL_ERROR: 500,
