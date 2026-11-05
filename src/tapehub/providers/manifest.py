@@ -110,6 +110,8 @@ class OperationMatch(BaseModel):
     """内部操作匹配键：data_type × market × asset_type × interval × adjust × variant。
 
     所有维度必须显式声明，不依赖默认值，避免“未传递参数的默认值不一致”。
+    对请求无意义的维度显式声明 ``null``（如 quote 快照无周期/复权概念），
+    ``null`` 只与「未携带该维度的请求」（quote 查询）匹配。
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -117,8 +119,8 @@ class OperationMatch(BaseModel):
     data_type: DataType
     market: str
     asset_type: AssetType
-    interval: Interval
-    adjust: Adjust
+    interval: Interval | None = None
+    adjust: Adjust | None = None
     variant: DataVariant
 
 

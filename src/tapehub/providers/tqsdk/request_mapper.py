@@ -1,4 +1,4 @@
-"""TqSdk 请求映射（RequestMapper）：标准请求 → api.get_kline_serial 参数。
+"""TqSdk 请求映射（RequestMapper）：标准请求 → 上游 API 参数。
 
 接口签名均已按官方文档核实：
 
@@ -12,15 +12,18 @@
   data_length 默认 200，每序列最大 10000（API 参考）；
   ``adj_type`` 仅对股票/基金类型有效（F=前复权、B=后复权、None=不复权），
   指数无复权概念，始终传 None；
+- ``get_quote(symbol)``：订阅并返回指定合约的盘口行情快照
+  （协程用法 ``await api.get_quote(symbol)`` 首包到达才返回，官方
+  api.py Example2；字段口径见 response_mapper）；
 - 权限边界（诚实声明）：免费版仅期货/期权与四大指数实时行情；
-  A股股票实时与历史行情需专业版，ETF 权限口径未核实，由探针实证。
+  A股股票/ETF 实时五档需专业版账户（运行期事实，不作为能力缺口声明）。
 """
 
 from typing import Any
 
 from tapehub.domain.errors import UnsupportedCapabilityError
 from tapehub.domain.intervals import Interval
-from tapehub.domain.models import Adjust, AssetType, BarQuery
+from tapehub.domain.models import Adjust, AssetType, BarQuery, Instrument, QuoteQuery
 
 # 单次请求上限（2026-11-03 探针实测：PT1M/PT5M 同时恰好返回 5000 根，
 # 低于文档 8000/10000 口径，疑受当前套餐限制；升级套餐后需重新实证）
@@ -47,25 +50,35 @@ _ADJ_TYPE: dict[Adjust, str | None] = {
 }
 
 
-def kline_symbol(query: BarQuery) -> str:
-    """标准标的 → TqSdk 合约代码。"""
-    base = f"{query.instrument.exchange}.{query.instrument.symbol}"
-    if query.asset_type == AssetType.CONTRACT:
+def upstream_symbol(instrument: Instrument, asset_type: AssetType) -> str:
+    """标准标的 → TqSdk 合约代码（K 线与快照共用同一映射）。"""
+    base = f"{instrument.exchange}.{instrument.symbol}"
+    if asset_type == AssetType.CONTRACT:
         return base
-    if query.asset_type == AssetType.CONTINUOUS:
+    if asset_type == AssetType.CONTINUOUS:
         return f"{_CONTINUOUS_PREFIX}{base}"
-    if query.asset_type == AssetType.WEIGHTED_INDEX:
+    if asset_type == AssetType.WEIGHTED_INDEX:
         return f"{_WEIGHTED_PREFIX}{base}"
-    if query.asset_type in (AssetType.STOCK, AssetType.INDEX, AssetType.ETF):
+    if asset_type in (AssetType.STOCK, AssetType.INDEX, AssetType.ETF):
         return base
     raise UnsupportedCapabilityError(
-        f"TqSdk does not support asset type {query.asset_type.value}.",
+        f"TqSdk does not support asset type {asset_type.value}.",
         details={
             "provider": "tqsdk",
-            "instrument": query.instrument.code,
-            "asset_type": query.asset_type.value,
+            "instrument": instrument.code,
+            "asset_type": asset_type.value,
         },
     )
+
+
+def kline_symbol(query: BarQuery) -> str:
+    """标准标的 → TqSdk 合约代码（K 线链路）。"""
+    return upstream_symbol(query.instrument, query.asset_type)
+
+
+def quote_symbol(query: QuoteQuery) -> str:
+    """标准标的 → TqSdk 合约代码（实时快照链路）。"""
+    return upstream_symbol(query.instrument, query.asset_type)
 
 
 def duration_seconds(interval: Interval) -> int:
@@ -105,4 +118,6 @@ __all__ = [
     "build_request",
     "duration_seconds",
     "kline_symbol",
+    "quote_symbol",
+    "upstream_symbol",
 ]

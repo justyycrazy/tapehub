@@ -24,6 +24,13 @@ class Settings(BaseSettings):
     tqsdk_conn_mode: Literal["per_request", "shared"] = "shared"
     # shared 模式的在飞取数上限（并发闸门，超出返回 CONCURRENCY_LIMIT）
     tqsdk_max_inflight_fetch: int = Field(default=16, ge=1)
+    # 实时快照首包等待超时（秒）：订阅建立后上游未在该窗口内推送首包
+    # 即返回 QUOTE_NOT_READY（HTTP 408）
+    tqsdk_first_snapshot_timeout: float = Field(default=5.0, gt=0)
+    # 休眠订阅回收阈值：tqsdk 不支持取消订阅，退订只停止本地快照维护，
+    # 上游推送仍在消耗带宽；休眠订阅累计到该值触发新一代重建清理
+    # （仍被引用的订阅自动重订）
+    tqsdk_subscription_limit: int = Field(default=64, ge=1)
     version: str = "0.1.0"
     api_version: str = "v1"
     catalog_version: str = "1"

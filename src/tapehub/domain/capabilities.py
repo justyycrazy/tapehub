@@ -72,14 +72,17 @@ class Capability(BaseModel):
         data_type: DataType,
         market: str,
         asset_type: AssetType,
-        interval: Interval,
-        adjust: Adjust,
-        variant: DataVariant | None,
+        interval: Interval | None = None,
+        adjust: Adjust | None = None,
+        variant: DataVariant | None = None,
     ) -> bool:
         """完整能力维度匹配：data_type × market × asset_type × interval × adjust × variant。
 
         ``variant=None`` 表示请求未表达变体偏好，该维度不参与匹配；
         具体化（默认变体解析）由 ProviderRecord 完成，本方法不做默认值推断。
+        ``interval``/``adjust`` 为 None（quote 类请求无周期/复权概念）时同样
+        跳过对应维度；非 None 时要求能力目录显式声明且精确匹配——
+        声明为空（如 quote 能力 ``intervals: []``）的能力不匹配任何具体周期。
         """
         if data_type != self.data_type:
             return False
@@ -89,6 +92,8 @@ class Capability(BaseModel):
             return False
         if variant is not None and variant not in self.variants:
             return False
-        if not any(entry.code == interval for entry in self.intervals):
+        if interval is not None and not any(entry.code == interval for entry in self.intervals):
             return False
-        return adjust in self.adjustments
+        if adjust is not None and adjust not in self.adjustments:
+            return False
+        return True

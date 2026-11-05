@@ -20,7 +20,14 @@ from pydantic import BaseModel, Field
 
 from tapehub.domain.errors import InvalidRequestError
 from tapehub.domain.intervals import Interval
-from tapehub.domain.models import Adjust, AssetType, BarQuery, DataVariant, Instrument
+from tapehub.domain.models import (
+    Adjust,
+    AssetType,
+    BarQuery,
+    DataVariant,
+    Instrument,
+    QuoteQuery,
+)
 from tapehub.settings import Settings
 
 DEFAULT_PAGE_LIMIT = 500
@@ -122,4 +129,32 @@ def to_bar_query(params: BarsQueryParams, settings: Settings) -> BarQuery:
         variant=params.variant,
         offset=params.offset,
         limit=params.limit,
+    )
+
+
+class QuotesQueryParams(BaseModel):
+    """``GET /v1/market/quotes`` 查询参数。
+
+    快照是当前时点的订阅数据：无 interval/时间范围/分页参数；
+    ``asset_type`` 与 bars 链路同样必填不推断。
+    """
+
+    provider: str = "auto"
+    asset_type: AssetType
+    instrument: str
+    variant: DataVariant | None = None
+
+
+def to_quote_query(params: QuotesQueryParams) -> QuoteQuery:
+    """把快照查询参数转换为统一领域请求；失败时抛出统一参数错误。"""
+    try:
+        instrument = Instrument.parse(params.instrument)
+    except ValueError as exc:
+        raise _invalid("instrument", str(exc)) from exc
+
+    return QuoteQuery(
+        provider=params.provider,
+        asset_type=params.asset_type,
+        instrument=instrument,
+        variant=params.variant,
     )

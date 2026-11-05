@@ -14,10 +14,25 @@
 
 - ``start()`` 懒启动：创建线程，线程内构造 TqApi（构造期 ``wait_update``
   自行驱动收初始截面，实测 ~1s；此时循环未运行，构造函数的守卫不触发）；
-- ``recycle()`` 新一代重建：失败在飞请求 → ``api.close()``（tick 返回后
-  循环未运行，close 才被允许）→ 同线程构造新一代。触发：北京时间 04:00
-  跨交易日窗口（采纳官方「跨交易日重启」建议）；订阅阈值随 M2 增加；
+- 新一代重建：失败在飞请求 → ``api.close()``（tick 返回后循环未运行，
+  close 才被允许）→ 同线程构造新一代。触发：北京时间 04:00 跨交易日窗口
+  （采纳官方「跨交易日重启」建议）、watchdog 连续异常、休眠订阅累计到
+  ``subscription_limit``（tqsdk 协议不支持取消订阅，退订只停止本地快照
+  维护，上游推送仍在消耗带宽——累计到阈值即重建一代清理，仍被引用的
+  订阅在新一代自动重订）；
 - ``shutdown()``：置停止标志并唤醒 tick → 线程内 close → join。
+
+实时快照订阅（M2）：
+
+- ``subscribe(symbol)`` 引用计数 +1；首个订阅者经订阅协程
+  ``await api.get_quote(symbol)`` 订阅并等到首包（官方文档的协程用法，
+  由 tick 循环的 wait_update 驱动，不阻塞 tick）；
+- 首包到达即在 Runtime 线程内 ``dict(quote)`` 拷贝发布首个快照；此后
+  tick 循环以 ``api.is_changing`` 判定增量并刷新 ``{symbol: dict}``
+  快照缓存——快照只在线程内拷贝后发布，外部拿到的是纯 dict；
+- ``latest(symbol)`` 读取最新快照（未收到首包/已退订返回 None）；
+- ``unsubscribe(symbol)`` 引用计数 -1；最后一个订阅者退订时停止本地
+  维护并丢弃快照，Quote 引用转入「休眠」（上游订阅仍在，等待代际回收）。
 
 健壮性：并发闸门（在飞 ≤ 上限，超限立即 ``ConcurrencyLimitError``）；
 watchdog（连续 wait_update 异常触发新一代重建）；构造失败为致命
@@ -70,6 +85,15 @@ class _StopSignal:
     """停止哨兵：入队后 Runtime 线程在当前 tick 结束时退出。"""
 
 
+class _Subscribe:
+    """订阅命令：Runtime 线程在本代 TqApi 上发起 get_quote 订阅。"""
+
+    __slots__ = ("symbol",)
+
+    def __init__(self, symbol: str) -> None:
+        self.symbol = symbol
+
+
 class TqSdkRuntime:
     """进程内唯一的 TqApi 长连接运行时；由 tqsdk 适配器持有与启停。"""
 
@@ -81,16 +105,18 @@ class TqSdkRuntime:
         max_inflight: int = 16,
         tick_seconds: float = 0.2,
         construct_timeout: float = 30.0,
+        subscription_limit: int = 64,
     ) -> None:
         self._auth_user = auth_user
         self._auth_password = auth_password
         self._max_inflight = max_inflight
         self._tick_seconds = tick_seconds
         self._construct_timeout = construct_timeout
+        self._subscription_limit = subscription_limit
 
-        self._jobs: queue.Queue[tuple[dict[str, Any], concurrent.futures.Future] | _StopSignal] = (
-            queue.Queue()
-        )
+        self._jobs: queue.Queue[
+            tuple[dict[str, Any], concurrent.futures.Future] | _StopSignal | _Subscribe
+        ] = queue.Queue()
         self._thread: threading.Thread | None = None
         self._lock = threading.Lock()
         self._ready = threading.Event()
@@ -101,6 +127,15 @@ class TqSdkRuntime:
         # 已派发、尚未回填的请求 Future：停机/回收时必须显式失败，避免调用方挂起
         self._pending: set[concurrent.futures.Future] = set()
         self._generation = 0
+        # —— 实时快照订阅（M2）——
+        # symbol → 订阅引用计数（外部线程增减）
+        self._sub_refs: dict[str, int] = {}
+        # 本代活跃订阅的 Quote 对象引用（仅 Runtime 线程读写，is_changing 判定用）
+        self._live_quotes: dict[str, Any] = {}
+        # 本代休眠订阅（引用计数归零但上游推送仍在，等代际回收清理）
+        self._dormant_quotes: dict[str, Any] = {}
+        # symbol → 最新快照（Runtime 线程内 dict(quote) 拷贝后发布，外部只读）
+        self._snapshots: dict[str, dict[str, Any]] = {}
 
     # ------------------------------------------------------------------
     # 对外接口（线程安全）
@@ -174,6 +209,57 @@ class TqSdkRuntime:
         cf = self.fetch(kwargs)
         return await asyncio.wrap_future(cf)
 
+    # ----------------------------------------------------------------------
+    # 实时快照订阅（M2，线程安全）
+    # ----------------------------------------------------------------------
+
+    def subscribe(self, symbol: str) -> None:
+        """注册一个订阅者（引用计数 +1）；必要时发起上游订阅。
+
+        首个订阅者向 Runtime 线程入队订阅命令；若本代此前订阅过该标的
+        （休眠中），唤醒即可复用既有 Quote 引用，不再重复 get_quote。
+        tqsdk 协议不支持取消订阅：退订只停止本地快照维护（见模块 docstring）。
+        """
+        with self._lock:
+            if self._status in (RuntimeStatus.IDLE, RuntimeStatus.STARTING):
+                raise UpstreamError("tqsdk runtime is not ready.")
+            if self._status == RuntimeStatus.FATAL:
+                raise UpstreamError(
+                    "tqsdk runtime is in fatal state.",
+                    details={"error": str(self._last_error) if self._last_error else None},
+                )
+            refs = self._sub_refs.get(symbol, 0)
+            self._sub_refs[symbol] = refs + 1
+            # 引用计数 0→1 即需要订阅；已在活跃集合（重复首个订阅命令）由
+            # Runtime 线程去重，命令本身幂等
+            if refs == 0 and symbol not in self._live_quotes:
+                self._jobs.put(_Subscribe(symbol))
+
+    def unsubscribe(self, symbol: str) -> None:
+        """注销一个订阅者（引用计数 -1）；最后一个订阅者退订时停止维护。
+
+        停止维护 = 移出活跃集合并丢弃快照（``latest`` 此后返回 None）；
+        Quote 引用转入休眠集合，等待休眠订阅回收阈值触发新一代重建清理。
+        """
+        with self._lock:
+            refs = self._sub_refs.get(symbol, 0)
+            if refs <= 1:
+                self._sub_refs.pop(symbol, None)
+                quote = self._live_quotes.pop(symbol, None)
+                self._snapshots.pop(symbol, None)
+                if quote is not None:
+                    self._dormant_quotes[symbol] = quote
+            else:
+                self._sub_refs[symbol] = refs - 1
+
+    def latest(self, symbol: str) -> dict[str, Any] | None:
+        """读取最新快照；未收到首包或已退订返回 ``None``。
+
+        返回的是发布时在线程内拷贝好的纯 dict，调用方可安全持有。
+        """
+        with self._lock:
+            return self._snapshots.get(symbol)
+
     def shutdown(self, timeout: float = 10.0) -> None:
         """停机：置停止标志并唤醒 tick，等待线程完成 close 与退出。"""
         self._request_stop()
@@ -241,6 +327,8 @@ class TqSdkRuntime:
                 time.perf_counter() - _construct_t0,
             )
             self._ready.set()
+            # 新一代就绪：清空上一代订阅态，并为仍被引用的标的重建订阅
+            self._on_generation_ready()
             next_recycle = self._next_recycle_ts()
             try:
                 self._tick_loop(api, next_recycle)
@@ -286,18 +374,33 @@ class TqSdkRuntime:
             if time.time() >= next_recycle:
                 logger.info("tqsdk runtime cross-trading-day recycle triggered (CN 04:00)")
                 raise _GenerationReset("cross-trading-day recycle (CN 04:00)")
+            if self._dormant_subscription_recycle_due():
+                logger.info(
+                    "tqsdk runtime dormant-subscription recycle triggered (dormant=%d, limit=%d)",
+                    self._dormant_subscription_count(),
+                    self._subscription_limit,
+                )
+                raise _GenerationReset("dormant subscription recycle")
             # peek 门闩复位（见 docstring）
             api._pending_peek = False
-            # 自适应 tick：有在飞请求 50ms（低延迟收数）；数据静默期逐步放宽
-            # 至 2s（限制静默期 _fetch_msg 残留任务累积，由每日回收清理）
+            # 自适应 tick：有在飞请求或活跃订阅 50ms（低延迟收数/快照保鲜）；
+            # 数据静默期逐步放宽至 2s（限制静默期 _fetch_msg 残留任务累积，
+            # 由每日回收清理）
             with self._lock:
-                busy = self._inflight > 0 or not self._jobs.empty()
+                busy = (
+                    self._inflight > 0
+                    or not self._jobs.empty()
+                    or bool(self._live_quotes)
+                )
             tick = 0.05 if busy else (0.5 if silent_ticks < 3 else 2.0)
             try:
                 got_data = api.wait_update(deadline=time.time() + tick)
                 with self._lock:
                     wait_exc_streak = 0
                 silent_ticks = 0 if got_data else min(silent_ticks + 1, 4)
+                if got_data:
+                    # 收到数据才判定 is_changing（_sync_diffs 反映最近一次更新）
+                    self._publish_changed_snapshots(api)
             except Exception as exc:  # noqa: BLE001 - 连续异常触发重建，单次只记录
                 with self._lock:
                     wait_exc_streak += 1
@@ -317,8 +420,95 @@ class TqSdkRuntime:
                 return
             if isinstance(item, _StopSignal):
                 return  # 停止由 tick 循环的 while 条件接管，走干净停机路径
+            if isinstance(item, _Subscribe):
+                self._handle_subscribe(api, item.symbol)
+                continue
             kwargs, cf = item
             api.create_task(self._fetch_coro(api, kwargs, cf))
+
+    def _handle_subscribe(self, api: Any, symbol: str) -> None:
+        """处理订阅命令（Runtime 线程）：唤醒休眠订阅或发起首次订阅。"""
+        with self._lock:
+            if symbol in self._live_quotes:
+                return  # 重复命令去重
+            quote = self._dormant_quotes.pop(symbol, None)
+            refs = self._sub_refs.get(symbol, 0)
+            if quote is not None:
+                if refs > 0:
+                    # 休眠唤醒：复用本代既有 Quote 引用，线程内拷贝发布当前值
+                    # （dict 拷贝在 Runtime 线程完成，此时 quote 不会被并发修改）
+                    self._live_quotes[symbol] = quote
+                    self._snapshots[symbol] = dict(quote)
+                else:
+                    # 命令到达前引用已归零：放回休眠，等待回收
+                    self._dormant_quotes[symbol] = quote
+                return
+        if refs <= 0:
+            return  # 首包未到即已退订（竞态）：丢弃命令
+        api.create_task(self._subscribe_coro(api, symbol))
+
+    async def _subscribe_coro(self, api: Any, symbol: str) -> None:
+        """订阅协程：``await api.get_quote(symbol)`` 至首包到达。
+
+        官方文档的协程用法（api.py Example2）：循环未在协程内运行时
+        get_quote 立即返回 Quote 引用，await 由 tick 循环的 wait_update
+        驱动、首包到达才完成——不阻塞 tick。首包到达即在线程内拷贝发布
+        首个快照；此后增量由 tick 循环 is_changing 判定刷新。订阅失败
+        （无效合约/权限不足等）只记录日志，等待方按首包超时收场。
+        """
+        try:
+            quote = await api.get_quote(symbol)
+        except Exception as exc:  # noqa: BLE001 - 单标的订阅失败不伤实例
+            logger.warning("tqsdk quote subscribe failed for %s: %r", symbol, exc)
+            with self._lock:
+                self._last_error = exc
+            return
+        with self._lock:
+            if self._sub_refs.get(symbol, 0) > 0:
+                self._live_quotes[symbol] = quote
+                self._snapshots[symbol] = dict(quote)
+            else:
+                # 首包到达前引用已归零：转休眠（供后续快速唤醒）
+                self._dormant_quotes[symbol] = quote
+
+    def _publish_changed_snapshots(self, api: Any) -> None:
+        """tick 内刷新发生变化的订阅快照（is_changing 判定，线程内拷贝发布）。"""
+        with self._lock:
+            live = list(self._live_quotes.items())
+        changed: dict[str, dict[str, Any]] = {}
+        for symbol, quote in live:
+            try:
+                if api.is_changing(quote):
+                    changed[symbol] = dict(quote)
+            except Exception as exc:  # noqa: BLE001 - 单标的判定异常不伤实例
+                logger.warning("tqsdk is_changing failed for %s: %r", symbol, exc)
+        if changed:
+            with self._lock:
+                # 只刷新仍处于活跃集合的订阅（发布窗口内退订的标的不复活）
+                for symbol, snapshot in changed.items():
+                    if symbol in self._live_quotes:
+                        self._snapshots[symbol] = snapshot
+
+    def _on_generation_ready(self) -> None:
+        """新一代就绪：清空上一代订阅态，为仍被引用的标的重建订阅。"""
+        with self._lock:
+            active = [symbol for symbol, refs in self._sub_refs.items() if refs > 0]
+            self._live_quotes.clear()
+            self._dormant_quotes.clear()
+            self._snapshots.clear()
+        for symbol in active:
+            self._jobs.put(_Subscribe(symbol))
+
+    def _dormant_subscription_count(self) -> int:
+        with self._lock:
+            return len(self._dormant_quotes)
+
+    def _dormant_subscription_recycle_due(self) -> bool:
+        """休眠订阅累计达到回收阈值：重建新一代清理（活跃订阅自动重订）。"""
+        if self._subscription_limit <= 0:
+            return False
+        with self._lock:
+            return len(self._dormant_quotes) >= self._subscription_limit
 
     async def _fetch_coro(
         self,
@@ -351,7 +541,8 @@ class TqSdkRuntime:
         for cf in pending:
             if not cf.done():
                 cf.set_exception(UpstreamError(reason))
-        # 队列中未派发的请求也一并失败（重建窗口内不再派发旧代请求）
+        # 队列中未派发的请求也一并失败（重建窗口内不再派发旧代请求）；
+        # 订阅命令直接丢弃——新一代就绪时会按引用计数重发（见 _on_generation_ready）
         while True:
             try:
                 item = self._jobs.get_nowait()
@@ -360,18 +551,23 @@ class TqSdkRuntime:
             if isinstance(item, _StopSignal):
                 self._jobs.put(item)  # 停止哨兵放回，交给 tick 循环处理
                 return
+            if isinstance(item, _Subscribe):
+                continue
             kwargs, cf = item
             del kwargs
             if not cf.done():
                 cf.set_exception(UpstreamError(reason))
 
     def _fail_all_jobs(self, reason: str) -> None:
-        """致命路径：失败队列中全部未派发请求。"""
+        """致命路径：失败队列中全部未派发请求；订阅命令一并丢弃。"""
         while True:
             try:
-                kwargs, cf = self._jobs.get_nowait()
+                item = self._jobs.get_nowait()
             except queue.Empty:
                 return
+            if isinstance(item, (_StopSignal, _Subscribe)):
+                continue
+            kwargs, cf = item
             del kwargs
             if not cf.done():
                 cf.set_exception(UpstreamError(reason))

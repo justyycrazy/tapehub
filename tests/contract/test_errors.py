@@ -61,3 +61,11 @@ def test_no_internal_details_leaked(fake_client) -> None:  # type: ignore[no-unt
     assert "traceback" not in text
     assert "exception" not in text
     assert "token" not in text
+
+
+def test_quote_not_ready_maps_to_408() -> None:
+    """快照首包未就绪（QUOTE_NOT_READY）映射 HTTP 408（请稍后重试语义）。"""
+    from tapehub.api.exception_handlers import _STATUS_BY_CODE
+    from tapehub.domain.errors import ErrorCode
+
+    assert _STATUS_BY_CODE[ErrorCode.QUOTE_NOT_READY] == 408

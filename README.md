@@ -24,6 +24,7 @@
 - `GET /v1/capabilities`：全部 Provider 能力目录；
 - `GET /v1/providers/{provider}/capabilities`：单个 Provider 能力；
 - `GET /v1/market/bars`：统一历史 K 线查询；
+- `GET /v1/market/quotes`：tqsdk 实时快照（单标的，订阅-推送模型，限 `single` 模式）；
 - Provider 注册、能力匹配与公共路由；Provider 内部二级操作路由的扩展机制；
 - 统一错误处理；
 - **akshare Provider 已接入**（接口签名按官方文档核实，见下文）；
@@ -39,8 +40,8 @@
 - 数据库、Redis、行情缓存、CSV/Parquet 等行情落盘
   （实时链路的**进程内最新快照**除外——那是订阅状态，不是持久化）；
 - 定时任务、全量转储 Worker、消息队列、双向 WebSocket；
-- 逐笔、标的元数据等其它查询接口（tqsdk 实时快照与 SSE 流式订阅
-  属本期交付范围，限 `TAPEHUB_DEPLOYMENT_MODE=single` 模式）；
+- 逐笔、标的元数据等其它查询接口（tqsdk SSE 流式订阅属后续里程碑，
+  与实时快照同样限 `TAPEHUB_DEPLOYMENT_MODE=single` 模式）；
 - 多进程/分布式部署（`TAPEHUB_DEPLOYMENT_MODE` 为守门字段，当前仅支持
   `single`，其他值启动即失败；未来以组件级配置形式提供，不预设）；
 - Docker 与前端页面。
@@ -137,6 +138,50 @@ GET /v1/market/bars?provider=akshare&asset_type=stock&instrument=CN-SSE-600000&i
 ```
 
 缺失数值以 `null` 返回，不用 `0` 冒充；Provider 特有字段只能通过 `extensions` 受控透出（如 akshare 的 `pct_change`、`turnover_rate`、`hold`、`settle`）。
+
+### 实时快照（tqsdk）
+
+```http
+GET /v1/market/quotes?provider=tqsdk&asset_type=contract&instrument=CN-SHFE-au2612
+```
+
+参数：`provider`（默认 `auto`，当前仅 tqsdk 声明 quotes 能力）、`asset_type`（必填）、`instrument`（必填）、`variant`（可选）。**快照是当前时点的订阅数据：无 `interval`、无时间范围、无分页参数**（`adjust` 同样不接受——复权是历史序列概念）。
+
+成功响应（节选，字段白名单以 P5 探针实证为准，见 TqSdk 映射表）：
+
+```json
+{
+  "data": {
+    "instrument": "CN-SHFE-au2612",
+    "asset_type": "contract",
+    "quote": {
+      "timestamp": "2026-11-04T10:14:46.500000+08:00",
+      "last_price": 848.24,
+      "bid_price1": 848.26, "bid_volume1": 2,
+      "ask_price1": 848.3, "ask_volume1": 2,
+      "volume": 200250.0, "amount": 169906871060.0,
+      "extensions": {"open_interest": 160306.0, "pre_settlement": 846.12}
+    }
+  },
+  "meta": {
+    "request_id": "req_...",
+    "provider": "tqsdk",
+    "variant": "tqsdk",
+    "received_at": "2026-11-04T10:14:47.000000+08:00"
+  }
+}
+```
+
+行为要点：
+
+- `data.quote.timestamp` 是行情时间（上游北京时间墙钟，统一 `+08:00` 输出），
+  `meta.received_at` 是网关完成标准化的时刻；
+- 首次请求某标的会先建立订阅并等待上游首包：未在
+  `TAPEHUB_TQSDK_FIRST_SNAPSHOT_TIMEOUT`（默认 5 秒）内到达则返回
+  `QUOTE_NOT_READY`（HTTP 408），常见于标的不存在/无权限或非交易时段上游静默；
+- 订阅存活期间由 Runtime tick 循环持续保鲜，后续请求即时返回最新快照
+  （M2 快照请求不退订，订阅累积由回收阈值管理，见 TqSdk 映射表）；
+- 指数类标的无盘口：`bid/ask` 价格为 `null`（不用 0 冒充）、量为 `0`，如实透出。
 
 ## 请求规范
 
@@ -270,6 +315,7 @@ GET /v1/market/bars?provider=akshare&asset_type=stock&instrument=CN-SSE-600000&i
 | `UPSTREAM_TIMEOUT` | 504 | 上游超时 |
 | `UPSTREAM_RATE_LIMITED` | 429 | 上游限频 |
 | `UPSTREAM_ERROR` | 502 | 上游其它错误 |
+| `QUOTE_NOT_READY` | 408 | 实时快照首包未就绪：订阅已建立但上游未在 `TAPEHUB_TQSDK_FIRST_SNAPSHOT_TIMEOUT` 内推送（标的不存在/无权限、非交易时段静默等），可稍后重试 |
 
 SDK 异常不会穿透 API；日志不记录 Provider 密钥与完整行情响应。
 
@@ -291,7 +337,7 @@ API 层 → Application 层 → Domain 层
   twelvedata `[forex, crypto]`、tushare/alphafeed/tickflow `[]`；
 - **manifest 属于配置**：缺失、格式错误或校验失败直接启动失败（fail-fast）；
   适配器导入失败（可选 SDK 未安装等）仍单 Provider 隔离，不影响启动；
-- **公共能力声明 vs 内部 operation 映射**：manifest 的 `capabilities` 面向目录与公共路由（含 `variants` 声明）；`operations` 的 match 键包含全部六个维度且必须显式声明，面向适配器内部。
+- **公共能力声明 vs 内部 operation 映射**：manifest 的 `capabilities` 面向目录与公共路由（含 `variants` 声明）；`operations` 的 match 键包含全部六个维度且必须显式声明，面向适配器内部；对请求无意义的维度显式声明 `null`（如 quotes 快照的 interval/adjust，两维度在能力目录同样声明为空、路由时跳过），`null` 只与不携带该维度的请求匹配。
 
 ### akshare 已接入范围
 
@@ -397,8 +443,34 @@ TqSdk（官方 SDK `tqsdk`：`TqApi(auth=TqAuth(...)).get_kline_serial(...)`）�
   分钟级以滚动保留 `retention_days` 声明（见上）；
   `/v1/capabilities` 的 interval history 字段按声明形式原样透出；
 - 代码映射（股票/指数/ETF 同期货格式）：`CN-SSE-600000 → SSE.600000`、`CN-SZSE-000001 → SZSE.000001`、`CN-SSE-000016 → SSE.000016`、`CN-SSE-510050 → SSE.510050`（mddatas 文档示例口径；指数仅核实 SSE/SZSE 发布的代码）；
-- 每次请求在线程池中独立创建并关闭 TqApi 实例（官方约定一个线程一个实例）；
+- 连接实例：`shared` 模式由 Runtime 长连接复用（官方推荐的并发用法）；
+  `per_request` 回滚模式每次请求在线程池中独立创建并关闭 TqApi 实例（官方约定一个线程一个实例）；
 - 上游 SDK 异常类型未在文档中核实，统一包装为 `UPSTREAM_ERROR`。
+
+实时快照（`GET /v1/market/quotes`，上游接口 `api.get_quote`，M2）：
+
+| 资产类型 | 变体 | 上游接口 | 周期/复权 | 标准字段 |
+| --- | --- | --- | --- | --- |
+| contract / continuous / weighted-index | tqsdk（默认） | `api.get_quote` | 无（不适用） | 全部 + 五档（指数/加权除外，见下） |
+| stock / etf | tqsdk | `api.get_quote` | 无（不适用） | 全部 + 五档（需专业版账户，运行期事实） |
+| index | tqsdk | `api.get_quote` | 无（不适用） | 无盘口：bid/ask 价格 null、量 0 |
+
+- 字段白名单以 **P5 探针实证**（2026-11-04，probes/results/tqsdk/20261104T012958Z）为准：
+  标准字段 `timestamp`/`last_price`/五档买卖价量（`bid|ask_price|volume1..5`）/`volume`/`amount`；
+  `extensions` 白名单 `open`/`highest`/`lowest`/`average`/`pre_settlement`/`pre_close`/
+  `open_interest`/`pre_open_interest`/`upper_limit`/`lower_limit`（盘中为 NaN 的字段如
+  `close`/`settlement` 不透出；合约元数据类字段 M2 不透出）；
+- `datetime` 为北京时间墙钟字符串（如 `2026-11-04 10:14:46.500000`），统一输出 `+08:00`；
+- 单位：期货 `volume` 保持手、股票/ETF 为股（2026-11-03 探针量级判定，同 K 线口径）、
+  `amount` 为元，均原样透出；
+- **订阅生命周期**（shared 模式）：首次请求建立订阅（`await get_quote` 等首包，由 Runtime
+  tick 循环驱动），此后快照由 tick 循环 `is_changing` 判定增量、线程内拷贝发布缓存，
+  后续请求即时返回；M2 快照请求不退订（快照是订阅状态），退订接口为 SSE 流式（M3）预留。
+  tqsdk 协议**不支持取消订阅**：退订只停止本地维护，休眠订阅的上游推送仍在消耗带宽，
+  累计到 `TAPEHUB_TQSDK_SUBSCRIPTION_LIMIT`（默认 64）触发新一代重建清理（仍被引用的
+  订阅自动重订；北京时间 04:00 跨交易日回收同理重订）；
+- 首包超时 `TAPEHUB_TQSDK_FIRST_SNAPSHOT_TIMEOUT`（默认 5 秒）→ `QUOTE_NOT_READY` 408；
+- `per_request` 回滚模式下快照同样可用（每请求独立实例订阅取首包后关闭，无缓存复用）。
 
 单位约定（按官方文档）：
 
@@ -454,12 +526,13 @@ Application/API 层与其它 Provider 不需要任何改动。
 
 ### 配置
 
-环境变量前缀 `TAPEHUB_`（见 [.env.example](.env.example)）：`TAPEHUB_VERSION`、`TAPEHUB_API_VERSION`、`TAPEHUB_CATALOG_VERSION`、`TAPEHUB_MAX_LIMIT`、`TAPEHUB_PROVIDER_ENABLED_OVERRIDES`（JSON，如 `{"akshare": false}` 可整体停用 akshare）、`TAPEHUB_TICKFLOW_API_KEY`、`TAPEHUB_ALPHAFEED_API_KEY`、`TAPEHUB_TUSHARE_TOKEN`、`TAPEHUB_TQSDK_AUTH_USER`、`TAPEHUB_TQSDK_AUTH_PASSWORD`、`TAPEHUB_TQSDK_CONN_MODE`（`shared` 默认/`per_request` 回滚）、`TAPEHUB_TQSDK_MAX_INFLIGHT_FETCH`、`TAPEHUB_TWELVEDATA_API_KEY`（Provider 凭据，只在内存中传给 SDK 客户端）。`.env` 不提交版本库。
+环境变量前缀 `TAPEHUB_`（见 [.env.example](.env.example)）：`TAPEHUB_VERSION`、`TAPEHUB_API_VERSION`、`TAPEHUB_CATALOG_VERSION`、`TAPEHUB_MAX_LIMIT`、`TAPEHUB_PROVIDER_ENABLED_OVERRIDES`（JSON，如 `{"akshare": false}` 可整体停用 akshare）、`TAPEHUB_TICKFLOW_API_KEY`、`TAPEHUB_ALPHAFEED_API_KEY`、`TAPEHUB_TUSHARE_TOKEN`、`TAPEHUB_TQSDK_AUTH_USER`、`TAPEHUB_TQSDK_AUTH_PASSWORD`、`TAPEHUB_TQSDK_CONN_MODE`（`shared` 默认/`per_request` 回滚）、`TAPEHUB_TQSDK_MAX_INFLIGHT_FETCH`、`TAPEHUB_TQSDK_FIRST_SNAPSHOT_TIMEOUT`（快照首包等待，默认 5 秒）、`TAPEHUB_TQSDK_SUBSCRIPTION_LIMIT`（休眠订阅回收阈值，默认 64）、`TAPEHUB_TWELVEDATA_API_KEY`（Provider 凭据，只在内存中传给 SDK 客户端）。`.env` 不提交版本库。
 
 ### 未来扩展边界（现在不实现）
 
 - **定时全量转储**：适配器不依赖 FastAPI 请求上下文，未来 Worker 可复用统一查询与分页模型逐批拉取；
-- **实时行情订阅**：未来新增独立 `StreamingProvider` 接口，不侵入历史查询链路；
+- **实时行情流式订阅（SSE）**：未来新增独立 `StreamingProvider` 接口（`GET /v1/market/quotes/stream`），
+  复用 Runtime 订阅与引用计数，不侵入历史查询与快照链路；
 - **新资产类型**：扩展标准枚举、能力清单与对应操作映射即可；
 - 第一版不存储任何行情数据。
 

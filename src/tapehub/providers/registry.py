@@ -23,7 +23,7 @@ from tapehub.domain.models import Adjust, AssetType, DataType, DataVariant
 from tapehub.providers.manifest import ProviderManifest, load_builtin_manifest
 
 if TYPE_CHECKING:
-    from tapehub.domain.ports import HistoricalBarProvider
+    from tapehub.domain.ports import HistoricalBarProvider, QuoteProvider
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +63,8 @@ class ProviderRecord:
     default_variants: dict[AssetType, DataVariant] = field(default_factory=dict)
     # 本 Provider 声明为缺省数据源的资产类型（manifest default_provider）
     default_for: frozenset[AssetType] = frozenset()
-    adapter: "HistoricalBarProvider | None" = None
+    # 适配器可同时实现 HistoricalBarProvider 与 QuoteProvider（鸭子类型）
+    adapter: "HistoricalBarProvider | QuoteProvider | None" = None
     implemented: bool = False
     enabled: bool = False
     load_error: str | None = None
@@ -74,16 +75,18 @@ class ProviderRecord:
         data_type: DataType,
         market: str,
         asset_type: AssetType,
-        interval: Interval,
-        adjust: Adjust,
-        variant: DataVariant | None,
+        interval: Interval | None = None,
+        adjust: Adjust | None = None,
+        variant: DataVariant | None = None,
     ) -> DataVariant | None:
         """解析可执行的具体变体；不支持该能力时返回 ``None``。
 
         - ``variant`` 显式传递：严格匹配，不匹配即不支持，不做任何降级；
         - ``variant`` 为 ``None``（未表达偏好）：在其余维度匹配的能力中，
           优先取声明 ``default_variant`` 所在的能力；default 未覆盖其余维度时
-          回退到声明顺序第一个匹配能力的第一个变体，可观测、确定性强。
+          回退到声明顺序第一个匹配能力的第一个变体，可观测、确定性强；
+        - ``interval``/``adjust`` 为 ``None`` 表示请求不携带该维度
+          （quote 快照类查询），能力匹配跳过对应维度。
         """
         if variant is not None:
             for cap in self.capabilities:
@@ -179,9 +182,9 @@ class ProviderRegistry:
         data_type: DataType,
         market: str,
         asset_type: AssetType,
-        interval: Interval,
-        adjust: Adjust,
-        variant: DataVariant | None,
+        interval: Interval | None = None,
+        adjust: Adjust | None = None,
+        variant: DataVariant | None = None,
     ) -> list["ResolvedCandidate"]:
         """启用、已实现且能力可解析的候选，按优先级返回并携带具体变体。
 

@@ -26,13 +26,17 @@ def test_default_catalog_lists_all_builtin_providers(default_client) -> None:  #
     tushare = next(entry for entry in body["data"] if entry["provider"] == "tushare")
     assert tushare["enabled"] is True
     assert len(tushare["capabilities"]) == 2
-    # tqsdk 已接入：期货三条能力（单一合约/主力连续/加权）
+    # tqsdk 已接入：期货三类拆分 + 股票/指数/ETF + 实时快照
     tqsdk = next(entry for entry in body["data"] if entry["provider"] == "tqsdk")
     assert tqsdk["enabled"] is True
-    # 期货三类拆分 + 股票/指数/ETF 各一条能力
-    assert len(tqsdk["capabilities"]) == 6
+    assert len(tqsdk["capabilities"]) == 7
     assert tqsdk["capabilities"][0]["asset_types"] == ["contract"]
     assert tqsdk["default_provider"] == ["contract", "continuous", "weighted-index", "etf"]
+    # quotes 能力：无周期/复权维度（两维度为空）
+    quotes = [cap for cap in tqsdk["capabilities"] if cap["data_type"] == "quotes"]
+    assert len(quotes) == 1
+    assert quotes[0]["intervals"] == []
+    assert quotes[0]["adjustments"] == []
     # 全部内置 Provider 均已接入
     for entry in body["data"]:
         assert entry["enabled"] is True
@@ -103,4 +107,4 @@ def test_single_provider_on_default_catalog(default_client) -> None:  # type: ig
     body = response.json()
     assert body["data"]["provider"] == "tqsdk"
     assert body["data"]["enabled"] is True
-    assert len(body["data"]["capabilities"]) == 6
+    assert len(body["data"]["capabilities"]) == 7

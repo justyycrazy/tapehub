@@ -1,8 +1,9 @@
 """测试用 TqSdk SDK 桩：模拟延迟导入的 ``tqsdk`` 模块。
 
-只实现适配器使用的 ``TqApi(auth=TqAuth(user, pwd)).get_kline_serial(...)`` 路径，
-记录构造与调用参数并返回文档核实的列式行（dict 列表 + to_dict 桩 DataFrame），
-无真实网络。
+实现适配器使用的 ``TqApi(auth=TqAuth(user, pwd))`` 路径：
+``get_kline_serial(...)``（列式行 + to_dict 桩 DataFrame）与
+``get_quote(symbol)``（同步阻塞至首包的真实语义在桩中简化为直接返回
+预设快照 dict），记录构造与调用参数，无真实网络。
 """
 
 from datetime import datetime, timezone
@@ -27,21 +28,47 @@ class StubDataFrame:
 class StubTqAuth:
     instances: list["StubTqAuth"] = []
 
-    def __init__(self, user: str | None = None, password: str | None = None) -> None:
+    def __init__(self, user: str = None, password: str = None) -> None:  # type: ignore[assignment]
         self.user = user
         self.password = password
         StubTqAuth.instances.append(self)
+
+
+# 快照默认字段（P5 探针 20261104T012958Z 的 au2612 实测样本节选）
+DEFAULT_QUOTE_FIELDS: dict[str, Any] = {
+    "datetime": "2026-11-04 10:14:46.500000",
+    "last_price": 848.24,
+    "ask_price1": 848.3, "ask_volume1": 2,
+    "bid_price1": 848.26, "bid_volume1": 2,
+    "ask_price2": 848.36, "ask_volume2": 8,
+    "bid_price2": 848.24, "bid_volume2": 12,
+    "ask_price3": 848.42, "ask_volume3": 4,
+    "bid_price3": 848.22, "bid_volume3": 1,
+    "ask_price4": 848.58, "ask_volume4": 4,
+    "bid_price4": 848.18, "bid_volume4": 1,
+    "ask_price5": 848.6, "ask_volume5": 3,
+    "bid_price5": 848.16, "bid_volume5": 1,
+    "highest": 853.64, "lowest": 843.14, "open": 846.0,
+    "close": float("nan"), "average": 848.47,
+    "volume": 200250, "amount": 169906871060.0,
+    "open_interest": 160306, "pre_open_interest": 160467,
+    "settlement": float("nan"), "upper_limit": 964.56, "lower_limit": 727.66,
+    "pre_settlement": 846.12, "pre_close": 841.8,
+}
 
 
 class StubTqApi:
     """TqApi 客户端桩；所有实例记录在 ``instances``。"""
 
     instances: list["StubTqApi"] = []
+    # get_quote 返回的快照字段（preset_quote 覆盖）
+    quote_fields: dict[str, Any] = dict(DEFAULT_QUOTE_FIELDS)
 
     def __init__(self, auth: Any = None, **kwargs: Any) -> None:
         self.auth = auth
         self.kwargs = kwargs
         self.calls: list[dict[str, Any]] = []
+        self.quote_calls: list[str] = []
         self.rows: list[dict[str, Any]] = []
         self.closed = False
         StubTqApi.instances.append(self)
@@ -49,6 +76,11 @@ class StubTqApi:
     def get_kline_serial(self, **kwargs: Any) -> StubDataFrame:
         self.calls.append(dict(kwargs))
         return StubDataFrame(self.rows)
+
+    def get_quote(self, symbol: str) -> dict[str, Any]:
+        """同步路径（per_request）：直接返回预设首包快照（dict-like）。"""
+        self.quote_calls.append(symbol)
+        return dict(type(self).quote_fields)
 
     def close(self) -> None:
         self.closed = True
@@ -71,7 +103,13 @@ def install(monkeypatch: Any) -> StubTqApi:
     monkeypatch.setitem(sys.modules, "tqsdk", module)
     StubTqApi.instances.clear()
     StubTqAuth.instances.clear()
+    StubTqApi.quote_fields = dict(DEFAULT_QUOTE_FIELDS)
     return StubTqApi  # 返回桩类便于断言
+
+
+def preset_quote(monkeypatch: Any, fields: dict[str, Any]) -> None:
+    """让 get_quote 返回指定快照字段（须在 install 之后调用）。"""
+    monkeypatch.setattr(StubTqApi, "quote_fields", dict(fields))
 
 
 def preset_rows(monkeypatch: Any, rows: list[dict[str, Any]]) -> None:

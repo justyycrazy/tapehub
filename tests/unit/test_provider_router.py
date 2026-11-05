@@ -286,3 +286,120 @@ class TestDefaultProviderPrecedence:
         solo = self._record("solo-provider", default_provider=[])
         with pytest.raises(ValueError, match="without a default provider"):
             ProviderRegistry([solo])
+
+
+# ---------------------------------------------------------------------------
+# 实时快照路由（select_quote，data_type=quotes，无 interval/adjust 维度）
+# ---------------------------------------------------------------------------
+
+
+def _quote_manifest_data() -> dict[str, Any]:
+    return {
+        "provider": "quote-source",
+        "enabled": True,
+        "default_variant": "tqsdk",
+        "default_provider": ["contract"],
+        "capabilities": [
+            {
+                "data_type": "quotes",
+                "markets": ["CN"],
+                "asset_types": ["contract"],
+                "delivery": ["rest"],
+                "variants": ["tqsdk"],
+                "intervals": [],
+                "adjustments": [],
+                "fields": ["timestamp", "last_price"],
+            }
+        ],
+        "operations": [
+            {
+                "match": {
+                    "data_type": "quotes",
+                    "market": "CN",
+                    "asset_type": "contract",
+                    "interval": None,
+                    "adjust": None,
+                    "variant": "tqsdk",
+                },
+                "operation": "get_quote",
+            }
+        ],
+    }
+
+
+def _quote_query(**overrides: Any):
+    from tapehub.domain.models import QuoteQuery
+
+    base: dict[str, Any] = {
+        "asset_type": AssetType.CONTRACT,
+        "instrument": Instrument.parse("CN-SHFE-au2612"),
+        "variant": DataVariant.TQSDK,
+    }
+    base.update(overrides)
+    return QuoteQuery(**base)
+
+
+def _quote_record(name: str = "quote-source") -> Any:
+    from tapehub.providers.manifest import manifest_from_dict
+
+    manifest = manifest_from_dict(_quote_manifest_data())
+    manifest_data = manifest.model_dump()
+    manifest_data["provider"] = name
+    manifest = manifest_from_dict(manifest_data)
+    return build_provider_record(name, manifest, _YesAdapter)
+
+
+class TestSelectQuote:
+    def test_explicit_provider_resolves_default_variant(self) -> None:
+        router = ProviderRouter(_registry(_quote_record()))
+        selection = router.select_quote(_quote_query(provider="quote-source", variant=None))
+        assert selection.record.name == "quote-source"
+        assert selection.variant == DataVariant.TQSDK  # default_variant 具体化
+
+    def test_auto_selects_quote_capability(self) -> None:
+        router = ProviderRouter(_registry(_quote_record()))
+        selection = router.select_quote(_quote_query())
+        assert selection.record.name == "quote-source"
+        assert selection.variant == DataVariant.TQSDK
+
+    def test_bars_only_provider_not_selected_for_quote(self, fake_record: Any) -> None:
+        """只有 bars 能力的 Provider 不服务 quote 查询（data_type 精确匹配）。"""
+        router = ProviderRouter(_registry(fake_record))
+        with pytest.raises(NoProviderAvailableError):
+            router.select_quote(_quote_query())
+
+    def test_explicit_bars_only_provider_unsupported(self, fake_record: Any) -> None:
+        router = ProviderRouter(_registry(fake_record))
+        with pytest.raises(UnsupportedCapabilityError):
+            router.select_quote(_quote_query(provider="fake-provider"))
+
+    def test_quote_capability_does_not_serve_bars(self) -> None:
+        """quote 能力不服务 bars 查询：data_type 不同，其余维度全部一致。"""
+        record = _quote_record()
+        router = ProviderRouter(_registry(record))
+        with pytest.raises(NoProviderAvailableError):
+            router.select(_query(asset_type=AssetType.CONTRACT, variant=None))
+
+    def test_variant_must_match(self) -> None:
+        router = ProviderRouter(_registry(_quote_record()))
+        with pytest.raises(UnsupportedCapabilityError):
+            router.select_quote(
+                _quote_query(provider="quote-source", variant=DataVariant.EASTMONEY)
+            )
+
+
+class TestQuoteOperationRouting:
+    def test_resolve_quote_operation(self) -> None:
+        record = _quote_record()
+        adapter = record.adapter
+        assert adapter is not None
+        assert adapter.resolve_quote_operation(_quote_query()) == "get_quote"
+
+    def test_asset_type_must_match(self) -> None:
+        record = _quote_record()
+        adapter = record.adapter
+        assert adapter is not None
+        with pytest.raises(UnsupportedCapabilityError):
+            adapter.resolve_quote_operation(
+                _quote_query(asset_type=AssetType.CONTINUOUS)
+            )

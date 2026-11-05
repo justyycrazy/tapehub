@@ -73,7 +73,12 @@ Provider 适配器实现 Domain Port。
   项目内部统一北京时间：服务级时间戳一律北京时间（`+08:00`）；行情数据时间戳
   全市场统一北京时间（GLOBAL 上游墙钟口径由适配器解析转换，如 twelvedata
   外汇 Australia/Sydney、加密货币 UTC，2026-11-04 探针实测确认）；
-- 结果先按 timestamp 升序排序，再应用 offset/limit；不返回 total。
+- 结果先按 timestamp 升序排序，再应用 offset/limit；不返回 total；
+- 实时快照（`GET /v1/market/quotes`，M2）：无 interval/时间范围/分页/adjust
+  （快照是当前时点的订阅数据）；能力目录与 operations match 对无意义维度
+  显式空/null，路由跳过对应维度；首包超时 `QUOTE_NOT_READY`（HTTP 408）；
+  tqsdk 不支持取消订阅——Runtime 退订只停本地维护，休眠订阅累计到
+  `TAPEHUB_TQSDK_SUBSCRIPTION_LIMIT` 触发新一代重建清理（活跃订阅自动重订）。
 
 ## 安全与诚实边界
 

@@ -8,10 +8,11 @@ from fastapi import FastAPI
 
 from tapehub.api.exception_handlers import register_exception_handlers
 from tapehub.api.middleware import RequestContextMiddleware
-from tapehub.api.routes import capabilities, health, market
+from tapehub.api.routes import capabilities, health, market, quotes
 from tapehub.application.bar_query_service import BarQueryService
 from tapehub.application.capability_service import CapabilityService
 from tapehub.application.provider_router import ProviderRouter
+from tapehub.application.quote_query_service import QuoteQueryService
 from tapehub.providers.registry import ProviderRegistry, build_default_registry
 from tapehub.settings import Settings
 
@@ -43,19 +44,22 @@ def create_app(
     app = FastAPI(
         title="tapehub",
         version=settings.version,
-        description="通用行情数据网关（历史 K 线查询；tqsdk 实时行情接入中）",
+        description="通用行情数据网关（历史 K 线查询；tqsdk 实时快照）",
         lifespan=lifespan,
     )
     app.state.settings = settings
     app.state.registry = registry
     app.state.capability_service = CapabilityService(registry)
-    app.state.bar_query_service = BarQueryService(ProviderRouter(registry))
+    router = ProviderRouter(registry)
+    app.state.bar_query_service = BarQueryService(router)
+    app.state.quote_query_service = QuoteQueryService(router)
 
     app.add_middleware(RequestContextMiddleware)
     register_exception_handlers(app)
     app.include_router(health.router)
     app.include_router(capabilities.router)
     app.include_router(market.router)
+    app.include_router(quotes.router)
     return app
 
 

@@ -1,4 +1,9 @@
-"""TqSdk 完整 HTTP 链路契约测试（SDK 用桩 Mock，无真实网络）。"""
+"""TqSdk 完整 HTTP 链路契约测试（SDK 用桩 Mock，无真实网络）。
+
+覆盖历史 K 线（bars）与实时快照（quotes）两条链路；
+sync 桩仅覆盖 per_request 路径，shared 语义由
+tests/unit/test_tqsdk_runtime.py 的假 SDK（tick 驱动模型）覆盖。
+"""
 
 
 import pytest
@@ -8,9 +13,11 @@ from tapehub.api.app import create_app
 from tapehub.providers.registry import build_default_registry
 from tests.conftest import make_settings
 from tests.fixtures.providers.stub_tqsdk import (
+    DEFAULT_QUOTE_FIELDS,
     StubTqApi,
     install,
     klines_rows,
+    preset_quote,
     preset_rows,
 )
 
@@ -95,8 +102,9 @@ def test_capability_catalog(tqsdk_client: TestClient) -> None:  # type: ignore[n
         "weighted-index",
         "etf",
     ]
-    assert len(entry["capabilities"]) == 6  # 期货三类拆分 + 股票/指数/ETF
+    assert len(entry["capabilities"]) == 7  # 期货三类拆分 + 股票/指数/ETF + quotes
     cap = entry["capabilities"][0]
+    assert cap["data_type"] == "bars"
     assert cap["asset_types"] == ["contract"]
     assert cap["variants"] == ["tqsdk"]
     assert [i["code"] for i in cap["intervals"]] == [
@@ -104,6 +112,16 @@ def test_capability_catalog(tqsdk_client: TestClient) -> None:  # type: ignore[n
     ]
     assert cap["adjustments"] == ["none"]
     assert cap["fields"] == ["open", "high", "low", "close", "volume"]
+    # quotes 能力：无周期/复权维度（两维度为空），覆盖六类资产
+    quotes_cap = next(c for c in entry["capabilities"] if c["data_type"] == "quotes")
+    assert quotes_cap["intervals"] == []
+    assert quotes_cap["adjustments"] == []
+    assert set(quotes_cap["asset_types"]) == {
+        "contract", "continuous", "weighted-index", "stock", "index", "etf",
+    }
+    assert quotes_cap["variants"] == ["tqsdk"]
+    assert "last_price" in quotes_cap["fields"]
+    assert "ask_price5" in quotes_cap["fields"]
     # 探针回填的 history.start 在能力目录可见（continuous 日线）
     continuous_cap = next(
         c for c in entry["capabilities"] if c["asset_types"] == ["continuous"]
@@ -217,3 +235,130 @@ def test_etf_default_routes_to_declared_default_provider(
     assert meta["provider"] == "tqsdk"
     assert meta["variant"] == "tqsdk"
     assert StubTqApi.instances[-1].calls[0]["symbol"] == "SSE.510050"
+
+
+# ---------------------------------------------------------------------------
+# 实时快照链路（M2，GET /v1/market/quotes；per_request 桩路径）
+# ---------------------------------------------------------------------------
+
+QUOTE_PARAMS = {
+    "provider": "tqsdk",
+    "asset_type": "contract",
+    "instrument": "CN-SHFE-au2612",
+    "variant": "tqsdk",
+}
+
+
+def test_quote_full_chain(
+    tqsdk_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """合约快照链路：SHFE.au2612 映射 + P5 实测字段白名单。"""
+    preset_quote(monkeypatch, DEFAULT_QUOTE_FIELDS)
+
+    response = tqsdk_client.get("/v1/market/quotes", params=QUOTE_PARAMS)
+    assert response.status_code == 200
+    body = response.json()
+
+    api = StubTqApi.instances[-1]
+    assert api.quote_calls == ["SHFE.au2612"]
+
+    data = body["data"]
+    assert data["instrument"] == "CN-SHFE-au2612"
+    assert data["asset_type"] == "contract"
+    quote = data["quote"]
+    # 行情时间统一北京时间（上游为北京时间墙钟字符串）
+    assert quote["timestamp"] == "2026-11-04T10:14:46.500000+08:00"
+    assert quote["last_price"] == 848.24
+    assert quote["bid_price1"] == 848.26
+    assert quote["ask_price5"] == 848.6
+    assert quote["bid_volume5"] == 1
+    assert quote["volume"] == 200250.0
+    assert quote["amount"] == 169906871060.0
+    # extensions 白名单：P5 实证字段；close/settlement 等未核实字段不透出
+    assert quote["extensions"] == {
+        "open": 846.0,
+        "highest": 853.64,
+        "lowest": 843.14,
+        "average": 848.47,
+        "pre_settlement": 846.12,
+        "pre_close": 841.8,
+        "open_interest": 160306.0,
+        "pre_open_interest": 160467.0,
+        "upper_limit": 964.56,
+        "lower_limit": 727.66,
+    }
+
+    meta = body["meta"]
+    assert meta["provider"] == "tqsdk"
+    assert meta["variant"] == "tqsdk"
+    assert meta["received_at"].endswith("+08:00")
+
+
+def test_quote_index_without_order_book(
+    tqsdk_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """指数快照：订阅成功但无盘口（P5 实测），bid/ask 价格 null、量 0 如实透出。"""
+    nan = float("nan")
+    preset_quote(
+        monkeypatch,
+        {
+            **DEFAULT_QUOTE_FIELDS,
+            "last_price": 2752.93,
+            **{f"{side}_price{i}": nan for side in ("bid", "ask") for i in range(1, 6)},
+            **{f"{side}_volume{i}": 0 for side in ("bid", "ask") for i in range(1, 6)},
+            "open_interest": 0,
+            "pre_open_interest": 0,
+            "upper_limit": nan,
+            "lower_limit": nan,
+            "pre_settlement": nan,
+            "volume": 17607537,
+            "amount": 44721284722.9,
+        },
+    )
+    params = {**QUOTE_PARAMS, "asset_type": "index", "instrument": "CN-SSE-000016"}
+    response = tqsdk_client.get("/v1/market/quotes", params=params)
+    assert response.status_code == 200
+    quote = response.json()["data"]["quote"]
+    assert quote["last_price"] == 2752.93
+    assert quote["bid_price1"] is None  # NaN → null，不用 0 冒充
+    assert quote["ask_price5"] is None
+    assert quote["bid_volume1"] == 0.0  # 量侧真实 0 保留
+    # 恒为 0/NaN 的期货语义字段按值透出；NaN（upper/lower/pre_settlement）剔除
+    assert quote["extensions"]["open_interest"] == 0.0
+    assert "upper_limit" not in quote["extensions"]
+    assert "pre_settlement" not in quote["extensions"]
+
+
+def test_quote_auto_routes_and_symbol_mapping(
+    tqsdk_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """auto 路由命中 quotes 能力；主连映射 KQ.m@ 前缀。"""
+    preset_quote(monkeypatch, DEFAULT_QUOTE_FIELDS)
+    params = {
+        "asset_type": "continuous",
+        "instrument": "CN-SHFE-cu",
+        # provider/variant 缺省：auto + default_variant（tqsdk）具体化
+    }
+    response = tqsdk_client.get("/v1/market/quotes", params=params)
+    assert response.status_code == 200
+    meta = response.json()["meta"]
+    assert meta["provider"] == "tqsdk"
+    assert meta["variant"] == "tqsdk"
+    assert StubTqApi.instances[-1].quote_calls == ["KQ.m@SHFE.cu"]
+
+
+def test_quote_unsupported_asset_type(tqsdk_client: TestClient) -> None:
+    """TqSdk quotes 能力不含期权：能力目录即拒绝。"""
+    params = {**QUOTE_PARAMS, "asset_type": "option", "instrument": "CN-SSE-10004512"}
+    response = tqsdk_client.get("/v1/market/quotes", params=params)
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "UNSUPPORTED_CAPABILITY"
+
+
+def test_quote_missing_auth_returns_clear_error(default_client) -> None:  # type: ignore[no-untyped-def]
+    """未配置快期账户：快照请求与 bars 同样返回 PROVIDER_NOT_IMPLEMENTED。"""
+    response = default_client.get("/v1/market/quotes", params=QUOTE_PARAMS)
+    assert response.status_code == 501
+    error = response.json()["error"]
+    assert error["code"] == "PROVIDER_NOT_IMPLEMENTED"
+    assert error["details"]["missing"] == ["user", "password"]

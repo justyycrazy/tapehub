@@ -21,6 +21,8 @@ class ErrorCode(str, Enum):
     UPSTREAM_TIMEOUT = "UPSTREAM_TIMEOUT"
     UPSTREAM_RATE_LIMITED = "UPSTREAM_RATE_LIMITED"
     UPSTREAM_ERROR = "UPSTREAM_ERROR"
+    # 实时快照首包未就绪（订阅已建立，上游数据未到）
+    QUOTE_NOT_READY = "QUOTE_NOT_READY"
     # 以下为框架补充错误码（非业务链路产生）
     NOT_FOUND = "NOT_FOUND"
     METHOD_NOT_ALLOWED = "METHOD_NOT_ALLOWED"
@@ -91,6 +93,17 @@ class UpstreamRateLimitedError(TapehubError):
 class UpstreamError(TapehubError):
     code = ErrorCode.UPSTREAM_ERROR
     default_message = "Upstream provider error."
+
+
+class QuoteNotReadyError(TapehubError):
+    """实时快照未就绪：订阅已发起，但上游首包未在超时窗口内到达。
+
+    常见原因：标的不存在/无权限（上游不推送）、非交易时段上游静默、
+    或网络/上游故障。可稍后重试。
+    """
+
+    code = ErrorCode.QUOTE_NOT_READY
+    default_message = "Quote snapshot is not ready yet."
 
 
 class ManifestError(TapehubError):

@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Any
 
 from tapehub.domain.capabilities import Capability
 from tapehub.domain.errors import ProviderNotImplementedError, UnsupportedCapabilityError
-from tapehub.domain.models import BarBatch, BarQuery, DataType
+from tapehub.domain.models import BarBatch, BarQuery, DataType, Quote, QuoteQuery
 from tapehub.providers.manifest import ProviderManifest
 
 if TYPE_CHECKING:
@@ -75,6 +75,37 @@ class BaseProviderAdapter:
         )
 
     async def fetch_bars(self, query: BarQuery) -> BarBatch:
+        raise ProviderNotImplementedError(
+            f"Provider {self.name!r} is not implemented yet.",
+            details={"provider": self.name},
+        )
+
+    def resolve_quote_operation(self, query: QuoteQuery) -> str:
+        """快照链路的内部二级路由：(market, asset_type, variant) × data_type=quotes。
+
+        quote 无周期/复权维度（manifest 中显式声明 null），其余语义同
+        ``resolve_operation``：无匹配时抛出 ``UNSUPPORTED_CAPABILITY``。
+        """
+        for op in self.manifest.operations:
+            m = op.match
+            if (
+                m.data_type == DataType.QUOTE
+                and m.market == query.instrument.market
+                and m.asset_type == query.asset_type
+                and m.variant == query.variant
+            ):
+                return op.operation
+        raise UnsupportedCapabilityError(
+            "No internal operation matches the requested capability.",
+            details={
+                "provider": self.name,
+                "market": query.instrument.market,
+                "asset_type": query.asset_type.value,
+                "variant": query.variant.value,
+            },
+        )
+
+    async def fetch_quote(self, query: QuoteQuery) -> Quote:
         raise ProviderNotImplementedError(
             f"Provider {self.name!r} is not implemented yet.",
             details={"provider": self.name},

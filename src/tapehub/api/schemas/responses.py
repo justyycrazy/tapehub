@@ -17,7 +17,7 @@ from pydantic import BaseModel
 from tapehub.api.schemas.common import BeijingDatetime, MarketDatetime
 from tapehub.application.capability_service import ProviderCapabilitiesView
 from tapehub.domain.capabilities import Capability
-from tapehub.domain.models import CN_TIMEZONE, BarBatch, BarQuery
+from tapehub.domain.models import CN_TIMEZONE, BarBatch, BarQuery, Quote, QuoteQuery
 
 
 def beijing_now() -> datetime:
@@ -183,3 +183,70 @@ def bars_to_response(batch: BarBatch, query: BarQuery, request_id: str) -> BarsR
             "upstream returned the maximum number of bars; result may be truncated"
         )
     return BarsResponse(data=data, meta=meta, warnings=warnings)
+
+
+class QuoteOut(BaseModel):
+    """单条实时快照（行情时间为市场口径，已统一北京时间）。"""
+
+    timestamp: MarketDatetime
+    last_price: float | None = None
+    bid_price1: float | None = None
+    bid_volume1: float | None = None
+    bid_price2: float | None = None
+    bid_volume2: float | None = None
+    bid_price3: float | None = None
+    bid_volume3: float | None = None
+    bid_price4: float | None = None
+    bid_volume4: float | None = None
+    bid_price5: float | None = None
+    bid_volume5: float | None = None
+    ask_price1: float | None = None
+    ask_volume1: float | None = None
+    ask_price2: float | None = None
+    ask_volume2: float | None = None
+    ask_price3: float | None = None
+    ask_volume3: float | None = None
+    ask_price4: float | None = None
+    ask_volume4: float | None = None
+    ask_price5: float | None = None
+    ask_volume5: float | None = None
+    volume: float | None = None
+    amount: float | None = None
+    extensions: dict[str, Any] | None = None
+
+
+class QuoteDataOut(BaseModel):
+    instrument: str
+    asset_type: str
+    quote: QuoteOut
+
+
+class QuoteMeta(BaseModel):
+    request_id: str
+    provider: str
+    # 实际使用的数据源变体：缺省请求经 default_variant 具体化后的值
+    variant: str
+    received_at: MarketDatetime
+
+
+class QuoteResponse(BaseModel):
+    data: QuoteDataOut
+    meta: QuoteMeta
+
+
+def quote_to_response(quote: Quote, query: QuoteQuery, request_id: str) -> QuoteResponse:
+    if query.variant is None:  # 不可达：QuoteQueryService 已具体化变体
+        raise ValueError("query variant must be resolved before building the response")
+    data = QuoteDataOut(
+        instrument=query.instrument.code,
+        asset_type=query.asset_type.value,
+        # provider/received_at 属于 meta（同 bars 链路），不进 data.quote
+        quote=QuoteOut(**quote.model_dump(exclude={"provider", "received_at"})),
+    )
+    meta = QuoteMeta(
+        request_id=request_id,
+        provider=quote.provider,
+        variant=query.variant.value,
+        received_at=quote.received_at,
+    )
+    return QuoteResponse(data=data, meta=meta)

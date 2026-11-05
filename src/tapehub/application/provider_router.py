@@ -1,7 +1,8 @@
 """公共 ProviderRouter：只负责选择 Provider，不包含任何上游 SDK 函数名。
 
 路由完整能力维度：provider × data_type × market × asset_type × interval × adjust × variant。
-其中 data_type=bars 已由 /v1/market/bars 路径确定；
+其中 data_type=bars 已由 /v1/market/bars 路径确定；data_type=quotes 由
+/v1/market/quotes 路径确定（quote 无 interval/adjust 维度，能力匹配跳过）；
 market/exchange 从标准 instrument 解析，不需要调用方重复传递。
 
 ``variant`` 未传递（None）表示请求未表达数据源偏好：
@@ -23,7 +24,7 @@ from tapehub.domain.errors import (
     ProviderNotImplementedError,
     UnsupportedCapabilityError,
 )
-from tapehub.domain.models import BarQuery, DataType, DataVariant
+from tapehub.domain.models import BarQuery, DataType, DataVariant, QuoteQuery
 
 if TYPE_CHECKING:
     from tapehub.providers.registry import ProviderRecord, ProviderRegistry
@@ -45,6 +46,14 @@ def _capability_details(query: BarQuery) -> dict[str, str | None]:
         "asset_type": query.asset_type.value,
         "interval": query.interval.code,
         "adjust": query.adjust.value,
+        "variant": query.variant.value if query.variant is not None else None,
+    }
+
+
+def _quote_capability_details(query: QuoteQuery) -> dict[str, str | None]:
+    return {
+        "market": query.instrument.market,
+        "asset_type": query.asset_type.value,
         "variant": query.variant.value if query.variant is not None else None,
     }
 
@@ -108,4 +117,58 @@ class ProviderRouter:
                 details=_capability_details(query),
             )
         # 注册顺序固定，取第一个完整匹配的候选，保证路由确定性。
+        return ProviderSelection(record=candidates[0].record, variant=candidates[0].variant)
+
+    # ------------------------------------------------------------------
+    # 实时快照路由（data_type=quotes，无 interval/adjust 维度）
+    # ------------------------------------------------------------------
+
+    def select_quote(self, query: QuoteQuery) -> "ProviderSelection":
+        """按快照请求选择实际执行的 Provider 与具体变体（与 bars 并列）。"""
+        if query.provider != AUTO_PROVIDER:
+            return self._select_quote_explicit(query)
+        return self._select_quote_auto(query)
+
+    def _select_quote_explicit(self, query: QuoteQuery) -> "ProviderSelection":
+        record = self._registry.get(query.provider)
+        if record is None:
+            raise ProviderNotFoundError(
+                f"Provider {query.provider!r} not found.",
+                details={"provider": query.provider},
+            )
+        if not record.enabled:
+            raise ProviderDisabledError(
+                f"Provider {query.provider!r} is disabled.",
+                details={"provider": record.name},
+            )
+        if not record.implemented or record.adapter is None:
+            raise ProviderNotImplementedError(
+                f"Provider {query.provider!r} is not implemented.",
+                details={"provider": record.name},
+            )
+        resolved_variant = record.resolve_variant(
+            data_type=DataType.QUOTE,
+            market=query.instrument.market,
+            asset_type=query.asset_type,
+            variant=query.variant,
+        )
+        if resolved_variant is None:
+            raise UnsupportedCapabilityError(
+                f"Provider {query.provider!r} does not support the requested capability.",
+                details={"provider": record.name, **_quote_capability_details(query)},
+            )
+        return ProviderSelection(record=record, variant=resolved_variant)
+
+    def _select_quote_auto(self, query: QuoteQuery) -> "ProviderSelection":
+        candidates = self._registry.resolve_candidates(
+            data_type=DataType.QUOTE,
+            market=query.instrument.market,
+            asset_type=query.asset_type,
+            variant=query.variant,
+        )
+        if not candidates:
+            raise NoProviderAvailableError(
+                "No enabled provider supports the requested capability.",
+                details=_quote_capability_details(query),
+            )
         return ProviderSelection(record=candidates[0].record, variant=candidates[0].variant)

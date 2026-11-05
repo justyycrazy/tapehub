@@ -29,6 +29,13 @@
 #   能力目录只声明结构性能力（SDK 能做什么）；账户权限不足是运行期事实，
 #   请求失败包装为 UPSTREAM_ERROR，不作为能力缺口声明；
 # - 每次请求独立创建并关闭 TqApi 实例（在线程池中执行，一个线程一个实例）；
+# - 实时快照（get_quote，M2）：订阅-推送模型（await get_quote 至首包 +
+#   wait_update 驱动 is_changing 增量），字段白名单以 P5 探针实证为准
+#   （2026-11-04，probes/results/tqsdk/20261104T012958Z）：期货/主连/加权/
+#   股票/ETF/指数订阅均成功；指数与加权指数无盘口（bid/ask 价格 NaN →
+#   null 如实透出，量侧为 0）；股票/ETF 实时五档需专业版账户（运行期事实，
+#   不作为能力缺口声明）。快照无周期/复权维度，intervals/adjustments 为空、
+#   operations match 对无意义维度显式 null；
 # - 上游返回“从最新一根往回”的序列：当返回数量达到上限且最早一根仍晚于
 #   请求 start 时，无法覆盖请求窗口，标记 partial=true；
 # - 历史覆盖范围（history，2026-11-03 探针：日线二分估计，次轮粒度 5 天）：
@@ -143,6 +150,40 @@ capabilities:
       - {code: P1D, history: {start: "2018-01-02T00:00:00+08:00", end: null}}
     adjustments: [none, qfq, hfq]
     fields: [open, high, low, close, volume]
+  # 实时快照（M2）：订阅-推送模型，无周期/复权维度（两维度声明为空，
+  # 路由与能力匹配跳过）；字段白名单以 P5 探针实证为准（见文件头注释）
+  - data_type: quotes
+    markets: [CN]
+    asset_types: [contract, continuous, weighted-index, stock, index, etf]
+    delivery: [rest]
+    variants: [tqsdk]
+    intervals: []
+    adjustments: []
+    fields:
+      - timestamp
+      - last_price
+      - bid_price1
+      - bid_volume1
+      - bid_price2
+      - bid_volume2
+      - bid_price3
+      - bid_volume3
+      - bid_price4
+      - bid_volume4
+      - bid_price5
+      - bid_volume5
+      - ask_price1
+      - ask_volume1
+      - ask_price2
+      - ask_volume2
+      - ask_price3
+      - ask_volume3
+      - ask_price4
+      - ask_volume4
+      - ask_price5
+      - ask_volume5
+      - volume
+      - amount
 
 operations:
   # 全部资产类型 × 周期组合都调用同一上游接口 api.get_kline_serial；
@@ -267,3 +308,17 @@ operations:
     operation: get_kline_serial
   - match: {data_type: bars, market: CN, asset_type: index, interval: P1D, adjust: none, variant: tqsdk}
     operation: get_kline_serial
+  # 实时快照：全部资产类型调用同一上游接口 api.get_quote；
+  # 周期/复权对快照无意义，显式声明 null（只与无该维度的 quote 查询匹配）
+  - match: {data_type: quotes, market: CN, asset_type: contract, interval: null, adjust: null, variant: tqsdk}
+    operation: get_quote
+  - match: {data_type: quotes, market: CN, asset_type: continuous, interval: null, adjust: null, variant: tqsdk}
+    operation: get_quote
+  - match: {data_type: quotes, market: CN, asset_type: weighted-index, interval: null, adjust: null, variant: tqsdk}
+    operation: get_quote
+  - match: {data_type: quotes, market: CN, asset_type: stock, interval: null, adjust: null, variant: tqsdk}
+    operation: get_quote
+  - match: {data_type: quotes, market: CN, asset_type: index, interval: null, adjust: null, variant: tqsdk}
+    operation: get_quote
+  - match: {data_type: quotes, market: CN, asset_type: etf, interval: null, adjust: null, variant: tqsdk}
+    operation: get_quote

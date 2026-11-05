@@ -91,9 +91,10 @@ class Delivery(StrEnum):
 
 
 class DataType(StrEnum):
-    """数据类型。第一版仅历史 K 线。"""
+    """数据类型：历史 K 线与实时快照（quote 无周期/复权维度）。"""
 
     BARS = "bars"
+    QUOTE = "quotes"
 
 
 class Instrument(BaseModel):
@@ -259,3 +260,74 @@ class BarBatch(BaseModel):
     def count(self) -> int:
         """本次实际返回的 K 线数量。"""
         return len(self.bars)
+
+
+class Quote(BaseModel):
+    """单标的实时快照。缺失数值使用 null，不得用 0 冒充。
+
+    五档买卖盘各 5 档（price/volume 成对）；指数类标的无盘口时
+    价格为 null、量为 0（如实透出，不编造）。``timestamp`` 为行情时间，
+    构造时要求时区感知并统一归一化为北京时间（+08:00）——快照无批次
+    包装，模型自身完成归一化。Provider 特有字段只经 ``extensions``
+    白名单透出（tqsdk 白名单以 P5 探针实证为准，见 README 映射表）。
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    timestamp: datetime
+    last_price: float | None = None
+    bid_price1: float | None = None
+    bid_volume1: float | None = None
+    bid_price2: float | None = None
+    bid_volume2: float | None = None
+    bid_price3: float | None = None
+    bid_volume3: float | None = None
+    bid_price4: float | None = None
+    bid_volume4: float | None = None
+    bid_price5: float | None = None
+    bid_volume5: float | None = None
+    ask_price1: float | None = None
+    ask_volume1: float | None = None
+    ask_price2: float | None = None
+    ask_volume2: float | None = None
+    ask_price3: float | None = None
+    ask_volume3: float | None = None
+    ask_price4: float | None = None
+    ask_volume4: float | None = None
+    ask_price5: float | None = None
+    ask_volume5: float | None = None
+    volume: float | None = None
+    amount: float | None = None
+    # 实际执行的数据源（同 BarBatch.provider 语义，不能是 "auto"）
+    provider: str
+    # 快照完成标准化（或从缓存读出）的网关时刻
+    received_at: datetime
+    # 受控的 Provider 特有字段：适配器必须显式白名单后放入，不得无约束混入。
+    extensions: dict[str, Any] | None = None
+
+    @field_validator("timestamp", "received_at")
+    @classmethod
+    def _aware(cls, value: datetime, info: object) -> datetime:
+        name = getattr(info, "field_name", "timestamp")
+        return ensure_aware(value, name)
+
+    @model_validator(mode="after")
+    def _market_zone(self) -> "Quote":
+        # 全市场统一北京时间（快照时间戳为行情时间）
+        self.timestamp = self.timestamp.astimezone(CN_TIMEZONE)
+        self.received_at = self.received_at.astimezone(CN_TIMEZONE)
+        return self
+
+
+class QuoteQuery(BaseModel):
+    """统一实时快照查询。快照是当前时点的订阅数据：无周期、无时间范围、
+    无分页；``asset_type`` 同样必填不推断。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    provider: str = "auto"
+    asset_type: AssetType
+    instrument: Instrument
+    # 数据源变体；未传递（None）表示不表达偏好，由所选 Provider 能力的
+    # default_variant 具体化（见 application 路由），适配器收到的一律是具体值
+    variant: DataVariant | None = None

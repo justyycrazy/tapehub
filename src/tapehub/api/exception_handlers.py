@@ -31,6 +31,8 @@ _STATUS_BY_CODE: dict[ErrorCode, int] = {
     ErrorCode.UPSTREAM_TIMEOUT: 504,
     ErrorCode.UPSTREAM_RATE_LIMITED: 429,
     ErrorCode.UPSTREAM_ERROR: 502,
+    # 快照首包等待超时（订阅已建立、上游未推送）：语义为“请稍后重试”
+    ErrorCode.QUOTE_NOT_READY: 408,
     ErrorCode.NOT_FOUND: 404,
     ErrorCode.METHOD_NOT_ALLOWED: 405,
     ErrorCode.INTERNAL_ERROR: 500,

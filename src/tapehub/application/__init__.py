@@ -6,5 +6,6 @@
 from tapehub.application.bar_query_service import BarQueryService
 from tapehub.application.capability_service import CapabilityService
 from tapehub.application.provider_router import ProviderRouter
+from tapehub.application.quote_query_service import QuoteQueryService
 
-__all__ = ["BarQueryService", "CapabilityService", "ProviderRouter"]
+__all__ = ["BarQueryService", "CapabilityService", "ProviderRouter", "QuoteQueryService"]

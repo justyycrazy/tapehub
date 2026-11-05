@@ -303,3 +303,51 @@ def test_start_and_retention_days_mutually_exclusive() -> None:
     }
     with pytest.raises(ManifestError):
         manifest_from_dict(data)
+
+
+def test_quote_operation_with_null_dimensions() -> None:
+    """quotes 快照操作：无意义维度（周期/复权）显式 null，加载与查重正常。"""
+    data = {
+        "provider": "quote-only",
+        "enabled": True,
+        "default_variant": "tqsdk",
+        "default_provider": ["contract"],
+        "capabilities": [
+            {
+                "data_type": "quotes",
+                "markets": ["CN"],
+                "asset_types": ["contract"],
+                "delivery": ["rest"],
+                "variants": ["tqsdk"],
+                "intervals": [],
+                "adjustments": [],
+                "fields": ["timestamp", "last_price"],
+            }
+        ],
+        "operations": [
+            {
+                "match": {
+                    "data_type": "quotes",
+                    "market": "CN",
+                    "asset_type": "contract",
+                    "interval": None,
+                    "adjust": None,
+                    "variant": "tqsdk",
+                },
+                "operation": "get_quote",
+            }
+        ],
+    }
+    manifest = manifest_from_dict(data)
+    op = manifest.operations[0]
+    assert op.match.interval is None
+    assert op.match.adjust is None
+    assert op.operation == "get_quote"
+    # quotes 能力维度为空：to_domain 后同样为空列表
+    cap = manifest.to_domain_capabilities()[0]
+    assert cap.intervals == []
+    assert cap.adjustments == []
+    # 相同 null 维度的重复 match 仍被查重拒绝
+    duplicate = {**data, "operations": data["operations"] * 2}
+    with pytest.raises(Exception, match="duplicate operation"):
+        manifest_from_dict(duplicate)

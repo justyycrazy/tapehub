@@ -15,8 +15,10 @@ from tapehub.domain.models import (
     DataType,
     Delivery,
     Instrument,
+    Quote,
+    QuoteQuery,
 )
-from tapehub.domain.ports import HistoricalBarProvider
+from tapehub.domain.ports import HistoricalBarProvider, QuoteProvider
 
 __all__ = [
     "Adjust",
@@ -33,5 +35,8 @@ __all__ = [
     "Interval",
     "IntervalEntry",
     "IntervalHistory",
+    "Quote",
+    "QuoteProvider",
+    "QuoteQuery",
     "TapehubError",
 ]
