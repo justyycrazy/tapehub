@@ -35,6 +35,7 @@ unsubscribe 释放 credit 并清缓存——M2 轮询与快速重连的流在窗
 import asyncio
 import json
 import logging
+import weakref
 from collections.abc import Callable
 from typing import Any
 
@@ -57,6 +58,12 @@ _SNAPSHOT_LINGER_SECONDS = 60.0
 _SILENCE_WATCHDOG_SECONDS = 45.0
 # WS 建连超时（秒）
 _OPEN_TIMEOUT_SECONDS = 20.0
+
+# 进程内存活 Runtime 检测（tripwire，弱引用不阻止回收）：上游免费版限 1 连接
+# 且超额关旧，同进程第二个存活实例会互踢连接（重连死循环）——单例由部署
+# 构造保证（single 模式 → 一 app → 一 registry → 一 adapter → 一 Runtime），
+# 此处只做启动期告警，不强制、不共享状态
+_LIVE_RUNTIMES: "weakref.WeakSet[TwelvedataWsRuntime]" = weakref.WeakSet()
 
 
 def _scrub(text: str, api_key: str) -> str:
@@ -91,9 +98,23 @@ class TwelvedataWsRuntime:
         调用方（适配器）控制，建连失败按固定退避无限重试。
 
         ``websockets`` 未安装在此急切失败（PROVIDER_NOT_IMPLEMENTED），
-        调用方（适配器）无需等首包超时。
+        调用方（适配器）无需等首包超时。检测到同进程另有存活 Runtime 时
+        告警（上游 1 连接限制下多实例互踢，见 ``_LIVE_RUNTIMES`` 注释）。
         """
         self._import_websockets()
+        others = [
+            rt
+            for rt in _LIVE_RUNTIMES
+            if rt is not self and rt._task is not None and not rt._task.done()
+        ]
+        if others:
+            logger.warning(
+                "twelvedata ws runtime: %d other live runtime(s) in this process; "
+                "upstream free plan allows a single WS connection — concurrent "
+                "runtimes will keep closing each other's connections",
+                len(others),
+            )
+        _LIVE_RUNTIMES.add(self)
         if self._task is None or self._task.done():
             self._stopping = False
             self._task = asyncio.create_task(self._run(), name="twelvedata-ws-runtime")

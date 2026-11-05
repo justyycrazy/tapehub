@@ -14,6 +14,7 @@
 """
 
 import asyncio
+import logging
 import sys
 from datetime import datetime
 from typing import Any
@@ -251,6 +252,34 @@ def test_runtime_missing_websockets(monkeypatch: pytest.MonkeyPatch) -> None:
     with pytest.raises(ProviderNotImplementedError) as excinfo:
         asyncio.run(scenario())
     assert "websockets" in str(excinfo.value)
+
+
+def test_second_live_runtime_warns(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """tripwire：同进程第二个存活 Runtime 启动即告警（上游 1 连接互踢）；
+    已停机/已消亡的实例不计入，同一实例幂等重启不误报。"""
+    install(monkeypatch)
+    caplog.set_level(logging.WARNING, logger="tapehub.providers.twelvedata.runtime")
+
+    async def scenario() -> None:
+        first = td_runtime.TwelvedataWsRuntime(api_key="k", subscription_limit=8)
+        await first.start()  # 首个实例：不应告警
+        await first.start()  # 幂等重启（同一实例）：不应告警
+        second = td_runtime.TwelvedataWsRuntime(api_key="k", subscription_limit=8)
+        await second.start()  # 第二个存活实例：应告警
+        await second.shutdown()
+        await first.shutdown()  # 全部停机后不再有存活实例
+        third = td_runtime.TwelvedataWsRuntime(api_key="k", subscription_limit=8)
+        await third.start()  # 已停实例不计入：不应再告警
+        await third.shutdown()
+
+    asyncio.run(scenario())
+    warnings = [
+        record for record in caplog.records if "other live runtime" in record.message
+    ]
+    assert len(warnings) == 1  # 恰好只在 second.start() 时告警一次
+    assert "single WS connection" in warnings[0].message
 
 
 # ---------------------------------------------------------------------------
