@@ -23,6 +23,8 @@ class ErrorCode(str, Enum):
     UPSTREAM_ERROR = "UPSTREAM_ERROR"
     # 实时快照首包未就绪（订阅已建立，上游数据未到）
     QUOTE_NOT_READY = "QUOTE_NOT_READY"
+    # 行情流客户端数达到上限（服务容量闸门）
+    STREAM_LIMIT_REACHED = "STREAM_LIMIT_REACHED"
     # 以下为框架补充错误码（非业务链路产生）
     NOT_FOUND = "NOT_FOUND"
     METHOD_NOT_ALLOWED = "METHOD_NOT_ALLOWED"
@@ -104,6 +106,17 @@ class QuoteNotReadyError(TapehubError):
 
     code = ErrorCode.QUOTE_NOT_READY
     default_message = "Quote snapshot is not ready yet."
+
+
+class StreamLimitReachedError(TapehubError):
+    """行情流客户端上限：并发 SSE 连接数已达服务配置上限。
+
+    属服务容量闸门（与 CONCURRENCY_LIMIT 同为可重试限流），稍后重试或
+    先断开空闲连接。
+    """
+
+    code = ErrorCode.STREAM_LIMIT_REACHED
+    default_message = "Streaming client limit reached, retry later."
 
 
 class ManifestError(TapehubError):

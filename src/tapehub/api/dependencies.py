@@ -5,6 +5,7 @@ from fastapi import Request
 from tapehub.application.bar_query_service import BarQueryService
 from tapehub.application.capability_service import CapabilityService
 from tapehub.application.quote_query_service import QuoteQueryService
+from tapehub.application.quote_stream_service import QuoteStreamService
 from tapehub.providers.registry import ProviderRegistry
 from tapehub.settings import Settings
 
@@ -27,6 +28,10 @@ def get_bar_query_service(request: Request) -> BarQueryService:
 
 def get_quote_query_service(request: Request) -> QuoteQueryService:
     return request.app.state.quote_query_service
+
+
+def get_quote_stream_service(request: Request) -> QuoteStreamService:
+    return request.app.state.quote_stream_service
 
 
 def get_request_id(request: Request) -> str:

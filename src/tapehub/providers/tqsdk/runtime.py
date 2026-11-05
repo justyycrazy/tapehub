@@ -34,6 +34,19 @@
 - ``unsubscribe(symbol)`` 引用计数 -1；最后一个订阅者退订时停止本地
   维护并丢弃快照，Quote 引用转入「休眠」（上游订阅仍在，等待代际回收）。
 
+实时快照流监听器（M3，SSE 数据出口）：
+
+- ``add_stream_listener(symbol, callback)`` 注册流监听器，返回注销句柄；
+  callback 在 Runtime 线程被调用，收到 ``(kind, symbol, snapshot)``：
+  ``subscribed``（首包到达/休眠唤醒/代际重订完成，携带快照拷贝）、
+  ``quote``（is_changing 增量，与快照缓存同源的拷贝）、
+  ``upstream_disconnected``（wait_update 异常/停机）、``recycling``
+  （代际重建，重订后自动恢复 subscribed）；
+- 通知只传线程内已拷贝的纯 dict，回调异常只记录、绝不阻塞 tick；
+- 监听器注册表跨代保留：回收后仍被引用的订阅在新一代自动重订，
+  重订首包到达即恢复推送——SSE 客户端经 ``recycling`` → ``subscribed``
+  事件感知整个窗口，绝不静默断流。
+
 健壮性：并发闸门（在飞 ≤ 上限，超限立即 ``ConcurrencyLimitError``）；
 watchdog（连续 wait_update 异常触发新一代重建）；构造失败为致命
 （凭据类错误重建无意义），Runtime 进入 fatal 并拒绝后续请求。
@@ -47,6 +60,7 @@ import logging
 import queue
 import threading
 import time
+from collections.abc import Callable
 from datetime import datetime, timedelta
 from enum import StrEnum
 from typing import Any
@@ -83,6 +97,11 @@ class RuntimeStatus(StrEnum):
 
 class _StopSignal:
     """停止哨兵：入队后 Runtime 线程在当前 tick 结束时退出。"""
+
+
+# 流监听器回调签名：(kind, symbol, snapshot)；snapshot 为线程内拷贝的纯 dict
+# （subscribed / quote 携带；upstream_disconnected / recycling 为 None）
+StreamListener = Callable[[str, str, "dict[str, Any] | None"], None]
 
 
 class _Subscribe:
@@ -136,6 +155,9 @@ class TqSdkRuntime:
         self._dormant_quotes: dict[str, Any] = {}
         # symbol → 最新快照（Runtime 线程内 dict(quote) 拷贝后发布，外部只读）
         self._snapshots: dict[str, dict[str, Any]] = {}
+        # —— 实时快照流监听器（M3）——
+        # symbol → 监听器集合（外部线程增删；通知发生在 Runtime 线程）
+        self._stream_listeners: dict[str, set[StreamListener]] = {}
 
     # ------------------------------------------------------------------
     # 对外接口（线程安全）
@@ -260,6 +282,39 @@ class TqSdkRuntime:
         with self._lock:
             return self._snapshots.get(symbol)
 
+    def add_stream_listener(self, symbol: str, callback: StreamListener) -> Callable[[], None]:
+        """注册实时快照流监听器（SSE 数据出口），返回注销句柄。
+
+        callback 通常在 Runtime 线程被调用（见模块 docstring 的事件契约）；
+        适配器侧负责经 ``loop.call_soon_threadsafe`` 桥接回自己的事件循环。
+        监听器不持有订阅引用：与 ``subscribe``/``unsubscribe`` 配对使用，
+        注册表跨代际保留（回收后自动重订恢复推送）。
+
+        注册时若该标的已有可用快照（订阅早已建立、首包已过——如先经
+        快照接口查询再开流），立即在调用方线程回调 ``subscribed`` + 当前
+        快照拷贝，保证流的首事件总是订阅确认，不静默等待。
+        """
+        with self._lock:
+            self._stream_listeners.setdefault(symbol, set()).add(callback)
+            snapshot = self._snapshots.get(symbol)
+            if snapshot is not None:
+                snapshot = dict(snapshot)
+
+        def _remove() -> None:
+            with self._lock:
+                listeners = self._stream_listeners.get(symbol)
+                if listeners is not None:
+                    listeners.discard(callback)
+                    if not listeners:
+                        self._stream_listeners.pop(symbol, None)
+
+        if snapshot is not None:
+            try:
+                callback("subscribed", symbol, snapshot)
+            except Exception as exc:  # noqa: BLE001 - 监听器故障不伤实例
+                logger.warning("tqsdk stream listener failed for %s: %r", symbol, exc)
+        return _remove
+
     def shutdown(self, timeout: float = 10.0) -> None:
         """停机：置停止标志并唤醒 tick，等待线程完成 close 与退出。"""
         self._request_stop()
@@ -275,6 +330,30 @@ class TqSdkRuntime:
         with self._lock:
             self._stop_requested = True
         self._jobs.put(_StopSignal())
+
+    def _notify_stream(self, symbol: str, kind: str, snapshot: dict[str, Any] | None) -> None:
+        """通知单标的的流监听器（Runtime 线程内；回调异常只记录不阻塞 tick）。"""
+        with self._lock:
+            callbacks = list(self._stream_listeners.get(symbol, ()))
+        for callback in callbacks:
+            try:
+                callback(kind, symbol, snapshot)
+            except Exception as exc:  # noqa: BLE001 - 监听器故障不伤实例
+                logger.warning("tqsdk stream listener failed for %s: %r", symbol, exc)
+
+    def _notify_all_streams(self, kind: str) -> None:
+        """通知全部流监听器（代际重建/上游断连/停机等实例级事件）。"""
+        with self._lock:
+            items = [
+                (symbol, callback)
+                for symbol, listeners in self._stream_listeners.items()
+                for callback in listeners
+            ]
+        for symbol, callback in items:
+            try:
+                callback(kind, symbol, None)
+            except Exception as exc:  # noqa: BLE001 - 监听器故障不伤实例
+                logger.warning("tqsdk stream listener failed for %s: %r", symbol, exc)
 
     def _thread_main(self) -> None:
         try:
@@ -332,7 +411,8 @@ class TqSdkRuntime:
             next_recycle = self._next_recycle_ts()
             try:
                 self._tick_loop(api, next_recycle)
-                # 正常停机路径
+                # 正常停机路径：流监听器以明确事件终结（绝不静默断流）
+                self._notify_all_streams("upstream_disconnected")
                 self._fail_inflight("tqsdk runtime stopped")
                 self._close_api(api)
                 asyncio.set_event_loop(None)
@@ -343,6 +423,8 @@ class TqSdkRuntime:
                 reset_reason = f"unexpected tick-loop error: {exc!r}"
                 with self._lock:
                     self._last_error = exc
+            # 新一代重建：通知流监听器（仍被引用的订阅将自动重订并恢复推送）
+            self._notify_all_streams("recycling")
             # 新一代重建：失败在飞 → close（失败不阻断重建）→ 退避后重建
             self._fail_inflight(f"tqsdk runtime recycling: {reset_reason}")
             self._close_api(api)
@@ -405,6 +487,9 @@ class TqSdkRuntime:
                 with self._lock:
                     wait_exc_streak += 1
                     self._last_error = exc
+                # 单次 wait_update 异常即通知流客户端（可能自愈；连续异常由
+                # watchdog 重建并发 recycling 事件）
+                self._notify_all_streams("upstream_disconnected")
                 if wait_exc_streak >= _WATCHDOG_STREAK_LIMIT:
                     logger.warning(
                         "tqsdk runtime watchdog: %d consecutive wait_update failures, rebuilding",
@@ -433,16 +518,21 @@ class TqSdkRuntime:
                 return  # 重复命令去重
             quote = self._dormant_quotes.pop(symbol, None)
             refs = self._sub_refs.get(symbol, 0)
+            wakeup: dict[str, Any] | None = None
             if quote is not None:
                 if refs > 0:
                     # 休眠唤醒：复用本代既有 Quote 引用，线程内拷贝发布当前值
                     # （dict 拷贝在 Runtime 线程完成，此时 quote 不会被并发修改）
                     self._live_quotes[symbol] = quote
                     self._snapshots[symbol] = dict(quote)
+                    wakeup = dict(self._snapshots[symbol])
                 else:
                     # 命令到达前引用已归零：放回休眠，等待回收
                     self._dormant_quotes[symbol] = quote
-                return
+        if wakeup is not None:
+            self._notify_stream(symbol, "subscribed", wakeup)
+        if quote is not None:
+            return  # 唤醒（或放回休眠）路径结束，不再重复发起订阅
         if refs <= 0:
             return  # 首包未到即已退订（竞态）：丢弃命令
         api.create_task(self._subscribe_coro(api, symbol))
@@ -465,11 +555,15 @@ class TqSdkRuntime:
             return
         with self._lock:
             if self._sub_refs.get(symbol, 0) > 0:
+                snapshot = dict(quote)
                 self._live_quotes[symbol] = quote
-                self._snapshots[symbol] = dict(quote)
+                self._snapshots[symbol] = snapshot
             else:
                 # 首包到达前引用已归零：转休眠（供后续快速唤醒）
                 self._dormant_quotes[symbol] = quote
+                snapshot = None
+        if snapshot is not None:
+            self._notify_stream(symbol, "subscribed", snapshot)
 
     def _publish_changed_snapshots(self, api: Any) -> None:
         """tick 内刷新发生变化的订阅快照（is_changing 判定，线程内拷贝发布）。"""
@@ -488,6 +582,9 @@ class TqSdkRuntime:
                 for symbol, snapshot in changed.items():
                     if symbol in self._live_quotes:
                         self._snapshots[symbol] = snapshot
+            # 流监听器发布（与快照缓存同源的拷贝；回调不持锁执行）
+            for symbol, snapshot in changed.items():
+                self._notify_stream(symbol, "quote", snapshot)
 
     def _on_generation_ready(self) -> None:
         """新一代就绪：清空上一代订阅态，为仍被引用的标的重建订阅。"""

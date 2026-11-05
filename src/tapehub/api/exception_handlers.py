@@ -33,6 +33,8 @@ _STATUS_BY_CODE: dict[ErrorCode, int] = {
     ErrorCode.UPSTREAM_ERROR: 502,
     # 快照首包等待超时（订阅已建立、上游未推送）：语义为“请稍后重试”
     ErrorCode.QUOTE_NOT_READY: 408,
+    # 行情流客户端上限（服务容量闸门）：与 CONCURRENCY_LIMIT 同为可重试限流
+    ErrorCode.STREAM_LIMIT_REACHED: 429,
     ErrorCode.NOT_FOUND: 404,
     ErrorCode.METHOD_NOT_ALLOWED: 405,
     ErrorCode.INTERNAL_ERROR: 500,

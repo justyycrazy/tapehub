@@ -31,6 +31,15 @@ class Settings(BaseSettings):
     # 上游推送仍在消耗带宽；休眠订阅累计到该值触发新一代重建清理
     # （仍被引用的订阅自动重订）
     tqsdk_subscription_limit: int = Field(default=64, ge=1)
+    # —— 实时快照流（SSE，M3）——
+    # 并发流客户端上限（超出 STREAM_LIMIT_REACHED 429）
+    stream_max_clients: int = Field(default=8, ge=1)
+    # 每客户端事件队列长度：队列满丢旧保新（行情「最新」比「完整」有价值）
+    stream_queue_size: int = Field(default=64, ge=1)
+    # 空闲心跳间隔（秒）：无事件时按该周期发送保活帧
+    stream_heartbeat_seconds: float = Field(default=15.0, gt=0)
+    # 流空闲超时（秒）：该窗口内无行情事件（心跳不算）则本地退订并结束流
+    stream_idle_timeout_seconds: float = Field(default=300.0, gt=0)
     version: str = "0.1.0"
     api_version: str = "v1"
     catalog_version: str = "1"

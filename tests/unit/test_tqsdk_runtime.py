@@ -1,22 +1,17 @@
 """TqSdkRuntime 单元测试（离线：注入假 SDK 模块，零网络零凭据）。
 
-假 SDK 模拟 tqsdk 的同步驱动模型（Runtime 线程 tick 驱动）：
-
-- ``create_task`` 把协程挂到私有循环；
-- ``get_kline_serial`` 返回可 await 的序列对象（任务推进若干 tick 后完成）；
-- ``get_quote`` 返回可 await 的 dict-like Quote（推进若干 tick 收到首包；
-  循环未运行时同步驱动至首包，模拟真实 SDK 的阻塞语义）；
-- ``wait_update(deadline)`` 推进私有循环一小段，按脚本推进行情首包/增量
-  （``_changed_ids`` 供 ``is_changing`` 判定），可注入连续故障（watchdog）。
+假 SDK（``tests/fixtures/providers/fake_tqsdk_runtime``）模拟 tqsdk 的同步
+驱动模型（Runtime 线程 tick 驱动），脚本旋钮与语义见该模块 docstring。
 
 覆盖：生命周期与并发取数、并发闸门、watchdog 新一代重建、跨交易日回收、
 致命构造失败、停机时在飞请求显式失败（不挂起调用方）；
 实时快照订阅：首包发布、is_changing 增量刷新、引用计数与退订、
-休眠唤醒复用（不重复 get_quote）、休眠订阅回收阈值重建与活跃重订。
+休眠唤醒复用（不重复 get_quote）、休眠订阅回收阈值重建与活跃重订；
+实时快照流监听器（M3）：subscribed/quote 事件、代际回收 recycling 与
+重订恢复、适配器 stream_quote 链路与 coalesce。
 """
 
 import asyncio
-import sys
 import time
 import types
 
@@ -24,204 +19,13 @@ import pytest
 
 from tapehub.domain.errors import ConcurrencyLimitError, QuoteNotReadyError, UpstreamError
 from tapehub.providers.tqsdk.runtime import RuntimeStatus, TqSdkRuntime
-
-# 取数协程推进所需时长（秒）；闸门/停机测试通过调大它制造慢请求
-FETCH_DELAY = 0.0
-TICKS_PER_FETCH = 2
-
-
-def _quote_fields(last_price: float) -> dict[str, object]:
-    """首包快照字段（取自 P5 探针 20261104T012958Z 的 au2612 实测样本）。"""
-    return {
-        "datetime": "2026-11-04 10:14:46.500000",
-        "last_price": last_price,
-        "ask_price1": 848.3, "ask_volume1": 2,
-        "bid_price1": 848.26, "bid_volume1": 2,
-        "ask_price2": 848.36, "ask_volume2": 8,
-        "bid_price2": 848.24, "bid_volume2": 12,
-        "ask_price3": 848.42, "ask_volume3": 4,
-        "bid_price3": 848.22, "bid_volume3": 1,
-        "ask_price4": 848.58, "ask_volume4": 4,
-        "bid_price4": 848.18, "bid_volume4": 1,
-        "ask_price5": 848.6, "ask_volume5": 3,
-        "bid_price5": 848.16, "bid_volume5": 1,
-        "highest": 853.64, "lowest": 843.14, "open": 846.0,
-        "close": float("nan"), "average": 848.47,
-        "volume": 200250, "amount": 169906871060.0,
-        "open_interest": 160306, "pre_open_interest": 160467,
-        "settlement": float("nan"), "upper_limit": 964.56, "lower_limit": 727.66,
-        "pre_settlement": 846.12, "pre_close": 841.8,
-    }
-
-
-class FakeQuote(dict):
-    """dict-like Quote：datetime 非空即首包已到；可 await（协程用法）。"""
-
-    def __await__(self):  # type: ignore[no-untyped-def]
-        async def _go():  # type: ignore[no-untyped-def]
-            while self.get("datetime", "") == "":
-                await asyncio.sleep(0.005)
-            return self
-
-        return _go().__await__()
-
-
-class FakeFrame:
-    def __init__(self, rows: list[dict[str, object]]) -> None:
-        self._rows = rows
-
-    def to_dict(self, kind: str) -> list[dict[str, object]]:
-        return list(self._rows)
-
-
-class FakeSerial:
-    """可 await 序列：推进 ticks 次（每次需 wait_update 驱动）后返回 frame。"""
-
-    def __init__(self, rows: list[dict[str, object]], ticks: int) -> None:
-        self._rows = rows
-        self._ticks = ticks
-
-    def __await__(self):  # type: ignore[no-untyped-def]
-        async def _go():  # type: ignore[no-untyped-def]
-            for _ in range(self._ticks):
-                await asyncio.sleep(FETCH_DELAY / max(1, self._ticks))
-            return FakeFrame(self._rows)
-
-        return _go().__await__()
-
-
-class FakeTqApi:
-    instances: list["FakeTqApi"] = []
-    fail_construct = False
-    fail_wait_update_times = 0
-    rows_per_call = 3
-    # quote 语义脚本：首包在第 N 次 wait_update 到达；其后每 N 次推送一次增量
-    quote_first_packet_ticks = 2
-    quote_update_every_ticks = 0
-
-    def __init__(
-        self, auth: object = None, disable_print: bool = False, loop: object = None, **kw: object
-    ) -> None:
-        if FakeTqApi.fail_construct:
-            raise RuntimeError("auth failed")
-        self.auth = auth
-        self._loop = (
-            loop if isinstance(loop, asyncio.AbstractEventLoop) else asyncio.new_event_loop()
-        )
-        self._tasks: list[asyncio.Task] = []
-        self.closed = False
-        self._tick_count = 0
-        self._quotes: dict[str, FakeQuote] = {}
-        self._quote_first_due: dict[str, int] = {}
-        self._changed_ids: set[int] = set()
-        self.get_quote_calls: list[str] = []
-        FakeTqApi.instances.append(self)
-
-    def create_task(self, coro):  # type: ignore[no-untyped-def]
-        task = self._loop.create_task(coro)
-        self._tasks.append(task)
-        return task
-
-    def get_kline_serial(self, **kwargs: object) -> FakeSerial:
-        # datetime 为 ns 时间戳（2026-01-02 00:00 +08:00 起，逐根 +1 日）
-        base_ns = 1767254400000000000
-        day_ns = 86400 * 1_000_000_000
-        rows = [
-            {
-                "id": i,
-                "symbol": kwargs.get("symbol"),
-                "datetime": base_ns + i * day_ns,
-                "open": 1.0,
-                "high": 1.0,
-                "low": 1.0,
-                "close": 1.0,
-                "volume": 100.0,
-            }
-            for i in range(FakeTqApi.rows_per_call)
-        ]
-        return FakeSerial(rows, ticks=TICKS_PER_FETCH)
-
-    def get_quote(self, symbol: str) -> FakeQuote:
-        """订阅并返回 Quote；循环未运行（同步路径）时驱动至首包（真实 SDK 语义）。"""
-        self.get_quote_calls.append(symbol)
-        if symbol not in self._quotes:
-            quote = FakeQuote({"datetime": "", "last_price": float("nan")})
-            self._quotes[symbol] = quote
-            self._quote_first_due[symbol] = max(1, FakeTqApi.quote_first_packet_ticks)
-        if not self._loop.is_running():
-            guard = 0
-            while self._quotes[symbol].get("datetime", "") == "":
-                self.wait_update()
-                guard += 1
-                if guard > 1000:  # 防御：脚本配置异常时避免死循环
-                    raise RuntimeError("fake get_quote never received first packet")
-        return self._quotes[symbol]
-
-    def is_changing(self, obj: object) -> bool:
-        return id(obj) in self._changed_ids
-
-    def wait_update(self, deadline: float | None = None) -> bool:
-        if FakeTqApi.fail_wait_update_times > 0:
-            FakeTqApi.fail_wait_update_times -= 1
-            raise RuntimeError("connection broken")
-        self._changed_ids = set()
-        self._tick_count += 1
-        for symbol, quote in self._quotes.items():
-            if quote.get("datetime", "") == "":
-                due = self._quote_first_due.get(symbol, 0) - 1
-                self._quote_first_due[symbol] = due
-                if due <= 0:
-                    quote.update(_quote_fields(848.24))
-                    self._changed_ids.add(id(quote))
-            elif (
-                FakeTqApi.quote_update_every_ticks > 0
-                and self._tick_count % FakeTqApi.quote_update_every_ticks == 0
-            ):
-                quote["last_price"] = float(quote.get("last_price", 0.0)) + 1.0
-                self._changed_ids.add(id(quote))
-        pending = [t for t in self._tasks if not t.done()]
-        if pending:
-            self._loop.run_until_complete(asyncio.wait(pending, timeout=0.05))
-        else:
-            time.sleep(0.005)
-        return True
-
-    def close(self) -> None:
-        if self.closed:
-            return
-        self.closed = True
-        for task in self._tasks:
-            task.cancel()
-        try:
-            if self._tasks:  # 空 gather 在无当前循环的线程里会取事件循环，需规避
-                self._loop.run_until_complete(
-                    asyncio.gather(*self._tasks, return_exceptions=True)
-                )
-        finally:
-            self._loop.close()
+from tests.fixtures.providers import fake_tqsdk_runtime as fake_rt
+from tests.fixtures.providers.fake_tqsdk_runtime import FakeTqApi
 
 
 @pytest.fixture()
 def fake_tqsdk(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
-    module = types.ModuleType("tqsdk")
-
-    class FakeTqAuth:
-        def __init__(self, user_name: str = "", password: str = "") -> None:
-            self.user_name = user_name
-            self.password = password
-
-    module.TqApi = FakeTqApi  # type: ignore[attr-defined]
-    module.TqAuth = FakeTqAuth  # type: ignore[attr-defined]
-    monkeypatch.setitem(sys.modules, "tqsdk", module)
-    FakeTqApi.instances = []
-    FakeTqApi.fail_construct = False
-    FakeTqApi.fail_wait_update_times = 0
-    FakeTqApi.quote_first_packet_ticks = 2
-    FakeTqApi.quote_update_every_ticks = 0
-    global FETCH_DELAY, TICKS_PER_FETCH
-    FETCH_DELAY = 0.0
-    TICKS_PER_FETCH = 2
-    return module
+    return fake_rt.install(monkeypatch)
 
 
 def _make_runtime(**overrides: object) -> TqSdkRuntime:
@@ -261,8 +65,7 @@ async def _gather_and_check(runtime: TqSdkRuntime) -> None:
 
 
 def test_inflight_gate_rejects_beyond_limit(fake_tqsdk: types.ModuleType) -> None:
-    global FETCH_DELAY
-    FETCH_DELAY = 0.5  # 制造慢请求，拉宽闸门窗口
+    fake_rt.FETCH_DELAY = 0.5  # 制造慢请求，拉宽闸门窗口
     runtime = _make_runtime(max_inflight=2)
     runtime.start()
 
@@ -347,8 +150,7 @@ def test_fatal_construct_rejects_and_fails_jobs(fake_tqsdk: types.ModuleType) ->
 
 
 def test_shutdown_fails_pending_fetches(fake_tqsdk: types.ModuleType) -> None:
-    global FETCH_DELAY
-    FETCH_DELAY = 5.0  # 派发一笔必然来不及完成的慢请求
+    fake_rt.FETCH_DELAY = 5.0  # 派发一笔必然来不及完成的慢请求
     runtime = _make_runtime()
     runtime.start()
     cf = runtime.fetch({"symbol": "SLOW", "duration_seconds": 60, "data_length": 1})
@@ -639,3 +441,158 @@ def test_adapter_runtime_status_per_request_is_none(fake_tqsdk: types.ModuleType
     """per_request 模式无常驻长连接：runtime_status 为 None（目录回退 unknown）。"""
     adapter = _quote_adapter(tqsdk_conn_mode="per_request")
     assert adapter.runtime_status is None
+
+
+# ---------------------------------------------------------------------------
+# 实时快照流监听器（M3）
+# ---------------------------------------------------------------------------
+
+
+def _wait_events(
+    received: list[tuple[str, str, dict | None]], kinds: tuple[str, ...], timeout: float = 8.0
+) -> None:
+    """轮询等待指定种类的事件**按次数**到达（允许穿插其他事件）。"""
+    from collections import Counter
+
+    want = Counter(kinds)
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        got = Counter(kind for kind, _sym, _snap in received)
+        if all(got[kind] >= count for kind, count in want.items()):
+            return
+        time.sleep(0.02)
+    got = Counter(kind for kind, _sym, _snap in received)
+    raise AssertionError(f"expected events {dict(want)}, got {dict(got)}")
+
+
+def test_stream_listener_subscribed_and_quote_events(fake_tqsdk: types.ModuleType) -> None:
+    FakeTqApi.quote_update_every_ticks = 3  # 每 3 tick 推一次增量
+    runtime = _make_runtime()
+    runtime.start()
+    received: list[tuple[str, str, dict | None]] = []
+    remove = runtime.add_stream_listener(
+        "SHFE.au2612", lambda kind, sym, snap: received.append((kind, sym, snap))
+    )
+    runtime.subscribe("SHFE.au2612")
+
+    _wait_events(received, ("subscribed", "quote"))
+    subscribed = next(item for item in received if item[0] == "subscribed")
+    assert subscribed[2] is not None and subscribed[2]["last_price"] == 848.24
+    # 增量最终到达（首包 tick 会同时触发一帧同值 quote，取最新即可）
+    deadline = time.time() + 8
+    latest = subscribed[2]
+    while latest["last_price"] == 848.24 and time.time() < deadline:
+        time.sleep(0.02)
+        quotes = [snap for kind, _s, snap in received if kind == "quote" and snap]
+        latest = quotes[-1]
+    assert latest["last_price"] > 848.24
+
+    remove()
+    runtime.shutdown()
+
+
+def test_stream_listener_recycle_emits_events_and_resubscribes(
+    fake_tqsdk: types.ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """代际回收：recycling 事件 → 新一代自动重订 → subscribed 恢复。"""
+    runtime = _make_runtime()
+    monkeypatch.setattr(runtime, "_next_recycle_ts", lambda: time.time() + 0.3)
+    runtime.start()
+    received: list[tuple[str, str, dict | None]] = []
+    runtime.add_stream_listener(
+        "SHFE.au2612", lambda kind, sym, snap: received.append((kind, sym, snap))
+    )
+    runtime.subscribe("SHFE.au2612")
+    _wait_events(received, ("subscribed",))
+
+    _wait_events(received, ("recycling", "subscribed", "subscribed"), timeout=10)
+    assert runtime.generation >= 2
+    runtime.shutdown()
+
+
+def test_stream_listener_upstream_disconnected_on_wait_failure(
+    fake_tqsdk: types.ModuleType,
+) -> None:
+    runtime = _make_runtime()
+    runtime.start()
+    received: list[tuple[str, str, dict | None]] = []
+    runtime.add_stream_listener(
+        "SHFE.au2612", lambda kind, sym, snap: received.append((kind, sym, snap))
+    )
+    runtime.subscribe("SHFE.au2612")
+    _wait_events(received, ("subscribed",))
+    FakeTqApi.fail_wait_update_times = 1  # 首包后注入单次异常（不触发 watchdog）
+    _wait_events(received, ("upstream_disconnected",))
+    runtime.shutdown()
+
+
+def test_stream_listener_notified_on_shutdown(fake_tqsdk: types.ModuleType) -> None:
+    runtime = _make_runtime()
+    runtime.start()
+    received: list[tuple[str, str, dict | None]] = []
+    runtime.add_stream_listener(
+        "SHFE.au2612", lambda kind, sym, snap: received.append((kind, sym, snap))
+    )
+    runtime.subscribe("SHFE.au2612")
+    _wait_events(received, ("subscribed",))
+    runtime.shutdown()
+    _wait_events(received, ("upstream_disconnected",))
+
+
+def test_adapter_stream_quote_chain(fake_tqsdk: types.ModuleType) -> None:
+    """适配器流链路：subscribed 首事件 → quote 帧；关闭即退订。"""
+    FakeTqApi.quote_update_every_ticks = 2
+    adapter = _quote_adapter()
+
+    async def scenario() -> list:
+        agen = adapter.stream_quote(_quote_query())
+        events = []
+        for _ in range(5):
+            events.append(await asyncio.wait_for(agen.__anext__(), 5))
+        await agen.aclose()
+        return events
+
+    events = asyncio.run(scenario())
+    assert events[0].status is not None and events[0].status.value == "subscribed"
+    assert events[1].quote is not None and events[1].quote.last_price == 848.24
+    assert events[1].quote.timestamp.isoformat().endswith("+08:00")
+    # 后续 quote 帧持续推进（首包 tick 会紧跟一帧同值 quote，取到增量即通过）
+    prices = [event.quote.last_price for event in events if event.quote is not None]
+    assert any(price > 848.24 for price in prices)
+
+    runtime = adapter._runtime  # type: ignore[attr-defined]
+    assert "SHFE.au2612" not in runtime._sub_refs  # 关闭即退订（引用归零）
+    adapter.shutdown_runtime()
+
+
+def test_adapter_stream_quote_coalesce_keeps_latest(fake_tqsdk: types.ModuleType) -> None:
+    """有界队列丢旧保新：慢消费者拿到的应是最新价（跳过中间帧）。"""
+    FakeTqApi.quote_update_every_ticks = 1  # 每 tick 推增量（tick≈50ms）
+    adapter = _quote_adapter(stream_queue_size=1)
+
+    async def scenario() -> tuple:
+        agen = adapter.stream_quote(_quote_query())
+        first_status = await asyncio.wait_for(agen.__anext__(), 5)
+        first_quote = await asyncio.wait_for(agen.__anext__(), 5)
+        await asyncio.sleep(0.8)  # 慢消费期间增量大量入队，队列只留最新
+        latest_quote = await asyncio.wait_for(agen.__anext__(), 5)
+        await agen.aclose()
+        return first_status, first_quote, latest_quote
+
+    first_status, first_quote, latest_quote = asyncio.run(scenario())
+    assert first_status.status is not None
+    assert first_quote.quote is not None
+    assert latest_quote.quote is not None
+    # 0.8s 内增量多次入队又被丢旧：coalesce 后消费者直接看到跳增的价
+    assert latest_quote.quote.last_price - first_quote.quote.last_price >= 2
+    adapter.shutdown_runtime()
+
+
+def test_adapter_stream_quote_requires_shared_mode(fake_tqsdk: types.ModuleType) -> None:
+    from tapehub.domain.errors import UnsupportedCapabilityError
+
+    adapter = _quote_adapter(tqsdk_conn_mode="per_request")
+    # 受理校验在调用时急切执行（响应头发出前统一 JSON 错误）
+    with pytest.raises(UnsupportedCapabilityError):
+        adapter.stream_quote(_quote_query())
+    adapter.shutdown_runtime()

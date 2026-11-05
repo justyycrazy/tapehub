@@ -79,6 +79,13 @@ Provider 适配器实现 Domain Port。
   显式空/null，路由跳过对应维度；首包超时 `QUOTE_NOT_READY`（HTTP 408）；
   tqsdk 不支持取消订阅——Runtime 退订只停本地维护，休眠订阅累计到
   `TAPEHUB_TQSDK_SUBSCRIPTION_LIMIT` 触发新一代重建清理（活跃订阅自动重订）。
+- 实时快照流（`GET /v1/market/quotes/stream`，M3，SSE `text/event-stream`）：
+  事件三类 `quote`/`status`（subscribed / upstream_disconnected / recycling /
+  idle_unsubscribed）/`heartbeat`；断线与代际回收必须发明确 status 事件，
+  **绝不静默断流**；coalesce 丢旧保新**只约束 quote 帧**（status 生命周期
+  帧不丢）；心跳/空闲退订/客户端容量闸门（`STREAM_LIMIT_REACHED` 429）在
+  Application 层流服务（`QuoteStreamService`，Provider 无关）；仅 `shared`
+  连接模式支持；流关闭即本地退订（上游订阅保留至回收，同 M2 口径）。
 
 ## 安全与诚实边界
 

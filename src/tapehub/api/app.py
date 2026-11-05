@@ -13,6 +13,7 @@ from tapehub.application.bar_query_service import BarQueryService
 from tapehub.application.capability_service import CapabilityService
 from tapehub.application.provider_router import ProviderRouter
 from tapehub.application.quote_query_service import QuoteQueryService
+from tapehub.application.quote_stream_service import QuoteStreamService
 from tapehub.providers.registry import ProviderRegistry, build_default_registry
 from tapehub.settings import Settings
 
@@ -35,7 +36,9 @@ def create_app(
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         yield
-        # 停机：关闭持有长连接的适配器运行时（鸭子类型，不感知具体 Provider）
+        # 停机顺序：先终结行情流（释放订阅引用，客户端收到明确事件），
+        # 再关闭持有长连接的适配器运行时（鸭子类型，不感知具体 Provider）
+        await app.state.quote_stream_service.shutdown()
         for record in app.state.registry.list_records():
             shutdown = getattr(record.adapter, "shutdown_runtime", None)
             if shutdown is not None:
@@ -44,7 +47,7 @@ def create_app(
     app = FastAPI(
         title="tapehub",
         version=settings.version,
-        description="通用行情数据网关（历史 K 线查询；tqsdk 实时快照）",
+        description="通用行情数据网关（历史 K 线查询；tqsdk 实时快照与 SSE 流式）",
         lifespan=lifespan,
     )
     app.state.settings = settings
@@ -53,6 +56,12 @@ def create_app(
     router = ProviderRouter(registry)
     app.state.bar_query_service = BarQueryService(router)
     app.state.quote_query_service = QuoteQueryService(router)
+    app.state.quote_stream_service = QuoteStreamService(
+        router,
+        max_clients=settings.stream_max_clients,
+        heartbeat_seconds=settings.stream_heartbeat_seconds,
+        idle_timeout_seconds=settings.stream_idle_timeout_seconds,
+    )
 
     app.add_middleware(RequestContextMiddleware)
     register_exception_handlers(app)

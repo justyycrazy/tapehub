@@ -331,3 +331,38 @@ class QuoteQuery(BaseModel):
     # 数据源变体；未传递（None）表示不表达偏好，由所选 Provider 能力的
     # default_variant 具体化（见 application 路由），适配器收到的一律是具体值
     variant: DataVariant | None = None
+
+
+class StreamStatusKind(StrEnum):
+    """行情流状态事件（SSE ``event: status`` 的取值）。
+
+    断线与代际回收必须有明确事件，绝不静默断流：
+    """
+
+    # 订阅建立、上游首包到达（含代际回收后自动重订完成）
+    SUBSCRIBED = "subscribed"
+    # 上游连接异常（wait_update 失败；服务停机时同以此事件终结流）
+    UPSTREAM_DISCONNECTED = "upstream_disconnected"
+    # Runtime 新一代重建中（北京时间 04:00 跨交易日回收 / watchdog / 休眠
+    # 订阅回收阈值），活跃订阅将在新一代自动重订
+    RECYCLING = "recycling"
+    # 流空闲超时，服务端本地退订并结束流（上游订阅保留至回收，见 README）
+    IDLE_UNSUBSCRIBED = "idle_unsubscribed"
+
+
+class QuoteStreamEvent(BaseModel):
+    """行情流事件：``quote``（标准快照）、``status``（流状态）与 ``heartbeat``
+    （空闲保活帧）三选一。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    quote: Quote | None = None
+    status: StreamStatusKind | None = None
+    heartbeat: bool = False
+
+    @model_validator(mode="after")
+    def _exactly_one(self) -> "QuoteStreamEvent":
+        filled = sum(1 for item in (self.quote, self.status, self.heartbeat) if item)
+        if filled != 1:
+            raise ValueError("exactly one of quote / status / heartbeat must be set")
+        return self

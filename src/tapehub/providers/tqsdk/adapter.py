@@ -1,4 +1,4 @@
-"""TqSdk 适配器（已实现：历史 K 线 + 实时快照）。
+"""TqSdk 适配器（已实现：历史 K 线 + 实时快照 + 实时快照流）。
 
 约定：
 
@@ -14,10 +14,15 @@
     K 线请求提交为并发协程，取数在 Runtime 线程完成，不占线程池线程；
   两种模式下标准化与语义完全一致（见下）；
 - 实时快照（M2）：shared 模式经 Runtime 订阅（引用计数 + 首包等待），
-    订阅存活期间快照由 tick 循环持续保鲜，重复请求即时返回；M2 快照
-    请求不退订（快照是订阅状态而非一次性取数，退订由 SSE 流式与回收
-    阈值管理）。首包在 ``tqsdk_first_snapshot_timeout`` 内未到达则抛
-    ``QUOTE_NOT_READY``；per_request 模式退化为每请求独立订阅取快照；
+  订阅存活期间快照由 tick 循环持续保鲜，重复请求即时返回；M2 快照
+  请求不退订（快照是订阅状态而非一次性取数，退订由 SSE 流式与回收
+  阈值管理）。首包在 ``tqsdk_first_snapshot_timeout`` 内未到达则抛
+  ``QUOTE_NOT_READY``；per_request 模式退化为每请求独立订阅取快照；
+- 实时快照流（M3，``stream_quote``）：仅 shared 模式支持（流依赖长连接
+  订阅；per_request 返回 UNSUPPORTED_CAPABILITY）。Runtime 流监听器
+  事件经 ``loop.call_soon_threadsafe`` 桥接进本适配器的有界队列，队列满
+  丢旧保新（行情「最新」比「完整」有价值，见 README）；迭代器关闭时
+  释放订阅引用并注销监听器；
 - get_kline_serial 从“最新一根”往回取 data_length 根：当返回数量达到
   上限且最早一根仍晚于请求 start 时，无法覆盖请求窗口，标记 partial=true，
   API 层据此在 warnings 中提示可能截断；
@@ -27,11 +32,25 @@
 
 import asyncio
 import time
+from collections import deque
+from collections.abc import AsyncIterator
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
-from tapehub.domain.errors import ProviderNotImplementedError, QuoteNotReadyError
-from tapehub.domain.models import CN_TIMEZONE, BarBatch, BarQuery, Quote, QuoteQuery
+from tapehub.domain.errors import (
+    ProviderNotImplementedError,
+    QuoteNotReadyError,
+    UnsupportedCapabilityError,
+)
+from tapehub.domain.models import (
+    CN_TIMEZONE,
+    BarBatch,
+    BarQuery,
+    Quote,
+    QuoteQuery,
+    QuoteStreamEvent,
+    StreamStatusKind,
+)
 from tapehub.providers.base import BaseProviderAdapter, call_in_thread
 from tapehub.providers.pagination import paginate_bars
 from tapehub.providers.tqsdk.request_mapper import (
@@ -48,6 +67,43 @@ if TYPE_CHECKING:
 _DEFAULT_CONN_MODE = "per_request"
 # 快照首包等待的轮询间隔（秒）：M2 快照链路为轮询语义，SSE（M3）改为推送
 _SNAPSHOT_POLL_INTERVAL = 0.05
+# 流缓冲中 status 帧的防御性堆积上限（超出才丢最旧；正常运行每代际至多 2 个）
+_STATUS_BACKLOG_LIMIT = 64
+
+
+class _StreamBuffer:
+    """单客户端有界事件缓冲（仅事件循环线程读写，无锁）。
+
+    coalesce 丢旧保新只约束 ``quote`` 数据帧——行情「最新」比「完整」
+    有价值；``status`` 生命周期事件（订阅确认/回收/断连）稀有且关键，
+    **不触发丢弃也绝不被丢弃**：缓冲内 quote 数达到上限时，新 quote
+    挤掉最旧的 quote。status 仅在极端堆积（超过防御上限，正常运行
+    每代际至多 2 个）时丢最旧。
+    """
+
+    def __init__(self, maxsize: int) -> None:
+        self._maxsize = maxsize
+        self._items: deque[tuple[str, dict[str, Any] | None]] = deque()
+        self._signal = asyncio.Event()
+
+    def put(self, kind: str, snapshot: dict[str, Any] | None) -> None:
+        if kind == "quote":
+            quotes = sum(1 for item in self._items if item[0] == "quote")
+            if quotes >= self._maxsize:
+                for index, item in enumerate(self._items):
+                    if item[0] == "quote":
+                        del self._items[index]  # 挤掉最旧的 quote
+                        break
+        elif len(self._items) >= self._maxsize + _STATUS_BACKLOG_LIMIT:
+            self._items.popleft()  # 防御：status 异常堆积时丢最旧
+        self._items.append((kind, snapshot))
+        self._signal.set()
+
+    async def get(self) -> tuple[str, dict[str, Any] | None]:
+        while not self._items:
+            self._signal.clear()
+            await self._signal.wait()
+        return self._items.popleft()
 
 
 class ProviderAdapter(BaseProviderAdapter):
@@ -122,6 +178,61 @@ class ProviderAdapter(BaseProviderAdapter):
             return RuntimeStatus.IDLE.value
         return runtime.status.value
 
+    def stream_quote(self, query: QuoteQuery) -> AsyncIterator[QuoteStreamEvent]:
+        """实时快照流（M3）：Runtime 订阅 + 流监听器 → 有界队列 → 事件流。
+
+        受理校验（operation 路由、凭据、连接模式、标的映射）在调用时急切
+        执行——错误在响应头发出前统一抛出（JSON 错误结构）；Runtime 启动
+        与订阅在首次迭代时进行。
+
+        事件桥接：Runtime 线程回调经 ``loop.call_soon_threadsafe`` 投递进
+        本流的有界 ``asyncio.Queue``（队列满丢旧保新——行情「最新」比
+        「完整」有价值）；迭代器关闭时释放订阅引用并注销监听器。
+        """
+        self.resolve_quote_operation(query)
+        auth = self._ensure_ready()
+        if self._conn_mode() != "shared":
+            raise UnsupportedCapabilityError(
+                "Streaming quotes require the shared runtime connection mode.",
+                details={"provider": self.name},
+            )
+        symbol = quote_symbol(query)
+        return self._stream_events(auth, symbol)
+
+    async def _stream_events(
+        self, auth: tuple[str, str], symbol: str
+    ) -> AsyncIterator[QuoteStreamEvent]:
+        runtime = await self._ensure_runtime(auth)
+        runtime.subscribe(symbol)
+        loop = asyncio.get_running_loop()
+        buffer = _StreamBuffer(self._stream_queue_size())
+
+        def _publish(kind: str, _symbol: str, snapshot: dict[str, Any] | None) -> None:
+            """Runtime 线程回调：调度到事件循环线程入缓冲（不阻塞 tick）。"""
+            loop.call_soon_threadsafe(buffer.put, kind, snapshot)
+
+        remove_listener = runtime.add_stream_listener(symbol, _publish)
+        try:
+            while True:
+                kind, snapshot = await buffer.get()
+                if kind == "quote":
+                    if snapshot is not None:
+                        yield QuoteStreamEvent(quote=self._stream_quote_event(snapshot))
+                else:
+                    yield QuoteStreamEvent(status=StreamStatusKind(kind))
+                    if kind == "subscribed" and snapshot is not None:
+                        # 订阅确认先于首帧快照（首事件 status，随后 quote）
+                        yield QuoteStreamEvent(quote=self._stream_quote_event(snapshot))
+        finally:
+            remove_listener()
+            runtime.unsubscribe(symbol)
+
+    def _stream_quote_event(self, snapshot: dict[str, Any]) -> Quote:
+        """流帧快照标准化（与 M2 快照同 mapper、同北京时间口径）。"""
+        return to_standard_quote(
+            snapshot, provider=self.name, received_at=datetime.now(CN_TIMEZONE)
+        )
+
     # ------------------------------------------------------------------
     # 连接模式
     # ------------------------------------------------------------------
@@ -138,6 +249,9 @@ class ProviderAdapter(BaseProviderAdapter):
 
     def _subscription_limit(self) -> int:
         return int(getattr(self.settings, "tqsdk_subscription_limit", 64) or 64)
+
+    def _stream_queue_size(self) -> int:
+        return int(getattr(self.settings, "stream_queue_size", 64) or 64)
 
     async def _ensure_runtime(self, auth: tuple[str, str]) -> TqSdkRuntime:
         """shared 模式：懒启动进程内唯一 Runtime（构造在线程内，不阻塞事件循环）。"""

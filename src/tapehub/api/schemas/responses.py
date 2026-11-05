@@ -1,4 +1,4 @@
-"""API 响应模型：能力目录、健康检查与历史 K 线。
+"""API 响应模型：能力目录、健康检查、历史 K 线、实时快照与行情流。
 
 时间字段分两类：
 
@@ -9,6 +9,7 @@
   确认上游口径后统一），序列化原样保留偏移。
 """
 
+import json
 from datetime import datetime
 from typing import Any, Literal
 
@@ -16,8 +17,16 @@ from pydantic import BaseModel
 
 from tapehub.api.schemas.common import BeijingDatetime, MarketDatetime
 from tapehub.application.capability_service import ProviderCapabilitiesView
+from tapehub.application.quote_stream_service import QuoteStream
 from tapehub.domain.capabilities import Capability
-from tapehub.domain.models import CN_TIMEZONE, BarBatch, BarQuery, Quote, QuoteQuery
+from tapehub.domain.models import (
+    CN_TIMEZONE,
+    BarBatch,
+    BarQuery,
+    Quote,
+    QuoteQuery,
+    QuoteStreamEvent,
+)
 
 
 def beijing_now() -> datetime:
@@ -250,3 +259,49 @@ def quote_to_response(quote: Quote, query: QuoteQuery, request_id: str) -> Quote
         received_at=quote.received_at,
     )
     return QuoteResponse(data=data, meta=meta)
+
+
+def quote_stream_frame(
+    event: QuoteStreamEvent, stream: "QuoteStream", request_id: str
+) -> str:
+    """行情流事件 → SSE 帧（``event`` + ``data`` 两行，空行结尾）。
+
+    - ``event: quote``：``data`` 与快照响应同构（instrument/asset_type/quote
+      + provider/variant/received_at），客户端可复用同一解析逻辑；
+    - ``event: status``：``data.status`` 取值见领域 ``StreamStatusKind``；
+    - ``event: heartbeat``：空闲保活帧，``data.ts`` 为北京时间。
+    """
+    query = stream.query
+    if query.variant is None:  # 不可达：QuoteStreamService 已具体化变体
+        raise ValueError("query variant must be resolved before building the frame")
+    if event.heartbeat:
+        payload: dict[str, Any] = {
+            "type": "heartbeat",
+            "request_id": request_id,
+            "ts": beijing_now().isoformat(),
+        }
+        return _sse_frame("heartbeat", payload)
+    if event.quote is not None:
+        payload = {
+            "instrument": query.instrument.code,
+            "asset_type": query.asset_type.value,
+            "quote": QuoteOut(
+                **event.quote.model_dump(exclude={"provider", "received_at"})
+            ).model_dump(mode="json"),
+            "provider": event.quote.provider,
+            "variant": query.variant.value,
+            "received_at": event.quote.received_at.isoformat(),
+        }
+        return _sse_frame("quote", payload)
+    payload = {
+        "status": event.status.value,
+        "instrument": query.instrument.code,
+        "asset_type": query.asset_type.value,
+        "provider": stream.provider,
+    }
+    return _sse_frame("status", payload)
+
+
+def _sse_frame(event: str, payload: dict[str, Any]) -> str:
+    body = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+    return f"event: {event}\ndata: {body}\n\n"

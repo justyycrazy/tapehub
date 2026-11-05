@@ -2,7 +2,7 @@
 
 通用行情数据网关：对外提供统一的 HTTP RESTful API，内部通过适配器接入多个行情数据源（akshare、tushare、tickflow、alphafeed、tqsdk）。
 
-**第一版只实现「历史 K 线查询」这一条业务链路，不建设行情数据存储平台。**
+**当前版本实现「历史 K 线查询」与「tqsdk 实时行情（快照 + SSE 流式，限 `single` 单进程单用户模式）」两条业务链路，不建设行情数据存储平台。**
 
 ```text
 统一请求参数
@@ -25,6 +25,8 @@
 - `GET /v1/providers/{provider}/capabilities`：单个 Provider 能力；
 - `GET /v1/market/bars`：统一历史 K 线查询；
 - `GET /v1/market/quotes`：tqsdk 实时快照（单标的，订阅-推送模型，限 `single` 模式）；
+- `GET /v1/market/quotes/stream`：tqsdk 实时快照 SSE 流（单标的订阅推送、
+  心跳与空闲退订、容量闸门，限 `single` 模式，仅 `shared` 连接模式）；
 - Provider 注册、能力匹配与公共路由；Provider 内部二级操作路由的扩展机制；
 - 统一错误处理；
 - **akshare Provider 已接入**（接口签名按官方文档核实，见下文）；
@@ -39,9 +41,9 @@
 
 - 数据库、Redis、行情缓存、CSV/Parquet 等行情落盘
   （实时链路的**进程内最新快照**除外——那是订阅状态，不是持久化）；
-- 定时任务、全量转储 Worker、消息队列、双向 WebSocket；
-- 逐笔、标的元数据等其它查询接口（tqsdk SSE 流式订阅属后续里程碑，
-  与实时快照同样限 `TAPEHUB_DEPLOYMENT_MODE=single` 模式）；
+- 定时任务、全量转储 Worker、消息队列、双向 WebSocket（行情流式已按
+  D8 决策采用 SSE 单向推送，与实时快照同样限 `TAPEHUB_DEPLOYMENT_MODE=single` 模式）；
+- 逐笔、标的元数据等其它查询接口；
 - 多进程/分布式部署（`TAPEHUB_DEPLOYMENT_MODE` 为守门字段，当前仅支持
   `single`，其他值启动即失败；未来以组件级配置形式提供，不预设）；
 - Docker 与前端页面。
@@ -183,6 +185,49 @@ GET /v1/market/quotes?provider=tqsdk&asset_type=contract&instrument=CN-SHFE-au26
   （M2 快照请求不退订，订阅累积由回收阈值管理，见 TqSdk 映射表）；
 - 指数类标的无盘口：`bid/ask` 价格为 `null`（不用 0 冒充）、量为 `0`，如实透出。
 
+### 实时行情流（SSE，tqsdk）
+
+```http
+GET /v1/market/quotes/stream?provider=tqsdk&asset_type=contract&instrument=CN-SHFE-au2612
+Accept: text/event-stream
+```
+
+参数与快照接口一致（`provider`/`asset_type`/`instrument`/`variant`），响应为
+`text/event-stream`（HTTP/1.1 chunked 流，零新依赖）。**行情推送是纯单向流，
+选 SSE 而非 WebSocket**（D8 决策）：复用 HTTP 鉴权/中间件/request_id，
+客户端 `curl -N` 即可消费。
+
+三类事件帧（`event:` + `data:` JSON，帧间空行分隔）：
+
+| event | data 结构 | 语义 |
+| --- | --- | --- |
+| `status` | `{status, instrument, asset_type, provider}` | 流生命周期：`subscribed`（订阅确认，**首事件**，含已缓存快照场景）/ `upstream_disconnected`（上游连接异常或服务停机）/ `recycling`（Runtime 新一代重建：北京时间 04:00 跨交易日回收 / watchdog / 休眠订阅回收，活跃订阅自动重订，重订完成再发 `subscribed`）/ `idle_unsubscribed`（流空闲超时，服务端本地退订并结束流） |
+| `quote` | `{instrument, asset_type, quote, provider, variant, received_at}` | 与快照响应同构（字段白名单同 P5 实证口径），`quote` 内为标准快照 |
+| `heartbeat` | `{type, request_id, ts}` | 空闲保活帧（默认 15s，仅出现在首事件之后），代理/负载均衡不至掐断空闲连接 |
+
+行为要点：
+
+- **断线与回收绝不静默断流**：`upstream_disconnected` / `recycling` /
+  `idle_unsubscribed` 都是明确事件；04:00 回收时客户端先收 `recycling`，
+  重订完成后收 `subscribed` 并恢复 `quote` 推送；
+- **coalesce 丢旧保新（仅 quote 帧）**：慢客户端的消费缓冲有上限
+  （`TAPEHUB_STREAM_QUEUE_SIZE`，默认 64），行情 `quote` 帧满时丢弃最旧帧
+  ——行情「最新」比「完整」有价值；`status` 生命周期帧稀有且关键，
+  **不参与也不被** coalesce 丢弃；
+- **退订语义（诚实边界）**：流关闭（客户端断开/空闲超时/停机）即本地退订
+  （引用计数 -1、快照停止维护）；**tqsdk 协议不支持取消订阅**，上游订阅
+  仍保留至代际回收（休眠订阅累计到 `TAPEHUB_TQSDK_SUBSCRIPTION_LIMIT`
+  触发新一代重建清理），与快照接口的订阅生命周期一致；
+- **容量闸门**：并发流数达 `TAPEHUB_STREAM_MAX_CLIENTS`（默认 8）返回
+  `STREAM_LIMIT_REACHED`（HTTP 429）；受理阶段（响应头发出前）的错误统一
+  JSON 错误结构，流中错误一律事件化收尾；
+- **仅 `shared` 连接模式支持**（流依赖长连接订阅）；`per_request` 回滚模式
+  返回 `UNSUPPORTED_CAPABILITY`（422）；
+- **访问日志口径**：SSE 请求的「耗时」= 连接时长（长连接期间不产生新日志行）；
+- 心跳与空闲退订由服务端管理：`TAPEHUB_STREAM_IDLE_TIMEOUT_SECONDS`
+  （默认 300s）内无行情事件（心跳不算）即 `idle_unsubscribed` 收尾，
+  客户端可随时重连。
+
 ## 请求规范
 
 ### instrument 标准代码
@@ -316,6 +361,7 @@ GET /v1/market/quotes?provider=tqsdk&asset_type=contract&instrument=CN-SHFE-au26
 | `UPSTREAM_RATE_LIMITED` | 429 | 上游限频 |
 | `UPSTREAM_ERROR` | 502 | 上游其它错误 |
 | `QUOTE_NOT_READY` | 408 | 实时快照首包未就绪：订阅已建立但上游未在 `TAPEHUB_TQSDK_FIRST_SNAPSHOT_TIMEOUT` 内推送（标的不存在/无权限、非交易时段静默等），可稍后重试 |
+| `STREAM_LIMIT_REACHED` | 429 | 行情流并发客户端数已达 `TAPEHUB_STREAM_MAX_CLIENTS` 上限（服务容量闸门，可稍后重试或先断开空闲连接） |
 
 SDK 异常不会穿透 API；日志不记录 Provider 密钥与完整行情响应。
 
@@ -474,6 +520,21 @@ TqSdk（官方 SDK `tqsdk`：`TqApi(auth=TqAuth(...)).get_kline_serial(...)`）�
 - 首包超时 `TAPEHUB_TQSDK_FIRST_SNAPSHOT_TIMEOUT`（默认 5 秒）→ `QUOTE_NOT_READY` 408；
 - `per_request` 回滚模式下快照同样可用（每请求独立实例订阅取首包后关闭，无缓存复用）。
 
+实时行情流（`GET /v1/market/quotes/stream`，上游接口 `api.get_quote` 订阅推送，M3）：
+
+- 仅 `shared` 模式支持（流依赖长连接订阅）：Runtime 流监听器在 tick 循环
+  `is_changing` 判定处发布（与快照缓存同源的线程内拷贝），经
+  `loop.call_soon_threadsafe` 桥接进每流的有界缓冲——跨线程只传拷贝、
+  不阻塞 tick、不引入新的 peek 行为变化；字段白名单与快照一致（P5 实证）；
+- **coalesce 丢旧保新只约束 quote 帧**（`TAPEHUB_STREAM_QUEUE_SIZE`，默认 64）；
+  `status` 生命周期帧（订阅确认/回收/断连）不参与也不被丢弃；
+- 心跳（`TAPEHUB_STREAM_HEARTBEAT_SECONDS`，默认 15s，仅出现在首事件之后）、
+  空闲退订（`TAPEHUB_STREAM_IDLE_TIMEOUT_SECONDS`，默认 300s →
+  `idle_unsubscribed` 收尾）与容量闸门（`TAPEHUB_STREAM_MAX_CLIENTS`，默认 8 →
+  `STREAM_LIMIT_REACHED` 429）由 Application 层流服务统一管理，Provider 无关；
+- 流关闭即本地退订（引用计数 -1）；上游订阅保留至代际回收（同快照接口口径）；
+- 请求规范、事件帧结构与语义见「实时行情流（SSE）」章节。
+
 单位约定（按官方文档）：
 
 - 个股 `volume` 统一为**股**：东财接口返回手，适配器 ×100 换算；新浪/腾讯为股，原样返回；TqSdk 股票/ETF 的 volume 单位文档未写明，**2026-11-03 探针量级对照判定为股**（600000 日 volume ≈5×10^7），原样透出；
@@ -528,13 +589,11 @@ Application/API 层与其它 Provider 不需要任何改动。
 
 ### 配置
 
-环境变量前缀 `TAPEHUB_`（见 [.env.example](.env.example)）：`TAPEHUB_VERSION`、`TAPEHUB_API_VERSION`、`TAPEHUB_CATALOG_VERSION`、`TAPEHUB_MAX_LIMIT`、`TAPEHUB_PROVIDER_ENABLED_OVERRIDES`（JSON，如 `{"akshare": false}` 可整体停用 akshare）、`TAPEHUB_TICKFLOW_API_KEY`、`TAPEHUB_ALPHAFEED_API_KEY`、`TAPEHUB_TUSHARE_TOKEN`、`TAPEHUB_TQSDK_AUTH_USER`、`TAPEHUB_TQSDK_AUTH_PASSWORD`、`TAPEHUB_TQSDK_CONN_MODE`（`shared` 默认/`per_request` 回滚）、`TAPEHUB_TQSDK_MAX_INFLIGHT_FETCH`、`TAPEHUB_TQSDK_FIRST_SNAPSHOT_TIMEOUT`（快照首包等待，默认 5 秒）、`TAPEHUB_TQSDK_SUBSCRIPTION_LIMIT`（休眠订阅回收阈值，默认 64）、`TAPEHUB_TWELVEDATA_API_KEY`（Provider 凭据，只在内存中传给 SDK 客户端）。`.env` 不提交版本库。
+环境变量前缀 `TAPEHUB_`（见 [.env.example](.env.example)）：`TAPEHUB_VERSION`、`TAPEHUB_API_VERSION`、`TAPEHUB_CATALOG_VERSION`、`TAPEHUB_MAX_LIMIT`、`TAPEHUB_PROVIDER_ENABLED_OVERRIDES`（JSON，如 `{"akshare": false}` 可整体停用 akshare）、`TAPEHUB_TICKFLOW_API_KEY`、`TAPEHUB_ALPHAFEED_API_KEY`、`TAPEHUB_TUSHARE_TOKEN`、`TAPEHUB_TQSDK_AUTH_USER`、`TAPEHUB_TQSDK_AUTH_PASSWORD`、`TAPEHUB_TQSDK_CONN_MODE`（`shared` 默认/`per_request` 回滚）、`TAPEHUB_TQSDK_MAX_INFLIGHT_FETCH`、`TAPEHUB_TQSDK_FIRST_SNAPSHOT_TIMEOUT`（快照首包等待，默认 5 秒）、`TAPEHUB_TQSDK_SUBSCRIPTION_LIMIT`（休眠订阅回收阈值，默认 64）、`TAPEHUB_STREAM_MAX_CLIENTS`（SSE 并发流上限，默认 8）、`TAPEHUB_STREAM_QUEUE_SIZE`（每流 quote 帧缓冲，默认 64）、`TAPEHUB_STREAM_HEARTBEAT_SECONDS`（SSE 心跳间隔，默认 15 秒）、`TAPEHUB_STREAM_IDLE_TIMEOUT_SECONDS`（流空闲退订超时，默认 300 秒）、`TAPEHUB_TWELVEDATA_API_KEY`（Provider 凭据，只在内存中传给 SDK 客户端）。`.env` 不提交版本库。
 
 ### 未来扩展边界（现在不实现）
 
 - **定时全量转储**：适配器不依赖 FastAPI 请求上下文，未来 Worker 可复用统一查询与分页模型逐批拉取；
-- **实时行情流式订阅（SSE）**：未来新增独立 `StreamingProvider` 接口（`GET /v1/market/quotes/stream`），
-  复用 Runtime 订阅与引用计数，不侵入历史查询与快照链路；
 - **新资产类型**：扩展标准枚举、能力清单与对应操作映射即可；
 - 第一版不存储任何行情数据。
 
