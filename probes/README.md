@@ -133,6 +133,8 @@ notes: 本探针要回答的问题与已知存疑点。
 - `results/report-<provider>-<时间戳>.md`：人读汇总，含「已确认能力 /
   声明未通过 / suspect+observe / history.start 建议回填值 / skipped」五张表；
 - 结果是**时点证据**，报告带时间戳，不代表上游当前状态；
+- 探针工具及其报告的时间口径统一北京时间（+08:00）：运行时间戳、结果
+  文件名（`YYYYMMDDTHHMMSS+0800`）与观测中的 bar 时间戳均为北京时间；
 - 样本数据每 case 最多 3 根 bar；凭据只记录「是否已配置」布尔。
 
 **manifest 回填流程**：报告 → 人工确认 → 修订 manifest（`history.start`、

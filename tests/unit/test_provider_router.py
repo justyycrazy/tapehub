@@ -1,6 +1,6 @@
 """公共 ProviderRouter 与适配器内部 operation 路由测试。"""
 
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any
 
 import pytest
@@ -14,13 +14,19 @@ from tapehub.domain.errors import (
     UnsupportedCapabilityError,
 )
 from tapehub.domain.intervals import Interval
-from tapehub.domain.models import Adjust, AssetType, BarQuery, DataType, DataVariant, Instrument
+from tapehub.domain.models import (
+    CN_TIMEZONE,
+    Adjust,
+    AssetType,
+    BarQuery,
+    DataType,
+    DataVariant,
+    Instrument,
+)
 from tapehub.providers.base import BaseProviderAdapter
 from tapehub.providers.manifest import ProviderManifest
 from tapehub.providers.registry import ProviderRegistry, build_provider_record
 from tests.conftest import build_fake_record
-
-UTC = timezone.utc
 
 
 class _YesAdapter(BaseProviderAdapter):
@@ -34,8 +40,8 @@ def _query(**overrides: Any) -> BarQuery:
         "asset_type": AssetType.STOCK,
         "instrument": Instrument.parse("CN-SSE-600000"),
         "interval": Interval.parse("P1D"),
-        "start": datetime(2026, 1, 1, tzinfo=UTC),
-        "end": datetime(2026, 1, 31, tzinfo=UTC),
+        "start": datetime(2026, 1, 1, tzinfo=CN_TIMEZONE),
+        "end": datetime(2026, 1, 31, tzinfo=CN_TIMEZONE),
         "adjust": Adjust.NONE,
         # 适配器内部 operation 路由需要具体变体；缺省（None）解析行为另行测试
         "variant": DataVariant.EASTMONEY,

@@ -22,7 +22,7 @@ import re
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Any
 
 from probes import analysis
@@ -31,7 +31,14 @@ from probes.loader import ChainCase, ConnectionPlan, ExpandedProbe, RawPlan, exp
 from probes.report import CaseResult, RunResult, sample_bars_of
 from probes.schema import CaseVerdict, CtorSpec, PacingSpec, ProbeFile, RawCaseSpec
 from tapehub.domain.errors import TapehubError, UpstreamError
-from tapehub.domain.models import Bar, BarBatch, BarQuery, DataVariant, Instrument
+from tapehub.domain.models import (
+    CN_TIMEZONE,
+    Bar,
+    BarBatch,
+    BarQuery,
+    DataVariant,
+    Instrument,
+)
 from tapehub.providers.registry import ProviderRecord, ProviderRegistry
 from tapehub.settings import Settings
 
@@ -138,7 +145,7 @@ async def run_provider_probe(
     execute: bool = True,
 ) -> RunResult:
     """执行一个 Provider 的完整探针文件。``execute=False`` 为 dry-run。"""
-    started_at = datetime.now(UTC)
+    started_at = datetime.now(CN_TIMEZONE)
     environment, req_reason = check_requirements(probe)
 
     record = registry.get(probe.probe)
@@ -187,7 +194,7 @@ async def run_provider_probe(
     return RunResult(
         provider=probe.probe,
         started_at=started_at,
-        finished_at=datetime.now(UTC),
+        finished_at=datetime.now(CN_TIMEZONE),
         environment=environment,
         call_budget={"max": probe.pacing.max_calls, "used": budget_used},
         file_skip_reason=file_skip,
@@ -453,7 +460,7 @@ async def _run_history_depth(ctx: RunContext, case: ChainCase, base: CaseResult)
     # 滚动保留的数据边界不可能超过当前时刻；target 窗口终点若写在未来，
     # 超出 now 的搜索区间对「窗口非空」谓词不单调（未来与边界前同样为空），
     # 会把二分诱入未来空窗而误报「无数据」——搜索终点裁剪到 now。
-    latest = min(case.window_end, datetime.now(UTC))
+    latest = min(case.window_end, datetime.now(CN_TIMEZONE))
     try:
         result = await analysis.run_history_depth(
             fetch,

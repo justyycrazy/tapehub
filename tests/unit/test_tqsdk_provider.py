@@ -2,14 +2,14 @@
 
 import asyncio
 import sys
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any
 
 import pytest
 
 from tapehub.domain.errors import ProviderNotImplementedError, UnsupportedCapabilityError
 from tapehub.domain.intervals import Interval
-from tapehub.domain.models import Adjust, AssetType, BarQuery, DataVariant, Instrument
+from tapehub.domain.models import CN_TIMEZONE, Adjust, AssetType, BarQuery, DataVariant, Instrument
 from tapehub.providers.manifest import load_builtin_manifest
 from tapehub.providers.registry import build_provider_record
 from tapehub.settings import Settings
@@ -21,16 +21,14 @@ from tests.fixtures.providers.stub_tqsdk import (
     sized_klines_rows,
 )
 
-UTC = timezone.utc
-
 
 def _query(**overrides: Any) -> BarQuery:
     base: dict[str, Any] = {
         "asset_type": AssetType.CONTRACT,
         "instrument": Instrument.parse("CN-SHFE-cu2607"),
         "interval": Interval.parse("P1D"),
-        "start": datetime(2026, 1, 1, tzinfo=UTC),
-        "end": datetime(2026, 1, 10, tzinfo=UTC),
+        "start": datetime(2026, 1, 1, tzinfo=CN_TIMEZONE),
+        "end": datetime(2026, 1, 10, tzinfo=CN_TIMEZONE),
         "adjust": Adjust.NONE,
         "variant": DataVariant.TQSDK,
         "offset": 0,
@@ -90,7 +88,8 @@ def test_request_and_response_mapping(monkeypatch: pytest.MonkeyPatch) -> None:
     assert batch.provider == "tqsdk"
     assert batch.count == 2
     bar = batch.bars[0]
-    assert bar.timestamp == datetime(2026, 1, 5, tzinfo=UTC)
+    # 桩按 UTC 零点编码日界，归一化输出即北京 08:00
+    assert bar.timestamp == datetime(2026, 1, 5, 8, tzinfo=CN_TIMEZONE)
     assert bar.close == 3005.0
     assert bar.volume == 500.0  # 期货成交量保持手
     assert bar.amount is None  # 上游无成交额字段
@@ -210,7 +209,7 @@ def test_closed_interval_filter_and_pagination(
 
     assert batch.count == 1
     assert batch.offset == 1
-    assert batch.bars[0].timestamp == datetime(2026, 1, 3, tzinfo=UTC)
+    assert batch.bars[0].timestamp == datetime(2026, 1, 3, 8, tzinfo=CN_TIMEZONE)
 
 
 def test_partial_when_window_not_covered(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -229,8 +228,8 @@ def test_partial_when_window_not_covered(monkeypatch: pytest.MonkeyPatch) -> Non
     preset_rows(monkeypatch, sized_klines_rows(5000, start_day="2026-01-06"))
     query = _query(
         interval=Interval.parse("PT1M"),
-        start=datetime(2026, 1, 5, tzinfo=UTC),
-        end=datetime(2026, 1, 20, tzinfo=UTC),
+        start=datetime(2026, 1, 5, tzinfo=CN_TIMEZONE),
+        end=datetime(2026, 1, 20, tzinfo=CN_TIMEZONE),
     )
     batch = asyncio.run(adapter.fetch_bars(query))
     assert batch.partial is True
@@ -242,8 +241,8 @@ def test_partial_false_when_bars_cover_start(monkeypatch: pytest.MonkeyPatch) ->
     adapter = _adapter()
     query = _query(
         interval=Interval.parse("PT1M"),
-        start=datetime(2026, 1, 5, tzinfo=UTC),
-        end=datetime(2026, 1, 20, tzinfo=UTC),
+        start=datetime(2026, 1, 5, tzinfo=CN_TIMEZONE),
+        end=datetime(2026, 1, 20, tzinfo=CN_TIMEZONE),
     )
     batch = asyncio.run(adapter.fetch_bars(query))
     # 最早一根早于 start：窗口完整覆盖，即使达到数量上限也不标记 partial

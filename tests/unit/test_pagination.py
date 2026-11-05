@@ -1,15 +1,13 @@
 """共享分页辅助组件测试。"""
 
-from datetime import datetime, timezone
+from datetime import datetime
 
-from tapehub.domain.models import Bar
+from tapehub.domain.models import CN_TIMEZONE, Bar
 from tapehub.providers.pagination import paginate_bars, sort_bars
-
-UTC = timezone.utc
 
 
 def _bar(day: int) -> Bar:
-    return Bar(timestamp=datetime(2026, 1, day, tzinfo=UTC), close=float(day))
+    return Bar(timestamp=datetime(2026, 1, day, tzinfo=CN_TIMEZONE), close=float(day))
 
 
 def test_sort_ascending_does_not_mutate_input() -> None:

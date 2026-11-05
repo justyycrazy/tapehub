@@ -2,7 +2,7 @@
 
 import asyncio
 import sys
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any
 
 import pytest
@@ -29,8 +29,6 @@ from tests.fixtures.providers.stub_twelvedata import (
     sized_values_rows,
 )
 
-UTC = timezone.utc
-
 
 class BadRequestError(Exception):
     """模拟 twelvedata SDK 的 400 异常（适配器按类型名 + 实测指纹识别）。"""
@@ -41,8 +39,8 @@ def _query(**overrides: Any) -> BarQuery:
         "asset_type": AssetType.FOREX,
         "instrument": Instrument.parse("GLOBAL-OTC-EUR/USD"),
         "interval": Interval.parse("P1D"),
-        "start": datetime(2026, 1, 1, tzinfo=UTC),
-        "end": datetime(2026, 1, 10, tzinfo=UTC),
+        "start": datetime(2026, 1, 1, tzinfo=CN_TIMEZONE),
+        "end": datetime(2026, 1, 10, tzinfo=CN_TIMEZONE),
         "adjust": Adjust.NONE,
         "variant": DataVariant.TWELVEDATA,
         "offset": 0,
@@ -85,8 +83,8 @@ def test_request_and_response_mapping(monkeypatch: pytest.MonkeyPatch) -> None:
         "symbol": "EUR/USD",
         "interval": "1day",
         "outputsize": 5000,
-        "start_date": "2026-01-01T11:00:00",
-        "end_date": "2026-01-10T11:00:00",
+        "start_date": "2026-01-01T03:00:00",
+        "end_date": "2026-01-10T03:00:00",
     }
 
     assert batch.provider == "twelvedata"
@@ -255,8 +253,8 @@ def test_partial_when_window_not_covered(monkeypatch: pytest.MonkeyPatch) -> Non
     adapter = _adapter()
     query = _query(
         interval=Interval.parse("PT1M"),
-        start=datetime(2026, 1, 5, tzinfo=UTC),
-        end=datetime(2026, 1, 20, tzinfo=UTC),
+        start=datetime(2026, 1, 5, tzinfo=CN_TIMEZONE),
+        end=datetime(2026, 1, 20, tzinfo=CN_TIMEZONE),
     )
     batch = asyncio.run(adapter.fetch_bars(query))
     assert batch.partial is True
@@ -268,8 +266,8 @@ def test_partial_false_when_bars_cover_start(monkeypatch: pytest.MonkeyPatch) ->
     adapter = _adapter()
     query = _query(
         interval=Interval.parse("PT1M"),
-        start=datetime(2026, 1, 5, tzinfo=UTC),
-        end=datetime(2026, 1, 20, tzinfo=UTC),
+        start=datetime(2026, 1, 5, tzinfo=CN_TIMEZONE),
+        end=datetime(2026, 1, 20, tzinfo=CN_TIMEZONE),
     )
     batch = asyncio.run(adapter.fetch_bars(query))
     assert batch.partial is False

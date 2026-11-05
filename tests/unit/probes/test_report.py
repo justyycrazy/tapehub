@@ -1,13 +1,15 @@
 """探针报告渲染与落盘测试（离线）。"""
 
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
 
 from probes.report import CaseResult, RunResult, render_markdown, write_results
 
+from tapehub.domain.models import CN_TIMEZONE
+
 
 def _run() -> RunResult:
-    started = datetime(2026, 1, 1, tzinfo=UTC)
+    started = datetime(2026, 1, 1, tzinfo=CN_TIMEZONE)
     return RunResult(
         provider="fake-provider",
         started_at=started,
@@ -24,8 +26,8 @@ def _run() -> RunResult:
                 dims={"asset_type": "stock"},
                 observation={
                     "count": 55,
-                    "first_timestamp": "2025-01-02T00:00:00+00:00",
-                    "last_timestamp": "2025-03-31T00:00:00+00:00",
+                    "first_timestamp": "2025-01-02T00:00:00+08:00",
+                    "last_timestamp": "2025-03-31T00:00:00+08:00",
                     "null_rates": {"amount": 0.2},
                 },
                 duration_ms=12.3,
@@ -48,7 +50,7 @@ def _run() -> RunResult:
                 verdict="observe",
                 reason="earliest window estimate (informational)",
                 observation={
-                    "earliest_estimate": "2003-04-11T00:00:00+00:00",
+                    "earliest_estimate": "2003-04-11T00:00:00+08:00",
                     "approx": True,
                     "granularity_days": 90,
                     "calls_used": 18,
@@ -75,7 +77,8 @@ def test_render_markdown_sections() -> None:
     assert "## skipped" in text
     assert "stock-P1D-none-eastmoney" in text
     assert "adjust_no_op_suspect" in text
-    assert "2003-04-11T00:00:00+00:00" in text
+    assert "运行时间（北京时间 +08:00）：2026-01-01T00:00:00+08:00" in text
+    assert "2003-04-11T00:00:00+08:00" in text
     assert "测试原因" in text
 
 
@@ -83,7 +86,7 @@ def test_write_results_creates_files(tmp_path: Path) -> None:
     json_path, md_path = write_results(_run(), tmp_path)
     assert json_path.exists() and md_path.exists()
     assert json_path.parent.name == "fake-provider"
-    assert "20260101T000000Z" in json_path.name
+    assert "20260101T000000+0800" in json_path.name
     content = json_path.read_text(encoding="utf-8")
     assert '"provider": "fake-provider"' in content
-    assert "2026-01-01T00:00:00+00:00" in content
+    assert "2026-01-01T00:00:00+08:00" in content

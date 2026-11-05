@@ -2,14 +2,14 @@
 
 import asyncio
 import sys
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any
 
 import pytest
 
 from tapehub.domain.errors import ProviderNotImplementedError, UnsupportedCapabilityError
 from tapehub.domain.intervals import Interval
-from tapehub.domain.models import Adjust, AssetType, BarQuery, DataVariant, Instrument
+from tapehub.domain.models import CN_TIMEZONE, Adjust, AssetType, BarQuery, DataVariant, Instrument
 from tapehub.providers.manifest import load_builtin_manifest
 from tapehub.providers.registry import build_provider_record
 from tapehub.settings import Settings
@@ -21,16 +21,14 @@ from tests.fixtures.providers.stub_tickflow import (
     sized_klines_payload,
 )
 
-UTC = timezone.utc
-
 
 def _query(**overrides: Any) -> BarQuery:
     base: dict[str, Any] = {
         "asset_type": AssetType.STOCK,
         "instrument": Instrument.parse("CN-SSE-600000"),
         "interval": Interval.parse("P1D"),
-        "start": datetime(2026, 1, 1, tzinfo=UTC),
-        "end": datetime(2026, 1, 10, tzinfo=UTC),
+        "start": datetime(2026, 1, 1, tzinfo=CN_TIMEZONE),
+        "end": datetime(2026, 1, 10, tzinfo=CN_TIMEZONE),
         "adjust": Adjust.QFQ,
         "variant": DataVariant.TICKFLOW,
         "offset": 0,
@@ -66,8 +64,8 @@ def test_request_and_response_mapping(monkeypatch: pytest.MonkeyPatch) -> None:
     assert kwargs["period"] == "1d"
     assert kwargs["adjust"] == "forward"  # qfq → 比例前复权
     assert kwargs["count"] == 10000
-    assert kwargs["start_time"] == int(datetime(2026, 1, 1, tzinfo=UTC).timestamp() * 1000)
-    assert kwargs["end_time"] == int(datetime(2026, 1, 10, tzinfo=UTC).timestamp() * 1000)
+    assert kwargs["start_time"] == int(datetime(2026, 1, 1, tzinfo=CN_TIMEZONE).timestamp() * 1000)
+    assert kwargs["end_time"] == int(datetime(2026, 1, 10, tzinfo=CN_TIMEZONE).timestamp() * 1000)
 
     assert batch.provider == "tickflow"
     assert batch.partial is False
@@ -83,7 +81,8 @@ def test_full_mapping_with_payload(monkeypatch: pytest.MonkeyPatch) -> None:
 
     assert batch.count == 2
     bar = batch.bars[0]
-    assert bar.timestamp == datetime(2026, 1, 5, tzinfo=UTC)
+    # 桩按 UTC 零点编码日界，归一化输出即北京 08:00
+    assert bar.timestamp == datetime(2026, 1, 5, 8, tzinfo=CN_TIMEZONE)
     assert bar.open == 10.0
     assert bar.close == 10.2
     assert bar.volume == 100.0
@@ -173,7 +172,7 @@ def test_closed_interval_filter_and_pagination(
 
     assert batch.count == 1
     assert batch.offset == 1
-    assert batch.bars[0].timestamp == datetime(2026, 1, 3, tzinfo=UTC)
+    assert batch.bars[0].timestamp == datetime(2026, 1, 3, 8, tzinfo=CN_TIMEZONE)
 
 
 def test_partial_when_upstream_limit_reached(

@@ -3,8 +3,7 @@
 - ``BeijingDatetime``：项目内部统一北京时间（+08:00）——服务级时间戳
   （健康检查、能力目录 generated_at）一律使用；
 - ``MarketDatetime``：行情数据时间，领域层已全市场统一归一化为北京时间
-  （+08:00，2026-11-04 数据探针确认上游口径后统一），序列化原样保留偏移；
-  UTC（+00:00）渲染为 ``Z`` 的分支仅作兼容保留。
+  （+08:00，2026-11-04 数据探针确认上游口径后统一），序列化原样保留偏移。
 """
 
 from datetime import datetime
@@ -21,8 +20,8 @@ def serialize_beijing(value: datetime) -> str:
 
 
 def serialize_market_offset(value: datetime) -> str:
-    """市场规范时区时间：偏移已在领域层归一化，序列化原样保留偏移。"""
-    return value.isoformat().replace("+00:00", "Z")
+    """行情数据时间：领域层已统一归一化为北京时间（+08:00），原样序列化。"""
+    return value.isoformat()
 
 
 BeijingDatetime = Annotated[

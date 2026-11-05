@@ -134,7 +134,7 @@ notes: 周线/月线复权是否生效未在文档核实，本探针以 adjust_d
 
 ## 六、结果与报告规范
 
-- `probes/results/<provider>/<UTC时间戳>.json`：完整证据（case 列表 + 观测 + 判定 +
+- `probes/results/<provider>/<北京时间戳>.json`：完整证据（case 列表 + 观测 + 判定 +
   环境布尔），是「时点证据」而非永久事实；
 - `probes/results/report-<时间戳>.md`：人读汇总，四张表——**已确认能力 /
   声明未通过（红） / 声明外可用 / history.start 建议回填值**，外加 `suspect` 汇总与

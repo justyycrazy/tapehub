@@ -389,9 +389,11 @@ def test_write_results_survives_unserializable_observation(
     回归背景：真实 tqsdk 探针曾因 to_json_dict 用 dataclasses.asdict 深拷贝
     观测树触发 cannot pickle '_asyncio.Future'，整轮运行的证据全部丢失。
     """
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     from probes.report import CaseResult, RunResult, write_results
+
+    from tapehub.domain.models import CN_TIMEZONE
 
     class UnDeepCopyable:
         """模拟 SDK 内部句柄/asyncio Future：asdict 深拷贝即崩（pickle 失败）。"""
@@ -409,8 +411,8 @@ def test_write_results_survives_unserializable_observation(
     )
     run = RunResult(
         provider="fake-provider",
-        started_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
-        finished_at=datetime(2026, 1, 1, second=1, tzinfo=timezone.utc),
+        started_at=datetime(2026, 1, 1, tzinfo=CN_TIMEZONE),
+        finished_at=datetime(2026, 1, 1, second=1, tzinfo=CN_TIMEZONE),
         cases=[case],
     )
     json_path, md_path = write_results(run, tmp_path)

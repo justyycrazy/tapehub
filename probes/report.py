@@ -95,7 +95,8 @@ def write_results(run: RunResult, results_dir: Path) -> tuple[Path, Path]:
     """
     provider_dir = results_dir / run.provider
     provider_dir.mkdir(parents=True, exist_ok=True)
-    stamp = run.started_at.strftime("%Y%m%dT%H%M%SZ")
+    # 文件名时间戳按北京时间（+0800）标注；中国无夏令时，偏移恒定
+    stamp = run.started_at.strftime("%Y%m%dT%H%M%S+0800")
     json_path = provider_dir / f"{stamp}.json"
     md_path = results_dir / f"report-{run.provider}-{stamp}.md"
     json_path.write_text(
@@ -112,7 +113,7 @@ def render_markdown(run: RunResult) -> str:
     started = run.started_at.isoformat()
     lines.append(f"# tapehub Provider 探针报告 — {run.provider}")
     lines.append("")
-    lines.append(f"- 运行时间（UTC）：{started}（时点证据，不代表上游当前状态）")
+    lines.append(f"- 运行时间（北京时间 +08:00）：{started}（时点证据，不代表上游当前状态）")
     lines.append(f"- 调用预算：{run.call_budget.get('used', 0)} / {run.call_budget.get('max', 0)}")
     env = run.environment
     lines.append(f"- 可选依赖安装：{env.get('extras', {}) or '（无要求）'}")
