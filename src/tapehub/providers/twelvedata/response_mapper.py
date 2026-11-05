@@ -12,6 +12,8 @@
 - quote（REST /quote）：JSON 对象，数值字段为**字符串**类型，timestamp
   / last_quote_at 为 Unix 秒；close → last_price、volume → volume（外汇
   可能缺失 → null）；五档盘口与 amount 上游无源字段恒 null；
+  extensions 白名单以 2026-11-05 quote 探针实证为准（报告
+  20261105T184934+0800，人工确认回填）；
 - 外汇/加密货币通常无 volume 字段：缺失时标准 volume 为 null，
   不用 0 冒充（bars 能力目录 fields 亦不含 volume）；
 - 缺失值与 NaN 统一映射为 null。
@@ -24,6 +26,28 @@ from zoneinfo import ZoneInfo
 
 from tapehub.domain.errors import UpstreamError
 from tapehub.domain.models import AssetType, Bar, Quote
+
+# quote extensions 白名单（2026-11-05 探针实证 + 人工确认，报告
+# 20261105T184934+0800）：仅透出文档与实测一致的标量字段；
+# fifty_two_week（嵌套对象）与 crypto 专属 rolling_* 不透出；
+# currency/mic_code/average_volume 文档列出但实测未返回，不声明
+# 数值字段经 _to_float 转换，None 值不透出（tqsdk P5 白名单同款过滤）
+_QUOTE_EXTENSIONS_FIELDS = (
+    "name",
+    "exchange",
+    "open",
+    "high",
+    "low",
+    "previous_close",
+    "change",
+    "percent_change",
+    "is_market_open",
+)
+
+# 白名单中的数值字段（字符串 → float）
+_QUOTE_EXTENSIONS_NUMERIC = frozenset(
+    {"open", "high", "low", "previous_close", "change", "percent_change"}
+)
 
 # 外汇 datetime 的显示时区（官方文档：All times are displayed in the
 # Australia/Sydney timezone；ZoneInfo 自动处理 AEDT/AEST 夏令时切换）
@@ -90,16 +114,35 @@ def _to_epoch(value: Any) -> int | None:
         return None
 
 
+def _quote_extensions(payload: dict[str, Any]) -> dict[str, Any]:
+    """按白名单提取 extensions；数值字段转 float，None 值一律不透出。"""
+    extensions: dict[str, Any] = {}
+    for field in _QUOTE_EXTENSIONS_FIELDS:
+        raw = payload.get(field)
+        if field in _QUOTE_EXTENSIONS_NUMERIC:
+            value = _to_float(raw)
+        elif field == "is_market_open":
+            value = raw if isinstance(raw, bool) else None
+        else:  # name / exchange：字符串字段
+            value = str(raw).strip() if raw is not None else None
+            if value == "":
+                value = None
+        if value is not None:
+            extensions[field] = value
+    return extensions
+
+
 def to_standard_quote(
     payload: Any, *, provider: str, received_at: datetime
 ) -> Quote:
-    """上游 /quote 响应对象 → 标准 Quote（extensions 白名单待探针回填，首版恒 None）。
+    """上游 /quote 响应对象 → 标准 Quote（extensions 白名单见模块 docstring）。
 
     - 行情时间：优先 ``last_quote_at``（最后一根分钟 K 线的 Unix 秒，快照
       新鲜度口径），缺失回退 ``timestamp``（当期 interval bar 开盘时刻）；
       两者皆缺属上游契约违背，抛 UPSTREAM_ERROR（不伪造时间）；Unix 秒
       按 UTC 解释，统一北京时间归一化由领域层 Quote 完成；
-    - ``close`` → last_price、``volume`` → volume（外汇可能缺失 → null）；
+    - ``close`` → last_price、``volume`` → volume（2026-11-05 探针实测
+      EUR/USD 与 BTC/USD 均未返回 volume；缺失 → null，映射保留防御处理）；
     - 五档盘口与 amount 上游无源字段，恒 null（不得用 0 冒充）。
     """
     if not isinstance(payload, dict):
@@ -125,5 +168,5 @@ def to_standard_quote(
         amount=None,  # 上游无成交额字段
         provider=provider,
         received_at=received_at,
-        extensions=None,  # 白名单待探针实证回填（tqsdk P5 同款流程）
+        extensions=_quote_extensions(payload) or None,
     )

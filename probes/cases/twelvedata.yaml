@@ -90,6 +90,10 @@ notes: >
   24 个周期 history.start 已按全量深度实测回填（报告 20261104T072650Z、
   20261104T084302Z；粒度 90 天 approx，forex 粗周期触底待精化）；
   上游 values 默认倒序，适配器已统一升序，报告首尾时间戳应体现这一点；
-  quote 探针（td-quote-*）产出后人工确认 extensions 白名单与 manifest
-  fields 回填（quote 结果为单个对象，报告 sample 即完整字段矩阵），
-  人工确认前适配器 extensions 恒 null。
+  2026-11-05 全量重跑（报告 20261105T184934+0800，人工确认回填）：
+  quote 探针实证 forex/crypto 的 /quote 均未返回 volume（及 currency/
+  mic_code，文档列出但实测缺），manifest quotes fields 收窄为
+  timestamp/last_price、extensions 白名单回填 9 个标量字段；last_quote_at
+  实测≈墙钟实时（快照新鲜度口径成立）；forex PT8H 深度 case 瞬时
+  ReadTimeout（该周期 2026-11-04 报告已确认，本轮其余 23 条深度 case 全
+  过，未重跑）；实测 exchange 值 forex="Forex"、crypto="Binance"。

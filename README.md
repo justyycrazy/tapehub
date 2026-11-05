@@ -572,18 +572,29 @@ Twelve Data（官方库 `twelvedata`（twelvedata-python）：`TDClient(apikey=.
 - 实测注意（2026-11-04）：外汇 `1h` 与 `1day` 数据源不一致——任何日切窗口（Sydney/UTC/纽约 17:00 ET）的 1h 聚合都无法精确还原 `1day` 的 OHLC，需要日线时请直接请求 `P1D`；加密货币 `1h` 聚合可完美还原 `1day`（UTC 0 点日切）；
 - 上游 `values` 默认倒序（最新在前），适配器统一按升序排序输出；`values` 字段为字符串，标准化为数值；
 - 区间无数据行为（2026-11-04 探针实测核实）：上游返回 400 `BadRequestError` "No data is available on the specified dates" 而非空列表，适配器按指纹归一化为空结果；
-- 其余上游 SDK/HTTP 异常类型与限频规则未在所引文档中核实，统一包装为 `UPSTREAM_ERROR`。
+- 其余上游 SDK/HTTP 异常类型与限频规则未在所引文档中核实，统一包装为 `UPSTREAM_ERROR`；实测错误指纹（2026-11-05 探针）：无效 Key → 401 `InvalidApiKeyError` "apikey parameter is incorrect"、无效标的 → 404 `TwelveDataError` "symbol or figi parameter is missing or invalid"。
 
 实时快照（`GET /v1/market/quotes`，上游接口 `td.quote`，REST 按需请求——无订阅/长连接/流式）：
 
 | 资产类型 | 变体 | 上游接口 | 周期/复权 | 标准字段 |
 | --- | --- | --- | --- | --- |
-| forex | twelvedata（默认） | `td.quote` | 无（不适用） | timestamp/last_price（volume 上游可能缺失 → null） |
-| crypto | twelvedata | `td.quote` | 无（不适用） | timestamp/last_price/volume（当日累计） |
+| forex | twelvedata（默认） | `td.quote` | 无（不适用） | timestamp/last_price（volume 实测未返回 → null） |
+| crypto | twelvedata | `td.quote` | 无（不适用） | timestamp/last_price（volume 实测未返回 → null） |
 
-- 五档盘口（`bid/ask_price|volume1..5`）与 `amount` 上游 `/quote` 无源字段，**恒 null**（不用 0 冒充）；`extensions` 白名单待 quote 探针（`td-quote-*`）实证后人工确认回填（tqsdk P5 同款流程），人工确认前恒 `null`；
-- 行情时间 `timestamp` 取上游 `last_quote_at`（最后一根分钟 K 线的 Unix 秒，快照新鲜度口径），缺失回退 `timestamp`（interval bar 开盘时刻）；Unix 秒按 UTC 解释，统一北京时间 `+08:00` 输出；两者皆缺属上游契约违背，返回 `UPSTREAM_ERROR`；
-- 请求参数显式传递：`interval=1day`（`volume` 是「当期 interval 累计量」，固定 1day 即当日累计，与快照口径对齐）、`timezone=UTC`（上游 `datetime` 字段口径固定，映射层不解析该字符串）、`eod=false`（要最新盘中 bar 而非已收盘日）；`prepost`（付费计划参数）与 `dp`（仅影响字符串小数位）不传；
+- 字段口径以 **quote 探针实证**（2026-11-05，probes/results/twelvedata/20261105T184934+0800）为准：
+  五档盘口（`bid/ask_price|volume1..5`）与 `amount` 上游无源字段，**恒 null**（不用 0 冒充）；
+  实测 forex（EUR/USD）与 crypto（BTC/USD）的 `/quote` 响应均未返回 `volume`
+  （官方文档称「部分品种可用」，实测两个标的皆无），能力目录 `fields` 不声明 volume，
+  标准 volume 为 null（映射保留防御性处理，若上游返回则正常映射）；
+- `extensions` 白名单已按同一探针报告人工确认回填：`name`/`exchange`/`open`/`high`/`low`/
+  `previous_close`/`change`/`percent_change`/`is_market_open` 九个标量字段（数值字符串转
+  float，非 None 才透出）；实测 `exchange` forex 为 `"Forex"`、crypto 为聚合源交易所
+  （如 `"Binance"`）；`fifty_two_week`（嵌套对象）与 crypto 专属 `rolling_*` 不透出；
+  文档列出但实测未返回的 `currency`/`mic_code`/`average_volume` 不声明；
+- 行情时间 `timestamp` 取上游 `last_quote_at`（最后一根分钟 K 线的 Unix 秒，快照新鲜度
+  口径，实测≈墙钟实时），缺失回退 `timestamp`（interval bar 开盘时刻）；Unix 秒按 UTC
+  解释，统一北京时间 `+08:00` 输出；两者皆缺属上游契约违背，返回 `UPSTREAM_ERROR`；
+- 请求参数显式传递：`interval=1day`（`volume` 是「当期 interval 累计量」，固定 1day 即当日累计）、`timezone=UTC`（上游 `datetime` 字段口径固定，映射层不解析该字符串）、`eod=false`（要最新盘中 bar 而非已收盘日）；`prepost`（付费计划参数）与 `dp`（仅影响字符串小数位）不传；
 - 语义边界：**分钟级聚合快照**（最近 bar 聚合，非 tick 推送，实时性弱于 tqsdk 订阅推送）；每次请求消耗上游 credit（每 symbol 1 次），不适合轮询；
 - 无流式能力：`GET /v1/market/quotes/stream` 请求本 Provider 在受理阶段返回 `UNSUPPORTED_CAPABILITY`（422）。
 

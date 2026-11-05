@@ -148,17 +148,16 @@ def sized_values_rows(n: int, *, start_day: str = "2026-01-01") -> list[dict[str
 
 
 def forex_quote_payload() -> dict[str, Any]:
-    """外汇 /quote 响应形（官方文档核实字段名；数值字符串、时间戳为 Unix 秒）。
+    """外汇 /quote 响应形（2026-11-05 探针实测镜像，报告 20261105T184934+0800）。
 
-    外汇通常无 volume 字段；datetime/timestamp 为 interval=1day 日 bar 的
-    开盘时刻，last_quote_at 为最后一根分钟 K 线时刻（快照新鲜度口径）。
+    数值字符串、时间戳为 Unix 秒；实测无 volume/currency/mic_code；
+    datetime/timestamp 为 interval=1day 日 bar 开盘时刻，last_quote_at 为
+    最后一根分钟 K 线时刻（快照新鲜度口径，实测≈墙钟实时）。
     """
     return {
         "symbol": "EUR/USD",
-        "name": "EUR/USD",
-        "exchange": "OTC",
-        "mic_code": "OTC",
-        "currency": "USD",
+        "name": "Euro / US Dollar",
+        "exchange": "Forex",  # 实测值（非 OTC）
         "datetime": "2026-01-05",
         "timestamp": 1767571200,  # 日 bar 开盘 2026-01-05T00:00:00Z
         "last_quote_at": 1767616440,  # 最后一根分钟 K 线 2026-01-05T12:34:00Z
@@ -170,16 +169,26 @@ def forex_quote_payload() -> dict[str, Any]:
         "change": "-0.0005",
         "percent_change": "-0.046",
         "is_market_open": True,
+        "fifty_two_week": {  # 嵌套对象：白名单不透出，断言排除用
+            "low": "1.11068",
+            "high": "1.20656",
+            "range": "1.110680 - 1.206560",
+        },
     }
 
 
 def crypto_quote_payload() -> dict[str, Any]:
-    """加密货币 /quote 响应形：含 volume 与 crypto 专属 rolling 字段。"""
+    """加密货币 /quote 响应形（2026-11-05 探针实测镜像 + 防御分支保留）。
+
+    实测（报告 20261105T184934+0800）：exchange 为聚合源交易所 "Binance"，
+    无 volume/currency，含 crypto 专属 rolling_*；本条保留 volume 字符串
+    仅覆盖映射防御分支（部分品种文档口径可能返回），rolling_* 用于断言
+    白名单排除。
+    """
     return {
         "symbol": "BTC/USD",
-        "name": "Bitcoin / U.S. Dollar",
-        "exchange": "Crypto",
-        "currency": "USD",
+        "name": "Bitcoin US Dollar",
+        "exchange": "Binance",
         "datetime": "2026-01-05",
         "timestamp": 1767571200,
         "last_quote_at": 1767616440,
@@ -187,11 +196,11 @@ def crypto_quote_payload() -> dict[str, Any]:
         "high": "43500",
         "low": "41800.2",
         "close": "43120.75",
-        "volume": "12345.6",
+        "volume": "12345.6",  # 防御分支：实测 BTC/USD 未返回该字段
         "previous_close": "42800.1",
         "change": "320.65",
         "percent_change": "0.749",
         "is_market_open": True,
-        "rolling_1d_change": "1.25",
+        "rolling_1d_change": "1.25",  # crypto 专属：白名单不透出
         "rolling_7d_change": "-3.4",
     }

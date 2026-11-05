@@ -110,7 +110,8 @@ def test_capability_catalog(twelvedata_client: TestClient) -> None:  # type: ign
     assert quote_cap["delivery"] == ["rest"]
     assert quote_cap["intervals"] == []
     assert quote_cap["adjustments"] == []
-    assert quote_cap["fields"] == ["timestamp", "last_price", "volume"]
+    # 2026-11-05 探针实测 forex/crypto 均未返回 volume → 不声明
+    assert quote_cap["fields"] == ["timestamp", "last_price"]
 
 
 def test_unsupported_interval_p3d(twelvedata_client: TestClient) -> None:  # type: ignore[no-untyped-def]
@@ -175,11 +176,23 @@ def test_quote_chain_forex(
     # 行情时间取 last_quote_at：UTC 2026-01-05 12:34 = 北京 20:34
     assert quote["timestamp"] == "2026-01-05T20:34:00+08:00"
     assert quote["last_price"] == 1.0855
-    assert quote["volume"] is None  # 外汇通常无 volume 字段
+    assert quote["volume"] is None  # 实测 forex /quote 未返回 volume
     assert quote["amount"] is None
     assert quote["bid_price1"] is None  # 上游无盘口：五档恒 null
     assert quote["ask_price5"] is None
-    assert quote["extensions"] is None  # 白名单待探针回填
+    # extensions 白名单（2026-11-05 探针实证回填，tqsdk P5 同款精确断言）
+    assert quote["extensions"] == {
+        "name": "Euro / US Dollar",
+        "exchange": "Forex",
+        "open": 1.085,
+        "high": 1.086,
+        "low": 1.084,
+        "previous_close": 1.086,
+        "change": -0.0005,
+        "percent_change": -0.046,
+        "is_market_open": True,
+    }
+    assert "fifty_two_week" not in quote["extensions"]
 
     meta = body["meta"]
     assert meta["provider"] == "twelvedata"
@@ -205,7 +218,9 @@ def test_quote_chain_crypto(
     assert StubTDClient.instances[-1].quote_calls[0]["symbol"] == "BTC/USD"
     quote = response.json()["data"]["quote"]
     assert quote["last_price"] == 43120.75
-    assert quote["volume"] == 12345.6
+    assert quote["volume"] == 12345.6  # 防御分支：volume 若返回则映射
+    assert "rolling_1d_change" not in quote["extensions"]  # crypto 专属不透出
+    assert quote["extensions"]["exchange"] == "Binance"
     assert response.json()["meta"]["provider"] == "twelvedata"
 
 

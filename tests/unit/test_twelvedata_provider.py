@@ -319,14 +319,26 @@ def test_quote_request_and_response_mapping(monkeypatch: pytest.MonkeyPatch) -> 
     # 行情时间取 last_quote_at（最后分钟 K 线）：UTC 2026-01-05 12:34 = 北京 20:34
     assert quote.timestamp == datetime(2026, 1, 5, 20, 34, tzinfo=CN_TIMEZONE)
     assert quote.last_price == 1.0855  # close 字符串 → float
-    assert quote.volume is None  # 外汇通常无 volume 字段
+    assert quote.volume is None  # 实测 forex /quote 未返回 volume
     assert quote.amount is None  # 上游无成交额字段
     for i in range(1, 6):  # 上游无盘口：五档恒 null
         assert getattr(quote, f"bid_price{i}") is None
         assert getattr(quote, f"bid_volume{i}") is None
         assert getattr(quote, f"ask_price{i}") is None
         assert getattr(quote, f"ask_volume{i}") is None
-    assert quote.extensions is None  # 白名单待探针回填
+    # extensions 白名单（2026-11-05 探针实证回填）：数值字符串 → float
+    assert quote.extensions == {
+        "name": "Euro / US Dollar",
+        "exchange": "Forex",
+        "open": 1.085,
+        "high": 1.086,
+        "low": 1.084,
+        "previous_close": 1.086,
+        "change": -0.0005,
+        "percent_change": -0.046,
+        "is_market_open": True,
+    }
+    assert "fifty_two_week" not in quote.extensions  # 嵌套对象不透出
 
 
 def test_quote_crypto_volume_mapped(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -340,7 +352,9 @@ def test_quote_crypto_volume_mapped(monkeypatch: pytest.MonkeyPatch) -> None:
     quote = asyncio.run(adapter.fetch_quote(query))
 
     assert quote.last_price == 43120.75
-    assert quote.volume == 12345.6  # crypto volume 字符串 → float
+    assert quote.volume == 12345.6  # 防御分支：volume 若返回则字符串 → float
+    assert "rolling_1d_change" not in quote.extensions  # crypto 专属字段不透出
+    assert quote.extensions["exchange"] == "Binance"  # 实测为聚合源交易所
 
 
 def test_quote_missing_timestamp_raises_upstream(monkeypatch: pytest.MonkeyPatch) -> None:
