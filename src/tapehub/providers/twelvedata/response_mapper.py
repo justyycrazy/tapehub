@@ -1,15 +1,19 @@
-"""Twelve Data 响应映射（ResponseMapper）：上游 as_json() 行 → 统一 Bar 模型。
+"""Twelve Data 响应映射（ResponseMapper）：上游 as_json() → 统一 Bar / Quote 模型。
 
-响应结构已按官方文档核实（values 数组，默认倒序=最新在前）：
+响应结构已按官方文档核实：
 
-- 每个元素字段：datetime（bar 开盘时间，墙钟时间无时区后缀）、
-  open/high/low/close/volume，均为**字符串**类型；
+- time-series：values 数组，默认倒序=最新在前。每个元素字段：datetime
+  （bar 开盘时间，墙钟时间无时区后缀）、open/high/low/close/volume，
+  均为**字符串**类型；
 - datetime 的墙钟口径按资产类型区分（2026-11-04 实测 + 官方文档
   https://twelvedata.com/exchanges/physical_currency|digital_currency）：
   外汇按 Australia/Sydney（AEDT/AEST 随夏令时切换），加密货币按 UTC；
   解析为对应时区的 aware datetime，到统一北京时间的归一化由领域层完成；
+- quote（REST /quote）：JSON 对象，数值字段为**字符串**类型，timestamp
+  / last_quote_at 为 Unix 秒；close → last_price、volume → volume（外汇
+  可能缺失 → null）；五档盘口与 amount 上游无源字段恒 null；
 - 外汇/加密货币通常无 volume 字段：缺失时标准 volume 为 null，
-  不用 0 冒充；能力目录 fields 亦不含 volume；
+  不用 0 冒充（bars 能力目录 fields 亦不含 volume）；
 - 缺失值与 NaN 统一映射为 null。
 """
 
@@ -18,7 +22,8 @@ from datetime import datetime, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from tapehub.domain.models import AssetType, Bar
+from tapehub.domain.errors import UpstreamError
+from tapehub.domain.models import AssetType, Bar, Quote
 
 # 外汇 datetime 的显示时区（官方文档：All times are displayed in the
 # Australia/Sydney timezone；ZoneInfo 自动处理 AEDT/AEST 夏令时切换）
@@ -73,3 +78,52 @@ def to_standard_bars(rows: list[dict[str, Any]], asset_type: AssetType) -> list[
             )
         )
     return bars
+
+
+def _to_epoch(value: Any) -> int | None:
+    """Unix 秒字段（int 或数字字符串）→ int；缺失/非法返回 None。"""
+    if value is None:
+        return None
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        return None
+
+
+def to_standard_quote(
+    payload: Any, *, provider: str, received_at: datetime
+) -> Quote:
+    """上游 /quote 响应对象 → 标准 Quote（extensions 白名单待探针回填，首版恒 None）。
+
+    - 行情时间：优先 ``last_quote_at``（最后一根分钟 K 线的 Unix 秒，快照
+      新鲜度口径），缺失回退 ``timestamp``（当期 interval bar 开盘时刻）；
+      两者皆缺属上游契约违背，抛 UPSTREAM_ERROR（不伪造时间）；Unix 秒
+      按 UTC 解释，统一北京时间归一化由领域层 Quote 完成；
+    - ``close`` → last_price、``volume`` → volume（外汇可能缺失 → null）；
+    - 五档盘口与 amount 上游无源字段，恒 null（不得用 0 冒充）。
+    """
+    if not isinstance(payload, dict):
+        raise UpstreamError(
+            "Twelve Data quote payload is not a JSON object.",
+            details={"provider": provider},
+        )
+    epoch = _to_epoch(payload.get("last_quote_at"))
+    if epoch is None:
+        epoch = _to_epoch(payload.get("timestamp"))
+    if epoch is None:
+        raise UpstreamError(
+            "Twelve Data quote payload has no time field.",
+            details={
+                "provider": provider,
+                "fields_checked": ["last_quote_at", "timestamp"],
+            },
+        )
+    return Quote(
+        timestamp=datetime.fromtimestamp(epoch, tz=timezone.utc),
+        last_price=_to_float(payload.get("close")),
+        volume=_to_float(payload.get("volume")),
+        amount=None,  # 上游无成交额字段
+        provider=provider,
+        received_at=received_at,
+        extensions=None,  # 白名单待探针实证回填（tqsdk P5 同款流程）
+    )

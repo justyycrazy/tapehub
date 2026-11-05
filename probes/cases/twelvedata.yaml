@@ -10,9 +10,9 @@ requires:
 pacing:
   call_interval_s: 10.0
   timeout_s: 60
-  # 常态全量深度覆盖（2026-11-04 人工确认保留）：固定 28（24 availability + 1 limit + 1 raw×3）
-  # + 24 条 history_depth case × 16 = 412 最坏；单轮最多约一半日配额（免费档 800/天）
-  max_calls: 420
+  # 常态全量深度覆盖：固定 37（24 availability + 1 limit + 4 raw×3）
+  # + 24 条 history_depth case × 16 = 421 最坏；单轮约一半日配额（免费档 800/天）
+  max_calls: 430
 
 targets:
   # min_bars 按资产类型统一生效、覆盖全部声明周期：窗口取两年、下限取 20，
@@ -53,10 +53,43 @@ raw:
       - {method: as_json, kwargs: {}}
     expect: {status: error, error_contains: ""}
 
+  # ── 实时快照（REST /quote）：字段矩阵与错误指纹，供 extensions 白名单
+  #    回填决策（与 tqsdk P5 流程一致；quote 结果为单个对象，sample 即完整
+  #    字段矩阵）。适配器显式传 interval=1day/timezone=UTC/eod=false，
+  #    探针以同参数实证返回形态；每 case 消耗 3 次调用（构造 + quote + as_json）
+  - id: td-quote-forex
+    purpose: 外汇实时快照字段矩阵（外汇通常无 volume，故不入 min_fields；文档核实字段断言）
+    module: twelvedata
+    client: {attr: TDClient, kwargs: {apikey: "$TAPEHUB_TWELVEDATA_API_KEY"}}
+    call:
+      - {method: quote, kwargs: {symbol: "EUR/USD", interval: "1day", timezone: "UTC", eod: false}}
+      - {method: as_json, kwargs: {}}
+    expect: {status: ok, min_fields: [symbol, datetime, timestamp, last_quote_at, close]}
+  - id: td-quote-crypto
+    purpose: 加密货币实时快照字段矩阵（含 volume 与 crypto 专属 rolling 字段形态）
+    module: twelvedata
+    client: {attr: TDClient, kwargs: {apikey: "$TAPEHUB_TWELVEDATA_API_KEY"}}
+    call:
+      - {method: quote, kwargs: {symbol: "BTC/USD", interval: "1day", timezone: "UTC", eod: false}}
+      - {method: as_json, kwargs: {}}
+    expect: {status: ok, min_fields: [symbol, datetime, timestamp, last_quote_at, close, volume]}
+  - id: td-quote-invalid-symbol-fingerprint
+    purpose: 采集无效标的的 quote 错误指纹（仅供 UPSTREAM 细分错误码参考；观察）
+    assert: false
+    module: twelvedata
+    client: {attr: TDClient, kwargs: {apikey: "$TAPEHUB_TWELVEDATA_API_KEY"}}
+    call:
+      - {method: quote, kwargs: {symbol: "NOT/A/SYMBOL", interval: "1day", timezone: "UTC", eod: false}}
+      - {method: as_json, kwargs: {}}
+    expect: {status: error, error_contains: ""}
+
 notes: >
   crypto 的 volume 上游可能缺失（→ null），从 availability 的 null_rates 核对；
   45min/2h/4h/8h 已于 2026-11-04 经实测确认可用并回填 manifest 声明
   （报告 20261104T061857Z），对应 raw 探针随之移除、由 availability 链路覆盖；
   24 个周期 history.start 已按全量深度实测回填（报告 20261104T072650Z、
   20261104T084302Z；粒度 90 天 approx，forex 粗周期触底待精化）；
-  上游 values 默认倒序，适配器已统一升序，报告首尾时间戳应体现这一点。
+  上游 values 默认倒序，适配器已统一升序，报告首尾时间戳应体现这一点；
+  quote 探针（td-quote-*）产出后人工确认 extensions 白名单与 manifest
+  fields 回填（quote 结果为单个对象，报告 sample 即完整字段矩阵），
+  人工确认前适配器 extensions 恒 null。

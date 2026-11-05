@@ -7,8 +7,11 @@ from tapehub.api.app import create_app
 from tapehub.providers.registry import build_default_registry
 from tests.conftest import make_settings
 from tests.fixtures.providers.stub_twelvedata import (
+    crypto_quote_payload,
+    forex_quote_payload,
     forex_values_rows,
     install,
+    preset_quote,
     preset_values,
 )
 
@@ -20,6 +23,13 @@ FOREX_PARAMS = {
     "start": "2026-01-01T00:00:00Z",
     "end": "2026-01-10T00:00:00Z",
     # 显式传 variant=twelvedata（缺省时按 default_variant 解析为同名变体）
+    "variant": "twelvedata",
+}
+
+QUOTE_PARAMS = {
+    "provider": "twelvedata",
+    "asset_type": "forex",
+    "instrument": "GLOBAL-OTC-EUR/USD",
     "variant": "twelvedata",
 }
 
@@ -76,10 +86,11 @@ def test_capability_catalog(twelvedata_client: TestClient) -> None:  # type: ign
     entry = response.json()["data"][0]
     assert entry["provider"] == "twelvedata"
     assert entry["enabled"] is True
-    assert len(entry["capabilities"]) == 2
-    asset_types = {tuple(cap["asset_types"]) for cap in entry["capabilities"]}
-    assert asset_types == {("forex",), ("crypto",)}
-    for cap in entry["capabilities"]:
+    assert len(entry["capabilities"]) == 3
+
+    bars_caps = [c for c in entry["capabilities"] if c["data_type"] == "bars"]
+    assert {tuple(cap["asset_types"]) for cap in bars_caps} == {("forex",), ("crypto",)}
+    for cap in bars_caps:
         assert cap["variants"] == ["twelvedata"]
         assert cap["markets"] == ["GLOBAL"]
         assert [i["code"] for i in cap["intervals"]] == [
@@ -88,6 +99,18 @@ def test_capability_catalog(twelvedata_client: TestClient) -> None:  # type: ign
         ]
         assert cap["adjustments"] == ["none"]
         assert cap["fields"] == ["open", "high", "low", "close"]
+
+    # 实时快照：无周期/复权维度（显式空），fields 首版三项（extensions 待探针回填）
+    quote_caps = [c for c in entry["capabilities"] if c["data_type"] == "quotes"]
+    assert len(quote_caps) == 1
+    quote_cap = quote_caps[0]
+    assert quote_cap["asset_types"] == ["forex", "crypto"]
+    assert quote_cap["variants"] == ["twelvedata"]
+    assert quote_cap["markets"] == ["GLOBAL"]
+    assert quote_cap["delivery"] == ["rest"]
+    assert quote_cap["intervals"] == []
+    assert quote_cap["adjustments"] == []
+    assert quote_cap["fields"] == ["timestamp", "last_price", "volume"]
 
 
 def test_unsupported_interval_p3d(twelvedata_client: TestClient) -> None:  # type: ignore[no-untyped-def]
@@ -124,3 +147,101 @@ def test_default_variant_routes_to_declared_default(
     response = twelvedata_client.get("/v1/market/bars", params=params)
     assert response.status_code == 200
     assert response.json()["meta"]["variant"] == "twelvedata"
+
+
+# ---------------------------------------------------------------------------
+# 实时快照链路（REST /quote 同步应答；无流式）
+# ---------------------------------------------------------------------------
+
+
+def test_quote_chain_forex(
+    twelvedata_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """外汇快照链路：symbol 映射 + last_quote_at 行情时间统一北京时间输出。"""
+    preset_quote(monkeypatch, forex_quote_payload())
+
+    response = twelvedata_client.get("/v1/market/quotes", params=QUOTE_PARAMS)
+    assert response.status_code == 200
+    body = response.json()
+
+    from tests.fixtures.providers.stub_twelvedata import StubTDClient
+
+    assert StubTDClient.instances[-1].quote_calls[0]["symbol"] == "EUR/USD"
+
+    data = body["data"]
+    assert data["instrument"] == "GLOBAL-OTC-EUR/USD"
+    assert data["asset_type"] == "forex"
+    quote = data["quote"]
+    # 行情时间取 last_quote_at：UTC 2026-01-05 12:34 = 北京 20:34
+    assert quote["timestamp"] == "2026-01-05T20:34:00+08:00"
+    assert quote["last_price"] == 1.0855
+    assert quote["volume"] is None  # 外汇通常无 volume 字段
+    assert quote["amount"] is None
+    assert quote["bid_price1"] is None  # 上游无盘口：五档恒 null
+    assert quote["ask_price5"] is None
+    assert quote["extensions"] is None  # 白名单待探针回填
+
+    meta = body["meta"]
+    assert meta["provider"] == "twelvedata"
+    assert meta["variant"] == "twelvedata"
+    assert meta["received_at"].endswith("+08:00")
+
+
+def test_quote_chain_crypto(
+    twelvedata_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    preset_quote(monkeypatch, crypto_quote_payload())
+
+    params = {
+        **QUOTE_PARAMS,
+        "asset_type": "crypto",
+        "instrument": "GLOBAL-CRYPTO-BTC/USD",
+    }
+    response = twelvedata_client.get("/v1/market/quotes", params=params)
+    assert response.status_code == 200
+
+    from tests.fixtures.providers.stub_twelvedata import StubTDClient
+
+    assert StubTDClient.instances[-1].quote_calls[0]["symbol"] == "BTC/USD"
+    quote = response.json()["data"]["quote"]
+    assert quote["last_price"] == 43120.75
+    assert quote["volume"] == 12345.6
+    assert response.json()["meta"]["provider"] == "twelvedata"
+
+
+def test_quote_auto_routes(
+    twelvedata_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """缺省 provider/variant：auto 路由命中 twelvedata（GLOBAL 外汇快照唯一候选）。"""
+    preset_quote(monkeypatch, forex_quote_payload())
+
+    params = {k: v for k, v in QUOTE_PARAMS.items() if k not in ("provider", "variant")}
+    response = twelvedata_client.get("/v1/market/quotes", params=params)
+    assert response.status_code == 200
+    meta = response.json()["meta"]
+    assert meta["provider"] == "twelvedata"
+    assert meta["variant"] == "twelvedata"
+
+
+def test_quote_unsupported_asset_type_422(twelvedata_client: TestClient) -> None:  # type: ignore[no-untyped-def]
+    """quotes 能力仅声明 forex/crypto：能力目录即拒绝股票快照。"""
+    params = {**QUOTE_PARAMS, "asset_type": "stock", "instrument": "CN-SSE-600000"}
+    response = twelvedata_client.get("/v1/market/quotes", params=params)
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "UNSUPPORTED_CAPABILITY"
+
+
+def test_quote_missing_api_key_501(default_client) -> None:  # type: ignore[no-untyped-def]
+    """未配置 API Key：快照请求与 bars 同样返回 PROVIDER_NOT_IMPLEMENTED。"""
+    response = default_client.get("/v1/market/quotes", params=QUOTE_PARAMS)
+    assert response.status_code == 501
+    error = response.json()["error"]
+    assert error["code"] == "PROVIDER_NOT_IMPLEMENTED"
+    assert error["details"]["setting"] == "TAPEHUB_TWELVEDATA_API_KEY"
+
+
+def test_sse_stream_unsupported_422(twelvedata_client: TestClient) -> None:  # type: ignore[no-untyped-def]
+    """Twelve Data 不实现 stream_quote（无流式能力）：SSE 受理阶段即 422。"""
+    response = twelvedata_client.get("/v1/market/quotes/stream", params=QUOTE_PARAMS)
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "UNSUPPORTED_CAPABILITY"

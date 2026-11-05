@@ -141,15 +141,23 @@ GET /v1/market/bars?provider=akshare&asset_type=stock&instrument=CN-SSE-600000&i
 
 缺失数值以 `null` 返回，不用 `0` 冒充；Provider 特有字段只能通过 `extensions` 受控透出（如 akshare 的 `pct_change`、`turnover_rate`、`hold`、`settle`）。
 
-### 实时快照（tqsdk）
+### 实时快照（tqsdk / twelvedata）
 
 ```http
 GET /v1/market/quotes?provider=tqsdk&asset_type=contract&instrument=CN-SHFE-au2612
+GET /v1/market/quotes?provider=twelvedata&asset_type=forex&instrument=GLOBAL-OTC-EUR/USD
 ```
 
-参数：`provider`（默认 `auto`，当前仅 tqsdk 声明 quotes 能力）、`asset_type`（必填）、`instrument`（必填）、`variant`（可选）。**快照是当前时点的订阅数据：无 `interval`、无时间范围、无分页参数**（`adjust` 同样不接受——复权是历史序列概念）。
+参数：`provider`（默认 `auto`；当前 tqsdk 声明 CN 全资产、twelvedata 声明 GLOBAL 外汇/加密货币的 quotes 能力）、`asset_type`（必填）、`instrument`（必填）、`variant`（可选）。**快照是当前时点的数据：无 `interval`、无时间范围、无分页参数**（`adjust` 同样不接受——复权是历史序列概念）。
 
-成功响应（节选，字段白名单以 P5 探针实证为准，见 TqSdk 映射表）：
+两类上游的交付模型不同，语义差异如实声明：
+
+- **tqsdk（订阅-推送）**：REST 快照从共享 Runtime 的订阅缓存即时读取（首包超时 `QUOTE_NOT_READY` 408，行为要点见下与 TqSdk 映射表）；
+- **twelvedata（REST 按需请求）**：`td.quote` 同步应答，是**分钟级聚合快照**（最近 bar 聚合，非 tick 推送，实时性弱于 tqsdk），每次请求消耗上游 credit（每 symbol 1 次）；无流式——`/v1/market/quotes/stream` 请求 twelvedata 返回 `UNSUPPORTED_CAPABILITY`（422），映射表见 Twelve Data 章节。
+
+以下请求/响应示例与行为要点为 **tqsdk 链路**；twelvedata 链路的字段口径见其映射表。
+
+tqsdk 成功响应（节选，字段白名单以 P5 探针实证为准，见 TqSdk 映射表）：
 
 ```json
 {
@@ -174,7 +182,7 @@ GET /v1/market/quotes?provider=tqsdk&asset_type=contract&instrument=CN-SHFE-au26
 }
 ```
 
-行为要点：
+tqsdk 行为要点：
 
 - `data.quote.timestamp` 是行情时间（上游北京时间墙钟，统一 `+08:00` 输出），
   `meta.received_at` 是网关完成标准化的时刻；
@@ -195,7 +203,9 @@ Accept: text/event-stream
 参数与快照接口一致（`provider`/`asset_type`/`instrument`/`variant`），响应为
 `text/event-stream`（HTTP/1.1 chunked 流，零新依赖）。**行情推送是纯单向流，
 选 SSE 而非 WebSocket**（D8 决策）：复用 HTTP 鉴权/中间件/request_id，
-客户端 `curl -N` 即可消费。
+客户端 `curl -N` 即可消费。仅实现 `stream_quote` 的 Provider 可用
+（当前仅 tqsdk）；纯 REST 按需请求的 Provider（如 twelvedata）在受理阶段
+即返回 `UNSUPPORTED_CAPABILITY`（422）。
 
 三类事件帧（`event:` + `data:` JSON，帧间空行分隔）：
 
@@ -563,6 +573,19 @@ Twelve Data（官方库 `twelvedata`（twelvedata-python）：`TDClient(apikey=.
 - 上游 `values` 默认倒序（最新在前），适配器统一按升序排序输出；`values` 字段为字符串，标准化为数值；
 - 区间无数据行为（2026-11-04 探针实测核实）：上游返回 400 `BadRequestError` "No data is available on the specified dates" 而非空列表，适配器按指纹归一化为空结果；
 - 其余上游 SDK/HTTP 异常类型与限频规则未在所引文档中核实，统一包装为 `UPSTREAM_ERROR`。
+
+实时快照（`GET /v1/market/quotes`，上游接口 `td.quote`，REST 按需请求——无订阅/长连接/流式）：
+
+| 资产类型 | 变体 | 上游接口 | 周期/复权 | 标准字段 |
+| --- | --- | --- | --- | --- |
+| forex | twelvedata（默认） | `td.quote` | 无（不适用） | timestamp/last_price（volume 上游可能缺失 → null） |
+| crypto | twelvedata | `td.quote` | 无（不适用） | timestamp/last_price/volume（当日累计） |
+
+- 五档盘口（`bid/ask_price|volume1..5`）与 `amount` 上游 `/quote` 无源字段，**恒 null**（不用 0 冒充）；`extensions` 白名单待 quote 探针（`td-quote-*`）实证后人工确认回填（tqsdk P5 同款流程），人工确认前恒 `null`；
+- 行情时间 `timestamp` 取上游 `last_quote_at`（最后一根分钟 K 线的 Unix 秒，快照新鲜度口径），缺失回退 `timestamp`（interval bar 开盘时刻）；Unix 秒按 UTC 解释，统一北京时间 `+08:00` 输出；两者皆缺属上游契约违背，返回 `UPSTREAM_ERROR`；
+- 请求参数显式传递：`interval=1day`（`volume` 是「当期 interval 累计量」，固定 1day 即当日累计，与快照口径对齐）、`timezone=UTC`（上游 `datetime` 字段口径固定，映射层不解析该字符串）、`eod=false`（要最新盘中 bar 而非已收盘日）；`prepost`（付费计划参数）与 `dp`（仅影响字符串小数位）不传；
+- 语义边界：**分钟级聚合快照**（最近 bar 聚合，非 tick 推送，实时性弱于 tqsdk 订阅推送）；每次请求消耗上游 credit（每 symbol 1 次），不适合轮询；
+- 无流式能力：`GET /v1/market/quotes/stream` 请求本 Provider 在受理阶段返回 `UNSUPPORTED_CAPABILITY`（422）。
 
 六个内置 Provider（akshare、tickflow、alphafeed、tushare、tqsdk、twelvedata）均已接入，接口签名与数据口径按各自官方文档核实；未配置凭据或未安装 SDK 时数据请求返回 `PROVIDER_NOT_IMPLEMENTED`，`provider=auto` 在无可用候选时返回 `NO_PROVIDER_AVAILABLE`，也**绝不返回写死的模拟行情**。
 

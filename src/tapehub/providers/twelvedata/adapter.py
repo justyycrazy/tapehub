@@ -20,22 +20,28 @@
 - 上游 SDK/HTTP 异常类型未在文档中核实，统一由应用层包装为 UPSTREAM_ERROR；
   唯一实测核实的例外（2026-11-04 探针实测）：区间内无数据时上游返回 400
   BadRequestError（指纹见 request_mapper.UPSTREAM_NO_DATA_FINGERPRINT），
-  属上游权威的无数据结论，适配器归一化为空列表而非报错。
+  属上游权威的无数据结论，适配器归一化为空列表而非报错；
+- 实时快照走 REST /quote 同步应答（按需请求路径，无订阅/长连接/流式——
+  SSE 流请求由应用层判定未实现 stream_quote 返回 UNSUPPORTED_CAPABILITY）：
+  td.quote(symbol, interval="1day", timezone="UTC", eod=False).as_json()，
+  行情时间以 last_quote_at Unix 秒为准，映射见 request/response_mapper；
+  上游异常同 bars 口径照常上抛，由应用层包装为 UPSTREAM_ERROR。
 """
 
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from tapehub.domain.errors import ProviderNotImplementedError
-from tapehub.domain.models import CN_TIMEZONE, BarBatch, BarQuery
+from tapehub.domain.models import CN_TIMEZONE, BarBatch, BarQuery, Quote, QuoteQuery
 from tapehub.providers.base import BaseProviderAdapter, call_in_thread
 from tapehub.providers.pagination import paginate_bars
 from tapehub.providers.twelvedata.request_mapper import (
     UPSTREAM_MAX_BARS,
     UPSTREAM_NO_DATA_FINGERPRINT,
+    build_quote_request,
     build_request,
 )
-from tapehub.providers.twelvedata.response_mapper import to_standard_bars
+from tapehub.providers.twelvedata.response_mapper import to_standard_bars, to_standard_quote
 
 if TYPE_CHECKING:
     pass
@@ -50,6 +56,11 @@ class ProviderAdapter(BaseProviderAdapter):
         operation = self.resolve_operation(query)
         api_key = self._ensure_ready()
         return await call_in_thread(self._fetch_sync, api_key, operation, query)
+
+    async def fetch_quote(self, query: QuoteQuery) -> Quote:
+        operation = self.resolve_quote_operation(query)
+        api_key = self._ensure_ready()
+        return await call_in_thread(self._fetch_quote_sync, api_key, operation, query)
 
     def _ensure_ready(self) -> str:
         """校验运行前提：API Key 配置。"""
@@ -106,3 +117,28 @@ class ProviderAdapter(BaseProviderAdapter):
         if payload is None:
             return []
         return list(payload)
+
+    def _fetch_quote_sync(self, api_key: str, operation: str, query: QuoteQuery) -> Quote:
+        """二级路由已匹配（operation=quote）：请求上游并将响应标准化。"""
+        payload = self._fetch_quote_payload(api_key, query)
+        return to_standard_quote(
+            payload, provider=self.name, received_at=datetime.now(CN_TIMEZONE)
+        )
+
+    def _fetch_quote_payload(self, api_key: str, query: QuoteQuery) -> Any:
+        """先完成参数映射，再延迟导入官方库调用 td.quote(...).as_json()。
+
+        REST 同步应答：要么有数据要么直接报错，无 bars 的空窗指纹问题；
+        上游 SDK/HTTP 异常照常上抛，由应用层统一包装为 UPSTREAM_ERROR。
+        """
+        kwargs = build_quote_request(query)
+        try:
+            from twelvedata import TDClient
+        except ImportError as exc:
+            raise ProviderNotImplementedError(
+                "Provider SDK 'twelvedata' is not installed.",
+                details={"provider": self.name, "sdk": "twelvedata"},
+            ) from exc
+        client = TDClient(apikey=api_key)
+        quote = client.quote(**kwargs)
+        return quote.as_json()

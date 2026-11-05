@@ -1,8 +1,9 @@
-"""Twelve Data 请求映射（RequestMapper）：标准请求 → td.time_series 参数。
+"""Twelve Data 请求映射（RequestMapper）：标准请求 → td.time_series / td.quote 参数。
 
-接口签名均已按官方文档核实（https://twelvedata.com/docs/market-data/time-series）：
+接口签名均已按官方文档核实（time-series 与 quote 端点）：
 
 - ``td.time_series(symbol, interval, outputsize, start_date, end_date).as_json()``；
+- ``td.quote(symbol, interval, timezone, eod).as_json()``（REST 同步应答）；
 - symbol 为斜杠分隔货币对：外汇 ``EUR/USD``（ISO 4217）、加密 ``BTC/USD``；
 - interval 枚举 1min/5min/15min/30min/45min/1h/2h/4h/8h/1day/1week/1month，
   本适配器声明全部 12 个周期（45min/2h/4h/8h 经探针实测后补充声明）；
@@ -10,7 +11,9 @@
   Australia/Sydney 解释，加密货币按 UTC 解释；start_date/end_date 无时区
   后缀，格式 YYYY-MM-DD 或 YYYY-MM-DDTHH:MM:SS，故北京时间边界须先
   转换为对应口径的墙钟再传递；
-- outputsize 范围 1~5000：显式传最大值 5000（不依赖上游默认 30）。
+- outputsize 范围 1~5000：显式传最大值 5000（不依赖上游默认 30）；
+- quote 快照固定请求 interval=1day、timezone=UTC、eod=false（见
+  build_quote_request 注释）。
 """
 
 from datetime import datetime
@@ -18,7 +21,7 @@ from typing import Any
 
 from tapehub.domain.errors import UnsupportedCapabilityError
 from tapehub.domain.intervals import Interval
-from tapehub.domain.models import AssetType, BarQuery
+from tapehub.domain.models import AssetType, BarQuery, QuoteQuery
 from tapehub.providers.twelvedata.response_mapper import display_zone
 
 # 单次请求上限（官方文档：outputsize 范围 1~5000）
@@ -27,6 +30,15 @@ UPSTREAM_MAX_BARS = 5000
 # 区间无数据指纹（2026-11-04 数据探针实测核实，报告 20261104T065529Z）：
 # 查询区间内无数据时上游返回 400 BadRequestError，报文含此句，而非空列表
 UPSTREAM_NO_DATA_FINGERPRINT = "No data is available on the specified dates"
+
+# 快照固定请求 1day 周期（官方文档 /quote）：volume 是「当期 interval 累计量」，
+# 传 1day 即当日累计，与快照口径对齐
+QUOTE_INTERVAL_CODE = "1day"
+
+# 快照墙钟固定 UTC（官方文档 /quote 的 timezone 参数，默认 Exchange）：
+# 行情时间以 last_quote_at Unix 秒为准，不解析 datetime 字符串，固定 UTC
+# 使该字段口径无歧义
+QUOTE_TIMEZONE = "UTC"
 
 _INTERVAL_CODES: dict[Interval, str] = {
     Interval.parse("PT1M"): "1min",
@@ -50,7 +62,7 @@ _ASSET_EXCHANGE = {
 }
 
 
-def td_symbol(query: BarQuery) -> str:
+def td_symbol(query: BarQuery | QuoteQuery) -> str:
     """标准标的 → Twelve Data 货币对（如 GLOBAL-OTC-EUR/USD → EUR/USD）。"""
     expected_exchange = _ASSET_EXCHANGE.get(query.asset_type)
     if expected_exchange is None:
@@ -106,9 +118,31 @@ def build_request(query: BarQuery) -> dict[str, Any]:
     }
 
 
+def build_quote_request(query: QuoteQuery) -> dict[str, Any]:
+    """构造 td.quote 的关键字参数；所有相关参数显式传递（不依赖上游默认值）。
+
+    - interval：默认 1day，显式传同值——快照的 volume 是「当期 interval
+      累计量」，固定 1day 即当日累计；
+    - timezone：默认 Exchange，显式传 UTC——datetime 字段口径固定；
+    - eod：默认 false，显式传同值——要最新盘中 bar 而非已收盘日；
+    - prepost（付费计划参数）、dp（仅影响字符串小数位，_to_float 解析后
+      无差别）不传；volume_time_period 仅影响 average_volume 字段，
+      extensions 白名单回填涉及该字段时再显式传递。
+    """
+    return {
+        "symbol": td_symbol(query),
+        "interval": QUOTE_INTERVAL_CODE,
+        "timezone": QUOTE_TIMEZONE,
+        "eod": False,
+    }
+
+
 __all__ = [
+    "QUOTE_INTERVAL_CODE",
+    "QUOTE_TIMEZONE",
     "UPSTREAM_MAX_BARS",
     "UPSTREAM_NO_DATA_FINGERPRINT",
+    "build_quote_request",
     "build_request",
     "interval_code",
     "td_symbol",

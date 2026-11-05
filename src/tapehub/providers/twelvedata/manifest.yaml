@@ -30,6 +30,11 @@
 # - 区间无数据行为（2026-11-04 探针实测核实，报告 20261104T065529Z）：上游返回
 #   400 BadRequestError "No data is available on the specified dates" 而非空列表，
 #   适配器按指纹归一化为空结果；其余未核实异常统一由应用层包装为 UPSTREAM_ERROR；
+# - 实时快照（REST /quote 同步应答，官方库调用形态 td.quote(symbol,
+#   interval, timezone, eod).as_json()）：按需请求路径——无订阅语义、无长
+#   连接、无流式（SSE 流请求返回 UNSUPPORTED_CAPABILITY）；interval 固定
+#   传 1day（volume 即当日累计，与快照口径对齐），timezone 显式传 UTC
+#   （datetime 字段口径固定，行情时间以 last_quote_at Unix 秒为准）；
 # - 单接口 Provider：变体与 default_variant 均为 twelvedata（数据源即上游服务自身，与东方财富无关）：缺省请求即可路由，也可显式传 variant=twelvedata。
 provider: twelvedata
 default_provider: [forex, crypto]
@@ -80,6 +85,19 @@ capabilities:
       - {code: P1M, history: {start: 2017-08-02T00:00:00+08:00, end: null}}
     adjustments: [none]
     fields: [open, high, low, close]
+
+  # 实时快照：REST 按需查询，无周期/复权维度（两维度声明为空，路由与能力
+  # 匹配跳过）；五档盘口/amount 上游无源字段恒 null；extensions 白名单
+  # 待数据探针实证后回填（与 tqsdk P5 流程一致），fields 首版只声明有
+  # 上游源字段的三项
+  - data_type: quotes
+    markets: [GLOBAL]
+    asset_types: [forex, crypto]
+    delivery: [rest]
+    variants: [twelvedata]
+    intervals: []
+    adjustments: []
+    fields: [timestamp, last_price, volume]
 
 operations:
   # 全部资产类型 × 周期组合都调用同一上游接口 td.time_series；
@@ -132,3 +150,9 @@ operations:
     operation: time_series
   - match: {data_type: bars, market: GLOBAL, asset_type: crypto, interval: P1M, adjust: none, variant: twelvedata}
     operation: time_series
+  # 实时快照：全部资产类型调用同一上游接口 td.quote；
+  # 周期/复权对快照无意义，显式声明 null（只与无该维度的 quote 查询匹配）
+  - match: {data_type: quotes, market: GLOBAL, asset_type: forex, interval: null, adjust: null, variant: twelvedata}
+    operation: quote
+  - match: {data_type: quotes, market: GLOBAL, asset_type: crypto, interval: null, adjust: null, variant: twelvedata}
+    operation: quote
