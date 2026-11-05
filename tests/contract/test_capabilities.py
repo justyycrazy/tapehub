@@ -9,8 +9,10 @@ def test_default_catalog_lists_all_builtin_providers(default_client) -> None:  #
     body = response.json()
     names = [entry["provider"] for entry in body["data"]]
     assert names == BUILTIN_PROVIDER_NAMES
+    # 无长连接概念的 Provider 状态恒为 unknown；tqsdk（shared 懒启动前）为 idle
     for entry in body["data"]:
-        assert entry["runtime_status"] == "unknown"
+        expected = "idle" if entry["provider"] == "tqsdk" else "unknown"
+        assert entry["runtime_status"] == expected
     # akshare 已接入：启用且能力目录非空
     akshare = body["data"][0]
     assert akshare["provider"] == "akshare"
@@ -108,3 +110,23 @@ def test_single_provider_on_default_catalog(default_client) -> None:  # type: ig
     assert body["data"]["provider"] == "tqsdk"
     assert body["data"]["enabled"] is True
     assert len(body["data"]["capabilities"]) == 7
+
+
+def test_runtime_status_per_request_stays_unknown() -> None:
+    """per_request 模式无常驻长连接：runtime_status 回退 unknown，不伪造状态。"""
+    from fastapi.testclient import TestClient
+
+    from tapehub.api.app import create_app
+    from tapehub.providers.registry import build_default_registry
+    from tests.conftest import make_settings
+
+    settings = make_settings(
+        tqsdk_conn_mode="per_request",
+        tqsdk_auth_user="u@example.com",
+        tqsdk_auth_password="secret",
+    )
+    client = TestClient(create_app(settings=settings, registry=build_default_registry(settings)))
+    body = client.get("/v1/capabilities").json()
+    statuses = {entry["provider"]: entry["runtime_status"] for entry in body["data"]}
+    assert statuses["tqsdk"] == "unknown"  # 无长连接：不伪造状态
+    assert statuses["akshare"] == "unknown"  # 无 runtime_status 属性的适配器同样回退

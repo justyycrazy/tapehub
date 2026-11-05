@@ -1,8 +1,11 @@
 """能力查询服务：读取本地能力目录，不实时访问上游。
 
 与公共 ProviderRouter 复用同一份 ProviderRegistry 能力目录。
-``enabled`` 与 ``runtime_status`` 是两个不同概念：
-第一版 ``runtime_status`` 恒为 ``unknown``，不伪造实时健康状态。
+``enabled`` 与 ``runtime_status`` 是两个不同概念：前者是目录声明的启用
+状态，后者是适配器长连接运行时的实时生命周期状态——经鸭子类型读取
+适配器的 ``runtime_status`` 属性（与 lifespan 的 ``shutdown_runtime``
+钩子同款模式，不感知具体 Provider）；未暴露该属性的适配器（无长连接
+概念）与读取失败一律回退 ``unknown``，不伪造实时健康状态。
 """
 
 from dataclasses import dataclass, field
@@ -14,9 +17,21 @@ from tapehub.domain.intervals import Interval
 from tapehub.domain.models import AssetType, DataType, DataVariant
 
 if TYPE_CHECKING:
-    from tapehub.providers.registry import ProviderRegistry
+    from tapehub.providers.registry import ProviderRecord, ProviderRegistry
 
 RUNTIME_STATUS_UNKNOWN = "unknown"
+
+
+def _runtime_status(record: "ProviderRecord") -> str:
+    """鸭子类型读取适配器运行时状态；无该属性或非字符串回退 ``unknown``。"""
+    adapter = record.adapter
+    if adapter is None:
+        return RUNTIME_STATUS_UNKNOWN
+    try:
+        value = getattr(adapter, "runtime_status", None)
+    except Exception:  # noqa: BLE001 - 状态读取异常不影响能力目录可用性
+        return RUNTIME_STATUS_UNKNOWN
+    return value if isinstance(value, str) else RUNTIME_STATUS_UNKNOWN
 
 
 @dataclass(frozen=True)
@@ -77,7 +92,7 @@ class CapabilityService:
                     ProviderCapabilitiesView(
                         name=record.name,
                         enabled=record.enabled,
-                        runtime_status=RUNTIME_STATUS_UNKNOWN,
+                        runtime_status=_runtime_status(record),
                         capabilities=capabilities,
                         default_variants=record.default_variants,
                         default_provider=list(record.manifest.default_provider or ()),
@@ -96,7 +111,7 @@ class CapabilityService:
         return ProviderCapabilitiesView(
             name=record.name,
             enabled=record.enabled,
-            runtime_status=RUNTIME_STATUS_UNKNOWN,
+            runtime_status=_runtime_status(record),
             capabilities=list(record.capabilities),
             default_variants=record.default_variants,
             default_provider=list(record.manifest.default_provider or ()),

@@ -606,3 +606,36 @@ def test_adapter_quote_per_request_path(fake_tqsdk: types.ModuleType) -> None:
     assert FakeTqApi.instances[0].closed
     # per_request 模式不持有 Runtime 常驻
     adapter.shutdown_runtime()
+
+
+# ---------------------------------------------------------------------------
+# runtime_status 回填（M4：供 /v1/capabilities 鸭子类型读取）
+# ---------------------------------------------------------------------------
+
+
+def test_adapter_runtime_status_lifecycle(fake_tqsdk: types.ModuleType) -> None:
+    """shared 模式 runtime_status 随 Runtime 生命周期变化（idle → ready）。"""
+    adapter = _quote_adapter()
+    assert adapter.runtime_status == "idle"  # 懒启动前
+
+    quote = asyncio.run(adapter.fetch_quote(_quote_query()))
+    assert quote.last_price == 848.24
+    assert adapter.runtime_status == "ready"
+    adapter.shutdown_runtime()
+
+
+def test_adapter_runtime_status_fatal(fake_tqsdk: types.ModuleType) -> None:
+    """构造致命失败：Runtime 进入 fatal，runtime_status 如实透出。"""
+    FakeTqApi.fail_construct = True
+    adapter = _quote_adapter(tqsdk_first_snapshot_timeout=0.2)
+    assert adapter.runtime_status == "idle"
+    with pytest.raises(UpstreamError):
+        asyncio.run(adapter.fetch_quote(_quote_query()))
+    assert adapter.runtime_status == "fatal"
+    adapter.shutdown_runtime()
+
+
+def test_adapter_runtime_status_per_request_is_none(fake_tqsdk: types.ModuleType) -> None:
+    """per_request 模式无常驻长连接：runtime_status 为 None（目录回退 unknown）。"""
+    adapter = _quote_adapter(tqsdk_conn_mode="per_request")
+    assert adapter.runtime_status is None

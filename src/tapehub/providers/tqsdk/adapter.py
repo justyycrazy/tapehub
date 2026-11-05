@@ -40,7 +40,7 @@ from tapehub.providers.tqsdk.request_mapper import (
     quote_symbol,
 )
 from tapehub.providers.tqsdk.response_mapper import to_standard_bars, to_standard_quote
-from tapehub.providers.tqsdk.runtime import TqSdkRuntime
+from tapehub.providers.tqsdk.runtime import RuntimeStatus, TqSdkRuntime
 
 if TYPE_CHECKING:
     from tapehub.settings import Settings
@@ -106,6 +106,21 @@ class ProviderAdapter(BaseProviderAdapter):
         """停机钩子（由应用 lifespan 调用）：关闭共享运行时（若已启动）。"""
         if self._runtime is not None:
             self._runtime.shutdown()
+
+    @property
+    def runtime_status(self) -> str | None:
+        """共享运行时生命周期状态（鸭子类型，供能力目录回填）。
+
+        值域即 ``RuntimeStatus``：``idle``（懒启动前）/``starting``/``ready``/
+        ``recycling``/``fatal``；``per_request`` 模式无常驻长连接，返回
+        ``None``（能力目录回退 ``unknown``，不伪造状态）。
+        """
+        if self._conn_mode() != "shared":
+            return None
+        runtime = self._runtime
+        if runtime is None:
+            return RuntimeStatus.IDLE.value
+        return runtime.status.value
 
     # ------------------------------------------------------------------
     # 连接模式

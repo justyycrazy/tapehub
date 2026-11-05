@@ -99,7 +99,7 @@ GET /v1/capabilities?asset_type=stock&interval=P1D
 GET /v1/providers/akshare/capabilities
 ```
 
-只读取本地能力目录，不实时访问上游；支持可选过滤参数 `provider`、`data_type`、`market`、`asset_type`、`interval`、`variant`；每个 Provider 条目携带 `default_variant`（「Provider × 资产类型」级缺省变体，variant 缺省时的解析依据）。`enabled`（是否启用）与 `runtime_status`（运行状态，第一版恒为 `unknown`）是两个不同概念。
+只读取本地能力目录，不实时访问上游；支持可选过滤参数 `provider`、`data_type`、`market`、`asset_type`、`interval`、`variant`；每个 Provider 条目携带 `default_variant`（「Provider × 资产类型」级缺省变体，variant 缺省时的解析依据）。`enabled`（是否启用，目录声明）与 `runtime_status`（适配器长连接运行时状态）是两个不同概念：`runtime_status` 经鸭子类型读取适配器属性，仅长连接类 Provider 有意义——tqsdk `shared` 模式回填真实 Runtime 状态（`idle` 懒启动前 / `starting` / `ready` / `recycling` 新一代重建中 / `fatal`），`per_request` 回滚模式与其余无长连接概念的 Provider 恒为 `unknown`（不伪造实时健康状态）。
 
 ### 历史 K 线
 
@@ -419,7 +419,9 @@ TqSdk（官方 SDK `tqsdk`：`TqApi(auth=TqAuth(...)).get_kline_serial(...)`）�
   - `shared`：进程内唯一长连接 Runtime（`TqSdkRuntime`，专属线程 tick 驱动 + `create_task` 并发协程 +
     `wait_update` 维持推送，2026-11-04 实验验证），首次请求懒启动，此后每请求节省全部建连开销；
     配套：并发闸门 `TAPEHUB_TQSDK_MAX_INFLIGHT_FETCH`（默认 16，超出 429 `CONCURRENCY_LIMIT`）、
-    连续 wait_update 异常自动重建新一代、北京时间 04:00 跨交易日回收（采纳官方跨交易日重启建议）、
+    连续 wait_update 异常自动重建新一代、北京时间 04:00 跨交易日回收（采纳官方跨交易日重启建议；
+    2026-11-05 15.3h 观察期实证：recycle triggered → gen2 重建 0.94s → 回收后请求全 200、
+    活跃订阅自动重订，证据见 probes/results/shared_observation.log 末尾结论段）、
     停机/回收时在飞请求显式失败（可快速重试）。两种模式标准化语义完全一致，`shared` 问题可一键切回；
 - 合约代码映射（交易所全大写，品种代码大小写遵从交易所规定）：`CN-SHFE-cu2607 → SHFE.cu2607`、`CN-CZCE-SR609 → CZCE.SR609`；主力连续 `CN-SHFE-cu → KQ.m@SHFE.cu`；指数连续/加权 `CN-SHFE-bu → KQ.i@SHFE.bu`（标准 symbol 允许小写品种代码，如 tqsdk 的小写品种约定）；
 - 周期映射（周期为不超过 1 日的任意秒数）：`PT1M→60`、`PT5M→300`、`PT15M→900`、`PT30M→1800`、`PT1H→3600`、`P1D→86400`；
