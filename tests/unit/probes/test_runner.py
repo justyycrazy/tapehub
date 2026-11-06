@@ -415,3 +415,35 @@ def test_run_result_is_fully_json_serializable() -> None:
     payload = json.dumps(to_json_dict(result), ensure_ascii=False)
     assert '"adjust_diff"' in payload
     assert "first_divergence" in payload
+
+
+def test_raw_runner_dotted_method_chain(monkeypatch: pytest.MonkeyPatch) -> None:
+    """CallSpec method 支持「资源.方法」点链：逐段 getattr 后调用（单段不变）。"""
+
+    class _FakeQuotes:
+        def get(self, **kwargs: object) -> list[dict[str, object]]:
+            return [{"symbol": "600000.SH", "last_price": 10.0}]
+
+    fake = types.ModuleType("probe_fake_sdk")
+    client = types.SimpleNamespace(quotes=_FakeQuotes())
+    fake.TickFlow = lambda **kw: client  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "probe_fake_sdk", fake)
+
+    probe = ProbeFile.model_validate(
+        _probe().model_dump()
+        | {
+            "raw": [
+                {
+                    "id": "fake-dotted",
+                    "module": "probe_fake_sdk",
+                    "client": {"attr": "TickFlow"},
+                    "call": [{"method": "quotes.get", "kwargs": {"symbols": ["600000.SH"]}}],
+                    "expect": {"status": "ok", "min_rows": 1},
+                }
+            ]
+        }
+    )
+    result = asyncio.run(run_provider_probe(probe, _registry(), _settings()))
+    case = next(c for c in result.cases if c.case_id == "fake-dotted")
+    assert case.verdict == "confirmed"
+    assert case.observation["rows"] == 1

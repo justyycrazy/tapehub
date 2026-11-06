@@ -791,8 +791,10 @@ async def _run_raw_case(ctx: RunContext, plan: RawPlan) -> CaseResult:
             calls_made += 1
             try:
                 root = owner if call.target == "client" else result
+                # method 支持「资源.方法」点链（如 quotes.get）：
+                # 逐段 getattr 解析到最终可调用对象，单段行为不变
                 func = (
-                    getattr(root, call.method)
+                    _resolve_attr(root, call.method)
                     if call.method
                     else _resolve_attr(module, call.module_func or "")
                 )

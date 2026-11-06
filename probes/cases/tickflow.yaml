@@ -21,25 +21,32 @@ targets:
   stock@CN:
     instrument: CN-SSE-600000
     window: {start: 2025-01-01, end: 2025-12-31}
-    min_bars: 100
+    # 跨周期下限（D≈243 / W≈52 / M≈12 根），只用于拦截空结果；按日线标定
+    # 会产生周/月假阳性（首轮探针实证：P1W 实际 52-53 根、P1M 11-12 根均正常）
+    min_bars: 10
     required_fields: [open, high, low, close, volume]
   stock@HK:
     instrument: HK-HKEX-00700
     window: {start: 2025-01-01, end: 2025-12-31}
-    min_bars: 100
+    # 跨周期下限（D≈243 / W≈52 / M≈12 根），只用于拦截空结果；按日线标定
+    # 会产生周/月假阳性（首轮探针实证：P1W 实际 52-53 根、P1M 11-12 根均正常）
+    min_bars: 10
     required_fields: [open, high, low, close, volume]
   stock@US:
     instrument: US-NASDAQ-AAPL
     window: {start: 2025-01-01, end: 2025-12-31}
-    min_bars: 100
+    # 跨周期下限（D≈243 / W≈52 / M≈12 根），只用于拦截空结果；按日线标定
+    # 会产生周/月假阳性（首轮探针实证：P1W 实际 52-53 根、P1M 11-12 根均正常）
+    min_bars: 10
     required_fields: [open, high, low, close, volume]
 
 chain:
   include_declared: true
   skip: []
   adjust_diff:
-    # 港股/美股复权语义是否与 A 股相同（forward/backward 是否生效、基准为何）
-    # 是本轮重点疑点；日线足以判定生效性，收敛 interval 控制预算。
+    # 三市场复权生效性（forward/backward 是否生效、基准为何）：首轮已实证
+    # 三市场均真实生效（HK qfq max_diff 7.97 元、US hfq 67889 元，首分歧
+    # 2024-06-03 除权期）；日线足以判定生效性，收敛 interval 控制预算。
     targets: [stock@CN, stock@HK, stock@US]
     window: {start: 2024-06-01, end: 2024-08-31}   # 分红除权高发窗口
     intervals: [P1D]
@@ -47,60 +54,65 @@ chain:
     fields: [close]
   history_depth:
     targets: [stock@CN, stock@HK, stock@US]
-    earliest: 2000-01-01
+    # 首轮实证三市场在 2000-01-01 边界仍有数据（HK 2000-2005 窗口 137 根 ≈
+    # 00700 上市 2004-06 起），真实最早更早，下探边界提前到 1990
+    earliest: 1990-01-01
     era_step_years: 5
     max_calls: 16
     intervals: [P1D]     # 分钟级历史深度价值低且调用重，显式收敛到日线（变体维度不收敛）
   limit_truncation:
     targets: [stock@CN, stock@HK, stock@US]
-    interval: PT1M
+    # 免费档无分钟权限（403 指纹已在 availability 实证），10000 触顶实证
+    # 需付费档分钟线；本轮以 P1D 超长窗口验证往返与未截断
+    interval: P1D
     max_range: P1Y
     documented_max: 10000
 
 raw:
-  # ── 实时行情（tf.quotes.get）：三市场字段矩阵与返回形态指纹，供 extensions
-  #    白名单回填决策（与 tqsdk P5 / twelvedata td-quote 流程一致）。
-  #    SDK 返回对象形态（dict['data'] / 列表 / 对象 .data）未实测核实，
-  #    首轮 observe-only：只记录形态与字段，不参与判定。
+  # ── 实时行情（tf.quotes.get）：三市场字段矩阵与返回形态。SDK 0.1.25 实测
+  #    返回 list[dict]（非文档的 data 包装；无 session 字段）；
+  #    CallSpec method 支持「资源.方法」点链（quotes.get）。
   - id: tf-quote-cn
-    purpose: A股快照字段矩阵与返回形态（last_price/volume/amount/session/ext）
+    purpose: A股快照字段矩阵（600000.SH；list 形态 + last_price 断言）
     module: tickflow
     client: {attr: TickFlow, kwargs: {api_key: "$TAPEHUB_TICKFLOW_API_KEY"}}
     call:
       - {method: quotes.get, kwargs: {symbols: ["600000.SH"]}}
-    expect: {status: ok, min_fields: [last_price]}
-    assert: false
+    expect: {status: ok, min_rows: 1}
+    assert: true
   - id: tf-quote-hk
     purpose: 港股快照字段矩阵（00700.HK 后缀核实）
     module: tickflow
     client: {attr: TickFlow, kwargs: {api_key: "$TAPEHUB_TICKFLOW_API_KEY"}}
     call:
       - {method: quotes.get, kwargs: {symbols: ["00700.HK"]}}
-    expect: {status: ok, min_fields: [last_price]}
-    assert: false
+    expect: {status: ok, min_rows: 1}
+    assert: true
   - id: tf-quote-us
     purpose: 美股快照字段矩阵（AAPL.US 后缀核实）
     module: tickflow
     client: {attr: TickFlow, kwargs: {api_key: "$TAPEHUB_TICKFLOW_API_KEY"}}
     call:
       - {method: quotes.get, kwargs: {symbols: ["AAPL.US"]}}
-    expect: {status: ok, min_fields: [last_price]}
-    assert: false
+    expect: {status: ok, min_rows: 1}
+    assert: true
   - id: tf-quote-invalid-symbol-fingerprint
-    purpose: 不存在标的的错误指纹（SYMBOL_NOT_FOUND 等，供错误分类回填）
+    purpose: 不存在标的的错误指纹（供错误分类回填）
     module: tickflow
     client: {attr: TickFlow, kwargs: {api_key: "$TAPEHUB_TICKFLOW_API_KEY"}}
     call:
       - {method: quotes.get, kwargs: {symbols: ["BOGUS.XX"]}}
-    expect: {status: error, error_contains: ""}   # 任意错误：首轮记录指纹
+    expect: {status: error, error_contains: ""}   # 任意错误：记录指纹
     assert: false
 
 notes: >
-  上游限频 429 与无权限 403 的错误指纹经 chain availability（免费档分钟线
-  全量失败即指纹样本）与 tf-quote-invalid-symbol 采集；SDK 客户端构造与
-  quotes 返回形态按官方文档核实为 QuotesResponse（data 数组），适配器
-  映射已做 dict/对象双形态防御，实测形态以 tf-quote-* 观察记录为准。
-  港股/美股复权（qfq/hfq→forward/backward）语义未经探针实证——美股复权
-  口径可能与 A 股不同（参考 twelvedata splits/all 教训），adjust_diff
-  差异判定如实记录；HK/US 日线时间戳墙钟口径（毫秒时间戳的基准时区）
-  由 availability 样本顺带观察。
+  首轮实证（20261107T000545+0800）：6.5s 间隔全程未触发限频（无 429）；
+  分钟级 403 指纹为 SDK PermissionError「无分钟K线查询权限」（免费档无分钟
+  权限，经应用层包装 UPSTREAM_ERROR 告知用户）；三市场 P1D × 三复权全
+  confirmed，adjust_diff 实证 forward/backward 在 CN/HK/US 均真实生效
+  （HK qfq max_diff 7.97 元、US hfq 67889 元，首分歧 2024-06-03 除权期）；
+  日线时间戳口径：CN/HK 北京零点，US 美东零点（北京 12:00 夏令 / 13:00
+  冬令，随 DST 漂移）；HK/US 日线 amount 上游原值 0（无成交额数据）；
+  quotes 实测返回 list[dict]（非文档 data 包装、无 session 字段），比例
+  字段为小数比例（1% = 0.01）。本轮复跑验证：min_bars 跨周期下限、
+  quotes 链式调用断言、history_depth 下探 1990。

@@ -446,9 +446,10 @@ TickFlow（REST API `GET https://api.tickflow.org/v1/klines` / `GET /v1/quotes`�
 - 标的代码映射：`CN-SSE-600000 → 600000.SH`、`CN-SZSE-… → .SZ`、`CN-BSE-… → .BJ`、`HK-HKEX-00700 → 00700.HK`、`US-NASDAQ-AAPL → AAPL.US`（美股 NYSE/NASDAQ/CBOE 统一 US 后缀，exchange 段仅作标准代码规范）；
 - 周期映射：`PT1M→1m`、`PT5M→5m`、`PT10M→10m`、`PT15M→15m`、`PT30M→30m`、`PT1H→60m`、`P1D→1d`、`P1W→1w`、`P1M→1M`；季线 `1Q` 无法用 ISO 8601 Duration 表达，年线 `1Y` 超出项目「最大支持到月线」的周期范围，均不声明；
 - 复权映射：`qfq→forward`（比例前复权）、`hfq→backward`、`none→none`（差值加法变体不对外暴露）；SDK 自身默认 forward，适配器始终显式传参；港股/美股复权语义未经探针实证（美股复权口径可能与 A 股不同），生效性以探针报告为准；
-- 快照字段映射：`last_price/volume/amount` 为标准字段（五档盘口上游无源字段恒 null）；`session/region/name/change_pct/change_amount/amplitude/turnover_rate/prev_close/open/high/low` 经 extensions 白名单透出（比例字段按上游口径 0.01=1%，即数值即百分数，原值透出）；上游支持逗号分隔批量（本项目单标的快照，单标的单次调用）；
+- 快照字段映射：`last_price/volume/amount` 为标准字段（五档盘口上游无源字段恒 null）；`region/name/change_pct/change_amount/amplitude/turnover_rate/prev_close/open/high/low` 经 extensions 白名单透出。SDK 0.1.25 探针实测：返回 `list[dict]`（非文档 data 包装），**无 `session` 字段**（文档声明存在，防御映射存在才透出），`ext.type`（cn_equity 等）不在白名单不透出；比例字段为**小数比例（1% = 0.01，如 change_pct 0.0162 = 1.62%）**；上游支持逗号分隔批量（本项目单标的快照，单标的单次调用）；
 - 上游单次上限 10000 根：达到上限时响应 `meta.partial=true` 且 `warnings` 提示可能截断；
-- 上游 SDK 的具体异常类型未在文档中核实，目前统一包装为 `UPSTREAM_ERROR`（限频 429 与分钟权限 403 的细分错误码待探针指纹核实后补充）。
+- 错误指纹（2026-11-07 探针实证）：免费档分钟线无权限为 SDK `PermissionError`「无分钟K线查询权限」（统一包装 `UPSTREAM_ERROR` 告知用户）；限频探针 6.5s 间隔（≈9 次/分钟）全程未触发；`RateLimitError` 类型存在于 SDK，429 指纹待更高频场景核实；
+- 日线时间戳口径（探针实测）：CN/HK 日线为**北京时间零点**；US 日线为**美东零点**（归一化北京时间随夏令时在 12:00/13:00 漂移）；HK/US 日线 `amount` 上游原值 0（无成交额数据，按原值透出非缺失 null）；历史深度：三市场日线在 2000-01-01 前仍有数据（HK 自 00700 上市 2004-06 起），最早锚点待更早边界下探。
 
 AlphaFeed（REST API `GET https://api.alphafeed.org/v1/klines`，官方 SDK `alphafeed`）：
 
