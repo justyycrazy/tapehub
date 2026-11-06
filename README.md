@@ -24,8 +24,9 @@
 - `GET /v1/capabilities`：全部 Provider 能力目录；
 - `GET /v1/providers/{provider}/capabilities`：单个 Provider 能力；
 - `GET /v1/market/bars`：统一历史 K 线查询；
-- `GET /v1/market/quotes`：实时快照（单标的订阅模型，限 `single` 模式）：tqsdk
-  （订阅-推送 Runtime）与 twelvedata（WS 订阅缓存，GLOBAL 外汇/加密货币）；
+- `GET /v1/market/quotes`：实时快照（限 `single` 模式）：tqsdk
+  （订阅-推送 Runtime）、twelvedata（WS 订阅缓存，GLOBAL 外汇/加密货币）与
+  tickflow（无状态 REST 快照，CN/HK/US 股票）；
 - `GET /v1/market/quotes/stream`：实时快照 SSE 流（单标的订阅推送、
   心跳与空闲退订、容量闸门，限 `single` 模式）：tqsdk（仅 `shared` 连接模式）
   与 twelvedata（WS 长连接，退订即释放上游订阅额度）；
@@ -143,19 +144,20 @@ GET /v1/market/bars?provider=akshare&asset_type=stock&instrument=CN-SSE-600000&i
 
 缺失数值以 `null` 返回，不用 `0` 冒充；Provider 特有字段只能通过 `extensions` 受控透出（如 akshare 的 `pct_change`、`turnover_rate`、`hold`、`settle`）。
 
-### 实时快照（tqsdk / twelvedata）
+### 实时快照（tqsdk / twelvedata / tickflow）
 
 ```http
 GET /v1/market/quotes?provider=tqsdk&asset_type=contract&instrument=CN-SHFE-au2612
 GET /v1/market/quotes?provider=twelvedata&asset_type=forex&instrument=GLOBAL-OTC-EUR/USD
 ```
 
-参数：`provider`（默认 `auto`；当前 tqsdk 声明 CN 全资产、twelvedata 声明 GLOBAL 外汇/加密货币的 quotes 能力）、`asset_type`（必填）、`instrument`（必填）、`variant`（可选）。**快照是当前时点的数据：无 `interval`、无时间范围、无分页参数**（`adjust` 同样不接受——复权是历史序列概念）。
+参数：`provider`（默认 `auto`；当前 tqsdk 声明 CN 全资产、twelvedata 声明 GLOBAL 外汇/加密货币、tickflow 声明 CN/HK/US 股票的 quotes 能力）、`asset_type`（必填）、`instrument`（必填）、`variant`（可选）。**快照是当前时点的数据：无 `interval`、无时间范围、无分页参数**（`adjust` 同样不接受——复权是历史序列概念）。auto 优先级：`default_provider` 声明的资产类型优先，其余按注册顺序——tickflow 注册在末位不抢占既有默认（CN 股票快照仍归 tqsdk；HK 与 US 股票快照为 tickflow 独占，显式 `provider=tickflow` 亦可选用）。
 
-两类上游的交付模型不同，语义差异如实声明：
+三类上游的交付模型不同，语义差异如实声明：
 
 - **tqsdk（订阅-推送）**：REST 快照从共享 Runtime 的订阅缓存即时读取（首包超时 `QUOTE_NOT_READY` 408，行为要点见下与 TqSdk 映射表）；
-- **twelvedata（WS 订阅缓存）**：快照与流同源，均来自 WS 共享订阅的实时 price 事件（2026-11-05 探针实证），冷订阅等待首包（超时同为 `QUOTE_NOT_READY` 408）、活跃订阅即时读缓存；上游 WS credit 按**并发活跃订阅 symbol** 计数（免费版 8），并发订阅达 `TAPEHUB_TWELVEDATA_SUBSCRIPTION_LIMIT` 返回 `UPSTREAM_SUBSCRIPTION_LIMIT`（429），映射表见 Twelve Data 章节。
+- **twelvedata（WS 订阅缓存）**：快照与流同源，均来自 WS 共享订阅的实时 price 事件（2026-11-05 探针实证），冷订阅等待首包（超时同为 `QUOTE_NOT_READY` 408）、活跃订阅即时读缓存；上游 WS credit 按**并发活跃订阅 symbol** 计数（免费版 8），并发订阅达 `TAPEHUB_TWELVEDATA_SUBSCRIPTION_LIMIT` 返回 `UPSTREAM_SUBSCRIPTION_LIMIT`（429），映射表见 Twelve Data 章节；
+- **tickflow（无状态 REST）**：快照为单标的单次 `tf.quotes.get` 调用，无订阅/缓存语义（不产生 `QUOTE_NOT_READY`——要么返回快照，要么返回上游错误）；限频/无权限等 SDK 异常统一包装为 `UPSTREAM_ERROR`；不支持 SSE 流（M3 流式仍为 tqsdk/twelvedata），映射表见 TickFlow 章节。
 
 以下请求/响应示例与行为要点为 **tqsdk 链路**；twelvedata 链路的字段口径见其映射表。
 
@@ -337,6 +339,7 @@ Accept: text/event-stream
 
 - **`PT1M`（1 分钟）与 `P1M`（1 个月）是不同周期**；
 - 不把 `P1M` 换算为固定 30 天，也不把周期统一换算为秒数；`P1W` 与 `P7D`、`PT1H` 与 `PT60M` 视为**不同**周期代码；
+- **项目能力目录的周期上界为月线（`P1M`）**：manifest 只声明**单分量**且不超过月线的周期——年分量（`P1Y`）、月分量 > 1（季线的 `P3M`/`P13W` 映射）、一切组合周期（`P1M2W`、`P1W2D`、`PT1H30M`）均被架构测试静态拒绝；
 - `tick` 不是 ISO 8601 周期；manifest 中出现非法周期会在加载时被拒绝。
 
 ### 时间边界与时区
@@ -432,28 +435,30 @@ API 层 → Application 层 → Domain 层
 | index | tencent | `stock_zh_index_daily_tx` | P1D | none | 无 amount（上游 amount 列语义为成交量） |
 | contract / continuous | sina | `futures_zh_daily_sina` | P1D | none | 全部（extensions: hold/settle） |
 
-TickFlow（REST API `GET https://api.tickflow.org/v1/klines`，官方 SDK `tickflow`）：
+TickFlow（REST API `GET https://api.tickflow.org/v1/klines` / `GET /v1/quotes`，官方 SDK `tickflow`）：
 
-| 资产类型 | 变体 | 上游接口 | 周期 | adjust | 标准字段 |
-| --- | --- | --- | --- | --- | --- |
-| stock | tickflow（默认） | `tf.klines.get` | PT1M~PT30M/PT1H、P1D/P1W/P1M/P1Y | none/qfq/hfq | 全部（extensions: prev_close） |
+| 资产类型 | 市场 | 变体 | 上游接口 | 周期 | adjust | 标准字段 |
+| --- | --- | --- | --- | --- | --- | --- |
+| stock（bars） | CN/HK/US | tickflow（默认） | `tf.klines.get` | PT1M~PT30M/PT1H、P1D/P1W/P1M | none/qfq/hfq | 全部（extensions: prev_close） |
+| stock（quotes） | CN/HK/US | tickflow（默认） | `tf.quotes.get(symbols=[...])` | —（快照无周期） | —（快照无复权） | timestamp/last_price/volume/amount（extensions 见下） |
 
 - API Key 通过环境变量 `TAPEHUB_TICKFLOW_API_KEY` 提供并传入 SDK 客户端，禁止写入代码/manifest/日志；未配置时能力目录正常，数据请求返回 `PROVIDER_NOT_IMPLEMENTED`；
-- 标的代码映射：`CN-SSE-600000 → 600000.SH`、`CN-SZSE-… → .SZ`、`CN-BSE-… → .BJ`（后缀 SH/SZ/BJ/US/HK 已按文档核实，第一版仅声明 A 股）；
-- 周期映射：`PT1M→1m`、`PT5M→5m`、`PT10M→10m`、`PT15M→15m`、`PT30M→30m`、`PT1H→60m`、`P1D→1d`、`P1W→1w`、`P1M→1M`、`P1Y→1Y`；季线 `1Q` 无法用 ISO 8601 Duration 表达，不声明；
-- 复权映射：`qfq→forward`（比例前复权）、`hfq→backward`、`none→none`（差值加法变体不对外暴露）；SDK 自身默认 forward，适配器始终显式传参；
+- 标的代码映射：`CN-SSE-600000 → 600000.SH`、`CN-SZSE-… → .SZ`、`CN-BSE-… → .BJ`、`HK-HKEX-00700 → 00700.HK`、`US-NASDAQ-AAPL → AAPL.US`（美股 NYSE/NASDAQ/CBOE 统一 US 后缀，exchange 段仅作标准代码规范）；
+- 周期映射：`PT1M→1m`、`PT5M→5m`、`PT10M→10m`、`PT15M→15m`、`PT30M→30m`、`PT1H→60m`、`P1D→1d`、`P1W→1w`、`P1M→1M`；季线 `1Q` 无法用 ISO 8601 Duration 表达，年线 `1Y` 超出项目「最大支持到月线」的周期范围，均不声明；
+- 复权映射：`qfq→forward`（比例前复权）、`hfq→backward`、`none→none`（差值加法变体不对外暴露）；SDK 自身默认 forward，适配器始终显式传参；港股/美股复权语义未经探针实证（美股复权口径可能与 A 股不同），生效性以探针报告为准；
+- 快照字段映射：`last_price/volume/amount` 为标准字段（五档盘口上游无源字段恒 null）；`session/region/name/change_pct/change_amount/amplitude/turnover_rate/prev_close/open/high/low` 经 extensions 白名单透出（比例字段按上游口径 0.01=1%，即数值即百分数，原值透出）；上游支持逗号分隔批量（本项目单标的快照，单标的单次调用）；
 - 上游单次上限 10000 根：达到上限时响应 `meta.partial=true` 且 `warnings` 提示可能截断；
-- 上游 SDK 的具体异常类型未在文档中核实，目前统一包装为 `UPSTREAM_ERROR`（限频 429 的细分错误码待核实后补充）。
+- 上游 SDK 的具体异常类型未在文档中核实，目前统一包装为 `UPSTREAM_ERROR`（限频 429 与分钟权限 403 的细分错误码待探针指纹核实后补充）。
 
 AlphaFeed（REST API `GET https://api.alphafeed.org/v1/klines`，官方 SDK `alphafeed`）：
 
 | 资产类型 | 变体 | 上游接口 | 周期 | adjust | 标准字段 |
 | --- | --- | --- | --- | --- | --- |
-| stock | alphafeed（默认） | `af.klines.get` | PT1M/PT5M/PT15M/PT30M/PT1H、P1D/P1W/P1M/P1Y | none/qfq/hfq | 全部（extensions: prev_close） |
+| stock | alphafeed（默认） | `af.klines.get` | PT1M/PT5M/PT15M/PT30M/PT1H、P1D/P1W/P1M | none/qfq/hfq | 全部（extensions: prev_close） |
 
 - API Key 通过环境变量 `TAPEHUB_ALPHAFEED_API_KEY` 提供并传入 SDK 客户端，禁止写入代码/manifest/日志；未配置时能力目录正常，数据请求返回 `PROVIDER_NOT_IMPLEMENTED`；
 - 标的代码映射：`CN-SSE-600519 → 600519.SH`、`CN-SZSE-… → .SZ`、`CN-BSE-… → .BJ`（示例 600519.SH / 000001.SZ / 920047.BJ 已按文档核实）；
-- 周期映射：`PT1M→1m`、`PT5M→5m`、`PT15M→15m`、`PT30M→30m`、`PT1H→60m`、`P1D→1d`、`P1W→1w`、`P1M→1M`、`P1Y→1Y`；**上游无 10m 周期**，`PT10M` 不声明；季线 `1Q` 无法用 ISO 8601 Duration 表达，不声明；
+- 周期映射：`PT1M→1m`、`PT5M→5m`、`PT15M→15m`、`PT30M→30m`、`PT1H→60m`、`P1D→1d`、`P1W→1w`、`P1M→1M`；**上游无 10m 周期**，`PT10M` 不声明；季线 `1Q` 无法用 ISO 8601 Duration 表达，年线 `1Y` 超出项目周期上界，均不声明；
 - 复权映射：`qfq→forward`、`hfq→backward`、`none→none`（差值加法变体不对外暴露）；上游自身默认 forward，适配器始终显式传参；
 - 上游单次上限 10000 根：达到上限时响应 `meta.partial=true` 且 `warnings` 提示可能截断；
 - 分钟级周期需上游套餐开通分钟 K 线权限（403 时统一包装为 `UPSTREAM_ERROR`）。

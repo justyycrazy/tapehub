@@ -13,17 +13,20 @@
 from __future__ import annotations
 
 import datetime as dt
+import re
 from enum import StrEnum
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from tapehub.domain.intervals import Interval
 from tapehub.domain.models import Adjust, AssetType
 
 PROBE_SCHEMA_VERSION = 1
 
-
+# 市场限定目标引用：``stock``（不限定市场，标的自身市场即市场）或
+# ``stock@HK``（限定市场）。同一 asset_type 跨多市场声明能力的 Provider
+# （如 tickflow 的 CN/HK/US stock）必须用限定形式区分各市场的基准标的。
 class CaseVerdict(StrEnum):
     """探针判定：统一五种结论，语义见 probes/README.md。"""
 
@@ -38,6 +41,42 @@ class _Strict(BaseModel):
     """公共基类：禁止未知字段。"""
 
     model_config = ConfigDict(extra="forbid")
+
+
+_TARGET_REF_RE = re.compile(r"^([a-z][a-z0-9-]*)(?:@([A-Z][A-Z0-9]*))?$")
+
+
+class TargetRef(_Strict):
+    """目标引用：``{asset_type}`` 或 ``{asset_type}@{MARKET}``。
+
+    ``market`` 为 ``None`` 表示不限定市场（兼容既有单市场目标）；
+    case id 以 ``key`` 为前缀，限定目标天然与不限定目标的 id 不冲突。
+    """
+
+    asset_type: AssetType
+    market: str | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _parse_ref(cls, value: Any) -> Any:
+        if isinstance(value, str):
+            match = _TARGET_REF_RE.match(value)
+            if match is None:
+                raise ValueError(
+                    f"invalid target reference {value!r}: expected "
+                    f"'<asset_type>' or '<asset_type>@<MARKET>'"
+                )
+            return {"asset_type": match.group(1), "market": match.group(2)}
+        return value
+
+    @property
+    def key(self) -> str:
+        """回写探针文件时使用的键 / case id 前缀。"""
+        if self.market is None:
+            return self.asset_type.value
+        return f"{self.asset_type.value}@{self.market}"
+
+
 
 
 class RequiresSpec(_Strict):
@@ -93,7 +132,7 @@ class AdjustDiffSpec(_Strict):
     ``intervals`` 可显式收敛 interval 维度以控制预算（variant 维度永不收敛）。
     """
 
-    targets: list[AssetType] = Field(min_length=1)
+    targets: list[TargetRef] = Field(min_length=1)
     window: WindowSpec
     pairs: list[tuple[Adjust, Adjust]] = Field(default_factory=lambda: [(Adjust.NONE, Adjust.QFQ)])
     fields: list[str] = Field(default_factory=lambda: ["close"])
@@ -110,7 +149,7 @@ class HistoryDepthSpec(_Strict):
     下载同一份全量数据，单次调用反而更省且无粒度误差。
     """
 
-    targets: list[AssetType] = Field(min_length=1)
+    targets: list[TargetRef] = Field(min_length=1)
     earliest: dt.date
     era_step_years: int = Field(default=5, ge=1)
     max_calls: int = Field(default=24, ge=1)
@@ -129,7 +168,7 @@ class VariantConsistencySpec(_Strict):
     用于消化跨源小数位精度等表示层差异；差异幅度始终如实记录。
     """
 
-    targets: list[AssetType] = Field(min_length=1)
+    targets: list[TargetRef] = Field(min_length=1)
     window: WindowSpec
     fields: list[str] = Field(default_factory=lambda: ["close"])
     intervals: list[Interval] = Field(default_factory=list)
@@ -139,7 +178,7 @@ class VariantConsistencySpec(_Strict):
 class LimitTruncationSpec(_Strict):
     """单次上限探针：最小声明周期 + 超长窗口，实测单次返回上限（按 variant 全量展开）。"""
 
-    targets: list[AssetType] = Field(min_length=1)
+    targets: list[TargetRef] = Field(min_length=1)
     interval: Interval
     max_range: Interval
     # 文档声称的上限；不写则只观察不判定
@@ -275,7 +314,15 @@ class ProbeFile(_Strict):
     version: int
     requires: RequiresSpec = Field(default_factory=RequiresSpec)
     pacing: PacingSpec = Field(default_factory=PacingSpec)
-    targets: dict[AssetType, TargetSpec] = Field(min_length=1)
+    targets: dict[str, TargetSpec] = Field(min_length=1)
+
+    @field_validator("targets")
+    @classmethod
+    def _target_keys(cls, value: dict[str, TargetSpec]) -> dict[str, TargetSpec]:
+        for key in value:
+            # 键合法性由 TargetRef 同一规则校验（asset_type[@MARKET]）
+            TargetRef.model_validate(key)
+        return value
     chain: ChainSpec | None = None
     raw: list[RawCaseSpec] = Field(default_factory=list)
     connection: list[ConnectionCaseSpec] = Field(default_factory=list)

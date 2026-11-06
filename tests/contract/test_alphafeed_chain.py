@@ -115,7 +115,7 @@ def test_capability_catalog(alphafeed_client: TestClient) -> None:  # type: igno
     assert cap["variants"] == ["alphafeed"]
     # AlphaFeed 周期枚举没有 10m
     assert [i["code"] for i in cap["intervals"]] == [
-        "PT1M", "PT5M", "PT15M", "PT30M", "PT1H", "P1D", "P1W", "P1M", "P1Y",
+        "PT1M", "PT5M", "PT15M", "PT30M", "PT1H", "P1D", "P1W", "P1M",
     ]
     assert cap["adjustments"] == ["none", "qfq", "hfq"]
 

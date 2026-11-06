@@ -1,17 +1,21 @@
 """TickFlow 完整 HTTP 链路契约测试（SDK 用桩 Mock，无真实网络）。"""
 
+from datetime import datetime
 from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
 
 from tapehub.api.app import create_app
+from tapehub.domain.models import CN_TIMEZONE
 from tapehub.providers.registry import build_default_registry
 from tests.conftest import make_settings
 from tests.fixtures.providers.stub_tickflow import (
     StubTickFlow,
     install,
     klines_payload,
+    preset_quote_payload,
+    quote_payload,
     sized_klines_payload,
 )
 
@@ -108,14 +112,22 @@ def test_capability_catalog(tickflow_client: TestClient) -> None:  # type: ignor
     entry = response.json()["data"][0]
     assert entry["provider"] == "tickflow"
     assert entry["enabled"] is True
-    cap = entry["capabilities"][0]
-    assert cap["asset_types"] == ["stock"]
-    assert cap["variants"] == ["tickflow"]
-    assert [i["code"] for i in cap["intervals"]] == [
+    bars_cap = entry["capabilities"][0]
+    assert bars_cap["data_type"] == "bars"
+    assert bars_cap["markets"] == ["CN", "HK", "US"]
+    assert bars_cap["asset_types"] == ["stock"]
+    assert bars_cap["variants"] == ["tickflow"]
+    assert [i["code"] for i in bars_cap["intervals"]] == [
         "PT1M", "PT5M", "PT10M", "PT15M", "PT30M",
-        "PT1H", "P1D", "P1W", "P1M", "P1Y",
+        "PT1H", "P1D", "P1W", "P1M",
     ]
-    assert cap["adjustments"] == ["none", "qfq", "hfq"]
+    assert bars_cap["adjustments"] == ["none", "qfq", "hfq"]
+    # quotes 快照能力：无 interval/adjust 维度，三市场 stock
+    quotes_cap = entry["capabilities"][1]
+    assert quotes_cap["data_type"] == "quotes"
+    assert quotes_cap["markets"] == ["CN", "HK", "US"]
+    assert quotes_cap["intervals"] == []
+    assert quotes_cap["adjustments"] == []
 
 
 def test_unsupported_interval(tickflow_client: TestClient) -> None:  # type: ignore[no-untyped-def]
@@ -148,3 +160,156 @@ def test_default_variant_routes_to_declared_default(
     response = tickflow_client.get("/v1/market/bars", params=params)
     assert response.status_code == 200
     assert response.json()["meta"]["variant"] == "tickflow"
+
+
+# ---------------------------------------------------------------------------
+# 港股 / 美股 K 线链路与实时快照链路（M2，GET /v1/market/quotes）
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("instrument", "symbol"),
+    [
+        ("HK-HKEX-00700", "00700.HK"),
+        ("US-NASDAQ-AAPL", "AAPL.US"),
+    ],
+)
+def test_hk_us_bars_full_chain(
+    tickflow_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    instrument: str,
+    symbol: str,
+) -> None:
+    preset_payload(monkeypatch, klines_payload(["2026-01-05", "2026-01-06"]))
+
+    response = tickflow_client.get(
+        "/v1/market/bars", params={**BASE_PARAMS, "instrument": instrument}
+    )
+    assert response.status_code == 200
+    body = response.json()
+    kwargs = StubTickFlow.instances[-1].calls[0]
+    assert kwargs["symbol"] == symbol
+    assert body["data"]["instrument"] == instrument
+    assert body["meta"]["provider"] == "tickflow"
+    assert len(body["data"]["bars"]) == 2
+
+
+QUOTE_PARAMS = {
+    "provider": "tickflow",
+    "asset_type": "stock",
+    "instrument": "CN-SSE-600000",
+    "variant": "tickflow",
+}
+
+
+def test_quote_full_chain(
+    tickflow_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A股快照链路：单标的 symbols 调用 + extensions 白名单。"""
+    preset_quote_payload(monkeypatch, quote_payload("600000.SH"))
+
+    response = tickflow_client.get("/v1/market/quotes", params=QUOTE_PARAMS)
+    assert response.status_code == 200
+    body = response.json()
+
+    client = StubTickFlow.instances[-1]
+    assert client.quote_calls == [{"symbols": ["600000.SH"]}]
+
+    data = body["data"]
+    assert data["instrument"] == "CN-SSE-600000"
+    assert data["asset_type"] == "stock"
+    assert body["meta"]["provider"] == "tickflow"
+    quote = data["quote"]
+    assert quote["last_price"] == 10.25
+    assert quote["volume"] == 123456.0
+    assert quote["amount"] == 1266924.0
+    # 行情时间统一北京时间（上游毫秒时间戳归一化）
+    assert quote["timestamp"] == "2026-01-05T08:00:00+08:00"
+    # 盘口上游无源字段恒 null；extensions 白名单透出会话/名称/涨跌幅/开高低昨收
+    assert quote["bid_price1"] is None
+    assert quote["extensions"]["session"] == "regular"
+    assert quote["extensions"]["name"] == "浦发银行"
+    assert quote["extensions"]["change_pct"] == 1.49
+    assert quote["extensions"]["prev_close"] == 10.1
+
+
+@pytest.mark.parametrize(
+    ("instrument", "symbol"),
+    [
+        ("HK-HKEX-00700", "00700.HK"),
+        ("US-NASDAQ-AAPL", "AAPL.US"),
+    ],
+)
+def test_quote_hk_us_chain(
+    tickflow_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    instrument: str,
+    symbol: str,
+) -> None:
+    preset_quote_payload(monkeypatch, quote_payload(symbol))
+
+    response = tickflow_client.get(
+        "/v1/market/quotes", params={**QUOTE_PARAMS, "instrument": instrument}
+    )
+    assert response.status_code == 200
+    assert StubTickFlow.instances[-1].quote_calls == [{"symbols": [symbol]}]
+    assert response.json()["data"]["instrument"] == instrument
+
+
+def test_quote_contract_violation_is_upstream_error(
+    tickflow_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """上游契约违背（空 data）→ UPSTREAM_ERROR，不伪造快照。"""
+    preset_quote_payload(monkeypatch, {"data": []})
+
+    response = tickflow_client.get("/v1/market/quotes", params=QUOTE_PARAMS)
+    assert response.status_code == 502
+    assert response.json()["error"]["code"] == "UPSTREAM_ERROR"
+
+
+# ---------------------------------------------------------------------------
+# auto 路由优先级：tickflow 不抢占既有默认路由（注册序末位）
+# ---------------------------------------------------------------------------
+
+
+def test_auto_routing_precedence(tickflow_client: TestClient) -> None:
+    """重叠能力归既有 Provider（tqsdk / twelvedata），独占能力归 tickflow。"""
+    from tapehub.application.provider_router import ProviderRouter
+    from tapehub.domain.models import AssetType, Instrument, QuoteQuery
+
+    settings = make_settings(tickflow_api_key="test-key")
+    router = ProviderRouter(build_default_registry(settings))
+
+    def _quote(instrument: str) -> str:
+        selection = router.select_quote(
+            QuoteQuery(
+                asset_type=AssetType.STOCK, instrument=Instrument.parse(instrument)
+            )
+        )
+        return selection.record.name
+
+    def _bars(instrument: str) -> str:
+        from tapehub.domain.intervals import Interval
+        from tapehub.domain.models import Adjust, BarQuery
+
+        selection = router.select(
+            BarQuery(
+                asset_type=AssetType.STOCK,
+                instrument=Instrument.parse(instrument),
+                interval=Interval.parse("P1D"),
+                start=datetime(2026, 1, 1, tzinfo=CN_TIMEZONE),
+                end=datetime(2026, 1, 31, tzinfo=CN_TIMEZONE),
+                adjust=Adjust.NONE,
+                offset=0,
+                limit=10,
+            )
+        )
+        return selection.record.name
+
+    # CN stock 快照与 US stock K 线：既有默认（tqsdk / twelvedata）不受影响
+    assert _quote("CN-SSE-600000") == "tqsdk"
+    assert _bars("US-NASDAQ-AAPL") == "twelvedata"
+    # tickflow 独占能力（HK 两类、US 快照）自动路由
+    assert _quote("HK-HKEX-00700") == "tickflow"
+    assert _quote("US-NASDAQ-AAPL") == "tickflow"
+    assert _bars("HK-HKEX-00700") == "tickflow"

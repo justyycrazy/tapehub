@@ -1,7 +1,8 @@
 """测试用 TickFlow SDK 桩：模拟延迟导入的 ``tickflow`` 模块。
 
-只实现适配器使用的 ``TickFlow(api_key=...).klines.get(...)`` 路径，
-记录构造与调用参数并返回文档核实的紧凑列式结构，无真实网络。
+实现适配器使用的 ``TickFlow(api_key=...).klines.get(...)`` 与
+``.quotes.get(symbols=...)`` 路径，记录构造与调用参数并返回文档
+核实的紧凑列式 / QuotesResponse 结构，无真实网络。
 """
 
 from datetime import datetime, timezone
@@ -22,6 +23,15 @@ class StubKlines:
         return self._client.payload
 
 
+class StubQuotes:
+    def __init__(self, client: "StubTickFlow") -> None:
+        self._client = client
+
+    def get(self, **kwargs: Any) -> Any:
+        self._client.quote_calls.append(dict(kwargs))
+        return self._client.quote_payload
+
+
 class StubTickFlow:
     """TickFlow 客户端桩；所有实例记录在 ``instances``。"""
 
@@ -35,8 +45,11 @@ class StubTickFlow:
             "timestamp": [], "open": [], "high": [],
             "low": [], "close": [], "volume": [], "amount": [],
         }
+        self.quote_calls: list[dict[str, Any]] = []
+        self.quote_payload: dict[str, Any] = {"data": []}
         StubTickFlow.instances.append(self)
         self.klines = StubKlines(self)
+        self.quotes = StubQuotes(self)
 
 
 def set_payload(client: StubTickFlow, payload: Any) -> None:
@@ -58,6 +71,34 @@ def klines_payload(days: list[str]) -> dict[str, list[Any]]:
     }
 
 
+def quote_payload(symbol: str = "600000.SH") -> dict[str, Any]:
+    """按官方文档构造 QuotesResponse：data 数组单条快照。"""
+    return {
+        "data": [
+            {
+                "symbol": symbol,
+                "region": "CN",
+                "last_price": 10.25,
+                "prev_close": 10.1,
+                "open": 10.0,
+                "high": 10.3,
+                "low": 9.9,
+                "volume": 123456,
+                "amount": 1266924.0,
+                "timestamp": _to_millis("2026-01-05"),
+                "session": "regular",
+                "ext": {
+                    "amplitude": 3.92,
+                    "change_amount": 0.15,
+                    "change_pct": 1.49,
+                    "name": "浦发银行",
+                    "turnover_rate": 0.04,
+                },
+            }
+        ]
+    }
+
+
 def sized_klines_payload(n: int) -> dict[str, list[Any]]:
     """n 根 K 线的列式响应（时间戳任意），用于上游截断边界测试。"""
     base_ms = int(datetime(2026, 1, 1, tzinfo=timezone.utc).timestamp() * 1000)
@@ -72,7 +113,7 @@ def sized_klines_payload(n: int) -> dict[str, list[Any]]:
     }
 
 
-def install(monkeypatch: Any) -> list[StubTickFlow]:
+def install(monkeypatch: Any) -> list["StubTickFlow"]:
     """把桩模块注入 sys.modules，返回实例记录列表。"""
     import sys
     import types
@@ -93,3 +134,14 @@ def preset_payload(monkeypatch: Any, payload: Any) -> None:
         self.payload = payload
 
     monkeypatch.setattr(StubTickFlow, "__init__", init_with_payload)
+
+
+def preset_quote_payload(monkeypatch: Any, payload: Any) -> None:
+    """让每个新建的桩客户端都返回指定快照响应（须在 install 之后调用）。"""
+    original_init = StubTickFlow.__init__
+
+    def init_with_quote_payload(self: StubTickFlow, *args: Any, **kwargs: Any) -> None:
+        original_init(self, *args, **kwargs)
+        self.quote_payload = payload
+
+    monkeypatch.setattr(StubTickFlow, "__init__", init_with_quote_payload)

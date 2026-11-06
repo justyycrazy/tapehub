@@ -27,13 +27,18 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# 注册顺序即 auto 路由的回退优先级（default_provider 声明的资产类型优先，
+# 其余按本顺序取首个完整匹配的候选）。新增 Provider 一律排在既有 Provider
+# 之后：不抢占既有默认路由（tickflow 与 tqsdk 的 CN stock 快照、与
+# twelvedata 的 US stock K 线重叠，重叠能力可显式 provider=tickflow 使用，
+# tickflow 独占的 HK 与 US stock 快照能力自动路由不受影响）。
 BUILTIN_PROVIDERS: tuple[str, ...] = (
     "akshare",
     "tushare",
-    "tickflow",
     "alphafeed",
     "tqsdk",
     "twelvedata",
+    "tickflow",
 )
 
 

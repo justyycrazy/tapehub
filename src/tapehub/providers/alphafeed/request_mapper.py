@@ -4,7 +4,8 @@
 
 - ``af.klines.get(symbol, period=..., count=..., adjust=..., start_time=..., end_time=...)``；
 - symbol 格式 ``代码.市场后缀``，示例 600519.SH / 000001.SZ / 920047.BJ（US/HK 暂不声明）；
-- period 枚举 1m/5m/15m/30m/60m/1d/1w/1M/1Q/1Y——**无 10m**（1Q 无 ISO 对应，不声明）；
+- period 枚举 1m/5m/15m/30m/60m/1d/1w/1M/1Q/1Y——**无 10m**（1Q 无 ISO 对应，
+  不声明；1Y 超出项目最大到月线的周期范围，不声明）；
 - adjust 枚举 none/forward/backward/forward_additive/backward_additive；
 - start_time/end_time 为毫秒时间戳（含端点）；count 上限 10000。
 
@@ -31,7 +32,6 @@ _PERIOD_CODES: dict[Interval, str] = {
     Interval.parse("P1D"): "1d",
     Interval.parse("P1W"): "1w",
     Interval.parse("P1M"): "1M",
-    Interval.parse("P1Y"): "1Y",
 }
 
 _ADJUST_CODES = {Adjust.NONE: "none", Adjust.QFQ: "forward", Adjust.HFQ: "backward"}

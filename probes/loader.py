@@ -25,6 +25,8 @@ from probes.schema import (
     LimitTruncationSpec,
     ProbeFile,
     RawCaseSpec,
+    TargetRef,
+    TargetSpec,
     VariantConsistencySpec,
 )
 from tapehub.domain.capabilities import Capability
@@ -72,6 +74,8 @@ class ChainCase:
     variants: tuple[DataVariant, ...] = ()
     # limit_truncation 专属：文档声称的上限
     documented_max: int | None = None
+    # 市场限定目标的前缀（如 "stock@HK"）；空串表示不限定（兼容单市场目标）
+    target_ref: str = ""
     # 加载期即确定跳过的原因（无 target / 市场不匹配 / 显式 skip / 维度未声明）
     skip_reason: str | None = None
 
@@ -133,6 +137,33 @@ def load_probe_files(cases_dir: Path) -> list[ProbeFile]:
     return [by_name[name] for name in BUILTIN_PROVIDERS]
 
 
+def _target_for(probe: ProbeFile, ref: TargetRef) -> tuple[str, TargetSpec] | None:
+    """按目标引用解析基准标的：限定键优先，不限定键兜底（市场一致才命中）。
+
+    - ``stock@HK`` 优先命中键 ``stock@HK``；
+    - 未命中限定键时回退键 ``stock``，但仅当其标的的市场与请求市场一致
+      （既有单市场文件用不限定键，行为不变；多市场 Provider 需为每个
+      要探的市场提供限定键，否则该市场不生成 case）；
+    - 不限定引用（market=None）直接命中键 ``stock``，不校验市场
+      （分析探针按标的自身市场展开，与既有语义一致）。
+    """
+    if ref.market is not None:
+        qualified = probe.targets.get(ref.key)
+        if qualified is not None:
+            return (ref.key, qualified)
+    plain = probe.targets.get(ref.asset_type.value)
+    if plain is None:
+        return None
+    if ref.market is not None and Instrument.parse(plain.instrument).market != ref.market:
+        return None
+    return (ref.asset_type.value, plain)
+
+
+def _id_prefix(base: ChainCase) -> str:
+    """case id 的目标前缀：市场限定目标带 @MARKET 段，否则为 asset_type。"""
+    return base.target_ref or base.asset_type.value
+
+
 def _to_beijing(day: dt.date) -> dt.datetime:
     """裸日期统一按北京时间零点解释（项目内部时间约定）。"""
     return dt.datetime(day.year, day.month, day.day, tzinfo=CN_TIMEZONE)
@@ -171,7 +202,7 @@ def _adjust_diff_cases(
             for variant in capability.variants:
                 for baseline, compared in config.pairs:
                     case_id = (
-                        f"adjust-diff-{base.asset_type.value}-{interval.code}-"
+                        f"adjust-diff-{_id_prefix(base)}-{interval.code}-"
                         f"{baseline.value}-vs-{compared.value}-{variant.value}"
                     )
                     if case_id in seen:
@@ -211,7 +242,7 @@ def _history_depth_cases(
         for interval in _declared_intervals(capability, config.intervals):
             for variant in capability.variants:
                 case_id = (
-                    f"history-depth-{base.asset_type.value}-{interval.code}-{variant.value}"
+                    f"history-depth-{_id_prefix(base)}-{interval.code}-{variant.value}"
                 )
                 if case_id in seen:
                     continue
@@ -244,7 +275,7 @@ def _limit_truncation_cases(
     seen: set[str] = set()
     for capability in caps:
         for variant in capability.variants:
-            case_id = f"limit-{base.asset_type.value}-{config.interval.code}-{variant.value}"
+            case_id = f"limit-{_id_prefix(base)}-{config.interval.code}-{variant.value}"
             if case_id in seen:
                 continue
             seen.add(case_id)
@@ -297,7 +328,7 @@ def _variant_consistency_cases(
             dataclasses.replace(
                 base,
                 case_id=(
-                    f"variant-consistency-{base.asset_type.value}-{interval.code}-{adjust.value}"
+                    f"variant-consistency-{_id_prefix(base)}-{interval.code}-{adjust.value}"
                 ),
                 kind="variant_consistency",
                 interval=interval,
@@ -315,7 +346,27 @@ def _variant_consistency_cases(
     return cases
 
 
-def _availability_case(
+def _has_target_for(probe: ProbeFile, asset_type: AssetType) -> bool:
+    """是否为该 asset_type 声明了任何 target（不限定键或市场限定键）。"""
+    prefix = f"{asset_type.value}@"
+    return any(
+        key == asset_type.value or key.startswith(prefix) for key in probe.targets
+    )
+
+
+def _first_target(probe: ProbeFile, asset_type: AssetType) -> TargetSpec | None:
+    """该 asset_type 的首个声明 target（不限定键优先），供错误信息引用。"""
+    spec = probe.targets.get(asset_type.value)
+    if spec is not None:
+        return spec
+    prefix = f"{asset_type.value}@"
+    for key in sorted(probe.targets):
+        if key.startswith(prefix):
+            return probe.targets[key]
+    return None
+
+
+def _market_mismatch_case(
     *,
     probe: ProbeFile,
     capability: Capability,
@@ -324,14 +375,59 @@ def _availability_case(
     adjust: Adjust,
     variant: DataVariant,
 ) -> ChainCase:
-    target = probe.targets[asset_type]
+    """声明了 target 但其市场不在能力市场内：生成显式跳过的 case（进报告）。"""
+    target = _first_target(probe, asset_type)
+    market = (
+        Instrument.parse(target.instrument).market if target is not None else "unknown"
+    )
     case_id = f"{asset_type.value}-{interval.code}-{adjust.value}-{variant.value}"
-    skip_reason: str | None = None
-    market = Instrument.parse(target.instrument).market
-    if market not in capability.markets:
-        skip_reason = (
-            f"target instrument market {market!r} not in capability markets {capability.markets}"
+    for skip in probe.chain.skip if probe.chain else []:
+        if skip.case == case_id:
+            reason = f"explicit skip: {skip.reason}"
+            break
+    else:
+        reason = (
+            f"target instrument market {market!r} not in capability markets "
+            f"{capability.markets}"
         )
+    return ChainCase(
+        case_id=case_id,
+        kind="availability",
+        asset_type=asset_type,
+        interval=interval,
+        adjust=adjust,
+        variant=variant,
+        instrument=target.instrument if target is not None else "",
+        window_start=_to_beijing(
+            target.window.start
+            if target is not None
+            else dt.date(2025, 1, 1)
+        ),
+        window_end=_to_beijing(
+            target.window.end if target is not None else dt.date(2025, 12, 31)
+        ),
+        skip_reason=reason,
+    )
+
+
+def _availability_case(
+    *,
+    probe: ProbeFile,
+    capability: Capability,
+    market: str,
+    asset_type: AssetType,
+    target_key: str,
+    target: TargetSpec,
+    interval: Interval,
+    adjust: Adjust,
+    variant: DataVariant,
+) -> ChainCase:
+    # 市场一致性由调用方（_target_for）保证；market 参数保留在签名里，
+    # 供阅读与后续按市场维度的判定使用。
+    del market
+    ref_prefix = target_key
+    case_id = f"{ref_prefix}-{interval.code}-{adjust.value}-{variant.value}"
+    skip_reason: str | None = None
     for skip in probe.chain.skip if probe.chain else []:
         if skip.case == case_id:
             skip_reason = f"explicit skip: {skip.reason}"
@@ -351,6 +447,7 @@ def _availability_case(
             (entry.history.start for entry in capability.intervals if entry.code == interval),
             None,
         ),
+        target_ref=ref_prefix,
         skip_reason=skip_reason,
     )
 
@@ -368,33 +465,60 @@ def expand_probe(probe: ProbeFile, manifest: ProviderManifest) -> ExpandedProbe:
                 for adjust in capability.adjustments:
                     for variant in capability.variants:
                         for asset_type in capability.asset_types:
-                            if asset_type not in probe.targets:
-                                # 无 target 的 asset_type 不生成 case，报告层面提示即可
-                                continue
-                            chain_cases.append(
-                                _availability_case(
-                                    probe=probe,
-                                    capability=capability,
-                                    asset_type=asset_type,
-                                    interval=entry.code,
-                                    adjust=adjust,
-                                    variant=variant,
+                            targets_by_market: list[tuple[str, str, TargetSpec]] = []
+                            for market in capability.markets:
+                                found = _target_for(
+                                    probe, TargetRef(asset_type=asset_type, market=market)
                                 )
-                            )
+                                if found is not None:
+                                    targets_by_market.append((market, *found))
+                            if not targets_by_market:
+                                # 声明了 target 但市场全不匹配：保留跳过标记进报告
+                                # （不静默漏探）；未声明任何 target 的 asset_type 不生成
+                                if not _has_target_for(probe, asset_type):
+                                    continue
+                                chain_cases.append(
+                                    _market_mismatch_case(
+                                        probe=probe,
+                                        capability=capability,
+                                        asset_type=asset_type,
+                                        interval=entry.code,
+                                        adjust=adjust,
+                                        variant=variant,
+                                    )
+                                )
+                                continue
+                            for market, target_key, target in targets_by_market:
+                                chain_cases.append(
+                                    _availability_case(
+                                        probe=probe,
+                                        capability=capability,
+                                        market=market,
+                                        asset_type=asset_type,
+                                        target_key=target_key,
+                                        target=target,
+                                        interval=entry.code,
+                                        adjust=adjust,
+                                        variant=variant,
+                                    )
+                                )
 
     if probe.chain:
         chain = probe.chain
 
-        def _base_for(asset_type: AssetType) -> tuple[ChainCase, list[Capability]] | None:
-            """为分析探针构造共享基底：窗口来自该 asset_type 的 target 声明。"""
-            target = probe.targets.get(asset_type)
-            caps = capabilities_of(capabilities, asset_type)
-            if target is None or not caps:
+        def _base_for(ref: TargetRef) -> tuple[ChainCase, list[Capability]] | None:
+            """为分析探针构造共享基底：窗口来自该目标引用的 target 声明。"""
+            found = _target_for(probe, ref)
+            caps = capabilities_of(capabilities, ref.asset_type)
+            if ref.market is not None:
+                caps = [cap for cap in caps if ref.market in cap.markets]
+            if found is None or not caps:
                 return None
+            target_key, target = found
             base = ChainCase(
                 case_id="",
                 kind="",
-                asset_type=asset_type,
+                asset_type=ref.asset_type,
                 interval=Interval.parse("P1D"),
                 adjust=Adjust.NONE,
                 # 占位值：下游分析探针构造器会按各能力声明的 variants 全量覆写；
@@ -403,6 +527,7 @@ def expand_probe(probe: ProbeFile, manifest: ProviderManifest) -> ExpandedProbe:
                 instrument=target.instrument,
                 window_start=_to_beijing(target.window.start),
                 window_end=_to_beijing(target.window.end),
+                target_ref=target_key,
             )
             return base, caps
 
@@ -414,8 +539,8 @@ def expand_probe(probe: ProbeFile, manifest: ProviderManifest) -> ExpandedProbe:
         ):
             if config is None:
                 continue
-            for asset_type in config.targets:
-                found = _base_for(asset_type)
+            for ref in config.targets:
+                found = _base_for(ref)
                 if found is None:
                     continue
                 base, caps = found

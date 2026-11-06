@@ -8,6 +8,7 @@
 
 import re
 from pathlib import Path
+from typing import Any
 
 SRC_DIR = Path(__file__).parents[2] / "src" / "tapehub"
 
@@ -66,3 +67,63 @@ def test_api_layer_does_not_import_provider_sdk_modules() -> None:
         for name in PROVIDER_NAMES:
             assert f"import {name}" not in text, f"{path.name} must not import provider SDK"
             assert f"from tapehub.providers.{name}" not in text
+
+
+def _beyond_monthly(interval: Any) -> bool:
+    """周期是否超出能力目录的月线上界（P1M）。
+
+    判定规则（避免项目禁止的「月↔固定天数」日历换算）：
+    - **组合周期一律拒绝**：七个分量中恰一个非零——交易所标准周期均为
+      单分量（PT1M…PT1H、P1D、P1W、P1M），P1M2W / P1W2D / PT1H30M 之类
+      组合不进能力目录（逐案判断组合长短只会引出跨单位换算）；
+    - 年分量 > 0 拒绝（P1Y 等）；
+    - 月分量 > 1 拒绝（P3M 季线映射、P2M 等）；
+    - 周/日/时/分/秒分量换算为天属恒等算术（周=7 天、时=1/24 天），
+      超过 31 天（公历最长月）即不可能短于等于任何一个月：P13W（季线的
+      周表达）、P5W、P32D 等由此拒绝。
+    """
+    components = (
+        interval.years,
+        interval.months,
+        interval.weeks,
+        interval.days,
+        interval.hours,
+        interval.minutes,
+        interval.seconds,
+    )
+    if sum(1 for value in components if value) != 1:
+        return True
+    if interval.years:
+        return True
+    if interval.months:
+        return interval.months > 1
+    days = (
+        interval.weeks * 7
+        + interval.days
+        + interval.hours / 24
+        + interval.minutes / 1440
+        + interval.seconds / 86400
+    )
+    return days > 31
+
+
+def test_manifests_do_not_declare_intervals_beyond_monthly() -> None:
+    """manifest 周期声明上界为月线（P1M）：年线、季线（含 P3M/P13W 映射）
+    与一切组合周期均不得进入能力目录（判定规则见 ``_beyond_monthly``）。
+
+    上游存在年线/季线（如 tickflow/alphafeed 的 1Q/1Y）属于上游能力面，
+    不映射进标准周期目录。
+    """
+    from tapehub.providers.manifest import load_builtin_manifest
+    from tapehub.providers.registry import BUILTIN_PROVIDERS
+
+    for name in BUILTIN_PROVIDERS:
+        manifest = load_builtin_manifest(name)
+        for capability in manifest.capabilities:
+            for entry in capability.intervals:
+                interval = entry.code
+                assert not _beyond_monthly(interval), (
+                    f"{name} declares interval {interval.code!r} beyond the "
+                    "monthly cap (P1M); only standard single-component periods "
+                    "up to P1M belong in the capability catalog"
+                )

@@ -294,3 +294,140 @@ def test_raw_id_collision_rejected() -> None:
     )
     with pytest.raises(ValueError):
         expand_probe(probe, _manifest())  # type: ignore[arg-type]
+
+
+# ── 市场限定目标（asset_type@MARKET）展开 ─────────────────────────────
+
+
+def _multi_market_manifest() -> object:
+    return load_manifest_file(FIXTURES / "manifests" / "multi_market_provider.yaml")
+
+
+def _multi_market_probe(**chain: object) -> ProbeFile:
+    data = {
+        "probe": "multi-market-provider",
+        "version": 1,
+        "targets": {
+            "stock@CN": {
+                "instrument": "CN-SSE-600000",
+                "window": {"start": "2025-01-01", "end": "2025-03-31"},
+            },
+            "stock@HK": {
+                "instrument": "HK-HKEX-00700",
+                "window": {"start": "2025-01-01", "end": "2025-03-31"},
+            },
+            "stock@US": {
+                "instrument": "US-NASDAQ-AAPL",
+                "window": {"start": "2025-01-01", "end": "2025-03-31"},
+            },
+        },
+        "chain": {"include_declared": True, **chain},
+    }
+    return ProbeFile.model_validate(data)
+
+
+def test_market_qualified_availability_expansion() -> None:
+    """三市场能力 × 三市场限定目标：每市场独立 case，id 带限定前缀。"""
+    expanded = expand_probe(
+        _multi_market_probe(), _multi_market_manifest()  # type: ignore[arg-type]
+    )
+    availability = [c for c in expanded.chain_cases if c.kind == "availability"]
+    # 3 市场 × 2 周期 × 2 adjust = 12 条，全部可执行（无 skip）
+    assert len(availability) == 12
+    assert all(c.skip_reason is None for c in availability)
+    by_id = {c.case_id: c for c in availability}
+    assert "stock@CN-P1D-none-tickflow" in by_id
+    assert "stock@HK-PT1M-qfq-tickflow" in by_id
+    assert "stock@US-P1D-none-tickflow" in by_id
+    assert by_id["stock@HK-P1D-none-tickflow"].instrument == "HK-HKEX-00700"
+    assert by_id["stock@US-PT1M-qfq-tickflow"].instrument == "US-NASDAQ-AAPL"
+
+
+def test_market_qualified_partial_targets() -> None:
+    """只声明部分市场的限定目标：未声明的市场不生成 case（不静默冒用其它市场标的）。"""
+    data = _multi_market_probe().model_dump()
+    del data["targets"]["stock@US"]
+    probe = ProbeFile.model_validate(data)
+    expanded = expand_probe(probe, _multi_market_manifest())  # type: ignore[arg-type]
+    availability = [c for c in expanded.chain_cases if c.kind == "availability"]
+    assert len(availability) == 8  # CN/HK 各 2 周期 × 2 adjust
+    assert all("@US" not in c.case_id for c in availability)
+
+
+def test_plain_target_fallback_only_matching_market() -> None:
+    """不限定键回退：仅当标的市场与请求市场一致时命中（单市场文件行为不变）。"""
+    data = _multi_market_probe().model_dump()
+    data["targets"] = {
+        "stock": {
+            "instrument": "CN-SSE-600000",
+            "window": {"start": "2025-01-01", "end": "2025-03-31"},
+        }
+    }
+    probe = ProbeFile.model_validate(data)
+    expanded = expand_probe(probe, _multi_market_manifest())  # type: ignore[arg-type]
+    availability = [c for c in expanded.chain_cases if c.kind == "availability"]
+    # CN 市场命中不限定键（id 不带 @CN），HK/US 无目标不生成
+    assert sorted(c.case_id for c in availability) == [
+        "stock-P1D-none-tickflow",
+        "stock-P1D-qfq-tickflow",
+        "stock-PT1M-none-tickflow",
+        "stock-PT1M-qfq-tickflow",
+    ]
+
+
+def test_market_qualified_adjust_diff_ids() -> None:
+    """分析探针（adjust_diff）接受限定目标：id 与标的按市场区分。"""
+    probe = _multi_market_probe(
+        adjust_diff={
+            "targets": ["stock@HK", "stock@US"],
+            "window": {"start": "2024-01-01", "end": "2024-12-31"},
+            "pairs": [["none", "qfq"]],
+        }
+    )
+    expanded = expand_probe(
+        probe, _multi_market_manifest()  # type: ignore[arg-type]
+    )
+    diffs = [c for c in expanded.chain_cases if c.kind == "adjust_diff"]
+    ids = sorted(c.case_id for c in diffs)
+    assert ids == [
+        "adjust-diff-stock@HK-P1D-none-vs-qfq-tickflow",
+        "adjust-diff-stock@HK-PT1M-none-vs-qfq-tickflow",
+        "adjust-diff-stock@US-P1D-none-vs-qfq-tickflow",
+        "adjust-diff-stock@US-PT1M-none-vs-qfq-tickflow",
+    ]
+    instruments = {c.case_id: c.instrument for c in diffs}
+    assert instruments["adjust-diff-stock@HK-P1D-none-vs-qfq-tickflow"] == "HK-HKEX-00700"
+    assert instruments["adjust-diff-stock@US-P1D-none-vs-qfq-tickflow"] == "US-NASDAQ-AAPL"
+
+
+def test_market_qualified_history_depth_ids() -> None:
+    probe = _multi_market_probe(
+        history_depth={
+            "targets": ["stock@CN"],
+            "earliest": "2000-01-01",
+            "intervals": ["P1D"],
+        }
+    )
+    expanded = expand_probe(
+        probe, _multi_market_manifest()  # type: ignore[arg-type]
+    )
+    depth = [c for c in expanded.chain_cases if c.kind == "history_depth"]
+    assert [c.case_id for c in depth] == ["history-depth-stock@CN-P1D-tickflow"]
+    assert depth[0].instrument == "CN-SSE-600000"
+
+
+def test_invalid_target_key_rejected() -> None:
+    """目标键格式非法（小写市场 / 未知 asset_type）在加载期拒绝。"""
+    data = _multi_market_probe().model_dump()
+    data["targets"]["stock@hk"] = data["targets"]["stock@HK"]
+    del data["targets"]["stock@HK"]
+    with pytest.raises(Exception):
+        ProbeFile.model_validate(data)
+
+    data2 = _multi_market_probe().model_dump()
+    data2["chain"]["adjust_diff"] = {
+        "targets": ["bogus@HK"],
+        "window": {"start": "2024-01-01", "end": "2024-12-31"},
+    }
+    with pytest.raises(Exception):
+        ProbeFile.model_validate(data2)

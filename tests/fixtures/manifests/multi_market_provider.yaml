@@ -1,0 +1,50 @@
+# 测试专用多市场 Fake Provider：同一 asset_type（stock）跨 CN/HK/US 三市场
+# 声明能力，只用于验证探针框架的市场限定目标展开，不代表真实数据源。
+provider: multi-market-provider
+default_provider: []
+default_variant: tickflow
+enabled: true
+
+capabilities:
+  - data_type: bars
+    markets: [CN, HK, US]
+    asset_types: [stock]
+    delivery: [rest]
+    variants: [tickflow]
+    intervals:
+      - code: P1D
+        history:
+          start: null
+          end: null
+      - code: PT1M
+        history:
+          start: null
+          end: null
+    adjustments: [none, qfq]
+    fields: [open, high, low, close, volume, amount]
+
+operations:
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: P1D, adjust: none, variant: tickflow}
+    operation: klines
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: P1D, adjust: qfq, variant: tickflow}
+    operation: klines
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: PT1M, adjust: none, variant: tickflow}
+    operation: klines
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: PT1M, adjust: qfq, variant: tickflow}
+    operation: klines
+  - match: {data_type: bars, market: HK, asset_type: stock, interval: P1D, adjust: none, variant: tickflow}
+    operation: klines
+  - match: {data_type: bars, market: HK, asset_type: stock, interval: P1D, adjust: qfq, variant: tickflow}
+    operation: klines
+  - match: {data_type: bars, market: HK, asset_type: stock, interval: PT1M, adjust: none, variant: tickflow}
+    operation: klines
+  - match: {data_type: bars, market: HK, asset_type: stock, interval: PT1M, adjust: qfq, variant: tickflow}
+    operation: klines
+  - match: {data_type: bars, market: US, asset_type: stock, interval: P1D, adjust: none, variant: tickflow}
+    operation: klines
+  - match: {data_type: bars, market: US, asset_type: stock, interval: P1D, adjust: qfq, variant: tickflow}
+    operation: klines
+  - match: {data_type: bars, market: US, asset_type: stock, interval: PT1M, adjust: none, variant: tickflow}
+    operation: klines
+  - match: {data_type: bars, market: US, asset_type: stock, interval: PT1M, adjust: qfq, variant: tickflow}
+    operation: klines

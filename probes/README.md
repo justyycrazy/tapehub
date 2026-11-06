@@ -50,11 +50,15 @@ pacing:                            # 节流与预算（探针消耗真实配额�
   max_calls: 120                   # 本文件调用预算，超出即中止
 
 targets:                           # 每个 asset_type 的基准标的 + 默认窗口
-  stock:
+  stock:                           # 键为 asset_type，或 asset_type@MARKET（市场限定）
     instrument: CN-SSE-600000
     window: {start: 2025-01-01, end: 2025-12-31}
     min_bars: 100                  # 可选：count 低于该值判 failed
     required_fields: [close]       # 可选：字段全 null 判 failed
+  stock@HK:                        # 同一 asset_type 跨多市场声明能力时（如
+    instrument: HK-HKEX-00700      # tickflow 的 CN/HK/US stock），每个要探的
+    window: {start: 2025-01-01, end: 2025-12-31}   # 市场各给一个限定键；case id
+                                   # 以限定键为前缀（stock@HK-P1D-...）
 
 chain:                             # ── 统一链路探针（经 adapter.fetch_bars）──
   include_declared: true           # 从 manifest 自动展开全部声明组合
@@ -112,6 +116,7 @@ notes: 本探针要回答的问题与已知存疑点。
 | 文件名 = Provider 名 | loader 只认 `BUILTIN_PROVIDERS` 同名文件，缺失/多余即报错 |
 | case ID | chain 自动生成 `{asset_type}-{interval}-{adjust}-{variant}`；分析类为 `adjust-diff-<at>-<interval>-<a>-vs-<b>-<variant>`、`history-depth-<at>-<interval>-<variant>`、`limit-<at>-<interval>-<variant>`、`variant-consistency-<at>-<interval>-<adjust>`；raw 自定义 `^[A-Za-z][A-Za-z0-9._-]*$` 且全局唯一 |
 | 声明内不抄写 | `include_declared: true` 从 manifest 矩阵展开，manifest 改动探针自动跟随 |
+| **市场限定目标** | `targets` 键与各分析探针的 `targets` 列表项支持 `asset_type@MARKET` 形式；availability 按 (market × asset_type × interval × adjust × variant) 展开，每市场用对应限定键的标的（无限定键时回退不限定键且标的市场一致才命中）。市场限定目标的 case id 带前缀（如 `stock@HK-P1D-none-tickflow`、`history-depth-stock@US-P1D-tickflow`）；不限定键的 id 不变（向后兼容既有 skip 条目与历史报告） |
 | **分析探针全量展开** | adjust_diff 按 (interval × variant × pair)、history_depth / limit_truncation 按 (interval × variant) 在声明矩阵上**全量展开**，不与「声明顺序第一组维度」绑定；`intervals` 字段可显式收敛 interval 维度以控制预算（variant 维度永不收敛） |
 | **跨 variant 一致性** | `variant_consistency` 对同一 (asset_type, interval, adjust) 在**跨能力聚合的全部声明 variant** 下重放同一查询；任何不一致（数值差异 / 无重叠 / 预算中断）都判 suspect，并记录差异幅度与首个分歧时间戳 |
 | skip 必须带 reason | 防止静默漏探 |

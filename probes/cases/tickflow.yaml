@@ -1,4 +1,5 @@
-# TickFlow 数据探针：全声明维度可用性、复权生效性、历史深度与单次上限实测。
+# TickFlow 数据探针：三市场（CN/HK/US）全声明维度可用性、复权生效性、
+# 历史深度、单次上限与实时行情（quotes）字段矩阵实测。
 probe: tickflow
 version: 1
 
@@ -7,13 +8,28 @@ requires:
   env: [TAPEHUB_TICKFLOW_API_KEY]
 
 pacing:
-  call_interval_s: 1.0
+  # 上游按 API Key 权限限频（文档未给具体数值；免费档经验口径约 10 次/分钟）。
+  # 6.5s 间隔 ≈ 9 次/分钟，为限频留余量；账户权限不足的调用（如免费档
+  # 分钟 K 线 403）按上游错误如实记录，不做跳过——这正是账户档位边界的证据。
+  call_interval_s: 6.5
   timeout_s: 60
-  max_calls: 90
+  max_calls: 160
 
+# 同一 asset_type（stock）跨三市场声明能力：用市场限定目标（stock@MARKET）
+# 为每个市场提供独立基准标的；case id 以限定键为前缀（如 stock@HK-P1D-...）。
 targets:
-  stock:
+  stock@CN:
     instrument: CN-SSE-600000
+    window: {start: 2025-01-01, end: 2025-12-31}
+    min_bars: 100
+    required_fields: [open, high, low, close, volume]
+  stock@HK:
+    instrument: HK-HKEX-00700
+    window: {start: 2025-01-01, end: 2025-12-31}
+    min_bars: 100
+    required_fields: [open, high, low, close, volume]
+  stock@US:
+    instrument: US-NASDAQ-AAPL
     window: {start: 2025-01-01, end: 2025-12-31}
     min_bars: 100
     required_fields: [open, high, low, close, volume]
@@ -22,25 +38,69 @@ chain:
   include_declared: true
   skip: []
   adjust_diff:
-    targets: [stock]
+    # 港股/美股复权语义是否与 A 股相同（forward/backward 是否生效、基准为何）
+    # 是本轮重点疑点；日线足以判定生效性，收敛 interval 控制预算。
+    targets: [stock@CN, stock@HK, stock@US]
     window: {start: 2024-06-01, end: 2024-08-31}   # 分红除权高发窗口
+    intervals: [P1D]
     pairs: [[none, qfq], [none, hfq]]
     fields: [close]
   history_depth:
-    targets: [stock]
+    targets: [stock@CN, stock@HK, stock@US]
     earliest: 2000-01-01
     era_step_years: 5
     max_calls: 16
     intervals: [P1D]     # 分钟级历史深度价值低且调用重，显式收敛到日线（变体维度不收敛）
   limit_truncation:
-    targets: [stock]
+    targets: [stock@CN, stock@HK, stock@US]
     interval: PT1M
     max_range: P1Y
     documented_max: 10000
 
-raw: []
+raw:
+  # ── 实时行情（tf.quotes.get）：三市场字段矩阵与返回形态指纹，供 extensions
+  #    白名单回填决策（与 tqsdk P5 / twelvedata td-quote 流程一致）。
+  #    SDK 返回对象形态（dict['data'] / 列表 / 对象 .data）未实测核实，
+  #    首轮 observe-only：只记录形态与字段，不参与判定。
+  - id: tf-quote-cn
+    purpose: A股快照字段矩阵与返回形态（last_price/volume/amount/session/ext）
+    module: tickflow
+    client: {attr: TickFlow, kwargs: {api_key: "$TAPEHUB_TICKFLOW_API_KEY"}}
+    call:
+      - {method: quotes.get, kwargs: {symbols: ["600000.SH"]}}
+    expect: {status: ok, min_fields: [last_price]}
+    assert: false
+  - id: tf-quote-hk
+    purpose: 港股快照字段矩阵（00700.HK 后缀核实）
+    module: tickflow
+    client: {attr: TickFlow, kwargs: {api_key: "$TAPEHUB_TICKFLOW_API_KEY"}}
+    call:
+      - {method: quotes.get, kwargs: {symbols: ["00700.HK"]}}
+    expect: {status: ok, min_fields: [last_price]}
+    assert: false
+  - id: tf-quote-us
+    purpose: 美股快照字段矩阵（AAPL.US 后缀核实）
+    module: tickflow
+    client: {attr: TickFlow, kwargs: {api_key: "$TAPEHUB_TICKFLOW_API_KEY"}}
+    call:
+      - {method: quotes.get, kwargs: {symbols: ["AAPL.US"]}}
+    expect: {status: ok, min_fields: [last_price]}
+    assert: false
+  - id: tf-quote-invalid-symbol-fingerprint
+    purpose: 不存在标的的错误指纹（SYMBOL_NOT_FOUND 等，供错误分类回填）
+    module: tickflow
+    client: {attr: TickFlow, kwargs: {api_key: "$TAPEHUB_TICKFLOW_API_KEY"}}
+    call:
+      - {method: quotes.get, kwargs: {symbols: ["BOGUS.XX"]}}
+    expect: {status: error, error_contains: ""}   # 任意错误：首轮记录指纹
+    assert: false
 
 notes: >
-  上游限频 429 与分钟权限 403 的错误指纹待 SDK 客户端构造方式按官方文档核实后
-  补充 raw 探针；当前以 availability/adjust_diff/history_depth/limit_truncation
-  覆盖全部声明维度。
+  上游限频 429 与无权限 403 的错误指纹经 chain availability（免费档分钟线
+  全量失败即指纹样本）与 tf-quote-invalid-symbol 采集；SDK 客户端构造与
+  quotes 返回形态按官方文档核实为 QuotesResponse（data 数组），适配器
+  映射已做 dict/对象双形态防御，实测形态以 tf-quote-* 观察记录为准。
+  港股/美股复权（qfq/hfq→forward/backward）语义未经探针实证——美股复权
+  口径可能与 A 股不同（参考 twelvedata splits/all 教训），adjust_diff
+  差异判定如实记录；HK/US 日线时间戳墙钟口径（毫秒时间戳的基准时区）
+  由 availability 样本顺带观察。

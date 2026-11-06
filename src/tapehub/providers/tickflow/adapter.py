@@ -9,21 +9,26 @@
 - 同步 SDK 调用通过 ``call_in_thread`` 隔离到线程池，不阻塞事件循环；
 - 上游单次上限 10000 根 K 线：达到上限时批次标记 ``partial=true``，
   API 层据此在 warnings 中提示可能截断；
-- 统一分页由共享 ``paginate_bars`` 完成，闭区间 [start, end] 在标准化后复核。
+- 统一分页由共享 ``paginate_bars`` 完成，闭区间 [start, end] 在标准化后复核；
+- 实时快照（quotes）为无状态 REST 单次调用：单标的单次调用
+  ``tf.quotes.get(symbols=[...])``，无订阅/缓存语义（与 tqsdk/twelvedata
+  的订阅模型不同）；SDK 异常（含限频 429 / 无权限 403）由应用层统一
+  包装为 ``UPSTREAM_ERROR``，不穿透 API。
 """
 
 from datetime import datetime
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from tapehub.domain.errors import ProviderNotImplementedError
-from tapehub.domain.models import CN_TIMEZONE, BarBatch, BarQuery
+from tapehub.domain.models import CN_TIMEZONE, BarBatch, BarQuery, Quote, QuoteQuery
 from tapehub.providers.base import BaseProviderAdapter, call_in_thread
 from tapehub.providers.pagination import paginate_bars
-from tapehub.providers.tickflow.request_mapper import UPSTREAM_MAX_COUNT, build_request
-from tapehub.providers.tickflow.response_mapper import to_standard_bars
-
-if TYPE_CHECKING:
-    pass
+from tapehub.providers.tickflow.request_mapper import (
+    UPSTREAM_MAX_COUNT,
+    build_quote_request,
+    build_request,
+)
+from tapehub.providers.tickflow.response_mapper import to_standard_bars, to_standard_quote
 
 
 class ProviderAdapter(BaseProviderAdapter):
@@ -82,6 +87,29 @@ class ProviderAdapter(BaseProviderAdapter):
         kwargs = build_request(query)
         client = TickFlow(api_key=api_key)
         return client.klines.get(**kwargs)
+
+    async def fetch_quote(self, query: QuoteQuery) -> Quote:
+        self.resolve_quote_operation(query)
+        self._ensure_ready()
+        return await call_in_thread(self._fetch_quote_sync, query)
+
+    def _fetch_quote_sync(self, query: QuoteQuery) -> Quote:
+        payload = self._call_quote_upstream(self._ensure_ready(), query)
+        return to_standard_quote(
+            payload, provider=self.name, received_at=datetime.now(CN_TIMEZONE)
+        )
+
+    def _call_quote_upstream(self, api_key: str, query: QuoteQuery) -> Any:
+        """延迟导入官方 SDK 并调用 tf.quotes.get（单标的单次调用）。"""
+        try:
+            from tickflow import TickFlow
+        except ImportError as exc:
+            raise ProviderNotImplementedError(
+                "Provider SDK 'tickflow' is not installed.",
+                details={"provider": self.name, "sdk": "tickflow"},
+            ) from exc
+        client = TickFlow(api_key=api_key)
+        return client.quotes.get(**build_quote_request(query))
 
     def _payload_size(self, payload: Any) -> int:
         columns = getattr(payload, "get", None)

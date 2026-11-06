@@ -100,7 +100,6 @@ def test_response_mapping_with_data_wrapper(monkeypatch: pytest.MonkeyPatch) -> 
         ("PT1H", "60m"),
         ("P1W", "1w"),
         ("P1M", "1M"),  # 月线，区别于分钟 PT1M
-        ("P1Y", "1Y"),
     ],
 )
 def test_period_codes(
