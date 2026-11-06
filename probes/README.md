@@ -70,6 +70,12 @@ chain:                             # ── 统一链路探针（经 adapter.fet
     earliest: 1991-01-01
     era_step_years: 5
     max_calls: 24
+    full_history_targets: []       # 可选：这些目标单次全窗口调用直接读最早 bar
+  variant_consistency:             # 跨 variant 一致性
+    targets: [stock, index]
+    window: {start: 2025-01-01, end: 2025-12-31}
+    fields: [close]
+    tolerance: 0.0                 # 可选：绝对容差，差异 ≤ 容差不判不一致（仍如实记录）
   limit_truncation:                # 单次上限：最小周期 + 超长窗口
     targets: [contract]
     interval: P1D
@@ -119,9 +125,9 @@ notes: 本探针要回答的问题与已知存疑点。
 | --- | --- | --- | --- |
 | availability | chain | 对每个声明组合查一次 | 0 bars / 低于 min_bars / required 字段全 null → failed；否则 confirmed |
 | adjust_diff | chain | 同窗口 none vs qfq/hfq 对比（按 interval × variant × pair 全量展开） | 序列完全一致 → **suspect**（adjust_no_op_suspect）；有差异 → confirmed；无重叠 → suspect |
-| history_depth | chain | 5 年档回溯 + 90 天窗口二分（按 interval × variant 全量展开） | 恒为 observe；报告给出 `earliest_estimate`（**近似值**，粒度 = 窗口宽度） |
+| history_depth | chain | 5 年档回溯 + 90 天窗口二分（按 interval × variant 全量展开）；`full_history_targets` 中的目标改走全量模式：单次全窗口调用直接读最早 bar，适用于上游无日期参数（每次返回全量历史，适配器内存过滤）或全量拉取代价可忽略的接口 | 恒为 observe；二分模式报告 `earliest_estimate`（**近似值**，粒度 = 窗口宽度）；全量模式给出**精确**最早 bar（approx=False） |
 | limit_truncation | chain | 最小周期 + 超长窗口数 bar（按 variant 全量展开） | 实测 = documented_max → confirmed；不等 → suspect；未设 → observe |
-| variant_consistency | chain | 同一 (interval, adjust) 查询在跨能力聚合的全部 variant 下重放并两两对比 | 全部一致 → confirmed；任何不一致（差异 / 无重叠 / 预算中断）→ suspect，记录 max_abs_diff 与 first_divergence |
+| variant_consistency | chain | 同一 (interval, adjust) 查询在跨能力聚合的全部 variant 下重放并两两对比 | 差异 ≤ `tolerance` → confirmed（差异幅度如实记录）；超出 → suspect，记录 max_abs_diff 与 first_divergence；无重叠 / 预算中断 → suspect |
 | raw | SDK 反射 | 声明外能力探测、错误指纹、快照字段矩阵（`min_fields` 验证 mapping 字段存在性） | 期望匹配 → confirmed / 不匹配 → failed；`assert: false` → observe |
 | connection | SDK 反射 | 客户端「创建 → 首次取数 → 释放」生命周期计时与并发共存验证（rounds × concurrent） | 全部实例创建/首调/释放成功 → confirmed；任一异常 → failed；`assert: false` → observe。观测值：每实例 create/first_call/close 毫秒 |
 

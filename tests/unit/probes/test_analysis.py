@@ -12,6 +12,7 @@ from probes.analysis import (
     compare_price_series,
     null_rates,
     run_history_depth,
+    run_history_depth_full,
     window_back,
 )
 
@@ -58,6 +59,23 @@ def test_compare_price_series() -> None:
     other_day = [_bar(dt.datetime(2024, 1, 1, tzinfo=CN_TIMEZONE))]
     empty = compare_price_series(same, other_day, "close")
     assert empty.compared == 0
+
+
+def test_compare_price_series_tolerance() -> None:
+    """容差内差异不判分歧，但 max_abs_diff 仍如实记录全部差异幅度。"""
+    day = dt.datetime(2025, 1, 1, tzinfo=CN_TIMEZONE)
+    a = [_bar(day, close=10.0), _bar(dt.datetime(2025, 1, 2, tzinfo=CN_TIMEZONE), close=11.0)]
+    b = [_bar(day, close=10.005), _bar(dt.datetime(2025, 1, 2, tzinfo=CN_TIMEZONE), close=11.004)]
+
+    within = compare_price_series(a, b, "close", tolerance=0.01)
+    assert within.identical
+    assert within.first_divergence is None
+    assert within.max_abs_diff == pytest.approx(0.005)
+    assert within.tolerance == pytest.approx(0.01)
+
+    beyond = compare_price_series(a, b, "close", tolerance=0.001)
+    assert not beyond.identical
+    assert beyond.first_divergence == day
 
 
 @pytest.mark.parametrize(
@@ -128,3 +146,69 @@ def test_history_depth_respects_budget() -> None:
     assert not result.complete
     assert result.calls_used == 3
     assert result.probes  # 已记录部分探测轨迹
+
+
+def test_history_depth_bisect_stops_at_span() -> None:
+    """二分收敛到窗口粒度即止：估算精度不变，调用数从对数(区间/1天)降为对数(区间/窗口)。"""
+    calls = 0
+    base = _fetch_from_data_start()
+
+    async def counting_fetch(start: dt.datetime, end: dt.datetime) -> list[Bar]:
+        nonlocal calls
+        calls += 1
+        return await base(start, end)
+
+    result = asyncio.run(
+        run_history_depth(
+            counting_fetch,
+            earliest=dt.datetime(1991, 1, 1, tzinfo=CN_TIMEZONE),
+            latest=SEARCH_END,
+            era_step_years=5,
+            max_calls=40,
+        )
+    )
+    assert result.complete
+    assert result.granularity_days == 90
+    # 区间 ~35 年：收敛到 1 天约需 13 次二分 + 验证，收敛到 90 天约 6 次
+    assert result.calls_used == calls
+    assert calls <= 20
+    assert abs((result.earliest_estimate - DATA_START).days) <= 90
+
+
+def test_history_depth_full_mode_reads_exact_earliest() -> None:
+    """全量模式：单次调用直接返回精确最早 bar，无粒度误差。"""
+
+    async def fetch(start: dt.datetime, end: dt.datetime) -> list[Bar]:
+        if end > DATA_START and start < SEARCH_END:
+            return [_bar(max(start, DATA_START))]
+        return []
+
+    result = asyncio.run(
+        run_history_depth_full(
+            fetch,
+            earliest=dt.datetime(1991, 1, 1, tzinfo=CN_TIMEZONE),
+            latest=SEARCH_END,
+        )
+    )
+    assert result.complete
+    assert result.approx is False
+    assert result.calls_used == 1
+    assert result.earliest_estimate == DATA_START  # 精确值，不是窗口估算
+
+
+def test_history_depth_full_mode_empty_range_is_exact_answer() -> None:
+    """全量模式单次调用覆盖全区间，「区间内无数据」也是精确结论。"""
+
+    async def fetch(start: dt.datetime, end: dt.datetime) -> list[Bar]:
+        return []
+
+    result = asyncio.run(
+        run_history_depth_full(
+            fetch,
+            earliest=dt.datetime(1991, 1, 1, tzinfo=CN_TIMEZONE),
+            latest=SEARCH_END,
+        )
+    )
+    assert result.complete
+    assert result.approx is False
+    assert result.earliest_estimate is None

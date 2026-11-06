@@ -413,6 +413,7 @@ def _series_compare_dict(result: "analysis.SeriesCompare") -> dict[str, Any]:
         "compared": result.compared,
         "identical": result.identical,
         "max_abs_diff": result.max_abs_diff,
+        "tolerance": result.tolerance,
         "first_divergence": (
             result.first_divergence.isoformat() if result.first_divergence else None
         ),
@@ -462,14 +463,20 @@ async def _run_history_depth(ctx: RunContext, case: ChainCase, base: CaseResult)
     # 会把二分诱入未来空窗而误报「无数据」——搜索终点裁剪到 now。
     latest = min(case.window_end, datetime.now(CN_TIMEZONE))
     try:
-        result = await analysis.run_history_depth(
-            fetch,
-            earliest=case.window_start,
-            latest=latest,
-            era_step_years=case.era_step_years,
-            probe_span_days=case.probe_span_days,
-            max_calls=case.expected_calls,
-        )
+        if case.full_history:
+            # 全量模式：上游无日期过滤（每次返回全量历史），单次调用直接读最早 bar
+            result = await analysis.run_history_depth_full(
+                fetch, earliest=case.window_start, latest=latest
+            )
+        else:
+            result = await analysis.run_history_depth(
+                fetch,
+                earliest=case.window_start,
+                latest=latest,
+                era_step_years=case.era_step_years,
+                probe_span_days=case.probe_span_days,
+                max_calls=case.expected_calls,
+            )
     except TapehubError as exc:
         return _failed_from(base, {"error_code": exc.code.value, "error_text": exc.message})
     base.verdict = CaseVerdict.OBSERVE.value
@@ -487,6 +494,8 @@ async def _run_history_depth(ctx: RunContext, case: ChainCase, base: CaseResult)
         base.reason = "no data found in search range"
     elif not result.complete:
         base.reason = "search stopped early: call budget exhausted"
+    elif case.full_history:
+        base.reason = "earliest bar observed exactly (single full-history call)"
     else:
         base.reason = "earliest window estimate (informational)"
     return base
@@ -532,8 +541,10 @@ async def _run_variant_consistency(
 ) -> CaseResult:
     """跨 variant 一致性：同一查询在全部声明 variant 下的序列必须一致。
 
-    任何不一致（数值差异、无重叠、预算中断导致样本不全）都按 suspect
-    记录并在报告中给出分歧细节（差异幅度 + 首个分歧时间戳）。
+    超出容差的不一致（数值差异、无重叠、预算中断导致样本不全）都按
+    suspect 记录并在报告中给出分歧细节（差异幅度 + 首个分歧时间戳）；
+    容差内的差异判 confirmed，但差异幅度始终如实记录（表示层精度差异，
+    如跨源小数位）。
     """
     assert case.variants, "variant_consistency case must carry declared variants"
     fields = case.compare_fields or ("close",)
@@ -569,7 +580,8 @@ async def _run_variant_consistency(
     for left_name, right_name in itertools.combinations(names, 2):
         for field_name in fields:
             result = analysis.compare_price_series(
-                series[left_name], series[right_name], field_name
+                series[left_name], series[right_name], field_name,
+                tolerance=case.tolerance,
             )
             entry = _series_compare_dict(result)
             entry["a"] = left_name
@@ -608,7 +620,15 @@ async def _run_variant_consistency(
         return base
 
     base.verdict = CaseVerdict.CONFIRMED.value
-    base.reason = "all declared variants agree on identical queries"
+    within_tolerance = [c for c in comparisons if c["max_abs_diff"] > 0]
+    if within_tolerance:
+        max_diff = max(c["max_abs_diff"] for c in within_tolerance)
+        base.reason = (
+            f"all declared variants agree within tolerance {case.tolerance:g} "
+            f"(recorded diffs: max {max_diff:.4g})"
+        )
+    else:
+        base.reason = "all declared variants agree on identical queries"
     return base
 
 

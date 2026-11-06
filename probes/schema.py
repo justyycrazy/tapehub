@@ -104,6 +104,10 @@ class HistoryDepthSpec(_Strict):
     """历史深度探针：纪元回溯 + 二分搜索最早可用窗口。
 
     按 (interval × variant) 全量展开；``max_calls`` 是**每条 case** 的预算。
+    ``full_history_targets`` 中的目标改走**全量模式**：单次全窗口调用直接读
+    最早 bar（精确值），适用于上游无日期参数（每次返回全量历史，适配器内存
+    过滤）或全量拉取代价可忽略的接口——对这类接口，回溯 + 二分只是重复
+    下载同一份全量数据，单次调用反而更省且无粒度误差。
     """
 
     targets: list[AssetType] = Field(min_length=1)
@@ -113,17 +117,23 @@ class HistoryDepthSpec(_Strict):
     intervals: list[Interval] = Field(default_factory=list)
     # 二分窗口宽度即精度：earliest_estimate 误差约为该值（天）
     probe_span_days: int = Field(default=90, ge=1)
+    # 走全量模式（单次调用读最早 bar）的目标
+    full_history_targets: list[AssetType] = Field(default_factory=list)
 
 
 class VariantConsistencySpec(_Strict):
     """跨 variant 一致性探针：同一 (asset_type, interval, adjust) 的查询在全部
     声明 variant 下的序列应当一致；任何不一致必须记录并在报告中呈现。
+
+    ``tolerance`` 为绝对容差：差异不超过容差不判不一致（verdict 仍 confirmed），
+    用于消化跨源小数位精度等表示层差异；差异幅度始终如实记录。
     """
 
     targets: list[AssetType] = Field(min_length=1)
     window: WindowSpec
     fields: list[str] = Field(default_factory=lambda: ["close"])
     intervals: list[Interval] = Field(default_factory=list)
+    tolerance: float = Field(default=0.0, ge=0)
 
 
 class LimitTruncationSpec(_Strict):

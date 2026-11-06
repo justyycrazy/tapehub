@@ -60,6 +60,10 @@ class ChainCase:
     declared_history_start: dt.datetime | None = None
     era_step_years: int = 5
     probe_span_days: int = 90
+    # history_depth 全量模式：单次全窗口调用直接读最早 bar（上游无日期过滤）
+    full_history: bool = False
+    # variant_consistency 判定容差（绝对值）；差异幅度始终如实记录
+    tolerance: float = 0.0
     # adjust_diff 专属：被对比的复权方式
     compared_adjust: Adjust | None = None
     # adjust_diff 专属：参与对比的价格字段
@@ -212,6 +216,7 @@ def _history_depth_cases(
                 if case_id in seen:
                     continue
                 seen.add(case_id)
+                full_history = base.asset_type in config.full_history_targets
                 cases.append(
                     dataclasses.replace(
                         base,
@@ -223,7 +228,9 @@ def _history_depth_cases(
                         window_start=_to_beijing(config.earliest),
                         era_step_years=config.era_step_years,
                         probe_span_days=config.probe_span_days,
-                        expected_calls=config.max_calls,
+                        full_history=full_history,
+                        # 全量模式单次调用即得精确值，预算声明按实际计
+                        expected_calls=1 if full_history else config.max_calls,
                     )
                 )
     return cases
@@ -298,6 +305,7 @@ def _variant_consistency_cases(
                 variant=ordered[0],
                 variants=ordered,
                 compare_fields=tuple(config.fields),
+                tolerance=config.tolerance,
                 window_start=_to_beijing(config.window.start),
                 window_end=_to_beijing(config.window.end),
                 expected_calls=len(ordered),

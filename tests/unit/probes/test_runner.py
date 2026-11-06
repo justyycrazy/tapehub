@@ -320,6 +320,71 @@ def test_variant_consistency_suspect_on_divergence() -> None:
     assert all(c.verdict == "confirmed" for c in diffs)
 
 
+def test_variant_consistency_tolerance_confirms_precision_noise() -> None:
+    """容差吸收表示层差异：none 差 2.0 / qfq 差 1.0，容差 1.5 → none suspect、qfq confirmed。"""
+    registry = _registry_for("multi_variant.yaml")
+
+    def _probe_with(tolerance: float) -> ProbeFile:
+        return _multi_var_probe(
+            "multi-var",
+            {
+                "variant_consistency": {
+                    "targets": ["stock"],
+                    "window": {"start": "2025-01-01", "end": "2025-03-31"},
+                    "tolerance": tolerance,
+                }
+            },
+        )
+
+    strict = asyncio.run(
+        run_provider_probe(_probe_with(1.5), registry, _settings())
+    )
+    by_id = {c.case_id: c for c in strict.cases if c.kind == "variant_consistency"}
+    assert by_id["variant-consistency-stock-P1D-none"].verdict == "suspect"
+    assert by_id["variant-consistency-stock-P1D-qfq"].verdict == "confirmed"
+    assert "within tolerance 1.5" in by_id["variant-consistency-stock-P1D-qfq"].reason
+
+    loose = asyncio.run(
+        run_provider_probe(_probe_with(3.0), registry, _settings())
+    )
+    by_id = {c.case_id: c for c in loose.cases if c.kind == "variant_consistency"}
+    assert all(c.verdict == "confirmed" for c in by_id.values())
+    comparisons = [item for c in by_id.values() for item in c.observation["comparisons"]]
+    # 差异幅度不因容差而丢失：max_abs_diff 仍如实记录
+    assert max(item["max_abs_diff"] for item in comparisons) == pytest.approx(2.0)
+
+
+def test_history_depth_full_mode_exact_estimate() -> None:
+    """full_history_targets 命中的目标走全量模式：单次调用给出精确最早 bar。"""
+    registry = _registry_for("multi_variant.yaml")
+    probe = _multi_var_probe(
+        "multi-var",
+        {
+            "history_depth": {
+                "targets": ["stock"],
+                "full_history_targets": ["stock"],
+                "earliest": "2024-01-01",
+                "max_calls": 6,
+            }
+        },
+    )
+    result = asyncio.run(run_provider_probe(probe, registry, _settings()))
+    cases = [c for c in result.cases if c.kind == "history_depth"]
+    # manifest 声明 eastmoney/sina 两个 variant → 全量展开为两条全量模式 case
+    assert {c.case_id for c in cases} == {
+        "history-depth-stock-P1D-eastmoney",
+        "history-depth-stock-P1D-sina",
+    }
+    for case in cases:
+        assert case.verdict == "observe"
+        assert "exactly" in case.reason
+        obs = case.observation
+        assert obs["approx"] is False
+        assert obs["complete"] is True
+        assert obs["calls_used"] == 1
+        assert obs["earliest_estimate"] is not None
+
+
 def test_run_result_is_fully_json_serializable() -> None:
     """运行结果（含 adjust_diff 的 first_divergence datetime）必须整体可序列化。
 
