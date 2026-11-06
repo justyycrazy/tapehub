@@ -30,6 +30,8 @@
 - `GET /v1/market/quotes/stream`：实时快照 SSE 流（单标的订阅推送、
   心跳与空闲退订、容量闸门，限 `single` 模式）：tqsdk（仅 `shared` 连接模式）
   与 twelvedata（WS 长连接，退订即释放上游订阅额度）；
+- `GET /v1/instruments/resolve`：标的模糊解析（宽松输入 → 标准代码候选，
+  纯本地规则、零上游调用，见「标的解析」章节）；
 - Provider 注册、能力匹配与公共路由；Provider 内部二级操作路由的扩展机制；
 - 统一错误处理；
 - **akshare Provider 已接入**（接口签名按官方文档核实，见下文）；
@@ -262,6 +264,60 @@ Accept: text/event-stream
 - `market`、`exchange` 由服务端解析，调用方无需重复传递；
 - **不接受** `CN.SSE.600000`、`600000` 等非标准格式；Provider 专用代码（如 akshare 的 `sh600000`、`RB0`）由适配器转换；
 - 第一版只校验标准格式，不通过标的元数据验证真实资产类型。
+
+### 标的解析（模糊查询）
+
+`GET /v1/instruments/resolve` 把宽松输入解析为标准代码候选，供「先解析、
+再查询」使用；bars/quotes 主链路的严格校验不受影响。
+
+```
+GET /v1/instruments/resolve?q=600000
+GET /v1/instruments/resolve?q=000001&asset_type=index
+GET /v1/instruments/resolve?q=AAPL&exchange=NASDAQ
+```
+
+参数：`q`（必填，宽松输入）、`asset_type`（可选提示，收窄歧义候选）、
+`exchange`（可选提示，按标准代码 exchange 段过滤，如 `NASDAQ`）。
+响应恒为 200（含空候选），候选多于一个时 `ambiguous: true`：
+
+```json
+{
+  "data": {
+    "query": "000001",
+    "ambiguous": true,
+    "candidates": [
+      {"instrument": "CN-SSE-000001", "market": "CN", "exchange": "SSE", "symbol": "000001", "asset_type": "index"},
+      {"instrument": "CN-SZSE-000001", "market": "CN", "exchange": "SZSE", "symbol": "000001", "asset_type": "stock"}
+    ]
+  },
+  "meta": {"request_id": "req_…", "generated_at": "…"}
+}
+```
+
+解析规则（公开市场代码约定，纯本地推导、零上游调用）：
+
+| 输入模式 | 解析结果 | 说明 |
+| --- | --- | --- |
+| 已是标准代码 | 原样回显（market/exchange 大写归一） | symbol 保留大小写（期货品种随交易所） |
+| 纯 6 位数字 | A 股：`6/5/0/3/399/4/8/92` 段定交易所与资产类型 | `000xxx` 为指数/个股双关（上证指数系列与深市个股共用代码段），双候选；`001/002/003` 深市个股单候选 |
+| 纯数字 1~5 位 | `HK-HKEX-` + 零填充 5 位 | `700` → `HK-HKEX-00700`；港股代码段不判资产类型（`02800` 是 ETF） |
+| 纯字母 1~5 位 / 含点字母 | 美股 ticker 三候选（NYSE/NASDAQ/CBOE） | ticker 推不出交易所，可用 `exchange` 提示收窄 |
+| 6 字母 3+3 双 ISO 4217 | `GLOBAL-OTC-基准/报价`（外汇） | 前三位为基准货币，`USDJPY` → `USD/JPY` |
+| 以 USD/USDT/USDC 结尾的 6~9 字母 | `GLOBAL-CRYPTO-…`（加密货币） | `BTCUSD`、`BTCUSDT` |
+| `代码.SH/SZ/BJ/HK/US` 后缀风格 | 对应市场（`600000.SH` → `CN-SSE-600000`） | 美股后缀不区分交易所，三候选 |
+| `sh/sz/bj + 代码` 前缀风格 | A 股（`sh600000` → `CN-SSE-600000`） | 前缀已定交易所，`000` 段类型仍不定 |
+
+诚实边界：
+
+- **解析 ≠ 验证存在**：候选是格式级推导，标的是否真实存在由后续
+  bars/quotes 请求经上游验证；`asset_type` 为 null 的候选（美股、港股、
+  标准代码回显）查询时仍需显式传参（asset_type 必填不推断不变）；
+- **期货/期权不解析**：品种代码与交易所无本地映射事实源，返回空候选
+  （已是标准代码的期货输入按回显规则处理）；中证指数系列（如 `000905`）
+  标准代码为 `CN-CSI-` 前缀，请直接传标准代码；
+- 提示参数过滤后可能为空：如实返回空候选，不回退、不猜测；
+- 规则依据为公开市场代码约定与 ISO 4217 货币码表，不代表任何上游
+  数据源的能力声明。
 
 ### asset_type 资产类型体系
 

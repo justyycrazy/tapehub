@@ -8,9 +8,10 @@ from fastapi import FastAPI
 
 from tapehub.api.exception_handlers import register_exception_handlers
 from tapehub.api.middleware import RequestContextMiddleware
-from tapehub.api.routes import capabilities, health, market, quotes
+from tapehub.api.routes import capabilities, health, instruments, market, quotes
 from tapehub.application.bar_query_service import BarQueryService
 from tapehub.application.capability_service import CapabilityService
+from tapehub.application.instrument_resolve_service import InstrumentResolveService
 from tapehub.application.provider_router import ProviderRouter
 from tapehub.application.quote_query_service import QuoteQueryService
 from tapehub.application.quote_stream_service import QuoteStreamService
@@ -53,6 +54,7 @@ def create_app(
     app.state.settings = settings
     app.state.registry = registry
     app.state.capability_service = CapabilityService(registry)
+    app.state.instrument_resolve_service = InstrumentResolveService()
     router = ProviderRouter(registry)
     app.state.bar_query_service = BarQueryService(router)
     app.state.quote_query_service = QuoteQueryService(router)
@@ -67,6 +69,7 @@ def create_app(
     register_exception_handlers(app)
     app.include_router(health.router)
     app.include_router(capabilities.router)
+    app.include_router(instruments.router)
     app.include_router(market.router)
     app.include_router(quotes.router)
     return app

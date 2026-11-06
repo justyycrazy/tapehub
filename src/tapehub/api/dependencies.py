@@ -4,6 +4,7 @@ from fastapi import Request
 
 from tapehub.application.bar_query_service import BarQueryService
 from tapehub.application.capability_service import CapabilityService
+from tapehub.application.instrument_resolve_service import InstrumentResolveService
 from tapehub.application.quote_query_service import QuoteQueryService
 from tapehub.application.quote_stream_service import QuoteStreamService
 from tapehub.providers.registry import ProviderRegistry
@@ -20,6 +21,10 @@ def get_registry(request: Request) -> ProviderRegistry:
 
 def get_capability_service(request: Request) -> CapabilityService:
     return request.app.state.capability_service
+
+
+def get_instrument_resolve_service(request: Request) -> InstrumentResolveService:
+    return request.app.state.instrument_resolve_service
 
 
 def get_bar_query_service(request: Request) -> BarQueryService:

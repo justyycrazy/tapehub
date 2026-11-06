@@ -19,6 +19,7 @@ from tapehub.api.schemas.common import BeijingDatetime, MarketDatetime
 from tapehub.application.capability_service import ProviderCapabilitiesView
 from tapehub.application.quote_stream_service import QuoteStream
 from tapehub.domain.capabilities import Capability
+from tapehub.domain.instrument_resolver import ResolveResult
 from tapehub.domain.models import (
     CN_TIMEZONE,
     BarBatch,
@@ -90,6 +91,59 @@ class CapabilitiesResponse(BaseModel):
 class ProviderCapabilitiesResponse(BaseModel):
     data: ProviderCapabilitiesOut
     meta: CapabilitiesMeta
+
+
+class InstrumentCandidateOut(BaseModel):
+    """单个解析候选。``asset_type`` 为 null 表示无法由输入格式判定，
+    查询 bars/quotes 时仍由调用方显式传参。"""
+
+    instrument: str
+    market: str
+    exchange: str
+    symbol: str
+    asset_type: str | None = None
+
+
+class InstrumentResolveDataOut(BaseModel):
+    query: str
+    # 多于一个候选即歧义（如 000001 的指数/个股双关），由调用方以提示收窄
+    ambiguous: bool
+    candidates: list[InstrumentCandidateOut]
+
+
+class InstrumentResolveMeta(BaseModel):
+    request_id: str
+    generated_at: BeijingDatetime
+
+
+class InstrumentResolveResponse(BaseModel):
+    data: InstrumentResolveDataOut
+    meta: InstrumentResolveMeta
+
+
+def resolve_to_response(result: ResolveResult, request_id: str) -> InstrumentResolveResponse:
+    return InstrumentResolveResponse(
+        data=InstrumentResolveDataOut(
+            query=result.query,
+            ambiguous=result.ambiguous,
+            candidates=[
+                InstrumentCandidateOut(
+                    instrument=candidate.instrument.code,
+                    market=candidate.instrument.market,
+                    exchange=candidate.instrument.exchange,
+                    symbol=candidate.instrument.symbol,
+                    asset_type=(
+                        candidate.asset_type.value if candidate.asset_type else None
+                    ),
+                )
+                for candidate in result.candidates
+            ],
+        ),
+        meta=InstrumentResolveMeta(
+            request_id=request_id,
+            generated_at=beijing_now(),
+        ),
+    )
 
 
 class BarOut(BaseModel):
