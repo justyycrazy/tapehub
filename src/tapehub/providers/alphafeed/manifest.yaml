@@ -18,39 +18,51 @@
 #   （SDK 默认 forward），tapehub 的 qfq/hfq 映射为 forward/backward；
 # - start_time/end_time 为毫秒时间戳（含端点）；单次上限 10000 根，
 #   可能截断时响应标记 partial=true；
-# - 历史覆盖（history）：history_depth 探针实证（报告 20261107T173550+0800
-#   P1D、20261107T195440+0800 P1W/P1M）三市场三周期在 2000-01-01 探测边界
-#   处均有数据（floor-hit，complete=True），start 回填为该边界下界（approx，
-#   真实库底可能更早；下轮可把 earliest 提前继续下探）；
+# - 历史覆盖（history）：history_depth 探针二分收敛（报告 20261107T201101
+#   CN / 20261107T203514 HK / 20261107T205210 US，三周期各自口径一致），
+#   start 取估计窗口右端零点（approx ±90 天，真实最早可能更早）：
+#   CN (1990-10-16, 1991-01-14]（含上交所开业日 1990-12-19）、
+#   HK (1979-11-17, 1980-02-15]、US (1961-11-19, 1962-02-17]
+#   （HK/US 与 tickflow 独立探测结果同日一致，两家上游历史库大概率同源）；
 # - 单接口 Provider：变体与 default_variant 均为 alphafeed（数据源即上游服务自身）：缺省请求即可路由，也可显式传 variant=alphafeed。
 provider: alphafeed
 default_variant: alphafeed
 
 capabilities:
-  # CN 与 HK/US 的周期集相同但拆块声明：官方文档三市场日线族（1d/1w/1M）
-  # 均覆盖，后续若某市场口径分化（如复权语义差异）可独立调整。
-  # history.start 三周期均为探测边界下界（P1D/P1W/P1M 探针均 floor-hit 于
-  # 2000-01-01，三周期深度口径一致）。
+  # 三市场周期集相同，但历史深度经探针二分收敛确认不同（HK/US 合并声明会
+  # 对 HK 过度声明 18 年），拆三块逐市场声明 history.start；operations 不受
+  # 块拆分影响（本就按市场枚举）。
   - data_type: bars
     markets: [CN]
     asset_types: [stock]
     delivery: [rest]
     variants: [alphafeed]
     intervals:
-      - {code: P1D, history: {start: 2000-01-01T00:00:00+08:00, end: null}}
-      - {code: P1W, history: {start: 2000-01-01T00:00:00+08:00, end: null}}
-      - {code: P1M, history: {start: 2000-01-01T00:00:00+08:00, end: null}}
+      - {code: P1D, history: {start: 1991-01-14T00:00:00+08:00, end: null}}
+      - {code: P1W, history: {start: 1991-01-14T00:00:00+08:00, end: null}}
+      - {code: P1M, history: {start: 1991-01-14T00:00:00+08:00, end: null}}
     adjustments: [none, qfq, hfq]
     fields: [open, high, low, close, volume, amount]
   - data_type: bars
-    markets: [HK, US]
+    markets: [HK]
     asset_types: [stock]
     delivery: [rest]
     variants: [alphafeed]
     intervals:
-      - {code: P1D, history: {start: 2000-01-01T00:00:00+08:00, end: null}}
-      - {code: P1W, history: {start: 2000-01-01T00:00:00+08:00, end: null}}
-      - {code: P1M, history: {start: 2000-01-01T00:00:00+08:00, end: null}}
+      - {code: P1D, history: {start: 1980-02-15T00:00:00+08:00, end: null}}
+      - {code: P1W, history: {start: 1980-02-15T00:00:00+08:00, end: null}}
+      - {code: P1M, history: {start: 1980-02-15T00:00:00+08:00, end: null}}
+    adjustments: [none, qfq, hfq]
+    fields: [open, high, low, close, volume, amount]
+  - data_type: bars
+    markets: [US]
+    asset_types: [stock]
+    delivery: [rest]
+    variants: [alphafeed]
+    intervals:
+      - {code: P1D, history: {start: 1962-02-17T00:00:00+08:00, end: null}}
+      - {code: P1W, history: {start: 1962-02-17T00:00:00+08:00, end: null}}
+      - {code: P1M, history: {start: 1962-02-17T00:00:00+08:00, end: null}}
     adjustments: [none, qfq, hfq]
     fields: [open, high, low, close, volume, amount]
 

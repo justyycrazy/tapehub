@@ -533,7 +533,7 @@ AlphaFeed（REST API `GET https://api.alphafeed.org/v1/klines`，官方 SDK `alp
 - 快照为纯 REST 单次调用语义：无推送接口，不实现流式（`/v1/market/quotes/stream` 路由到 alphafeed 返回 `UNSUPPORTED_CAPABILITY`，与 tickflow 一致）；无首包超时语义（调用失败统一 `UPSTREAM_ERROR`）；
 - 错误码映射：上游 429（限频，响应含 `retry_after_ms`）→ `UPSTREAM_RATE_LIMITED`（HTTP 429，`retry_after_ms` 可得时透传 details；SDK 对 429/5xx 自带最多 3 次退避重试，映射发生在重试耗尽后）；401/403 等其余上游异常统一 `UPSTREAM_ERROR`（SDK 异常类型不穿透 API）；无效 Key 指纹为 SDK `AuthenticationError`「Invalid or expired API key」（2026-11-07 探针实证）；无效标的上游返回 200 空数组（适配器按契约违背抛 `UPSTREAM_ERROR`）；
 - 上游单次上限 10000 根：达到上限时响应 `meta.partial=true` 且 `warnings` 提示可能截断；
-- 历史深度（history_depth 探针实证，报告 20261107T173550+0800）：三市场 P1D 在 2000-01-01 探测边界处仍有数据（floor-hit，complete=True），`history.start` 回填为 2000-01-01T00:00:00+08:00 **下界**（真实库底可能更早，下轮探针可提前边界继续下探）；P1W/P1M 深度未单独探测，保持 null；
+- 历史深度（history_depth 探针二分收敛，报告 20261107T201101+0800 CN / 20261107T203514+0800 HK / 20261107T205210+0800 US，三周期各自口径一致）：CN ≈1991-01-14（真值带 (1990-10-16, 1991-01-14]，含上交所开业日 1990-12-19）、HK ≈1980-02-15、US ≈1962-02-17（HK/US 与 TickFlow 独立探测结果同日一致，两家上游历史库大概率同源）；`history.start` 取估计窗口右端零点（approx ±90 天，真实最早可能更早），bars 能力拆 CN/HK/US 三块逐市场声明；
 - 日线时间戳口径（smoke 实测）：CN/HK 日线为**北京时间零点**；US 日线为**美东零点**（归一化北京时间随夏令时在 12:00/13:00 漂移）；HK/US 日线 `amount` 上游原值 0（无成交额数据，按原值透出非缺失 null），与 TickFlow 口径一致。
 
 Tushare（官方 SDK `tushare`：`ts.pro_bar` / `pro.fut_daily`）：

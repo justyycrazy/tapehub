@@ -115,19 +115,27 @@ def test_capability_catalog(alphafeed_client: TestClient) -> None:  # type: igno
     assert entry["provider"] == "alphafeed"
     assert entry["enabled"] is True
     caps = entry["capabilities"]
-    # bars 两块（CN 与 HK/US，分钟族不声明、周期枚举无 10m）+ quotes 一块
+    # bars 三块（CN/HK/US 逐市场声明：历史深度经探针二分收敛确认不同，
+    # 合并声明会对 HK 过度声明；分钟族不声明、周期枚举无 10m）+ quotes 一块
     assert [(cap["data_type"], cap["markets"]) for cap in caps] == [
         ("bars", ["CN"]),
-        ("bars", ["HK", "US"]),
+        ("bars", ["HK"]),
+        ("bars", ["US"]),
         ("quotes", ["CN", "HK", "US"]),
     ]
     for cap in caps:
         assert cap["asset_types"] == ["stock"]
         assert cap["variants"] == ["alphafeed"]
-    for cap in caps[:2]:
+    for cap in caps[:3]:
         assert [i["code"] for i in cap["intervals"]] == ["P1D", "P1W", "P1M"]
         assert cap["adjustments"] == ["none", "qfq", "hfq"]
-    quotes_cap = caps[2]
+    # history.start 逐市场回填（二分收敛估计窗口右端零点，approx ±90 天）
+    assert [cap["intervals"][0]["history"]["start"] for cap in caps[:3]] == [
+        "1991-01-14T00:00:00+08:00",
+        "1980-02-15T00:00:00+08:00",
+        "1962-02-17T00:00:00+08:00",
+    ]
+    quotes_cap = caps[3]
     # 快照无周期/复权维度，显式空
     assert quotes_cap["intervals"] == []
     assert quotes_cap["adjustments"] == []
