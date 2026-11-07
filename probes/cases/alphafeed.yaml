@@ -1,4 +1,5 @@
-# AlphaFeed 数据探针：全声明维度可用性、复权生效性、历史深度与单次上限实测。
+# AlphaFeed 数据探针：三市场（CN/HK/US）日线全声明维度可用性、复权生效性、
+# 历史深度与实时行情（quotes）字段矩阵、错误指纹实测。
 probe: alphafeed
 version: 1
 
@@ -7,40 +8,131 @@ requires:
   env: [TAPEHUB_ALPHAFEED_API_KEY]
 
 pacing:
-  call_interval_s: 1.0
+  # 官方文档未公布限频数值，账户套餐口径为 10 次/分钟（quotes 与 K 线同）。
+  # 6.5s 间隔 ≈ 9 次/分钟，为限频留余量（参照 tickflow 先例）；SDK 对 429/5xx
+  # 自带最多 3 次退避重试（_base_client.py），pacing 过密会掩盖限频真相。
+  call_interval_s: 6.5
   timeout_s: 60
-  max_calls: 90
+  # 预算：availability 27（CN/HK/US × P1D/P1W/P1M × 3 复权）+ adjust_diff 12 +
+  # history_depth 3 市场 × ≤24 + raw 12 = 最坏 111，期望约 90。
+  max_calls: 120
 
+# 同一 asset_type（stock）跨三市场声明能力：用市场限定目标（stock@MARKET）
+# 为每个市场提供独立基准标的；case id 以限定键为前缀（如 stock@HK-P1D-...）。
+# 基准沿用 tickflow 探针第三轮定稿的早上市标的（见 tickflow.yaml targets 注释）：
+# 早上市标的的历史深度收敛点是真实库底而非标的自身上市日伪影。
 targets:
-  stock:
-    instrument: CN-SSE-600000
+  stock@CN:
+    instrument: CN-SSE-600602
+    # 云赛智联（原真空电子），1990-12-19 上交所开业首批「老八股」且现存续
     window: {start: 2025-01-01, end: 2025-12-31}
-    min_bars: 100
+    # 跨周期下限（D≈243 / W≈52 / M≈12 根），只用于拦截空结果；按日线标定
+    # 会产生周/月假阳性（tickflow 探针实证）
+    min_bars: 10
+    required_fields: [open, high, low, close, volume, amount]
+  stock@HK:
+    instrument: HK-HKEX-00002
+    # 中电控股，港股最古老上市标的之一（tickflow 探针同款基准）
+    window: {start: 2025-01-01, end: 2025-12-31}
+    min_bars: 10
+    # amount 不预设必填：tickflow 实证 HK/US 日线成交额上游原值 0，
+    # alphafeed 是否同口径由本轮观察，如实在报告记录
+    required_fields: [open, high, low, close, volume]
+  stock@US:
+    instrument: US-NYSE-GE
+    # GE，1892 年 NYSE 上市且现存续（tickflow 探针同款基准）
+    window: {start: 2025-01-01, end: 2025-12-31}
+    min_bars: 10
     required_fields: [open, high, low, close, volume]
 
 chain:
   include_declared: true
   skip: []
   adjust_diff:
-    targets: [stock]
+    # 三市场复权生效性（forward/backward 是否生效、基准为何）：日线足以判定，
+    # 收敛 interval 控制预算（参照 tickflow 先例）
+    targets: [stock@CN, stock@HK, stock@US]
     window: {start: 2024-06-01, end: 2024-08-31}   # 分红除权高发窗口
+    intervals: [P1D]
     pairs: [[none, qfq], [none, hfq]]
     fields: [close]
   history_depth:
-    targets: [stock]
+    targets: [stock@CN, stock@HK, stock@US]
     earliest: 2000-01-01
     era_step_years: 5
-    max_calls: 16
-    intervals: [P1D]     # 分钟级历史深度价值低且调用重，显式收敛到日线（变体维度不收敛）
-  limit_truncation:
-    targets: [stock]
-    interval: PT1M
-    max_range: P1Y
-    documented_max: 10000
+    max_calls: 24
+    intervals: [P1D]     # 分钟线不声明（套餐口径仅 1d/1w/1M），只探日线深度
 
-raw: []
+raw:
+  # ── 错误指纹（仅观察，assert: false）──
+  # 429 无法确定性触发：SDK 对 429 自带最多 3 次退避重试（重试耗尽才抛
+  # RateLimitError，且烧真实配额）；限频细分映射已在适配器层完成
+  # （RateLimitError → UPSTREAM_RATE_LIMITED），此处只采集可直接复现的指纹。
+  - id: af-invalid-key-fingerprint
+    purpose: 无效 API Key 的错误指纹（字面量假 Key，非真实凭据；供错误分类回填）
+    module: alphafeed
+    client: {attr: AlphaFeed, kwargs: {api_key: "probe-invalid-key-not-a-credential"}}
+    call:
+      - {method: klines.get, kwargs: {symbol: "600000.SH", period: "1d", count: 1}}
+    expect: {status: error, error_contains: ""}   # 任意错误：记录指纹
+    assert: false
+  - id: af-period-10m-fingerprint
+    purpose: 实证上游无 10m 周期（能力目录不声明 PT10M 的依据；兑现 notes 遗留 TODO）
+    module: alphafeed
+    client: {attr: AlphaFeed, kwargs: {api_key: "$TAPEHUB_ALPHAFEED_API_KEY"}}
+    call:
+      - {method: klines.get, kwargs: {symbol: "600000.SH", period: "10m", count: 1}}
+    expect: {status: error, error_contains: ""}
+    assert: false
+  - id: af-quote-invalid-symbol-fingerprint
+    purpose: 不存在标的的快照错误指纹（供错误分类回填）
+    module: alphafeed
+    client: {attr: AlphaFeed, kwargs: {api_key: "$TAPEHUB_ALPHAFEED_API_KEY"}}
+    call:
+      - {method: quotes.get, kwargs: {symbols: ["BOGUS.XX"]}}
+    expect: {status: error, error_contains: ""}
+    assert: false
+
+  # ── 实时行情（af.quotes.get）：三市场字段矩阵与返回形态 ──
+  # SDK 实测返回 list[Quote dict]（response["data"]），非 Mapping 形态——
+  # 不能用 min_fields（runner 对非 Mapping 恒 False），字段矩阵看
+  # observation.sample；每条 raw 预算 = 1（client 构造）+ 1（调用）。
+  - id: af-quote-cn
+    purpose: A股快照字段矩阵（600000.SH；list 形态 + 行数断言）
+    module: alphafeed
+    client: {attr: AlphaFeed, kwargs: {api_key: "$TAPEHUB_ALPHAFEED_API_KEY"}}
+    call:
+      - {method: quotes.get, kwargs: {symbols: ["600000.SH"]}}
+    expect: {status: ok, min_rows: 1}
+    assert: true
+  - id: af-quote-hk
+    purpose: 港股快照字段矩阵（00700.HK 后缀核实）
+    module: alphafeed
+    client: {attr: AlphaFeed, kwargs: {api_key: "$TAPEHUB_ALPHAFEED_API_KEY"}}
+    call:
+      - {method: quotes.get, kwargs: {symbols: ["00700.HK"]}}
+    expect: {status: ok, min_rows: 1}
+    assert: true
+  - id: af-quote-us
+    purpose: 美股快照字段矩阵（AAPL.US 后缀核实）
+    module: alphafeed
+    client: {attr: AlphaFeed, kwargs: {api_key: "$TAPEHUB_ALPHAFEED_API_KEY"}}
+    call:
+      - {method: quotes.get, kwargs: {symbols: ["AAPL.US"]}}
+    expect: {status: ok, min_rows: 1}
+    assert: true
 
 notes: >
-  上游无 10m 周期（能力目录已不声明 PT10M），「声明缺失」的实证性 raw 探针待
-  SDK 客户端构造方式核实后补充；分钟级周期需上游套餐开通分钟 K 线权限
-  （403 → 统一包装为 UPSTREAM_ERROR），实测时如遇权限问题会在报告中如实记录。
+  套餐口径（官方文档未公布限频数值）：K 线与实时快照均 10 次/分钟，K 线
+  1 标的/次、快照 5 标的/次，周期仅 1d/1w/1M（无分钟 K 线权限）——manifest
+  已据此收敛：分钟族 PT1M~PT1H 不再声明（alphafeed 是 CN stock bars 缺省
+  Provider，路由执行失败不回退，声明无权限的周期会 403 打断本可由 tickflow
+  服务的请求）；limit_truncation 一并移除：P1D 全年约 250 根无法触达
+  count=10000 上限（必判 suspect），截断标记逻辑由单测 sized_klines_payload
+  覆盖。1Q/1Y 周期上游存在但超出项目「最大到月线」周期上界，不声明、不探。
+  raw 案例实证：无效 Key / 无效标的 / 无 10m 周期三类错误指纹（429 因 SDK
+  重试掩蔽不可确定性复现，细分映射在适配器层）；quotes 三市场字段矩阵。
+  HK/US amount 口径、日线时间戳墙钟（GLOBAL 数据按项目约定由适配器解析
+  转换为北京时间，需实测上游原始时区）由本轮 availability/adjust_diff
+  观察后回填。history 保持 null，探针报告产出 earliest_estimate 建议后
+  人工确认再单独提交回填。
