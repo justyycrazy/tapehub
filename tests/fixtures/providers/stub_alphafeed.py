@@ -20,7 +20,19 @@ class StubKlines:
 
     def get(self, **kwargs: Any) -> Any:
         self._client.calls.append(dict(kwargs))
+        if self._client.error is not None:
+            raise self._client.error
         return self._client.payload
+
+
+class StubRateLimitError(Exception):
+    """模拟 SDK 限频异常（alphafeed.RateLimitError：code/status_code/details）。"""
+
+    def __init__(self, message: str = "rate limit exceeded", details: Any = None) -> None:
+        super().__init__(message)
+        self.code = "RATE_LIMITED"
+        self.status_code = 429
+        self.details = details
 
 
 class StubQuotes:
@@ -29,6 +41,8 @@ class StubQuotes:
 
     def get(self, **kwargs: Any) -> Any:
         self._client.calls.append(dict(kwargs))
+        if self._client.error is not None:
+            raise self._client.error
         return self._client.quote_payload
 
 
@@ -41,6 +55,7 @@ class StubAlphaFeed:
         self.api_key = api_key
         self.kwargs = kwargs
         self.calls: list[dict[str, Any]] = []
+        self.error: Exception | None = None
         self.payload: Any = {
             "data": {
                 "timestamp": [],
@@ -65,9 +80,21 @@ def install(monkeypatch: Any) -> list[StubAlphaFeed]:
 
     module = types.ModuleType("alphafeed")
     module.AlphaFeed = StubAlphaFeed  # type: ignore[attr-defined]
+    module.RateLimitError = StubRateLimitError  # type: ignore[attr-defined]
     monkeypatch.setitem(sys.modules, "alphafeed", module)
     StubAlphaFeed.instances.clear()
     return StubAlphaFeed.instances
+
+
+def preset_error(monkeypatch: Any, error: Exception | None) -> None:
+    """让每个新建的桩客户端在调用时抛出指定异常（None 清除）。"""
+    original_init = StubAlphaFeed.__init__
+
+    def init_with_error(self: StubAlphaFeed, *args: Any, **kwargs: Any) -> None:
+        original_init(self, *args, **kwargs)
+        self.error = error
+
+    monkeypatch.setattr(StubAlphaFeed, "__init__", init_with_error)
 
 
 def preset_payload(monkeypatch: Any, payload: Any) -> None:

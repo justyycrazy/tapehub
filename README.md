@@ -531,6 +531,7 @@ AlphaFeed（REST API `GET https://api.alphafeed.org/v1/klines`，官方 SDK `alp
 - 复权映射：`qfq→forward`、`hfq→backward`、`none→none`（差值加法变体不对外暴露）；上游自身默认 forward，适配器始终显式传参；港股/美股复权语义未经探针实证（美股复权口径可能与 A 股不同），生效性以探针报告为准；
 - 快照字段映射：`last_price/volume/amount` 为标准字段（五档盘口上游无源字段恒 null）；`region/prev_close/open/high/low/name/change_pct/change_amount/amplitude/turnover_rate` 经 extensions 白名单透出，`ext.type`（cn_equity 等）不在白名单不透出；比例字段为**小数比例（1% = 0.01）**；上游支持批量（5 标的/次）与标的池（universes），本项目单标的快照语义、单元素 symbols 调用（限频 10 次/分钟为实际约束）；
 - 快照为纯 REST 单次调用语义：无推送接口，不实现流式（`/v1/market/quotes/stream` 路由到 alphafeed 返回 `UNSUPPORTED_CAPABILITY`，与 tickflow 一致）；无首包超时语义（调用失败统一 `UPSTREAM_ERROR`）；
+- 错误码映射：上游 429（限频，响应含 `retry_after_ms`）→ `UPSTREAM_RATE_LIMITED`（HTTP 429，`retry_after_ms` 可得时透传 details；SDK 对 429/5xx 自带最多 3 次退避重试，映射发生在重试耗尽后）；401/403 等其余上游异常统一 `UPSTREAM_ERROR`（SDK 异常类型不穿透 API）；
 - 上游单次上限 10000 根：达到上限时响应 `meta.partial=true` 且 `warnings` 提示可能截断。
 
 Tushare（官方 SDK `tushare`：`ts.pro_bar` / `pro.fut_daily`）：

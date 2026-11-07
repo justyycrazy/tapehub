@@ -50,18 +50,27 @@ def _to_timestamp_ms(value: Any) -> datetime:
 
 
 def _data_columns(payload: Any) -> dict[str, list[Any]]:
-    """提取列式数据：data 包装、单标的批量包装、直接列式均可。"""
+    """提取列式数据：data 包装、直接列式均可。"""
     if isinstance(payload, dict):
         data = payload.get("data")
         if isinstance(data, dict):
             payload = data
     if isinstance(payload, dict) and isinstance(payload.get("timestamp"), list):
         return payload
-    # 防御：批量包装 {symbol: CompactKlineData} 时取第一个（单标的请求只返回一个）
+    # 防御：批量包装 {symbol: CompactKlineData} 形态时多 key 无法判定唯一
+    # 标的，静默取第一个会无声错配数据——显式拒绝
     if isinstance(payload, dict):
-        for value in payload.values():
-            if isinstance(value, dict) and isinstance(value.get("timestamp"), list):
-                return value
+        matches = [
+            value
+            for value in payload.values()
+            if isinstance(value, dict) and isinstance(value.get("timestamp"), list)
+        ]
+        if len(matches) == 1:
+            return matches[0]
+        if len(matches) > 1:
+            raise ValueError(
+                "ambiguous AlphaFeed klines payload: multiple symbol entries"
+            )
     raise ValueError("unsupported AlphaFeed klines payload: expected columnar data")
 
 

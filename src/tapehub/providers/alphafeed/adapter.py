@@ -22,7 +22,7 @@
 from datetime import datetime
 from typing import Any
 
-from tapehub.domain.errors import ProviderNotImplementedError
+from tapehub.domain.errors import ProviderNotImplementedError, UpstreamRateLimitedError
 from tapehub.domain.models import CN_TIMEZONE, BarBatch, BarQuery, Quote, QuoteQuery
 from tapehub.providers.alphafeed.request_mapper import (
     UPSTREAM_MAX_COUNT,
@@ -86,7 +86,7 @@ class ProviderAdapter(BaseProviderAdapter):
     def _call_upstream(self, api_key: str, query: BarQuery) -> Any:
         """延迟导入官方 SDK 并调用 af.klines.get（原始列式返回）。"""
         try:
-            from alphafeed import AlphaFeed
+            from alphafeed import AlphaFeed, RateLimitError
         except ImportError as exc:
             raise ProviderNotImplementedError(
                 "Provider SDK 'alphafeed' is not installed.",
@@ -94,7 +94,10 @@ class ProviderAdapter(BaseProviderAdapter):
             ) from exc
         kwargs = build_request(query)
         client = AlphaFeed(api_key=api_key)
-        return client.klines.get(**kwargs)
+        try:
+            return client.klines.get(**kwargs)
+        except RateLimitError as exc:
+            raise self._rate_limited(exc) from exc
 
     def _fetch_quote_sync(self, operation: str, query: QuoteQuery) -> Quote:
         payload = self._call_quote_upstream(self._ensure_ready(), query)
@@ -105,7 +108,7 @@ class ProviderAdapter(BaseProviderAdapter):
     def _call_quote_upstream(self, api_key: str, query: QuoteQuery) -> Any:
         """延迟导入官方 SDK 并调用 af.quotes.get（list[Quote dict] 默认返回）。"""
         try:
-            from alphafeed import AlphaFeed
+            from alphafeed import AlphaFeed, RateLimitError
         except ImportError as exc:
             raise ProviderNotImplementedError(
                 "Provider SDK 'alphafeed' is not installed.",
@@ -113,7 +116,26 @@ class ProviderAdapter(BaseProviderAdapter):
             ) from exc
         kwargs = build_quote_request(query)
         client = AlphaFeed(api_key=api_key)
-        return client.quotes.get(**kwargs)
+        try:
+            return client.quotes.get(**kwargs)
+        except RateLimitError as exc:
+            raise self._rate_limited(exc) from exc
+
+    def _rate_limited(self, exc: Exception) -> UpstreamRateLimitedError:
+        """SDK 限频异常（429，重试耗尽后）→ UPSTREAM_RATE_LIMITED。
+
+        ``retry_after_ms`` 若可从上游错误 details 取得则透传（官方文档：
+        429 响应含建议等待毫秒数）；取不到时不编造。
+        """
+        details: dict[str, Any] = {"provider": self.name}
+        upstream_details = getattr(exc, "details", None)
+        if isinstance(upstream_details, dict):
+            retry_after = upstream_details.get("retry_after_ms")
+            if isinstance(retry_after, int):
+                details["retry_after_ms"] = retry_after
+        return UpstreamRateLimitedError(
+            "AlphaFeed upstream rate limit exceeded.", details=details
+        )
 
     def _payload_size(self, payload: Any) -> int:
         if not isinstance(payload, dict):

@@ -11,6 +11,7 @@ from tapehub.domain.errors import (
     ProviderNotImplementedError,
     UnsupportedCapabilityError,
     UpstreamError,
+    UpstreamRateLimitedError,
 )
 from tapehub.domain.intervals import Interval
 from tapehub.domain.models import (
@@ -27,8 +28,10 @@ from tapehub.providers.registry import build_provider_record
 from tapehub.settings import Settings
 from tests.conftest import make_settings
 from tests.fixtures.providers.stub_alphafeed import (
+    StubRateLimitError,
     install,
     klines_payload,
+    preset_error,
     preset_payload,
     preset_quote_payload,
     quote_payload,
@@ -240,6 +243,19 @@ def test_partial_when_upstream_limit_reached(
     assert batch.partial is True  # 达到上游上限，可能截断
 
 
+def test_ambiguous_batch_payload_rejected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """批量包装多标的响应：无法判定唯一标的，显式拒绝而非静默取第一个。"""
+    install(monkeypatch)
+    columns = klines_payload(["2026-01-02"])["data"]
+    preset_payload(monkeypatch, {"600519.SH": columns, "000001.SZ": dict(columns)})
+    adapter = _adapter()
+
+    with pytest.raises(ValueError, match="multiple symbol entries"):
+        asyncio.run(adapter.fetch_bars(_query()))
+
+
 def test_unsupported_exchange_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
     """未映射交易所（如东证 TSE）拒绝；HKEX/US 交易所已支持，不得误判。"""
     install(monkeypatch)
@@ -332,3 +348,29 @@ def test_quote_missing_timestamp_raises(monkeypatch: pytest.MonkeyPatch) -> None
 
     with pytest.raises(UpstreamError):
         asyncio.run(adapter.fetch_quote(_quote_query()))
+
+
+def test_rate_limit_maps_to_upstream_rate_limited(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """SDK 429（重试耗尽后）→ UPSTREAM_RATE_LIMITED，retry_after_ms 透传 details。"""
+    install(monkeypatch)
+    preset_error(monkeypatch, StubRateLimitError(details={"retry_after_ms": 250}))
+    adapter = _adapter()
+
+    with pytest.raises(UpstreamRateLimitedError) as excinfo:
+        asyncio.run(adapter.fetch_bars(_query()))
+    assert excinfo.value.details == {"provider": "alphafeed", "retry_after_ms": 250}
+
+
+def test_rate_limit_without_retry_after(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """上游 429 未携带 retry_after_ms：如实省略，不编造。"""
+    install(monkeypatch)
+    preset_error(monkeypatch, StubRateLimitError())
+    adapter = _adapter()
+
+    with pytest.raises(UpstreamRateLimitedError) as excinfo:
+        asyncio.run(adapter.fetch_quote(_quote_query()))
+    assert excinfo.value.details == {"provider": "alphafeed"}
