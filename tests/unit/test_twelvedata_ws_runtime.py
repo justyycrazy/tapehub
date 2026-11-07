@@ -16,7 +16,7 @@
 import asyncio
 import logging
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import pytest
@@ -483,3 +483,18 @@ def test_ws_price_to_quote_contract_violations() -> None:
     payload["price"] = None
     with pytest.raises(UpstreamError):  # 缺价格：不伪造
         ws_price_to_quote(payload, provider="twelvedata", received_at=now)
+
+
+def test_ws_price_to_quote_pre_1970_epoch() -> None:
+    """1970 前负纪元秒映射（纪元算术，Windows fromtimestamp 会崩）。"""
+    epoch = (
+        datetime(1960, 6, 15, tzinfo=timezone.utc)
+        - datetime(1970, 1, 1, tzinfo=timezone.utc)
+    ) // timedelta(seconds=1)
+    payload = fake_ws.price_event(_SYMBOL, 1.1)
+    payload["timestamp"] = epoch  # 1960-06-15 00:00 UTC（负纪元秒）
+    quote = ws_price_to_quote(
+        payload, provider="twelvedata", received_at=datetime.now(CN_TIMEZONE)
+    )
+    # 同一时刻的北京表示（00:00 UTC = 08:00 +08:00）
+    assert quote.timestamp == datetime(1960, 6, 15, 8, tzinfo=CN_TIMEZONE)

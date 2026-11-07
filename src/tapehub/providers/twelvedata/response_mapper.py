@@ -43,6 +43,7 @@ from zoneinfo import ZoneInfo
 
 from tapehub.domain.errors import UpstreamError
 from tapehub.domain.models import AssetType, Bar, Quote
+from tapehub.domain.timeutil import epoch_to_datetime
 
 # 外汇 datetime 的显示时区（官方文档：All times are displayed in the
 # Australia/Sydney timezone；ZoneInfo 自动处理 AEDT/AEST 夏令时切换）
@@ -147,7 +148,7 @@ def ws_price_to_quote(
         if value:
             extensions[field] = value
     return Quote(
-        timestamp=datetime.fromtimestamp(epoch, tz=timezone.utc),
+        timestamp=epoch_to_datetime(epoch * 1_000_000_000, timezone.utc),
         last_price=price,
         volume=None,  # WS price 事件无 volume（探针实证）
         amount=None,  # 上游无成交额字段

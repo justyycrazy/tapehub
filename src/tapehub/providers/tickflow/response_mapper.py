@@ -17,11 +17,12 @@ timestamp 缺失或 last_price 不可解析属上游契约违背，抛 ``UPSTREA
 """
 
 import math
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 from typing import Any
 
 from tapehub.domain.errors import UpstreamError
 from tapehub.domain.models import CN_TIMEZONE, Bar, Quote
+from tapehub.domain.timeutil import epoch_to_datetime
 
 _EXTENSIONS_FIELDS = ("prev_close", "open_interest", "settlement_price")
 _BAR_FIELDS = ("open", "high", "low", "close", "volume", "amount")
@@ -47,18 +48,8 @@ def _to_float(value: Any) -> float | None:
 
 
 def _to_timestamp_ms(value: Any) -> datetime:
-    """毫秒时间戳 → 北京时间 datetime（+08:00）。
-
-    用纪元算术而非 ``datetime.fromtimestamp``：后者在 Windows 上对 1970 年
-    前的负时间戳抛 ``OSError [Errno 22]``（CRT localtime 限制），而上游确有
-    更早的历史数据（探针实证 GE 1960 年代日线），负毫秒可正常出现。
-    """
-    millis = int(value)
-    seconds, remainder = divmod(millis, 1000)
-    utc = datetime(1970, 1, 1, tzinfo=timezone.utc) + timedelta(
-        seconds=seconds, milliseconds=remainder
-    )
-    return utc.astimezone(CN_TIMEZONE)
+    """毫秒时间戳 → 北京时间 datetime（+08:00）（纪元算术，见 domain.timeutil）。"""
+    return epoch_to_datetime(int(value) * 1_000_000, CN_TIMEZONE)
 
 
 def _data_columns(payload: Any) -> dict[str, list[Any]] | None:

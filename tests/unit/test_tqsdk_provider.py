@@ -98,6 +98,32 @@ def test_request_and_response_mapping(monkeypatch: pytest.MonkeyPatch) -> None:
     assert bar.extensions["close_oi"] == 101000.0
 
 
+def test_pre_1970_timestamp_mapping(monkeypatch: pytest.MonkeyPatch) -> None:
+    """1970 前负纳秒时间戳映射（纪元算术，Windows fromtimestamp 会崩）。"""
+    install(monkeypatch)
+    preset_rows(monkeypatch, klines_rows(["1960-06-15", "1960-06-16"]))
+    adapter = _adapter(
+        make_settings(
+            tqsdk_conn_mode="per_request",
+            tqsdk_auth_user="user@qq.com",
+            tqsdk_auth_password="secret",
+        )
+    )
+
+    batch = asyncio.run(
+        adapter.fetch_bars(
+            _query(
+                start=datetime(1960, 1, 1, tzinfo=CN_TIMEZONE),
+                end=datetime(1961, 1, 1, tzinfo=CN_TIMEZONE),
+            )
+        )
+    )
+
+    assert batch.count == 2
+    assert batch.bars[0].timestamp == datetime(1960, 6, 15, 8, tzinfo=CN_TIMEZONE)
+    assert batch.bars[1].timestamp == datetime(1960, 6, 16, 8, tzinfo=CN_TIMEZONE)
+
+
 @pytest.mark.parametrize(
     ("interval", "expected"),
     [

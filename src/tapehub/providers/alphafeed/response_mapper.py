@@ -13,6 +13,7 @@ from datetime import datetime
 from typing import Any
 
 from tapehub.domain.models import CN_TIMEZONE, Bar
+from tapehub.domain.timeutil import epoch_to_datetime
 
 _EXTENSIONS_FIELDS = ("prev_close",)
 
@@ -31,12 +32,8 @@ def _to_float(value: Any) -> float | None:
 
 
 def _to_timestamp_ms(value: Any) -> datetime:
-    """毫秒时间戳 → 北京时间 datetime（+08:00）。"""
-    millis = int(value)
-    seconds, remainder = divmod(millis, 1000)
-    return datetime.fromtimestamp(seconds, tz=CN_TIMEZONE).replace(
-        microsecond=remainder * 1000
-    )
+    """毫秒时间戳 → 北京时间 datetime（+08:00）（纪元算术，见 domain.timeutil）。"""
+    return epoch_to_datetime(int(value) * 1_000_000, CN_TIMEZONE)
 
 
 def _data_columns(payload: Any) -> dict[str, list[Any]]:

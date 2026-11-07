@@ -90,6 +90,26 @@ def test_response_mapping_with_data_wrapper(monkeypatch: pytest.MonkeyPatch) -> 
     assert bar.extensions["prev_close"] == 20.1
 
 
+def test_pre_1970_timestamp_mapping(monkeypatch: pytest.MonkeyPatch) -> None:
+    """1970 前负毫秒时间戳映射（纪元算术，Windows fromtimestamp 会崩）。"""
+    install(monkeypatch)
+    preset_payload(monkeypatch, klines_payload(["1960-06-15", "1960-06-16"]))
+    adapter = _adapter()
+
+    batch = asyncio.run(
+        adapter.fetch_bars(
+            _query(
+                start=datetime(1960, 1, 1, tzinfo=CN_TIMEZONE),
+                end=datetime(1961, 1, 1, tzinfo=CN_TIMEZONE),
+            )
+        )
+    )
+
+    assert batch.count == 2
+    assert batch.bars[0].timestamp == datetime(1960, 6, 15, 8, tzinfo=CN_TIMEZONE)
+    assert batch.bars[1].timestamp == datetime(1960, 6, 16, 8, tzinfo=CN_TIMEZONE)
+
+
 @pytest.mark.parametrize(
     ("interval", "expected"),
     [

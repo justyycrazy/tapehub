@@ -27,6 +27,7 @@ from datetime import datetime
 from typing import Any
 
 from tapehub.domain.models import CN_TIMEZONE, Bar, Quote
+from tapehub.domain.timeutil import epoch_to_datetime
 
 _EXTENSIONS_FIELDS = ("open_oi", "close_oi")
 
@@ -59,12 +60,8 @@ def _to_float(value: Any) -> float | None:
 
 
 def _to_timestamp_ns(value: Any) -> datetime:
-    """纳秒时间戳 → 北京时间 datetime（+08:00）。"""
-    nanos = int(value)
-    seconds, remainder_ns = divmod(nanos, 1_000_000_000)
-    return datetime.fromtimestamp(seconds, tz=CN_TIMEZONE).replace(
-        microsecond=remainder_ns // 1000
-    )
+    """纳秒时间戳 → 北京时间 datetime（+08:00）（纪元算术，见 domain.timeutil）。"""
+    return epoch_to_datetime(int(value), CN_TIMEZONE)
 
 
 def _to_quote_datetime(value: Any) -> datetime:
