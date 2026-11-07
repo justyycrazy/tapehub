@@ -14,7 +14,7 @@ pacing:
   call_interval_s: 6.5
   timeout_s: 60
   # 预算：availability 27（CN/HK/US × P1D/P1W/P1M × 3 复权）+ adjust_diff 12 +
-  # history_depth 6 条（HK/US × 三周期）× ≤24 + raw 12 = 最坏 194，期望约 150。
+  # history_depth 3 条（US × 三周期）× ≤24 + raw 12 = 最坏 123，期望约 110。
   max_calls: 180
 
 # 同一 asset_type（stock）跨三市场声明能力：用市场限定目标（stock@MARKET）
@@ -57,12 +57,13 @@ chain:
     pairs: [[none, qfq], [none, hfq]]
     fields: [close]
   history_depth:
-    # CN 已二分收敛 ≈1991-01-14（20261107T201101，90 天粒度 complete=True），
-    # 不重复消耗配额；本轮仅 HK/US 下探：1980 边界 floor-hit（同报告），边界
-    # 提前到 1960（era_step_years 10 → 7 纪元；tickflow US 同期实证 ≈1962），
-    # 三周期全展开保持逐周期证据
-    targets: [stock@HK, stock@US]
-    earliest: 1960-01-01
+    # CN 已收敛 ≈1991-01-14（20261107T201101）、HK 已收敛 ≈1980-02-15
+    # （20261107T203514，与 tickflow HK 结论一致），均不重复消耗配额；US 在
+    # 1960 边界 floor-hit（同报告，比 tickflow US ≈1962 更深），本轮边界提前
+    # 到 1930 收敛真实库底（era_step_years 10 → 10 纪元，max_calls 24/条
+    # 覆盖 10+8+1 ≈ 19 最坏）
+    targets: [stock@US]
+    earliest: 1930-01-01
     era_step_years: 10
     max_calls: 24
     intervals: [P1D, P1W, P1M]
