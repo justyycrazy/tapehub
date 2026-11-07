@@ -14,8 +14,8 @@ pacing:
   call_interval_s: 6.5
   timeout_s: 60
   # 预算：availability 27（CN/HK/US × P1D/P1W/P1M × 3 复权）+ adjust_diff 12 +
-  # history_depth 3 市场 × ≤24 + raw 12 = 最坏 111，期望约 90。
-  max_calls: 120
+  # history_depth 6 条（3 市场 × P1W/P1M）× ≤24 + raw 12 = 最坏 193，期望约 100。
+  max_calls: 140
 
 # 同一 asset_type（stock）跨三市场声明能力：用市场限定目标（stock@MARKET）
 # 为每个市场提供独立基准标的；case id 以限定键为前缀（如 stock@HK-P1D-...）。
@@ -61,7 +61,10 @@ chain:
     earliest: 2000-01-01
     era_step_years: 5
     max_calls: 24
-    intervals: [P1D]     # 分钟线不声明（套餐口径仅 1d/1w/1M），只探日线深度
+    # P1D 已实证库深 ≥2000-01-01（floor-hit，报告 20261107T173550，manifest
+    # 已回填下界）；本轮补测 P1W/P1M 历史深度（分钟线不声明，P1D 不重复
+    # 消耗配额）
+    intervals: [P1W, P1M]
 
 raw:
   # ── 错误指纹（仅观察，assert: false）──
