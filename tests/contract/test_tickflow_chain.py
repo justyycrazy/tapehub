@@ -112,25 +112,36 @@ def test_capability_catalog(tickflow_client: TestClient) -> None:  # type: ignor
     entry = response.json()["data"][0]
     assert entry["provider"] == "tickflow"
     assert entry["enabled"] is True
-    bars_cap = entry["capabilities"][0]
-    assert bars_cap["data_type"] == "bars"
-    assert bars_cap["markets"] == ["CN", "HK", "US"]
-    assert bars_cap["asset_types"] == ["stock"]
-    assert bars_cap["variants"] == ["tickflow"]
-    assert [i["code"] for i in bars_cap["intervals"]] == [
-        "PT1M", "PT5M", "PT10M", "PT15M", "PT30M",
-        "PT1H", "P1D", "P1W", "P1M",
+    caps = entry["capabilities"]
+    # bars 三块逐市场声明（history 已按 20261107T145801 探针报告回填：早上市
+    # 基准标的二分 90 天粒度收敛、三市场深度不同——原合并块取跨市场最早
+    # US 值对 CN 过度声明 29 年，已拆块；分钟族免费档无分钟权限（403 三轮
+    # 实证）无法核实，保持 null）+ quotes 快照能力三市场合并
+    assert [(cap["data_type"], cap["markets"]) for cap in caps] == [
+        ("bars", ["CN"]),
+        ("bars", ["HK"]),
+        ("bars", ["US"]),
+        ("quotes", ["CN", "HK", "US"]),
     ]
-    assert bars_cap["adjustments"] == ["none", "qfq", "hfq"]
-    # history 已按 20261107T145801 探针报告回填（早上市基准标的，二分 90 天
-    # 粒度收敛）：能力为三市场合并声明，start 取跨市场最早（US ≈1962-02-17）；
-    # 分钟族免费档无分钟权限（403 三轮实证）无法核实，保持 null
-    starts = {i["code"]: i["history"]["start"] for i in bars_cap["intervals"]}
-    minute_codes = ("PT1M", "PT5M", "PT10M", "PT15M", "PT30M", "PT1H")
-    assert all(starts[c] is None for c in minute_codes)
-    assert starts["P1D"] == starts["P1W"] == starts["P1M"] == "1962-02-17T00:00:00+08:00"
+    expected_starts = {
+        "CN": "1991-01-18T00:00:00+08:00",
+        "HK": "1980-02-15T00:00:00+08:00",
+        "US": "1962-02-17T00:00:00+08:00",
+    }
+    for cap in caps[:3]:
+        assert cap["asset_types"] == ["stock"]
+        assert cap["variants"] == ["tickflow"]
+        assert [i["code"] for i in cap["intervals"]] == [
+            "PT1M", "PT5M", "PT10M", "PT15M", "PT30M",
+            "PT1H", "P1D", "P1W", "P1M",
+        ]
+        assert cap["adjustments"] == ["none", "qfq", "hfq"]
+        starts = {i["code"]: i["history"]["start"] for i in cap["intervals"]}
+        minute_codes = ("PT1M", "PT5M", "PT10M", "PT15M", "PT30M", "PT1H")
+        assert all(starts[c] is None for c in minute_codes)
+        assert starts["P1D"] == starts["P1W"] == starts["P1M"] == expected_starts[cap["markets"][0]]
     # quotes 快照能力：无 interval/adjust 维度，三市场 stock
-    quotes_cap = entry["capabilities"][1]
+    quotes_cap = caps[3]
     assert quotes_cap["data_type"] == "quotes"
     assert quotes_cap["markets"] == ["CN", "HK", "US"]
     assert quotes_cap["intervals"] == []
