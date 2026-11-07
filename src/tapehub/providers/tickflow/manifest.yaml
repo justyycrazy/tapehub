@@ -14,7 +14,11 @@
 # - adjust 枚举 forward/forward_additive/backward/backward_additive/none，
 #   tapehub 的 qfq/hfq 映射为 forward/backward（加权差值变体不对外暴露）；
 # - 上游单次上限 10000 根 K 线，可能截断时响应标记 partial=true；
-# - 历史覆盖范围（history）未核实，保持 null，不编造；
+# - 历史覆盖范围（history）：日/周/月经 history_depth 探针实证回填
+#   （20261107T145801，早上市基准标的 600602/00002/GE，二分 90 天粒度收敛
+#   complete=True：CN ≈1991-01-18、HK ≈1980-02-15、US ≈1962-02-17，日/周/月
+#   同值；能力为三市场合并声明，start 取跨市场最早 US 值，approx ±90 天）；
+#   分钟族免费档无分钟 K 线权限（403 已三轮实证）无法核实，保持 null，不编造；
 # - quotes 快照：上游支持逗号分隔批量（本项目单标的快照，单标的单次调用），
 #   返回 last_price/volume/amount 与 session/ext（name/change_pct 等，经
 #   extensions 白名单透出）；quote 无 interval/adjust 维度，显式声明空；
@@ -33,15 +37,23 @@ capabilities:
     delivery: [rest]
     variants: [tickflow]
     intervals:
+      # 分钟族（PT1M~PT1H，含 60m）：免费档无分钟 K 线权限（403 指纹
+      # 「无分钟K线查询权限」已三轮实证），历史深度无法核实，保持 null，
+      # 升档后按探针流程实测再回填；
+      # 日/周/月：history_depth 探针实证（20261107T145801，早上市基准标的）
+      # 回填。能力为三市场合并声明，start 取跨市场最早（US）；per-market
+      # 真值带：CN [1990-12-19, 1991-01-18]（不早于上交所开业日）、
+      # HK (1979-08-19, 1980-02-15]、US (1961-09-23, 1962-02-17]；
+      # 估计日零点 approx ±90 天，真实最早可能更早。
       - {code: PT1M, history: {start: null, end: null}}
       - {code: PT5M, history: {start: null, end: null}}
       - {code: PT10M, history: {start: null, end: null}}
       - {code: PT15M, history: {start: null, end: null}}
       - {code: PT30M, history: {start: null, end: null}}
       - {code: PT1H, history: {start: null, end: null}}
-      - {code: P1D, history: {start: null, end: null}}
-      - {code: P1W, history: {start: null, end: null}}
-      - {code: P1M, history: {start: null, end: null}}
+      - {code: P1D, history: {start: 1962-02-17T00:00:00+08:00, end: null}}
+      - {code: P1W, history: {start: 1962-02-17T00:00:00+08:00, end: null}}
+      - {code: P1M, history: {start: 1962-02-17T00:00:00+08:00, end: null}}
     adjustments: [none, qfq, hfq]
     fields: [open, high, low, close, volume, amount]
   - data_type: quotes

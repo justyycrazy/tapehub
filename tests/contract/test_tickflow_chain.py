@@ -122,6 +122,13 @@ def test_capability_catalog(tickflow_client: TestClient) -> None:  # type: ignor
         "PT1H", "P1D", "P1W", "P1M",
     ]
     assert bars_cap["adjustments"] == ["none", "qfq", "hfq"]
+    # history 已按 20261107T145801 探针报告回填（早上市基准标的，二分 90 天
+    # 粒度收敛）：能力为三市场合并声明，start 取跨市场最早（US ≈1962-02-17）；
+    # 分钟族免费档无分钟权限（403 三轮实证）无法核实，保持 null
+    starts = {i["code"]: i["history"]["start"] for i in bars_cap["intervals"]}
+    minute_codes = ("PT1M", "PT5M", "PT10M", "PT15M", "PT30M", "PT1H")
+    assert all(starts[c] is None for c in minute_codes)
+    assert starts["P1D"] == starts["P1W"] == starts["P1M"] == "1962-02-17T00:00:00+08:00"
     # quotes 快照能力：无 interval/adjust 维度，三市场 stock
     quotes_cap = entry["capabilities"][1]
     assert quotes_cap["data_type"] == "quotes"

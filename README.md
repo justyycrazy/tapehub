@@ -514,7 +514,8 @@ TickFlow（REST API `GET https://api.tickflow.org/v1/klines` / `GET /v1/quotes`�
 - 快照字段映射：`last_price/volume/amount` 为标准字段（五档盘口上游无源字段恒 null）；`region/name/change_pct/change_amount/amplitude/turnover_rate/prev_close/open/high/low` 经 extensions 白名单透出。SDK 0.1.25 探针实测：返回 `list[dict]`（非文档 data 包装），**无 `session` 字段**（文档声明存在，防御映射存在才透出），`ext.type`（cn_equity 等）不在白名单不透出；比例字段为**小数比例（1% = 0.01，如 change_pct 0.0162 = 1.62%）**；上游支持逗号分隔批量（本项目单标的快照，单标的单次调用）；
 - 上游单次上限 10000 根：达到上限时响应 `meta.partial=true` 且 `warnings` 提示可能截断；
 - 错误指纹（2026-11-07 探针实证）：免费档分钟线无权限为 SDK `PermissionError`「无分钟K线查询权限」（统一包装 `UPSTREAM_ERROR` 告知用户）；限频探针 6.5s 间隔（≈9 次/分钟）全程未触发；`RateLimitError` 类型存在于 SDK，429 指纹待更高频场景核实；
-- 日线时间戳口径（探针实测）：CN/HK 日线为**北京时间零点**；US 日线为**美东零点**（归一化北京时间随夏令时在 12:00/13:00 漂移）；HK/US 日线 `amount` 上游原值 0（无成交额数据，按原值透出非缺失 null）；历史深度：三市场日线在 2000-01-01 前仍有数据（HK 自 00700 上市 2004-06 起），最早锚点待更早边界下探。
+- 日线时间戳口径（探针实测）：CN/HK 日线为**北京时间零点**；US 日线为**美东零点**（归一化北京时间随夏令时在 12:00/13:00 漂移）；HK/US 日线 `amount` 上游原值 0（无成交额数据，按原值透出非缺失 null）；
+- 历史深度（history_depth 探针实证，报告 20261107T145801+0800：早上市基准标的 CN 600602（1990-12-19 上交所开业首批老八股）/ HK 00002 / US GE（1892 年上市），二分 90 天粒度收敛 complete=True，日/周/月三周期同值）：CN ≈1991-01-18（不早于上交所开业日 1990-12-19）、HK ≈1980-02-15、US ≈1962-02-17。bars 能力为三市场合并声明，manifest `history.start` 取跨市场最早 **1962-02-17T00:00:00+08:00**（估计日零点，approx ±90 天，真实最早可能更早）；分钟族（PT1M~PT1H）免费档无分钟权限（403 已三轮实证）无法核实，保持 null。基准标的已永久换为早上市标的：二分收敛点若远离其上市日即为真实库底，后续下探无需再改配置。
 
 AlphaFeed（REST API `GET https://api.alphafeed.org/v1/klines`，官方 SDK `alphafeed`）：
 
