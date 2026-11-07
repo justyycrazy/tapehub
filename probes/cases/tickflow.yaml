@@ -13,27 +13,39 @@ pacing:
   # 分钟 K 线 403）按上游错误如实记录，不做跳过——这正是账户档位边界的证据。
   call_interval_s: 6.5
   timeout_s: 60
-  max_calls: 160
+  # 预算：availability 81（含分钟族 54 条 403 复证）+ adjust_diff 12 +
+  # history_depth 9 条 × ≤24 + limit_truncation 3 + raw 8 = 最坏 320，期望约 220。
+  max_calls: 320
 
 # 同一 asset_type（stock）跨三市场声明能力：用市场限定目标（stock@MARKET）
 # 为每个市场提供独立基准标的；case id 以限定键为前缀（如 stock@HK-P1D-...）。
+# 第三轮起永久换用早上市标的作基准（20261107T002854 报告：600000/00700 的
+# 二分收敛点是标的自身上市伪影、AAPL 击穿 1990 边界）——早上市标的的
+# 收敛点若远离其上市日，即真实库底而非标的伪影。
 targets:
   stock@CN:
-    instrument: CN-SSE-600000
+    instrument: CN-SSE-600602
+    # 云赛智联（原真空电子），1990-12-19 上交所开业首批「老八股」且现存续：
+    # 标的上市日早于任何合理库底，CN 收敛点 = 真实库深（或市场起点本身）
     window: {start: 2025-01-01, end: 2025-12-31}
     # 跨周期下限（D≈243 / W≈52 / M≈12 根），只用于拦截空结果；按日线标定
     # 会产生周/月假阳性（首轮探针实证：P1W 实际 52-53 根、P1M 11-12 根均正常）
     min_bars: 10
     required_fields: [open, high, low, close, volume]
   stock@HK:
-    instrument: HK-HKEX-00700
+    instrument: HK-HKEX-00002
+    # 中电控股，港股最古老上市标的之一（精确上市日以权威口径核实后写入
+    # 回填 notes）；00700（2004-06 上市）第二轮收敛 2004-07-17 是标的伪影，
+    # 港股真实最早更早
     window: {start: 2025-01-01, end: 2025-12-31}
     # 跨周期下限（D≈243 / W≈52 / M≈12 根），只用于拦截空结果；按日线标定
     # 会产生周/月假阳性（首轮探针实证：P1W 实际 52-53 根、P1M 11-12 根均正常）
     min_bars: 10
     required_fields: [open, high, low, close, volume]
   stock@US:
-    instrument: US-NASDAQ-AAPL
+    instrument: US-NYSE-GE
+    # GE，1892 年 NYSE 上市且现存续；AAPL（1980-12-12 上市）第二轮击穿
+    # 1990 边界（粒度 None + 7 调，二分未跑），美国库深未知
     window: {start: 2025-01-01, end: 2025-12-31}
     # 跨周期下限（D≈243 / W≈52 / M≈12 根），只用于拦截空结果；按日线标定
     # 会产生周/月假阳性（首轮探针实证：P1W 实际 52-53 根、P1M 11-12 根均正常）
@@ -54,12 +66,18 @@ chain:
     fields: [close]
   history_depth:
     targets: [stock@CN, stock@HK, stock@US]
-    # 首轮实证三市场在 2000-01-01 边界仍有数据（HK 2000-2005 窗口 137 根 ≈
-    # 00700 上市 2004-06 起），真实最早更早，下探边界提前到 1990
-    earliest: 1990-01-01
-    era_step_years: 5
-    max_calls: 16
-    intervals: [P1D]     # 分钟级历史深度价值低且调用重，显式收敛到日线（变体维度不收敛）
+    # 第二轮（20261107T002854）：CN ≈2000-01-01（600000 上市伪影）、HK
+    # ≈2004-07-17（00700 上市伪影）均 90 天粒度收敛；US 击穿 1990 边界
+    # （粒度 None，二分未跑）。本轮基准换早上市标的并把边界提前到 1930：
+    # 收敛点即库底；floor-hit（粒度 None）=「库深 ≥1930」强声明，下轮边界
+    # 再降（1900/1880）。earliest 为全 targets 共享单值，CN 回溯到首个空
+    # 纪元（1980-1990）即停，不受 1930 影响。
+    earliest: 1930-01-01
+    era_step_years: 10   # 1930 起共 10 纪元；步长 5 则仅纪元回溯就要 19 调，装不进 24 预算
+    max_calls: 24        # 每条 case 预算：回溯 10 + 二分 ~8 + 验证 1 ≈ 19 最坏，留余量
+    intervals: [P1D, P1W, P1M]
+    # 分钟族（PT1M~PT1H，含 60m）免费档 403 已两轮实证，无法探测历史深度，
+    # manifest 保持 null（变体维度不收敛）
   limit_truncation:
     targets: [stock@CN, stock@HK, stock@US]
     # 免费档无分钟权限（403 指纹已在 availability 实证），10000 触顶实证
@@ -116,3 +134,7 @@ notes: >
   quotes 实测返回 list[dict]（非文档 data 包装、无 session 字段），比例
   字段为小数比例（1% = 0.01）。本轮复跑验证：min_bars 跨周期下限、
   quotes 链式调用断言、history_depth 下探 1990。
+  第三轮（本轮）：基准标的永久换早上市标的（CN 600602 / HK 00002 / US GE，
+  破除二分收敛点的标的上市日伪影），history_depth 边界提前至 1930、
+  era_step_years 10、纳入 P1W/P1M（分钟族 PT1M~PT1H 免费档 403 已两轮
+  实证，无法探测历史深度）；预期调用最坏 320。
