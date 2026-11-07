@@ -179,5 +179,9 @@ cython_debug/
 #  refer to https://docs.cursor.com/context/ignore-files
 .cursorignore
 .cursorindexingignore
+
+# Agent tools
+.zcode/
+
 # 探针运行产出（时点证据，不入库）
 probes/results/
