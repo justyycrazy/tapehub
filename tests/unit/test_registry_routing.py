@@ -19,8 +19,14 @@ class TestLoadRoutingConfig:
         """包内内置路由配置可加载，且与既有 Provider 能力覆盖一一对应。"""
         table = load_routing_config()
         assert len(table) == EXPECTED_BUILTIN_ENTRY_COUNT
-        # 拍板定稿的关键裁决：US 个股 K 线 twelvedata 优先、tickflow 回退
-        assert table[(DataType.BARS, "US", AssetType.STOCK)] == ("twelvedata", "tickflow")
+        # 拍板定稿的关键裁决：US 个股 K 线 twelvedata 优先（alphafeed 第二
+        # 候选 2026-11-07 追加）、tickflow 回退；HK 个股 K 线 alphafeed 接管缺省
+        assert table[(DataType.BARS, "US", AssetType.STOCK)] == (
+            "twelvedata",
+            "alphafeed",
+            "tickflow",
+        )
+        assert table[(DataType.BARS, "HK", AssetType.STOCK)] == ("alphafeed", "tickflow")
         # 完整回退链示例：CN 个股五源、tqsdk 缺省的期货合约
         assert table[(DataType.BARS, "CN", AssetType.STOCK)] == (
             "alphafeed",

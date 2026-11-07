@@ -19,3 +19,13 @@ def epoch_to_datetime(epoch_nanos: int, tz: tzinfo) -> datetime:
     seconds, remainder_ns = divmod(int(epoch_nanos), 1_000_000_000)
     utc = _EPOCH_UTC + timedelta(seconds=seconds, microseconds=remainder_ns // 1000)
     return utc.astimezone(tz)
+
+
+def datetime_to_epoch(value: datetime) -> int:
+    """aware datetime → 纪元纳秒时间戳（可为负），与 :func:`epoch_to_datetime` 对称。
+
+    纪元整数算术，平台无关（Windows 上 ``datetime.timestamp`` 对 1970 前的
+    本地时间换算同样受限，统一收口避免逐处绕开）。
+    """
+    delta = value - _EPOCH_UTC
+    return (delta.days * 86_400 + delta.seconds) * 1_000_000_000 + delta.microseconds * 1_000

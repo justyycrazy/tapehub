@@ -113,11 +113,6 @@ def test_pre_1970_timestamp_mapping(monkeypatch: pytest.MonkeyPatch) -> None:
 @pytest.mark.parametrize(
     ("interval", "expected"),
     [
-        ("PT1M", "1m"),
-        ("PT5M", "5m"),
-        ("PT15M", "15m"),
-        ("PT30M", "30m"),
-        ("PT1H", "60m"),
         ("P1W", "1w"),
         ("P1M", "1M"),  # 月线，区别于分钟 PT1M
     ],
@@ -134,6 +129,20 @@ def test_period_codes(
     assert StubAlphaFeed.instances[-1].calls[0]["period"] == expected
 
 
+@pytest.mark.parametrize(
+    "interval",
+    ["PT1M", "PT5M", "PT15M", "PT30M", "PT1H"],
+)
+def test_minute_periods_not_supported(
+    interval: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """分钟族不声明（套餐无分钟 K 线权限）：二级路由必须拒绝，落到回退链。"""
+    install(monkeypatch)
+    adapter = _adapter()
+    with pytest.raises(UnsupportedCapabilityError):
+        adapter.resolve_operation(_query(interval=Interval.parse(interval)))
+
+
 def test_pt10m_not_supported(monkeypatch: pytest.MonkeyPatch) -> None:
     """AlphaFeed 周期枚举没有 10m：二级路由必须拒绝，不得复用相邻周期。"""
     install(monkeypatch)
@@ -148,6 +157,9 @@ def test_pt10m_not_supported(monkeypatch: pytest.MonkeyPatch) -> None:
         ("CN-SSE-600519", "600519.SH"),
         ("CN-SZSE-000001", "000001.SZ"),
         ("CN-BSE-920047", "920047.BJ"),
+        ("HK-HKEX-00700", "00700.HK"),
+        ("US-NASDAQ-AAPL", "AAPL.US"),
+        ("US-NYSE-IBM", "IBM.US"),
     ],
 )
 def test_symbol_suffixes(
@@ -215,8 +227,9 @@ def test_partial_when_upstream_limit_reached(
 
 
 def test_unsupported_exchange_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
+    """未映射交易所（如东证 TSE）拒绝；HKEX/US 交易所已支持，不得误判。"""
     install(monkeypatch)
     adapter = _adapter()
-    query = _query(instrument=Instrument.parse("CN-HKEX-00700"))
+    query = _query(instrument=Instrument.parse("JP-TSE-7203"))
     with pytest.raises(UnsupportedCapabilityError):
         asyncio.run(adapter.fetch_bars(query))

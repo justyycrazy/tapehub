@@ -4,9 +4,12 @@
 # 说明：
 # - AlphaFeed 为 REST API（GET /v1/klines），官方 Python SDK 包名为 alphafeed，
 #   客户端 AlphaFeed(api_key=...)，K 线方法 af.klines.get(...)；
-# - symbol 格式 代码.市场后缀，示例已核实 600519.SH / 000001.SZ / 920047.BJ，
-#   第一版仅声明 A 股（SSE/SZSE/BSE）个股；
-# - period 枚举 1m/5m/15m/30m/60m/1d/1w/1M/1Q/1Y（无 10m）；
+# - symbol 格式 代码.市场后缀，示例已核实 600519.SH / 000001.SZ / 920047.BJ /
+#   00700.HK / AAPL.US；
+# - period 枚举 1m/5m/15m/30m/60m/1d/1w/1M/1Q/1Y（无 10m）；账户套餐口径仅
+#   开通日 K 线权限（1d/1w/1M，三市场一致），分钟族不声明——alphafeed 是
+#   CN stock bars 缺省 Provider，路由执行失败不回退，声明无权限的周期会
+#   403 打断本可由其他 Provider 服务的请求；
 #   季线 1Q 无法用 ISO 8601 Duration 表达，不声明；年线 1Y 超出项目
 #   「最大支持到月线」的周期范围，不声明；
 # - adjust 枚举 none/forward/backward/forward_additive/backward_additive
@@ -14,22 +17,30 @@
 # - start_time/end_time 为毫秒时间戳（含端点）；单次上限 10000 根，
 #   可能截断时响应标记 partial=true；
 # - 历史覆盖范围（history）未核实，保持 null，不编造；
-# - 单接口 Provider：变体与 default_variant 均为 alphafeed（数据源即上游服务自身，与东方财富无关）：缺省请求即可路由，也可显式传 variant=alphafeed。
+# - 单接口 Provider：变体与 default_variant 均为 alphafeed（数据源即上游服务自身）：缺省请求即可路由，也可显式传 variant=alphafeed。
 provider: alphafeed
 default_variant: alphafeed
 
 capabilities:
+  # CN 与 HK/US 的周期集相同但拆块声明：官方文档三市场日线族（1d/1w/1M）
+  # 均覆盖，后续若某市场口径分化（如复权语义差异）可独立调整。
   - data_type: bars
     markets: [CN]
     asset_types: [stock]
     delivery: [rest]
     variants: [alphafeed]
     intervals:
-      - {code: PT1M, history: {start: null, end: null}}
-      - {code: PT5M, history: {start: null, end: null}}
-      - {code: PT15M, history: {start: null, end: null}}
-      - {code: PT30M, history: {start: null, end: null}}
-      - {code: PT1H, history: {start: null, end: null}}
+      - {code: P1D, history: {start: null, end: null}}
+      - {code: P1W, history: {start: null, end: null}}
+      - {code: P1M, history: {start: null, end: null}}
+    adjustments: [none, qfq, hfq]
+    fields: [open, high, low, close, volume, amount]
+  - data_type: bars
+    markets: [HK, US]
+    asset_types: [stock]
+    delivery: [rest]
+    variants: [alphafeed]
+    intervals:
       - {code: P1D, history: {start: null, end: null}}
       - {code: P1W, history: {start: null, end: null}}
       - {code: P1M, history: {start: null, end: null}}
@@ -37,38 +48,9 @@ capabilities:
     fields: [open, high, low, close, volume, amount]
 
 operations:
-  # 全部周期 × 复权组合都调用同一上游接口 af.klines.get；
+  # 全部周期 × 复权 × 市场组合都调用同一上游接口 af.klines.get；
   # 显式枚举以保证能力目录与内部操作一一对应（AlphaFeed 无 10m 周期）。
-  - match: {data_type: bars, market: CN, asset_type: stock, interval: PT1M, adjust: none, variant: alphafeed}
-    operation: klines
-  - match: {data_type: bars, market: CN, asset_type: stock, interval: PT1M, adjust: qfq, variant: alphafeed}
-    operation: klines
-  - match: {data_type: bars, market: CN, asset_type: stock, interval: PT1M, adjust: hfq, variant: alphafeed}
-    operation: klines
-  - match: {data_type: bars, market: CN, asset_type: stock, interval: PT5M, adjust: none, variant: alphafeed}
-    operation: klines
-  - match: {data_type: bars, market: CN, asset_type: stock, interval: PT5M, adjust: qfq, variant: alphafeed}
-    operation: klines
-  - match: {data_type: bars, market: CN, asset_type: stock, interval: PT5M, adjust: hfq, variant: alphafeed}
-    operation: klines
-  - match: {data_type: bars, market: CN, asset_type: stock, interval: PT15M, adjust: none, variant: alphafeed}
-    operation: klines
-  - match: {data_type: bars, market: CN, asset_type: stock, interval: PT15M, adjust: qfq, variant: alphafeed}
-    operation: klines
-  - match: {data_type: bars, market: CN, asset_type: stock, interval: PT15M, adjust: hfq, variant: alphafeed}
-    operation: klines
-  - match: {data_type: bars, market: CN, asset_type: stock, interval: PT30M, adjust: none, variant: alphafeed}
-    operation: klines
-  - match: {data_type: bars, market: CN, asset_type: stock, interval: PT30M, adjust: qfq, variant: alphafeed}
-    operation: klines
-  - match: {data_type: bars, market: CN, asset_type: stock, interval: PT30M, adjust: hfq, variant: alphafeed}
-    operation: klines
-  - match: {data_type: bars, market: CN, asset_type: stock, interval: PT1H, adjust: none, variant: alphafeed}
-    operation: klines
-  - match: {data_type: bars, market: CN, asset_type: stock, interval: PT1H, adjust: qfq, variant: alphafeed}
-    operation: klines
-  - match: {data_type: bars, market: CN, asset_type: stock, interval: PT1H, adjust: hfq, variant: alphafeed}
-    operation: klines
+  # —— CN ——
   - match: {data_type: bars, market: CN, asset_type: stock, interval: P1D, adjust: none, variant: alphafeed}
     operation: klines
   - match: {data_type: bars, market: CN, asset_type: stock, interval: P1D, adjust: qfq, variant: alphafeed}
@@ -86,4 +68,42 @@ operations:
   - match: {data_type: bars, market: CN, asset_type: stock, interval: P1M, adjust: qfq, variant: alphafeed}
     operation: klines
   - match: {data_type: bars, market: CN, asset_type: stock, interval: P1M, adjust: hfq, variant: alphafeed}
+    operation: klines
+  # —— HK ——
+  - match: {data_type: bars, market: HK, asset_type: stock, interval: P1D, adjust: none, variant: alphafeed}
+    operation: klines
+  - match: {data_type: bars, market: HK, asset_type: stock, interval: P1D, adjust: qfq, variant: alphafeed}
+    operation: klines
+  - match: {data_type: bars, market: HK, asset_type: stock, interval: P1D, adjust: hfq, variant: alphafeed}
+    operation: klines
+  - match: {data_type: bars, market: HK, asset_type: stock, interval: P1W, adjust: none, variant: alphafeed}
+    operation: klines
+  - match: {data_type: bars, market: HK, asset_type: stock, interval: P1W, adjust: qfq, variant: alphafeed}
+    operation: klines
+  - match: {data_type: bars, market: HK, asset_type: stock, interval: P1W, adjust: hfq, variant: alphafeed}
+    operation: klines
+  - match: {data_type: bars, market: HK, asset_type: stock, interval: P1M, adjust: none, variant: alphafeed}
+    operation: klines
+  - match: {data_type: bars, market: HK, asset_type: stock, interval: P1M, adjust: qfq, variant: alphafeed}
+    operation: klines
+  - match: {data_type: bars, market: HK, asset_type: stock, interval: P1M, adjust: hfq, variant: alphafeed}
+    operation: klines
+  # —— US ——
+  - match: {data_type: bars, market: US, asset_type: stock, interval: P1D, adjust: none, variant: alphafeed}
+    operation: klines
+  - match: {data_type: bars, market: US, asset_type: stock, interval: P1D, adjust: qfq, variant: alphafeed}
+    operation: klines
+  - match: {data_type: bars, market: US, asset_type: stock, interval: P1D, adjust: hfq, variant: alphafeed}
+    operation: klines
+  - match: {data_type: bars, market: US, asset_type: stock, interval: P1W, adjust: none, variant: alphafeed}
+    operation: klines
+  - match: {data_type: bars, market: US, asset_type: stock, interval: P1W, adjust: qfq, variant: alphafeed}
+    operation: klines
+  - match: {data_type: bars, market: US, asset_type: stock, interval: P1W, adjust: hfq, variant: alphafeed}
+    operation: klines
+  - match: {data_type: bars, market: US, asset_type: stock, interval: P1M, adjust: none, variant: alphafeed}
+    operation: klines
+  - match: {data_type: bars, market: US, asset_type: stock, interval: P1M, adjust: qfq, variant: alphafeed}
+    operation: klines
+  - match: {data_type: bars, market: US, asset_type: stock, interval: P1M, adjust: hfq, variant: alphafeed}
     operation: klines

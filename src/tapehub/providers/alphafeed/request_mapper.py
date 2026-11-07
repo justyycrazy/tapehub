@@ -3,9 +3,12 @@
 接口签名均已按官方文档核实（https://docs.alphafeed.org/zh-hans/）：
 
 - ``af.klines.get(symbol, period=..., count=..., adjust=..., start_time=..., end_time=...)``；
-- symbol 格式 ``代码.市场后缀``，示例 600519.SH / 000001.SZ / 920047.BJ（US/HK 暂不声明）；
-- period 枚举 1m/5m/15m/30m/60m/1d/1w/1M/1Q/1Y——**无 10m**（1Q 无 ISO 对应，
-  不声明；1Y 超出项目最大到月线的周期范围，不声明）；
+- symbol 格式 ``代码.市场后缀``，示例 600519.SH / 000001.SZ / 920047.BJ /
+  00700.HK / AAPL.US（美股 NYSE/NASDAQ/CBOE 统一 US 后缀，与 tickflow 口径一致）；
+- 上游 period 枚举 1m/5m/15m/30m/60m/1d/1w/1M/1Q/1Y——**无 10m**；
+  账户套餐口径仅开通日 K 线权限（1d/1w/1M），分钟族不声明（分钟级需
+  单独的「分钟K线权限」，403 由探针/文档口径核实）；1Q 无 ISO 对应，
+  1Y 超出项目最大到月线的周期范围，均不声明；
 - adjust 枚举 none/forward/backward/forward_additive/backward_additive；
 - start_time/end_time 为毫秒时间戳（含端点）；count 上限 10000。
 
@@ -14,21 +17,19 @@
 的声明默认值无关，必须显式传参）。
 """
 
+from datetime import datetime
 from typing import Any
 
 from tapehub.domain.errors import UnsupportedCapabilityError
 from tapehub.domain.intervals import Interval
 from tapehub.domain.models import Adjust, BarQuery
+from tapehub.domain.timeutil import datetime_to_epoch
 
 # 单次请求上限（官方文档：count 最大 10000）
 UPSTREAM_MAX_COUNT = 10000
 
+# 仅声明日/周/月（分钟族无套餐权限、1Q/1Y 超出项目周期上界，见模块 docstring）
 _PERIOD_CODES: dict[Interval, str] = {
-    Interval.parse("PT1M"): "1m",
-    Interval.parse("PT5M"): "5m",
-    Interval.parse("PT15M"): "15m",
-    Interval.parse("PT30M"): "30m",
-    Interval.parse("PT1H"): "60m",
     Interval.parse("P1D"): "1d",
     Interval.parse("P1W"): "1w",
     Interval.parse("P1M"): "1M",
@@ -36,8 +37,16 @@ _PERIOD_CODES: dict[Interval, str] = {
 
 _ADJUST_CODES = {Adjust.NONE: "none", Adjust.QFQ: "forward", Adjust.HFQ: "backward"}
 
-# 已核实的市场后缀（第一版仅声明 A 股交易所）
-_EXCHANGE_SUFFIXES = {"SSE": "SH", "SZSE": "SZ", "BSE": "BJ"}
+# 已核实的市场后缀：CN 三交易所 + HK + US（美股多交易所统一 US 后缀）
+_EXCHANGE_SUFFIXES = {
+    "SSE": "SH",
+    "SZSE": "SZ",
+    "BSE": "BJ",
+    "HKEX": "HK",
+    "NYSE": "US",
+    "NASDAQ": "US",
+    "CBOE": "US",
+}
 
 
 def symbol_code(query: BarQuery) -> str:
@@ -69,8 +78,9 @@ def adjust_code(adjust: Adjust) -> str:
     return _ADJUST_CODES[adjust]
 
 
-def _to_millis(value: object) -> int:
-    return int(value.timestamp() * 1000)  # type: ignore[union-attr]
+def _to_millis(value: datetime) -> int:
+    """aware datetime → 纪元毫秒（纪元算术收口 domain.timeutil，向下取整）。"""
+    return datetime_to_epoch(value) // 1_000_000
 
 
 def build_request(query: BarQuery) -> dict[str, Any]:

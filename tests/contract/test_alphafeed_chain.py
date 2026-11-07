@@ -112,14 +112,17 @@ def test_capability_catalog(alphafeed_client: TestClient) -> None:  # type: igno
     entry = response.json()["data"][0]
     assert entry["provider"] == "alphafeed"
     assert entry["enabled"] is True
-    cap = entry["capabilities"][0]
-    assert cap["asset_types"] == ["stock"]
-    assert cap["variants"] == ["alphafeed"]
-    # AlphaFeed 周期枚举没有 10m
-    assert [i["code"] for i in cap["intervals"]] == [
-        "PT1M", "PT5M", "PT15M", "PT30M", "PT1H", "P1D", "P1W", "P1M",
+    caps = entry["capabilities"]
+    # 两个 bars 能力块：CN 与 HK/US（分钟族不声明，AlphaFeed 周期枚举也没有 10m）
+    assert [(cap["data_type"], cap["markets"]) for cap in caps] == [
+        ("bars", ["CN"]),
+        ("bars", ["HK", "US"]),
     ]
-    assert cap["adjustments"] == ["none", "qfq", "hfq"]
+    for cap in caps:
+        assert cap["asset_types"] == ["stock"]
+        assert cap["variants"] == ["alphafeed"]
+        assert [i["code"] for i in cap["intervals"]] == ["P1D", "P1W", "P1M"]
+        assert cap["adjustments"] == ["none", "qfq", "hfq"]
 
 
 def test_pt10m_unsupported(alphafeed_client: TestClient) -> None:  # type: ignore[no-untyped-def]
@@ -152,3 +155,28 @@ def test_default_variant_routes_to_declared_default(
     response = alphafeed_client.get("/v1/market/bars", params=params)
     assert response.status_code == 200
     assert response.json()["meta"]["variant"] == "alphafeed"
+
+
+@pytest.mark.parametrize(
+    ("instrument", "expected_symbol"),
+    [
+        ("HK-HKEX-00700", "00700.HK"),
+        ("US-NASDAQ-AAPL", "AAPL.US"),
+    ],
+)
+def test_hk_us_bars_chain(
+    alphafeed_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    instrument: str,
+    expected_symbol: str,
+) -> None:
+    """港股/美股日线链路：标的代码后缀映射与响应回显。"""
+    preset_payload(monkeypatch, klines_payload(["2026-01-02"]))
+
+    response = alphafeed_client.get(
+        "/v1/market/bars", params={**BASE_PARAMS, "instrument": instrument}
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["data"]["instrument"] == instrument
+    assert StubAlphaFeed.instances[-1].calls[0]["symbol"] == expected_symbol

@@ -325,3 +325,34 @@ def test_auto_routing_precedence(tickflow_client: TestClient) -> None:
     assert _quote("HK-HKEX-00700") == "tickflow"
     assert _quote("US-NASDAQ-AAPL") == "tickflow"
     assert _bars("HK-HKEX-00700") == "tickflow"
+
+    # alphafeed 启用时：接管 HK 日线缺省（2026-11-07 拍板），US/CN 缺省不变
+    af_settings = make_settings(
+        alphafeed_api_key="test-alphafeed-key",
+        tickflow_api_key="test-key",
+        tqsdk_auth_user="user@example.com",
+        tqsdk_auth_password="secret",
+        twelvedata_api_key="test-twelvedata-key",
+    )
+    af_router = ProviderRouter(build_default_registry(af_settings))
+
+    def _bars_af(instrument: str) -> str:
+        from tapehub.domain.intervals import Interval
+        from tapehub.domain.models import Adjust, BarQuery
+
+        selection = af_router.select(
+            BarQuery(
+                asset_type=AssetType.STOCK,
+                instrument=Instrument.parse(instrument),
+                interval=Interval.parse("P1D"),
+                start=datetime(2026, 1, 1, tzinfo=CN_TIMEZONE),
+                end=datetime(2026, 1, 31, tzinfo=CN_TIMEZONE),
+                adjust=Adjust.NONE,
+                offset=0,
+                limit=10,
+            )
+        )
+        return selection.record.name
+
+    assert _bars_af("HK-HKEX-00700") == "alphafeed"
+    assert _bars_af("US-NASDAQ-AAPL") == "twelvedata"
