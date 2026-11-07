@@ -12,6 +12,8 @@ from tests.fixtures.providers.stub_alphafeed import (
     StubAlphaFeed,
     install,
     klines_payload,
+    preset_quote_payload,
+    quote_payload,
     sized_klines_payload,
 )
 
@@ -113,16 +115,23 @@ def test_capability_catalog(alphafeed_client: TestClient) -> None:  # type: igno
     assert entry["provider"] == "alphafeed"
     assert entry["enabled"] is True
     caps = entry["capabilities"]
-    # 两个 bars 能力块：CN 与 HK/US（分钟族不声明，AlphaFeed 周期枚举也没有 10m）
+    # bars 两块（CN 与 HK/US，分钟族不声明、周期枚举无 10m）+ quotes 一块
     assert [(cap["data_type"], cap["markets"]) for cap in caps] == [
         ("bars", ["CN"]),
         ("bars", ["HK", "US"]),
+        ("quotes", ["CN", "HK", "US"]),
     ]
     for cap in caps:
         assert cap["asset_types"] == ["stock"]
         assert cap["variants"] == ["alphafeed"]
+    for cap in caps[:2]:
         assert [i["code"] for i in cap["intervals"]] == ["P1D", "P1W", "P1M"]
         assert cap["adjustments"] == ["none", "qfq", "hfq"]
+    quotes_cap = caps[2]
+    # 快照无周期/复权维度，显式空
+    assert quotes_cap["intervals"] == []
+    assert quotes_cap["adjustments"] == []
+    assert quotes_cap["fields"] == ["timestamp", "last_price", "volume", "amount"]
 
 
 def test_pt10m_unsupported(alphafeed_client: TestClient) -> None:  # type: ignore[no-untyped-def]
@@ -180,3 +189,47 @@ def test_hk_us_bars_chain(
     body = response.json()
     assert body["data"]["instrument"] == instrument
     assert StubAlphaFeed.instances[-1].calls[0]["symbol"] == expected_symbol
+
+
+@pytest.mark.parametrize(
+    ("instrument", "expected_symbol"),
+    [
+        ("CN-SSE-600519", "600519.SH"),
+        ("HK-HKEX-00700", "00700.HK"),
+        ("US-NASDAQ-AAPL", "AAPL.US"),
+    ],
+)
+def test_quote_chain_three_markets(
+    alphafeed_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    instrument: str,
+    expected_symbol: str,
+) -> None:
+    """三市场快照链路：单标的 symbols 调用与响应归一化。"""
+    preset_quote_payload(monkeypatch, quote_payload(symbol=expected_symbol))
+
+    response = alphafeed_client.get(
+        "/v1/market/quotes",
+        params={
+            "provider": "alphafeed",
+            "asset_type": "stock",
+            "instrument": instrument,
+            "variant": "alphafeed",
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+
+    assert StubAlphaFeed.instances[-1].calls[0] == {"symbols": [expected_symbol]}
+    data = body["data"]
+    assert data["instrument"] == instrument
+    quote = data["quote"]
+    assert quote["last_price"] == 20.25
+    assert quote["volume"] == 200.0
+    assert quote["timestamp"] == "2026-01-05T08:00:00+08:00"
+    assert quote["extensions"]["name"] == "测试标的"
+    assert quote["extensions"]["change_pct"] == 0.00746
+
+    meta = body["meta"]
+    assert meta["provider"] == "alphafeed"
+    assert meta["variant"] == "alphafeed"

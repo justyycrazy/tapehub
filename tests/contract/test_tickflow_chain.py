@@ -356,3 +356,16 @@ def test_auto_routing_precedence(tickflow_client: TestClient) -> None:
 
     assert _bars_af("HK-HKEX-00700") == "alphafeed"
     assert _bars_af("US-NASDAQ-AAPL") == "twelvedata"
+
+    # alphafeed 启用时同时接管 HK/US 快照缺省；CN 快照缺省仍 tqsdk
+    def _quote_af(instrument: str) -> str:
+        selection = af_router.select_quote(
+            QuoteQuery(
+                asset_type=AssetType.STOCK, instrument=Instrument.parse(instrument)
+            )
+        )
+        return selection.record.name
+
+    assert _quote_af("HK-HKEX-00700") == "alphafeed"
+    assert _quote_af("US-NASDAQ-AAPL") == "alphafeed"
+    assert _quote_af("CN-SSE-600000") == "tqsdk"

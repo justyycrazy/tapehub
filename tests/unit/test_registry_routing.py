@@ -38,6 +38,14 @@ class TestLoadRoutingConfig:
             "tqsdk",
             "akshare",
         )
+        # 个股快照缺省：CN tqsdk 缺省（alphafeed 第二候选 2026-11-07 追加）；
+        # HK/US alphafeed 接管缺省（tickflow 回退）
+        assert table[(DataType.QUOTE, "CN", AssetType.STOCK)] == (
+            "tqsdk",
+            "alphafeed",
+            "tickflow",
+        )
+        assert table[(DataType.QUOTE, "HK", AssetType.STOCK)] == ("alphafeed", "tickflow")
         # 全部 order 链非空且首元素是各组合的既有缺省
         assert all(order for order in table.values())
 

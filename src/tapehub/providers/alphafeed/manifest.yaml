@@ -2,8 +2,9 @@
 # 接口签名均已按官方文档核实：https://docs.alphafeed.org/zh-hans/
 #
 # 说明：
-# - AlphaFeed 为 REST API（GET /v1/klines），官方 Python SDK 包名为 alphafeed，
-#   客户端 AlphaFeed(api_key=...)，K 线方法 af.klines.get(...)；
+# - AlphaFeed 为 REST API（GET /v1/klines / GET /v1/quotes），官方 Python SDK
+#   包名为 alphafeed，客户端 AlphaFeed(api_key=...)，K 线方法 af.klines.get(...)，
+#   快照方法 af.quotes.get(symbols=..., universes=... 二选一)；
 # - symbol 格式 代码.市场后缀，示例已核实 600519.SH / 000001.SZ / 920047.BJ /
 #   00700.HK / AAPL.US；
 # - period 枚举 1m/5m/15m/30m/60m/1d/1w/1M/1Q/1Y（无 10m）；账户套餐口径仅
@@ -46,6 +47,17 @@ capabilities:
       - {code: P1M, history: {start: null, end: null}}
     adjustments: [none, qfq, hfq]
     fields: [open, high, low, close, volume, amount]
+
+  # 实时快照：官方 /v1/quotes 支持 CN/US/HK 个股（symbols 批量 / universes
+  # 标的池二选一）；快照是当前时点订阅数据，interval/adjust 维度无意义，显式空。
+  - data_type: quotes
+    markets: [CN, HK, US]
+    asset_types: [stock]
+    delivery: [rest]
+    variants: [alphafeed]
+    intervals: []
+    adjustments: []
+    fields: [timestamp, last_price, volume, amount]
 
 operations:
   # 全部周期 × 复权 × 市场组合都调用同一上游接口 af.klines.get；
@@ -107,3 +119,10 @@ operations:
     operation: klines
   - match: {data_type: bars, market: US, asset_type: stock, interval: P1M, adjust: hfq, variant: alphafeed}
     operation: klines
+  # —— quotes：快照无周期/复权维度，match 显式 null ——
+  - match: {data_type: quotes, market: CN, asset_type: stock, interval: null, adjust: null, variant: alphafeed}
+    operation: quotes
+  - match: {data_type: quotes, market: HK, asset_type: stock, interval: null, adjust: null, variant: alphafeed}
+    operation: quotes
+  - match: {data_type: quotes, market: US, asset_type: stock, interval: null, adjust: null, variant: alphafeed}
+    operation: quotes

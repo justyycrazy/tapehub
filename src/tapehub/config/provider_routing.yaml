@@ -81,9 +81,10 @@ defaults:
 
   # —— quotes · 实时快照 ——
 
-  # CN 六类资产：tqsdk 缺省；tickflow 仅个股快照与 tqsdk 重叠
+  # CN 六类资产：tqsdk 缺省；个股快照回退链 alphafeed 第二候选（2026-11-07
+  # 追加，官方文档核实 A 股快照）、tickflow 第三
   - match: {data_type: quotes, market: CN, asset_type: stock}
-    order: [tqsdk, tickflow]
+    order: [tqsdk, alphafeed, tickflow]
   - match: {data_type: quotes, market: CN, asset_type: index}
     order: [tqsdk]
   - match: {data_type: quotes, market: CN, asset_type: etf}
@@ -95,11 +96,12 @@ defaults:
   - match: {data_type: quotes, market: CN, asset_type: weighted-index}
     order: [tqsdk]
 
-  # HK / US 个股快照：tickflow 独占
+  # HK / US 个股快照：alphafeed 缺省（2026-11-07 拍板接管，官方文档核实
+  # 三市场快照），tickflow 回退
   - match: {data_type: quotes, market: HK, asset_type: stock}
-    order: [tickflow]
+    order: [alphafeed, tickflow]
   - match: {data_type: quotes, market: US, asset_type: stock}
-    order: [tickflow]
+    order: [alphafeed, tickflow]
 
   # GLOBAL 外汇 / 加密货币快照：twelvedata 独占
   - match: {data_type: quotes, market: GLOBAL, asset_type: forex}

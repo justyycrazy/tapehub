@@ -7,9 +7,21 @@ from typing import Any
 
 import pytest
 
-from tapehub.domain.errors import ProviderNotImplementedError, UnsupportedCapabilityError
+from tapehub.domain.errors import (
+    ProviderNotImplementedError,
+    UnsupportedCapabilityError,
+    UpstreamError,
+)
 from tapehub.domain.intervals import Interval
-from tapehub.domain.models import CN_TIMEZONE, Adjust, AssetType, BarQuery, DataVariant, Instrument
+from tapehub.domain.models import (
+    CN_TIMEZONE,
+    Adjust,
+    AssetType,
+    BarQuery,
+    DataVariant,
+    Instrument,
+    QuoteQuery,
+)
 from tapehub.providers.manifest import load_builtin_manifest
 from tapehub.providers.registry import build_provider_record
 from tapehub.settings import Settings
@@ -18,6 +30,8 @@ from tests.fixtures.providers.stub_alphafeed import (
     install,
     klines_payload,
     preset_payload,
+    preset_quote_payload,
+    quote_payload,
     sized_klines_payload,
 )
 
@@ -233,3 +247,88 @@ def test_unsupported_exchange_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
     query = _query(instrument=Instrument.parse("JP-TSE-7203"))
     with pytest.raises(UnsupportedCapabilityError):
         asyncio.run(adapter.fetch_bars(query))
+
+
+def _quote_query(**overrides: Any) -> QuoteQuery:
+    base: dict[str, Any] = {
+        "asset_type": AssetType.STOCK,
+        "instrument": Instrument.parse("CN-SSE-600519"),
+        "variant": DataVariant.ALPHAFEED,
+    }
+    base.update(overrides)
+    return QuoteQuery(**base)
+
+
+def test_quote_mapping(monkeypatch: pytest.MonkeyPatch) -> None:
+    """快照映射：单标的 symbols 调用、字段归一化与 extensions 白名单。"""
+    install(monkeypatch)
+    preset_quote_payload(monkeypatch, quote_payload())
+    adapter = _adapter()
+
+    quote = asyncio.run(adapter.fetch_quote(_quote_query()))
+
+    from tests.fixtures.providers.stub_alphafeed import StubAlphaFeed
+
+    # af.quotes.get keyword-only 单元素 symbols（5 标的/次批量容量闲置）
+    assert StubAlphaFeed.instances[-1].calls[0] == {"symbols": ["600519.SH"]}
+    assert quote.provider == "alphafeed"
+    assert quote.last_price == 20.25
+    assert quote.volume == 200.0
+    assert quote.amount == 4040.0
+    # 桩按 UTC 零点编码，归一化输出即北京 08:00
+    assert quote.timestamp == datetime(2026, 1, 5, 8, tzinfo=CN_TIMEZONE)
+    assert quote.received_at.tzinfo is not None
+    assert quote.extensions is not None
+    assert quote.extensions["region"] == "CN"
+    assert quote.extensions["prev_close"] == 20.1
+    assert quote.extensions["name"] == "测试标的"
+    assert quote.extensions["change_pct"] == 0.00746  # 小数比例（0.746%）
+    # ext.type 不在白名单，不受控字段不透出
+    assert "type" not in quote.extensions
+    # 五档盘口上游无源字段，恒 null 不冒充
+    assert quote.bid_price1 is None
+    assert quote.ask_price5 is None
+
+
+@pytest.mark.parametrize(
+    ("code", "expected"),
+    [
+        ("HK-HKEX-00700", ["00700.HK"]),
+        ("US-NASDAQ-AAPL", ["AAPL.US"]),
+    ],
+)
+def test_quote_hk_us_symbols(
+    code: str, expected: list[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    install(monkeypatch)
+    preset_quote_payload(monkeypatch, quote_payload(symbol=expected[0]))
+    adapter = _adapter()
+    asyncio.run(adapter.fetch_quote(_quote_query(instrument=Instrument.parse(code))))
+
+    from tests.fixtures.providers.stub_alphafeed import StubAlphaFeed
+
+    assert StubAlphaFeed.instances[-1].calls[0]["symbols"] == expected
+
+
+def test_quote_missing_last_price_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    """last_price 缺失属上游契约违背：抛 UPSTREAM_ERROR，不用 0 冒充。"""
+    install(monkeypatch)
+    payload = quote_payload()
+    payload[0]["last_price"] = None
+    preset_quote_payload(monkeypatch, payload)
+    adapter = _adapter()
+
+    with pytest.raises(UpstreamError):
+        asyncio.run(adapter.fetch_quote(_quote_query()))
+
+
+def test_quote_missing_timestamp_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    """timestamp 缺失属上游契约违背：抛 UPSTREAM_ERROR，不伪造时间。"""
+    install(monkeypatch)
+    payload = quote_payload()
+    payload[0]["timestamp"] = None
+    preset_quote_payload(monkeypatch, payload)
+    adapter = _adapter()
+
+    with pytest.raises(UpstreamError):
+        asyncio.run(adapter.fetch_quote(_quote_query()))

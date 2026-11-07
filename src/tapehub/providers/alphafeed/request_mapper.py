@@ -22,7 +22,7 @@ from typing import Any
 
 from tapehub.domain.errors import UnsupportedCapabilityError
 from tapehub.domain.intervals import Interval
-from tapehub.domain.models import Adjust, BarQuery
+from tapehub.domain.models import Adjust, BarQuery, Instrument, QuoteQuery
 from tapehub.domain.timeutil import datetime_to_epoch
 
 # 单次请求上限（官方文档：count 最大 10000）
@@ -49,18 +49,18 @@ _EXCHANGE_SUFFIXES = {
 }
 
 
-def symbol_code(query: BarQuery) -> str:
+def symbol_code(instrument: Instrument) -> str:
     """标准标的 → AlphaFeed 代码，如 CN-SSE-600519 → 600519.SH。"""
-    suffix = _EXCHANGE_SUFFIXES.get(query.instrument.exchange)
+    suffix = _EXCHANGE_SUFFIXES.get(instrument.exchange)
     if suffix is None:
         raise UnsupportedCapabilityError(
-            f"AlphaFeed does not support exchange {query.instrument.exchange!r}.",
+            f"AlphaFeed does not support exchange {instrument.exchange!r}.",
             details={
                 "provider": "alphafeed",
-                "instrument": query.instrument.code,
+                "instrument": instrument.code,
             },
         )
-    return f"{query.instrument.symbol}.{suffix}"
+    return f"{instrument.symbol}.{suffix}"
 
 
 def period_code(interval: Interval) -> str:
@@ -86,7 +86,7 @@ def _to_millis(value: datetime) -> int:
 def build_request(query: BarQuery) -> dict[str, Any]:
     """构造 af.klines.get 的关键字参数；所有参数显式传递。"""
     return {
-        "symbol": symbol_code(query),
+        "symbol": symbol_code(query.instrument),
         "period": period_code(query.interval),
         "adjust": adjust_code(query.adjust),
         "start_time": _to_millis(query.start),
@@ -95,4 +95,20 @@ def build_request(query: BarQuery) -> dict[str, Any]:
     }
 
 
-__all__ = ["UPSTREAM_MAX_COUNT", "adjust_code", "build_request", "period_code", "symbol_code"]
+def build_quote_request(query: QuoteQuery) -> dict[str, Any]:
+    """构造 af.quotes.get 的关键字参数（symbols/universes 二选一，keyword-only）。
+
+    tapehub 快照为单标的语义：单元素 symbols 列表；上游 5 标的/次的批量
+    容量闲置（套餐限频 10 次/分钟才是约束）。
+    """
+    return {"symbols": [symbol_code(query.instrument)]}
+
+
+__all__ = [
+    "UPSTREAM_MAX_COUNT",
+    "adjust_code",
+    "build_quote_request",
+    "build_request",
+    "period_code",
+    "symbol_code",
+]

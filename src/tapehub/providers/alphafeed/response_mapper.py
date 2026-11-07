@@ -1,4 +1,4 @@
-"""AlphaFeed 响应映射（ResponseMapper）：上游返回对象 → 统一 Bar 模型。
+"""AlphaFeed 响应映射（ResponseMapper）：上游返回对象 → 统一 Bar/Quote 模型。
 
 响应结构已按官方文档核实（GET /v1/klines）：顶层 ``data`` 为 CompactKlineData
 列式结构（各数组等长，同下标对应同一根K线）：
@@ -6,16 +6,29 @@
 - 必填字段：timestamp（毫秒）、open/high/low/close/volume/amount；
 - 可选字段：prev_close（前收盘价），存在且非空时进入受控 ``extensions``；
 - 缺失值与 NaN 统一映射为 null。
+
+实时快照（GET /v1/quotes）：``data`` 为 Quote 字典数组（SDK 默认返回
+``list[Quote dict]``），字段 symbol/region/last_price/prev_close/open/high/
+low/volume/amount/timestamp（毫秒）/ext{name, change_pct, ...}；
+``last_price``/``timestamp`` 缺失属上游契约违背，抛 UPSTREAM_ERROR（不伪造）。
 """
 
 import math
 from datetime import datetime
 from typing import Any
 
-from tapehub.domain.models import CN_TIMEZONE, Bar
+from tapehub.domain.errors import UpstreamError
+from tapehub.domain.models import CN_TIMEZONE, Bar, Quote
 from tapehub.domain.timeutil import epoch_to_datetime
 
 _EXTENSIONS_FIELDS = ("prev_close",)
+
+# 快照顶层字段的 extensions 白名单：数值字段经 _to_float，缺失不透出
+_QUOTE_TOP_NUMERIC = ("prev_close", "open", "high", "low")
+# 快照 ext 块内的 extensions 白名单：名称原样、比例/涨跌额转 float
+# （官方文档：change_pct 等比例为小数，0.01 表示 1%）
+_QUOTE_EXT_STRING = ("name",)
+_QUOTE_EXT_NUMERIC = ("amplitude", "change_amount", "change_pct", "turnover_rate")
 
 
 def _to_float(value: Any) -> float | None:
@@ -80,3 +93,90 @@ def to_standard_bars(payload: Any) -> list[Bar]:
             )
         )
     return bars
+
+
+def _quote_field(source: Any, name: str) -> Any:
+    """从 dict 或对象风格条目取字段；缺失返回 None。"""
+    if isinstance(source, dict):
+        return source.get(name)
+    return getattr(source, name, None)
+
+
+def _quote_entries(payload: Any, *, provider: str) -> list[Any]:
+    """提取 QuotesResponse 的 data 数组：list 本身 / dict['data'] / 对象 .data。"""
+    if isinstance(payload, list):
+        return payload
+    if isinstance(payload, dict):
+        data = payload.get("data")
+        if isinstance(data, list):
+            return data
+    else:
+        data = getattr(payload, "data", None)
+        if isinstance(data, list):
+            return data
+    raise UpstreamError(
+        "AlphaFeed quotes payload has no data array.",
+        details={"provider": provider},
+    )
+
+
+def to_standard_quote(payload: Any, *, provider: str, received_at: datetime) -> Quote:
+    """上游快照响应 → 标准 Quote（单标的快照，取 data 首条）。
+
+    - ``timestamp``（毫秒）缺失/非法、``last_price`` 不可解析属上游契约
+      违背，抛 ``UPSTREAM_ERROR``（不伪造时间或价格）；
+    - 五档盘口上游无源字段，恒 null（不得用 0 冒充）；
+    - ``ext.change_pct`` 等比例字段为小数（0.01 = 1%），按数值透出。
+    """
+    entries = _quote_entries(payload, provider=provider)
+    if not entries:
+        raise UpstreamError(
+            "AlphaFeed quotes payload has an empty data array.",
+            details={"provider": provider},
+        )
+    entry = entries[0]
+    raw_ts = _quote_field(entry, "timestamp")
+    try:
+        millis = int(raw_ts)  # type: ignore[arg-type]
+    except (TypeError, ValueError) as exc:
+        raise UpstreamError(
+            "AlphaFeed quotes payload has no valid timestamp.",
+            details={"provider": provider, "field": "timestamp"},
+        ) from exc
+    last_price = _to_float(_quote_field(entry, "last_price"))
+    if last_price is None:
+        raise UpstreamError(
+            "AlphaFeed quotes payload has no valid last_price.",
+            details={"provider": provider, "field": "last_price"},
+        )
+    extensions: dict[str, Any] = {}
+    region = _quote_field(entry, "region")
+    if region is not None:
+        value = str(region).strip()
+        if value:
+            extensions["region"] = value
+    for name in _QUOTE_TOP_NUMERIC:
+        value = _to_float(_quote_field(entry, name))
+        if value is not None:
+            extensions[name] = value
+    ext_block = _quote_field(entry, "ext")
+    for name in _QUOTE_EXT_STRING:
+        raw = _quote_field(ext_block, name) if ext_block is not None else None
+        if raw is None:
+            continue
+        value = str(raw).strip()
+        if value:
+            extensions[name] = value
+    for name in _QUOTE_EXT_NUMERIC:
+        value = _to_float(_quote_field(ext_block, name)) if ext_block is not None else None
+        if value is not None:
+            extensions[name] = value
+    return Quote(
+        timestamp=_to_timestamp_ms(millis),
+        last_price=last_price,
+        volume=_to_float(_quote_field(entry, "volume")),
+        amount=_to_float(_quote_field(entry, "amount")),
+        provider=provider,
+        received_at=received_at,
+        extensions=extensions or None,
+    )

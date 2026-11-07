@@ -522,12 +522,15 @@ AlphaFeed（REST API `GET https://api.alphafeed.org/v1/klines`，官方 SDK `alp
 | 资产类型 | 市场 | 变体 | 上游接口 | 周期 | adjust | 标准字段 |
 | --- | --- | --- | --- | --- | --- | --- |
 | stock（bars） | CN/HK/US | alphafeed（默认） | `af.klines.get` | P1D/P1W/P1M | none/qfq/hfq | 全部（extensions: prev_close） |
+| stock（quotes） | CN/HK/US | alphafeed（默认） | `af.quotes.get(symbols=[...])` | —（快照无周期） | —（快照无复权） | timestamp/last_price/volume/amount（extensions 见下） |
 
 - API Key 通过环境变量 `TAPEHUB_ALPHAFEED_API_KEY` 提供并传入 SDK 客户端，禁止写入代码/manifest/日志；未配置时不启用（能力目录仍可见，`enabled=false`），显式请求返回 `PROVIDER_DISABLED`；
 - 标的代码映射：`CN-SSE-600519 → 600519.SH`、`CN-SZSE-… → .SZ`、`CN-BSE-… → .BJ`、`HK-HKEX-00700 → 00700.HK`、`US-NASDAQ-AAPL → AAPL.US`（美股 NYSE/NASDAQ/CBOE 统一 US 后缀；示例已按官方文档核实）；
 - 周期映射：`P1D→1d`、`P1W→1w`、`P1M→1M`；分钟级周期（`1m`~`60m`）需上游套餐开通分钟 K 线权限，账户套餐未包含、不声明（alphafeed 是 CN stock bars 缺省 Provider，路由执行失败不回退，声明无权限的周期会 403 打断本可由 tickflow 服务的请求）；**上游无 10m 周期**，`PT10M` 不声明；季线 `1Q` 无法用 ISO 8601 Duration 表达，年线 `1Y` 超出项目周期上界，均不声明；
-- 缺省路由（2026-11-07 拍板）：CN 个股 K 线缺省 alphafeed；HK 个股 K 线缺省 alphafeed（tickflow 回退）；US 个股 K 线缺省 twelvedata（alphafeed 第二候选、tickflow 第三）；
+- 缺省路由（2026-11-07 拍板）：CN 个股 K 线缺省 alphafeed；HK 个股 K 线缺省 alphafeed（tickflow 回退）；US 个股 K 线缺省 twelvedata（alphafeed 第二候选、tickflow 第三）；快照 HK/US 个股缺省 alphafeed（tickflow 回退）、CN 个股快照缺省 tqsdk（alphafeed 第二候选）；
 - 复权映射：`qfq→forward`、`hfq→backward`、`none→none`（差值加法变体不对外暴露）；上游自身默认 forward，适配器始终显式传参；港股/美股复权语义未经探针实证（美股复权口径可能与 A 股不同），生效性以探针报告为准；
+- 快照字段映射：`last_price/volume/amount` 为标准字段（五档盘口上游无源字段恒 null）；`region/prev_close/open/high/low/name/change_pct/change_amount/amplitude/turnover_rate` 经 extensions 白名单透出，`ext.type`（cn_equity 等）不在白名单不透出；比例字段为**小数比例（1% = 0.01）**；上游支持批量（5 标的/次）与标的池（universes），本项目单标的快照语义、单元素 symbols 调用（限频 10 次/分钟为实际约束）；
+- 快照为纯 REST 单次调用语义：无推送接口，不实现流式（`/v1/market/quotes/stream` 路由到 alphafeed 返回 `UNSUPPORTED_CAPABILITY`，与 tickflow 一致）；无首包超时语义（调用失败统一 `UPSTREAM_ERROR`）；
 - 上游单次上限 10000 根：达到上限时响应 `meta.partial=true` 且 `warnings` 提示可能截断。
 
 Tushare（官方 SDK `tushare`：`ts.pro_bar` / `pro.fut_daily`）：
