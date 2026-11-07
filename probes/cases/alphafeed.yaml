@@ -14,8 +14,8 @@ pacing:
   call_interval_s: 6.5
   timeout_s: 60
   # 预算：availability 27（CN/HK/US × P1D/P1W/P1M × 3 复权）+ adjust_diff 12 +
-  # history_depth 6 条（3 市场 × P1W/P1M）× ≤24 + raw 12 = 最坏 193，期望约 100。
-  max_calls: 140
+  # history_depth 9 条（3 市场 × 三周期）× ≤24 + raw 12 = 最坏 255，期望约 140。
+  max_calls: 180
 
 # 同一 asset_type（stock）跨三市场声明能力：用市场限定目标（stock@MARKET）
 # 为每个市场提供独立基准标的；case id 以限定键为前缀（如 stock@HK-P1D-...）。
@@ -58,13 +58,15 @@ chain:
     fields: [close]
   history_depth:
     targets: [stock@CN, stock@HK, stock@US]
-    earliest: 2000-01-01
+    # 已实证三周期库深 ≥2000-01-01（20261107T173550 P1D / 20261107T195440
+    # P1W/P1M 均 floor-hit，manifest 已回填下界）；本轮边界提前到 1980 三
+    # 周期一起下探：CN 基准 600602 上市于 1990-12（上交所开业首批），回溯到
+    # 1980-1990 空纪元即停，收敛点即真实库底；HK/US 若 1980 处仍有数据则
+    # floor-hit「库深 ≥1980」
+    earliest: 1980-01-01
     era_step_years: 5
     max_calls: 24
-    # P1D 已实证库深 ≥2000-01-01（floor-hit，报告 20261107T173550，manifest
-    # 已回填下界）；本轮补测 P1W/P1M 历史深度（分钟线不声明，P1D 不重复
-    # 消耗配额）
-    intervals: [P1W, P1M]
+    intervals: [P1D, P1W, P1M]
 
 raw:
   # ── 错误指纹（仅观察，assert: false）──
