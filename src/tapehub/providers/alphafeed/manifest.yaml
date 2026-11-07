@@ -7,17 +7,21 @@
 #   快照方法 af.quotes.get(symbols=..., universes=... 二选一)；
 # - symbol 格式 代码.市场后缀，示例已核实 600519.SH / 000001.SZ / 920047.BJ /
 #   00700.HK / AAPL.US；
-# - period 枚举 1m/5m/15m/30m/60m/1d/1w/1M/1Q/1Y（无 10m）；账户套餐口径仅
-#   开通日 K 线权限（1d/1w/1M，三市场一致），分钟族不声明——alphafeed 是
-#   CN stock bars 缺省 Provider，路由执行失败不回退，声明无权限的周期会
-#   403 打断本可由其他 Provider 服务的请求；
-#   季线 1Q 无法用 ISO 8601 Duration 表达，不声明；年线 1Y 超出项目
+# - period 官方文档枚举 1m/5m/15m/30m/60m/1d/1w/1M/1Q/1Y（无 10m；但探针
+#   实测 10m 上游亦接受并返回数据，报告 20261107T173550+0800，与文档枚举
+#   不符，维持不声明）；账户套餐口径仅开通日 K 线权限（1d/1w/1M，三市场
+#   一致），分钟族不声明——alphafeed 是 CN stock bars 缺省 Provider，路由
+#   执行失败不回退，声明无权限的周期会 403 打断本可由其他 Provider 服务的
+#   请求；季线 1Q 无法用 ISO 8601 Duration 表达，不声明；年线 1Y 超出项目
 #   「最大支持到月线」的周期范围，不声明；
 # - adjust 枚举 none/forward/backward/forward_additive/backward_additive
 #   （SDK 默认 forward），tapehub 的 qfq/hfq 映射为 forward/backward；
 # - start_time/end_time 为毫秒时间戳（含端点）；单次上限 10000 根，
 #   可能截断时响应标记 partial=true；
-# - 历史覆盖范围（history）未核实，保持 null，不编造；
+# - 历史覆盖（history）：history_depth 探针实证（报告 20261107T173550+0800）
+#   三市场 P1D 在 2000-01-01 探测边界处仍有数据（floor-hit，complete=True），
+#   start 回填为该边界下界（approx，真实库底可能更早；下轮可把 earliest
+#   提前继续下探）；
 # - 单接口 Provider：变体与 default_variant 均为 alphafeed（数据源即上游服务自身）：缺省请求即可路由，也可显式传 variant=alphafeed。
 provider: alphafeed
 default_variant: alphafeed
@@ -25,13 +29,15 @@ default_variant: alphafeed
 capabilities:
   # CN 与 HK/US 的周期集相同但拆块声明：官方文档三市场日线族（1d/1w/1M）
   # 均覆盖，后续若某市场口径分化（如复权语义差异）可独立调整。
+  # history.start 仅 P1D 回填（探针只下探了日线）；P1W/P1M 深度未单独探测，
+  # 保持 null 不推断。
   - data_type: bars
     markets: [CN]
     asset_types: [stock]
     delivery: [rest]
     variants: [alphafeed]
     intervals:
-      - {code: P1D, history: {start: null, end: null}}
+      - {code: P1D, history: {start: 2000-01-01T00:00:00+08:00, end: null}}
       - {code: P1W, history: {start: null, end: null}}
       - {code: P1M, history: {start: null, end: null}}
     adjustments: [none, qfq, hfq]
@@ -42,7 +48,7 @@ capabilities:
     delivery: [rest]
     variants: [alphafeed]
     intervals:
-      - {code: P1D, history: {start: null, end: null}}
+      - {code: P1D, history: {start: 2000-01-01T00:00:00+08:00, end: null}}
       - {code: P1W, history: {start: null, end: null}}
       - {code: P1M, history: {start: null, end: null}}
     adjustments: [none, qfq, hfq]

@@ -5,10 +5,11 @@
 - ``af.klines.get(symbol, period=..., count=..., adjust=..., start_time=..., end_time=...)``；
 - symbol 格式 ``代码.市场后缀``，示例 600519.SH / 000001.SZ / 920047.BJ /
   00700.HK / AAPL.US（美股 NYSE/NASDAQ/CBOE 统一 US 后缀，与 tickflow 口径一致）；
-- 上游 period 枚举 1m/5m/15m/30m/60m/1d/1w/1M/1Q/1Y——**无 10m**；
-  账户套餐口径仅开通日 K 线权限（1d/1w/1M），分钟族不声明（分钟级需
-  单独的「分钟K线权限」，403 由探针/文档口径核实）；1Q 无 ISO 对应，
-  1Y 超出项目最大到月线的周期范围，均不声明；
+- 官方文档 period 枚举 1m/5m/15m/30m/60m/1d/1w/1M/1Q/1Y（无 10m；探针实测
+  10m 上游亦接受并返回数据，报告 20261107T173550+0800，与文档枚举不符，
+  维持不声明）；账户套餐口径仅开通日 K 线权限（1d/1w/1M），分钟族不声明
+  （分钟级需单独的「分钟K线权限」）；1Q 无 ISO 对应，1Y 超出项目最大到
+  月线的周期范围，均不声明；
 - adjust 枚举 none/forward/backward/forward_additive/backward_additive；
 - start_time/end_time 为毫秒时间戳（含端点）；count 上限 10000。
 

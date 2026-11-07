@@ -77,7 +77,7 @@ raw:
     expect: {status: error, error_contains: ""}   # 任意错误：记录指纹
     assert: false
   - id: af-period-10m-fingerprint
-    purpose: 实证上游无 10m 周期（能力目录不声明 PT10M 的依据；兑现 notes 遗留 TODO）
+    purpose: 探测 10m 周期上游行为（官方文档枚举无 10m；20261107T173550 实测返回数据、与文档不符，持续观察口径一致性）
     module: alphafeed
     client: {attr: AlphaFeed, kwargs: {api_key: "$TAPEHUB_ALPHAFEED_API_KEY"}}
     call:
@@ -130,9 +130,12 @@ notes: >
   服务的请求）；limit_truncation 一并移除：P1D 全年约 250 根无法触达
   count=10000 上限（必判 suspect），截断标记逻辑由单测 sized_klines_payload
   覆盖。1Q/1Y 周期上游存在但超出项目「最大到月线」周期上界，不声明、不探。
-  raw 案例实证：无效 Key / 无效标的 / 无 10m 周期三类错误指纹（429 因 SDK
-  重试掩蔽不可确定性复现，细分映射在适配器层）；quotes 三市场字段矩阵。
-  HK/US amount 口径、日线时间戳墙钟（GLOBAL 数据按项目约定由适配器解析
-  转换为北京时间，需实测上游原始时区）由本轮 availability/adjust_diff
-  观察后回填。history 保持 null，探针报告产出 earliest_estimate 建议后
-  人工确认再单独提交回填。
+  raw 案例实证（20261107T173550+0800 首轮）：无效 Key 指纹 SDK
+  AuthenticationError「Invalid or expired API key」；无效标的返回 200 空数组
+  （非错误）；**10m 周期上游实测接受并返回数据**（与官方文档枚举不符，
+  PT10M 经人工确认维持不声明）（429 因 SDK 重试掩蔽不可确定性复现，
+  细分映射在适配器层）；quotes 三市场字段矩阵。HK/US amount 上游原值 0、
+  US 日线墙钟美东零点（DST 漂移），与 tickflow 口径一致，已回填 README。
+  history.start 已按人工确认回填 2000-01-01T00:00:00+08:00（P1D 下界，
+  floor-hit 于探测边界；下轮可把 earliest 提前到 1990/1980 继续下探精确
+  库底；P1W/P1M 深度未单独探测保持 null）。
