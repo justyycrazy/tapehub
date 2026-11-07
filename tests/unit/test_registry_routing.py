@@ -23,16 +23,14 @@ class TestLoadRoutingConfig:
         assert table[(DataType.BARS, "US", AssetType.STOCK)] == ("twelvedata", "tickflow")
         # 完整回退链示例：CN 个股五源、tqsdk 缺省的期货合约
         assert table[(DataType.BARS, "CN", AssetType.STOCK)] == (
-            "akshare",
-            "tushare",
             "alphafeed",
-            "tqsdk",
             "tickflow",
+            "tushare",
+            "akshare",
         )
         assert table[(DataType.BARS, "CN", AssetType.CONTRACT)] == (
             "tqsdk",
             "akshare",
-            "tushare",
         )
         # 全部 order 链非空且首元素是各组合的既有缺省
         assert all(order for order in table.values())

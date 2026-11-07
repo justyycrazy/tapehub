@@ -30,17 +30,25 @@ version: 1
 defaults:
   # —— bars · 历史 K 线 ——
 
-  # CN 个股：五源重叠；akshare 缺省，其余按既有回退优先级
+  # CN 个股：akshare 上游不稳定降为末位（2026-11-07 调整）；tqsdk 不参与
+  # 本组合的 auto 路由（能力保留、仅显式 provider=tqsdk 可用），链上不写
+  # 即明确不参与——校验只要求组合有条目与 order 引用合法，不要求穷举。
   - match: {data_type: bars, market: CN, asset_type: stock}
-    order: [akshare, tushare, alphafeed, tqsdk, tickflow]
+    order: [alphafeed, tickflow, tushare, akshare]
 
-  # CN 指数：akshare 缺省；tqsdk 亦有日线，作回退
+  # CN 指数：akshare 独占（tqsdk 虽声明指数日线，不参与本组合的
+  # auto 路由，仅显式 provider=tqsdk 可用）
   - match: {data_type: bars, market: CN, asset_type: index}
-    order: [akshare, tqsdk]
+    order: [akshare]
 
-  # CN 期货合约：tqsdk 缺省；回退 akshare（新浪源）、tushare
+  # CN ETF：tqsdk 独占（twelvedata 的 etf 仅 US 市场）
+  - match: {data_type: bars, market: CN, asset_type: etf}
+    order: [tqsdk]
+
+  # CN 期货合约：tqsdk 缺省；回退 akshare（新浪源）。tushare 虽声明
+  # 期货日线，不参与本组合的 auto 路由（仅显式 provider=tushare 可用）
   - match: {data_type: bars, market: CN, asset_type: contract}
-    order: [tqsdk, akshare, tushare]
+    order: [tqsdk, akshare]
 
   # CN 主力连续：tqsdk 缺省；回退 akshare（新浪源）
   - match: {data_type: bars, market: CN, asset_type: continuous}
@@ -48,10 +56,6 @@ defaults:
 
   # CN 加权指数：tqsdk 独占
   - match: {data_type: bars, market: CN, asset_type: weighted-index}
-    order: [tqsdk]
-
-  # CN ETF：tqsdk 独占（twelvedata 的 etf 仅 US 市场）
-  - match: {data_type: bars, market: CN, asset_type: etf}
     order: [tqsdk]
 
   # US 个股：twelvedata 优先（2026-11-07 拍板维持既有回退结果；

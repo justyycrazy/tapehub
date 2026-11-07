@@ -554,7 +554,9 @@ TqSdk（官方 SDK `tqsdk`：`TqApi(auth=TqAuth(...)).get_kline_serial(...)`）�
 
 - 变体与 default_variant 均为 `tqsdk`（与 Provider 同名，官方 SDK 包名；背后为天勤行情平台，与东方财富无关）：缺省请求即可路由，也可显式传 `variant=tqsdk`；
 - 缺省路由（provider_routing.yaml 裁决）：期货三类与 ETF 归 tqsdk；
-  stock/index 仅声明能力，缺省仍由 akshare 承担，tqsdk 股票/指数需显式 `provider=tqsdk`；
+  stock/index 仅声明能力、不参与个股/指数 K 线的 auto 回退链
+  （provider_routing.yaml 裁决：个股缺省 alphafeed，tqsdk 股票/指数需显式
+  `provider=tqsdk`；指数仍归 akshare）；
 - **权限说明（usage/mddatas 原文，诚实标注）**：数据可见性由**天勤平台账户
   档位**决定（免费版/专业版），与 SDK 及其版本无关。免费版账户仅期货/期权
   与四大指数（上证50/沪深300/中证500/中证1000）实时行情，A股股票/ETF 实时
