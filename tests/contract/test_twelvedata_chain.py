@@ -118,8 +118,16 @@ def test_capability_catalog(twelvedata_client: TestClient) -> None:  # type: ign
     assert us_caps["etf"]["adjustments"] == ["none"]
     for cap in us_caps.values():
         assert cap["fields"] == ["open", "high", "low", "close", "volume"]
-        # history 待探针回填：声明周期无历史覆盖（不编造）
-        assert all(i["history"]["start"] is None for i in cap["intervals"])
+        # history 已按 2026-11-07 探针报告回填（估计日零点，approx）：全部非 null
+        starts = {i["code"]: i["history"]["start"] for i in cap["intervals"]}
+        assert all(v is not None for v in starts.values())
+        assert starts["PT1M"] == "2020-04-11T00:00:00+08:00"
+        assert starts["P1D"] == "2000-01-01T00:00:00+08:00"
+    # spot-check：stock PT1H（2019-02）深于 etf 同周期（2020-02，二分估计差异）
+    stock_starts = {i["code"]: i["history"]["start"] for i in us_caps["stock"]["intervals"]}
+    etf_starts = {i["code"]: i["history"]["start"] for i in us_caps["etf"]["intervals"]}
+    assert stock_starts["PT1H"] == "2019-02-01T00:00:00+08:00"
+    assert etf_starts["PT1H"] == "2020-02-15T00:00:00+08:00"
 
     # 实时快照：无周期/复权维度（显式空），fields 首版三项（extensions 待探针回填）
     quote_caps = [c for c in entry["capabilities"] if c["data_type"] == "quotes"]

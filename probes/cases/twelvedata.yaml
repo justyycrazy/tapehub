@@ -144,4 +144,13 @@ notes: >
   验证 12 周期 × 复权矩阵（stock 24 + etf 12 case）、history_depth 回填
   24 个周期的 history.start（预算 780 见 pacing 注释，截断则次日续跑）；
   qfq 与 none case 在有分红的窗口内数据**应存在差异**（除息回溯调整），
-  无差异反而说明复权未生效需排查。
+  无差异反而说明复权未生效需排查；
+  2026-11-07 全量重跑（报告 20261107T111630+0800，447/780 配额）：
+  availability 60/60 confirmed（美股 36 条含 24 stock×none/qfq + 12 etf，
+  volume null 率 0；日内 PT1M/PT5M/PT15M/PT30M 触 5000 上限 partial=True）；
+  limit stock/forex 均 5000 confirmed；CBOE 准入 raw case confirmed；
+  td-quote-crypto 修复后 confirmed；48 条 depth complete，stock/etf
+  24 周期 history.start 已按估计日零点回填（人工确认：stock 日内
+  ≈2019-02-01~2020-04-11、etf 日内 ≈2020-02-15~2020-04-11，粗周期
+  触底 2000-01-01 待精化）；forex/crypto 本轮估计与已回填值 ±1 粒度内
+  漂移，维持原值。

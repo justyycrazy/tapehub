@@ -65,6 +65,11 @@
 # - 美股墙钟口径 America/New_York（官方 https://twelvedata.com/exchanges/stocks，
 #   EST/EDT 夏令时由 ZoneInfo 处理）；日线/周线/月线上游强制返回交易所
 #   本地 date-only 时间；volume 有值、amount 上游无字段恒 null；
+# - 美股 history.start 已按 2026-11-07 全量探针回填（报告
+#   probes/results/twelvedata/20261107T111630+0800.json，人工确认；
+#   二分估计粒度 90 天 approx，回填值取估计日零点）：stock 日内
+#   ≈2019-02-01~2020-04-11、etf 日内 ≈2020-02-15~2020-04-11，
+#   日/周/月触底 2000-01-01（真实更早待精化）；
 # - CN/HK 不声明（2026-11-05 探针实证）：目录虽有 China stock 5,433 /
 #   etf 1,745、Hong Kong stock 11,201 / etf 442，但免费档 Basic 可用标的
 #   仅 China stock 000001、China etf 511880、HK stock 1299 各 1 个（其余
@@ -124,47 +129,49 @@ capabilities:
 
   # 美股个股：exchange 段白名单 NYSE/NASDAQ/CBOE；qfq = 上游 adjust=all
   # （拆股+分红前复权，与国内口径一致，2026-11-06 实证）；volume 有值、
-  # amount 无字段；history 待探针回填（保持 null）
+  # amount 无字段；history 已按 2026-11-07 探针报告回填（估计日零点，
+  # 粒度 90 天 approx，人工确认）
   - data_type: bars
     markets: [US]
     asset_types: [stock]
     delivery: [rest]
     variants: [twelvedata]
     intervals:
-      - {code: PT1M, history: {start: null, end: null}}
-      - {code: PT5M, history: {start: null, end: null}}
-      - {code: PT15M, history: {start: null, end: null}}
-      - {code: PT30M, history: {start: null, end: null}}
-      - {code: PT45M, history: {start: null, end: null}}
-      - {code: PT1H, history: {start: null, end: null}}
-      - {code: PT2H, history: {start: null, end: null}}
-      - {code: PT4H, history: {start: null, end: null}}
-      - {code: PT8H, history: {start: null, end: null}}
-      - {code: P1D, history: {start: null, end: null}}
-      - {code: P1W, history: {start: null, end: null}}
-      - {code: P1M, history: {start: null, end: null}}
+      - {code: PT1M, history: {start: 2020-04-11T00:00:00+08:00, end: null}}
+      - {code: PT5M, history: {start: 2020-02-15T00:00:00+08:00, end: null}}
+      - {code: PT15M, history: {start: 2019-11-06T00:00:00+08:00, end: null}}
+      - {code: PT30M, history: {start: 2019-11-06T00:00:00+08:00, end: null}}
+      - {code: PT45M, history: {start: 2019-11-06T00:00:00+08:00, end: null}}
+      - {code: PT1H, history: {start: 2019-02-01T00:00:00+08:00, end: null}}
+      - {code: PT2H, history: {start: 2019-07-18T00:00:00+08:00, end: null}}
+      - {code: PT4H, history: {start: 2019-07-18T00:00:00+08:00, end: null}}
+      - {code: PT8H, history: {start: 2019-07-18T00:00:00+08:00, end: null}}
+      - {code: P1D, history: {start: 2000-01-01T00:00:00+08:00, end: null}}
+      - {code: P1W, history: {start: 2000-01-01T00:00:00+08:00, end: null}}
+      - {code: P1M, history: {start: 2000-01-01T00:00:00+08:00, end: null}}
     adjustments: [none, qfq]
     fields: [open, high, low, close, volume]
 
-  # 美股 ETF：复权仅声明 none（上游 ETF 复权行为未核实，不编造能力）
+  # 美股 ETF：复权仅声明 none（上游 ETF 复权行为未核实，不编造能力）；
+  # history 同报告回填（日内 2020-02-15/04-11，粗周期触底 2000-01-01 待精化）
   - data_type: bars
     markets: [US]
     asset_types: [etf]
     delivery: [rest]
     variants: [twelvedata]
     intervals:
-      - {code: PT1M, history: {start: null, end: null}}
-      - {code: PT5M, history: {start: null, end: null}}
-      - {code: PT15M, history: {start: null, end: null}}
-      - {code: PT30M, history: {start: null, end: null}}
-      - {code: PT45M, history: {start: null, end: null}}
-      - {code: PT1H, history: {start: null, end: null}}
-      - {code: PT2H, history: {start: null, end: null}}
-      - {code: PT4H, history: {start: null, end: null}}
-      - {code: PT8H, history: {start: null, end: null}}
-      - {code: P1D, history: {start: null, end: null}}
-      - {code: P1W, history: {start: null, end: null}}
-      - {code: P1M, history: {start: null, end: null}}
+      - {code: PT1M, history: {start: 2020-04-11T00:00:00+08:00, end: null}}
+      - {code: PT5M, history: {start: 2020-02-15T00:00:00+08:00, end: null}}
+      - {code: PT15M, history: {start: 2020-02-15T00:00:00+08:00, end: null}}
+      - {code: PT30M, history: {start: 2020-02-15T00:00:00+08:00, end: null}}
+      - {code: PT45M, history: {start: 2020-02-15T00:00:00+08:00, end: null}}
+      - {code: PT1H, history: {start: 2020-02-15T00:00:00+08:00, end: null}}
+      - {code: PT2H, history: {start: 2020-02-15T00:00:00+08:00, end: null}}
+      - {code: PT4H, history: {start: 2020-02-15T00:00:00+08:00, end: null}}
+      - {code: PT8H, history: {start: 2020-02-15T00:00:00+08:00, end: null}}
+      - {code: P1D, history: {start: 2000-01-01T00:00:00+08:00, end: null}}
+      - {code: P1W, history: {start: 2000-01-01T00:00:00+08:00, end: null}}
+      - {code: P1M, history: {start: 2000-01-01T00:00:00+08:00, end: null}}
     adjustments: [none]
     fields: [open, high, low, close, volume]
 
