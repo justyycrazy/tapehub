@@ -1,11 +1,12 @@
 """能力查询服务：读取本地能力目录，不实时访问上游。
 
 与公共 ProviderRouter 复用同一份 ProviderRegistry 能力目录。
-``enabled`` 与 ``runtime_status`` 是两个不同概念：前者是目录声明的启用
-状态，后者是适配器长连接运行时的实时生命周期状态——经鸭子类型读取
-适配器的 ``runtime_status`` 属性（与 lifespan 的 ``shutdown_runtime``
-钩子同款模式，不感知具体 Provider）；未暴露该属性的适配器（无长连接
-概念）与读取失败一律回退 ``unknown``，不伪造实时健康状态。
+``enabled`` 与 ``runtime_status`` 是两个不同概念：前者是部署裁决的启用
+状态（显式覆盖 > 凭据推断，能力目录不因停用而收缩），后者是适配器长连接
+运行时的实时生命周期状态——经鸭子类型读取适配器的 ``runtime_status`` 属性
+（与 lifespan 的 ``shutdown_runtime`` 钩子同款模式，不感知具体 Provider）；
+未暴露该属性的适配器（无长连接概念）与读取失败一律回退 ``unknown``，
+不伪造实时健康状态。
 """
 
 from dataclasses import dataclass, field
@@ -44,8 +45,6 @@ class ProviderCapabilitiesView:
     capabilities: list[Capability] = field(default_factory=list)
     # 「Provider × 资产类型」级缺省变体（manifest default_variant 归一化）
     default_variants: dict[AssetType, DataVariant] = field(default_factory=dict)
-    # 声明为缺省数据源的资产类型（manifest default_provider，保持声明顺序）
-    default_provider: list[AssetType] = field(default_factory=list)
 
 
 class CapabilityService:
@@ -89,14 +88,13 @@ class CapabilityService:
             capability_filters_applied = any((data_type, market, asset_type, interval, variant))
             if capabilities or not capability_filters_applied:
                 views.append(
-                    ProviderCapabilitiesView(
-                        name=record.name,
-                        enabled=record.enabled,
-                        runtime_status=_runtime_status(record),
-                        capabilities=capabilities,
-                        default_variants=record.default_variants,
-                        default_provider=list(record.manifest.default_provider or ()),
-                    )
+                ProviderCapabilitiesView(
+                    name=record.name,
+                    enabled=record.enabled,
+                    runtime_status=_runtime_status(record),
+                    capabilities=capabilities,
+                    default_variants=record.default_variants,
+                )
                 )
         return views
 
@@ -114,7 +112,6 @@ class CapabilityService:
             runtime_status=_runtime_status(record),
             capabilities=list(record.capabilities),
             default_variants=record.default_variants,
-            default_provider=list(record.manifest.default_provider or ()),
         )
 
 

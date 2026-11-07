@@ -80,7 +80,14 @@ class ProviderRouter:
         if not record.enabled:
             raise ProviderDisabledError(
                 f"Provider {query.provider!r} is disabled.",
-                details={"provider": record.name},
+                details={
+                    "provider": record.name,
+                    **(
+                        {"disabled_reason": record.disabled_reason}
+                        if record.disabled_reason
+                        else {}
+                    ),
+                },
             )
         if not record.implemented or record.adapter is None:
             raise ProviderNotImplementedError(
@@ -139,7 +146,14 @@ class ProviderRouter:
         if not record.enabled:
             raise ProviderDisabledError(
                 f"Provider {query.provider!r} is disabled.",
-                details={"provider": record.name},
+                details={
+                    "provider": record.name,
+                    **(
+                        {"disabled_reason": record.disabled_reason}
+                        if record.disabled_reason
+                        else {}
+                    ),
+                },
             )
         if not record.implemented or record.adapter is None:
             raise ProviderNotImplementedError(

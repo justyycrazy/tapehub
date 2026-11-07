@@ -13,7 +13,9 @@ class Settings(BaseSettings):
       （单进程、单用户最小运行模式）；其他值在启动时直接失败——该字段
       的职责是防误用与记录意图，不承诺任何未实现的能力。
     - ``max_limit``：统一分页最大 limit；
-    - ``provider_enabled_overrides``：按 provider 名覆盖 manifest 的启用状态。
+    - ``provider_enabled_overrides``：按 provider 名覆盖启用状态（两级裁决：显式覆盖 > 凭据推断）；
+    - ``routing_config_path``：缺省路由顺序配置文件路径；None 用包内内置版本
+      （外部文件整体替换内置版本，不做合并）。
     """
 
     model_config = SettingsConfigDict(env_prefix="TAPEHUB_", env_file=".env", extra="ignore")
@@ -52,6 +54,9 @@ class Settings(BaseSettings):
     catalog_version: str = "1"
     max_limit: int = Field(default=5000, ge=1)
     provider_enabled_overrides: dict[str, bool] = Field(default_factory=dict)
+    # 缺省路由顺序配置（provider_routing.yaml）：None 用包内内置版本；
+    # 外部文件整体替换内置版本，不做合并
+    routing_config_path: str | None = None
     # Provider 凭据：只能通过环境变量提供，禁止写入代码/manifest/日志
     tickflow_api_key: str = ""
     alphafeed_api_key: str = ""

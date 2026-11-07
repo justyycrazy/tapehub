@@ -1,9 +1,7 @@
 # 测试专用多 variant Provider：两个 variant 映射到相同 operation，
 # FakeBarProvider 生成完全相同的序列（跨 variant 一致性的 confirmed 路径）。
 provider: multi-var-same
-default_provider: [stock]
 default_variant: eastmoney
-enabled: true
 
 capabilities:
   - data_type: bars

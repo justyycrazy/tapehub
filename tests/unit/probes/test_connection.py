@@ -22,7 +22,7 @@ from pydantic import ValidationError
 
 from tapehub.providers.manifest import load_manifest_file
 from tapehub.providers.registry import ProviderRegistry, build_provider_record
-from tests.conftest import make_settings
+from tests.conftest import fake_routing, make_settings
 
 FIXTURES = Path(__file__).parents[2] / "fixtures"
 
@@ -80,7 +80,7 @@ def _registry() -> ProviderRegistry:
     from tests.fixtures.providers.fake_provider import FakeBarProvider
 
     return ProviderRegistry(
-        [build_provider_record("fake-provider", manifest, FakeBarProvider)]
+        [build_provider_record("fake-provider", manifest, FakeBarProvider)], fake_routing()
     )
 
 

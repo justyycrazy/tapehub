@@ -92,16 +92,18 @@ def test_truncation_warning_when_upstream_limit_reached(
 
 
 def test_missing_api_key_returns_clear_error(default_client) -> None:  # type: ignore[no-untyped-def]
-    """未配置 API Key 时能力目录正常，数据请求返回明确错误。"""
+    """未配置 API Key 时：Provider 不启用（能力目录可见），显式请求返回明确错误。"""
     caps = default_client.get("/v1/providers/alphafeed/capabilities")
     assert caps.status_code == 200
-    assert caps.json()["data"]["enabled"] is True
+    assert caps.json()["data"]["enabled"] is False
 
-    response = default_client.get("/v1/market/bars", params=BASE_PARAMS)
-    assert response.status_code == 501
+    response = default_client.get(
+        "/v1/market/bars", params={**BASE_PARAMS, "provider": "alphafeed"}
+    )
+    assert response.status_code == 409
     error = response.json()["error"]
-    assert error["code"] == "PROVIDER_NOT_IMPLEMENTED"
-    assert error["details"]["setting"] == "TAPEHUB_ALPHAFEED_API_KEY"
+    assert error["code"] == "PROVIDER_DISABLED"
+    assert "TAPEHUB_ALPHAFEED_API_KEY" in error["details"]["disabled_reason"]
 
 
 def test_capability_catalog(alphafeed_client: TestClient) -> None:  # type: ignore[no-untyped-def]

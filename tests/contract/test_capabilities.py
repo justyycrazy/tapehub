@@ -24,24 +24,23 @@ def test_default_catalog_lists_all_builtin_providers(default_client) -> None:  #
     em_stock = next(cap for cap in stock_caps if cap["variants"] == ["eastmoney"])
     assert [i["code"] for i in em_stock["intervals"]] == ["P1D", "P1W", "P1M"]
     assert em_stock["adjustments"] == ["none", "qfq", "hfq"]
-    # tushare 已接入：股票 + 期货两条能力
+    # tushare 已接入：凭据未配置 → 不启用，能力目录仍完整可见
     tushare = next(entry for entry in body["data"] if entry["provider"] == "tushare")
-    assert tushare["enabled"] is True
+    assert tushare["enabled"] is False
     assert len(tushare["capabilities"]) == 2
-    # tqsdk 已接入：期货三类拆分 + 股票/指数/ETF + 实时快照
+    # tqsdk 已接入：凭据未配置 → 不启用；期货三类拆分 + 股票/指数/ETF + 实时快照
     tqsdk = next(entry for entry in body["data"] if entry["provider"] == "tqsdk")
-    assert tqsdk["enabled"] is True
+    assert tqsdk["enabled"] is False
     assert len(tqsdk["capabilities"]) == 7
     assert tqsdk["capabilities"][0]["asset_types"] == ["contract"]
-    assert tqsdk["default_provider"] == ["contract", "continuous", "weighted-index", "etf"]
     # quotes 能力：无周期/复权维度（两维度为空）
     quotes = [cap for cap in tqsdk["capabilities"] if cap["data_type"] == "quotes"]
     assert len(quotes) == 1
     assert quotes[0]["intervals"] == []
     assert quotes[0]["adjustments"] == []
-    # 全部内置 Provider 均已接入
+    # 全部内置 Provider 均已接入；启用判定 = 凭据推断（akshare 无凭据概念恒启用）
     for entry in body["data"]:
-        assert entry["enabled"] is True
+        assert entry["enabled"] is (entry["provider"] == "akshare")
         assert len(entry["capabilities"]) >= 1
     meta = body["meta"]
     assert meta["request_id"].startswith("req_")
@@ -108,7 +107,8 @@ def test_single_provider_on_default_catalog(default_client) -> None:  # type: ig
     assert response.status_code == 200
     body = response.json()
     assert body["data"]["provider"] == "tqsdk"
-    assert body["data"]["enabled"] is True
+    # 凭据未配置：不启用，能力目录仍完整可见
+    assert body["data"]["enabled"] is False
     assert len(body["data"]["capabilities"]) == 7
 
 

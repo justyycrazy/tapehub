@@ -46,21 +46,32 @@ Provider 适配器实现 Domain Port。
   interval × adjust × **variant** 选 Provider；
 - 选中后适配器按自身 manifest 的 `operations` 做内部二级路由，match 必须**显式写全六个维度**；
   上游函数名不暴露到公共 API；
-- 能力目录（manifest `capabilities`）是唯一事实来源，`/v1/capabilities` 与路由复用同一份。
+- 能力目录（manifest `capabilities`）是唯一事实来源，`/v1/capabilities` 与路由复用同一份；
+- **缺省路由**（auto、多 Provider 覆盖同一组合时）由
+  `src/tapehub/config/provider_routing.yaml` 集中裁决：三维 match 全显式 +
+  完整回退链，凡能力覆盖的组合必须恰有条目（缺失/重复/order 引用未知或
+  未声明该能力的 Provider 都启动失败）；代码内注册顺序不承载路由语义；
+- **凭据驱动的注册**：需凭据的 Provider（`.env` 变量全部非空才启用）凭据缺失时
+  不启用——能力目录仍可见，auto 路由跳过，显式请求返回 `PROVIDER_DISABLED`
+  （details 携带缺失变量名）；显式 `TAPEHUB_PROVIDER_ENABLED_OVERRIDES` 优先于
+  凭据推断。
 
 ## 新增 / 接入 Provider 的最小改动集
 
-1. 新建 `src/tapehub/providers/<name>/`：
+1. 若与既有 Provider 能力重叠：在 `src/tapehub/config/provider_routing.yaml`
+   相应组合的回退链中显式插入本 Provider 的位置（注册表构建期强制校验覆盖完整性）；
+2. 新建 `src/tapehub/providers/<name>/`：
    - `manifest.yaml`：能力声明 + operations 映射（未核实的历史覆盖 `history` 保持 null）；
    - `adapter.py`：继承 `BaseProviderAdapter`，`implemented = True`，凭据从 `settings` 读；
    - `request_mapper.py`：所有参数**显式传给上游**，不依赖上游默认值；
    - `response_mapper.py`：缺失值 → `null`（不用 0 冒充）；Provider 特有字段只经
      `extensions` 白名单透出；单位按官方文档换算；
-2. `src/tapehub/providers/registry.py` 的 `BUILTIN_PROVIDERS` 注册名称；
-3. `pyproject.toml` `[project.optional-dependencies]` 添加 SDK；
-4. 测试：`tests/unit/test_<name>_provider.py`、`tests/contract/test_<name>_chain.py`，
+3. `src/tapehub/providers/registry.py` 的 `BUILTIN_PROVIDERS` 追加注册名称
+   （顺序仅初始化序；需凭据的 Provider 同步登记 `_REQUIRED_CREDENTIALS`）；
+4. `pyproject.toml` `[project.optional-dependencies]` 添加 SDK；
+5. 测试：`tests/unit/test_<name>_provider.py`、`tests/contract/test_<name>_chain.py`，
    SDK Mock 桩放 `tests/fixtures/providers/stub_<name>.py`（经 `sys.modules` 注入）；
-5. `README.md` 补充该 Provider 的映射表。
+6. `README.md` 补充该 Provider 的映射表。
    Application/API 层与其它 Provider 不需要任何改动。
 
 ## 数据与 API 约定（详见 README「请求规范」）

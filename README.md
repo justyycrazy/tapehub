@@ -153,7 +153,7 @@ GET /v1/market/quotes?provider=tqsdk&asset_type=contract&instrument=CN-SHFE-au26
 GET /v1/market/quotes?provider=twelvedata&asset_type=forex&instrument=GLOBAL-OTC-EUR/USD
 ```
 
-参数：`provider`（默认 `auto`；当前 tqsdk 声明 CN 全资产、twelvedata 声明 GLOBAL 外汇/加密货币、tickflow 声明 CN/HK/US 股票的 quotes 能力）、`asset_type`（必填）、`instrument`（必填）、`variant`（可选）。**快照是当前时点的数据：无 `interval`、无时间范围、无分页参数**（`adjust` 同样不接受——复权是历史序列概念）。auto 优先级：`default_provider` 声明的资产类型优先，其余按注册顺序——tickflow 注册在末位不抢占既有默认（CN 股票快照仍归 tqsdk；HK 与 US 股票快照为 tickflow 独占，显式 `provider=tickflow` 亦可选用）。
+参数：`provider`（默认 `auto`；当前 tqsdk 声明 CN 全资产、twelvedata 声明 GLOBAL 外汇/加密货币、tickflow 声明 CN/HK/US 股票的 quotes 能力）、`asset_type`（必填）、`instrument`（必填）、`variant`（可选）。**快照是当前时点的数据：无 `interval`、无时间范围、无分页参数**（`adjust` 同样不接受——复权是历史序列概念）。auto 优先级：由缺省路由配置的完整回退链裁决（CN 股票快照归 tqsdk、tickflow 回退；HK 与 US 股票快照为 tickflow 独占，显式 `provider=tickflow` 亦可选用）；凭据未配置的 Provider 自动跳过。
 
 三类上游的交付模型不同，语义差异如实声明：
 
@@ -467,14 +467,23 @@ API 层 → Application 层 → Domain 层
 
 - **能力目录是唯一事实来源**：`/v1/capabilities` 与公共路由复用同一份目录；
 - **两级路由**：公共 `ProviderRouter` 按 provider × data_type × market × asset_type × interval × adjust × **variant** 选 Provider；适配器按 manifest 的 `operations` 做内部二级路由，上游函数名不暴露到公共 API；
-- **auto 路由优先级（显式声明，非隐式顺序）**：显式 `provider=X` > manifest 的
-  `default_provider` 声明 > 注册顺序（兜底）。每个 Provider 必填声明
-  `default_provider`（资产类型列表，`[]` 表示对任何类型都不是缺省），注册表构建期
-  强制校验**每个被覆盖的资产类型恰好一个缺省**（0 个或多个都拒绝启动）。
-  当前声明：akshare `[stock, index]`、tqsdk `[contract, continuous, weighted-index, etf]`、
-  twelvedata `[forex, crypto]`、tushare/alphafeed/tickflow `[]`；
+- **auto 路由优先级（显式声明，非隐式顺序）**：显式 `provider=X` > 缺省路由配置
+  `src/tapehub/config/provider_routing.yaml`（可用 `TAPEHUB_ROUTING_CONFIG` 指向
+  外部文件整体替换内置版本）的完整回退链。该文件按 `(data_type, market, asset_type)`
+  三维全显式声明每组合的 Provider 回退顺序（首个「已注册、已启用且能力可解析」者
+  为缺省；未启用条目自动跳过；回退只发生在路由选择阶段，请求执行失败不切换
+  Provider）；注册表构建期强制校验**凡能力覆盖的组合必须恰有条目**、order 引用的
+  Provider 必须已注册且实际声明该组合能力（缺失/重复/未知引用都拒绝启动）；
+  代码内注册顺序不承载路由语义；
+- **凭据驱动的注册**：内置 Provider 中需要凭据的（alphafeed/tickflow/tushare/
+  tqsdk/twelvedata），`.env` 相应变量全部非空（strip 后）才启用；凭据缺失的
+  Provider **能力目录仍可见但 `enabled=false`**，auto 路由跳过，显式请求返回
+  `PROVIDER_DISABLED`（details 携带缺失的变量名）。akshare 无凭据概念恒启用。
+  启用裁决：显式 `TAPEHUB_PROVIDER_ENABLED_OVERRIDES` > 凭据推断 > manifest
+  `enabled`（显式启用可越过凭据推断作运维逃生门，日志告警）。只判非空不做
+  格式校验：格式错误的凭据在请求时报 `UPSTREAM_ERROR`，启动不因凭据内容失败；
 - **manifest 属于配置**：缺失、格式错误或校验失败直接启动失败（fail-fast）；
-  适配器导入失败（可选 SDK 未安装等）仍单 Provider 隔离，不影响启动；
+  路由配置同上；适配器导入失败（可选 SDK 未安装等）仍单 Provider 隔离，不影响启动；
 - **公共能力声明 vs 内部 operation 映射**：manifest 的 `capabilities` 面向目录与公共路由（含 `variants` 声明）；`operations` 的 match 键包含全部六个维度且必须显式声明，面向适配器内部；对请求无意义的维度显式声明 `null`（如 quotes 快照的 interval/adjust，两维度在能力目录同样声明为空、路由时跳过），`null` 只与不携带该维度的请求匹配。
 
 ### akshare 已接入范围
@@ -498,7 +507,7 @@ TickFlow（REST API `GET https://api.tickflow.org/v1/klines` / `GET /v1/quotes`�
 | stock（bars） | CN/HK/US | tickflow（默认） | `tf.klines.get` | PT1M~PT30M/PT1H、P1D/P1W/P1M | none/qfq/hfq | 全部（extensions: prev_close） |
 | stock（quotes） | CN/HK/US | tickflow（默认） | `tf.quotes.get(symbols=[...])` | —（快照无周期） | —（快照无复权） | timestamp/last_price/volume/amount（extensions 见下） |
 
-- API Key 通过环境变量 `TAPEHUB_TICKFLOW_API_KEY` 提供并传入 SDK 客户端，禁止写入代码/manifest/日志；未配置时能力目录正常，数据请求返回 `PROVIDER_NOT_IMPLEMENTED`；
+- API Key 通过环境变量 `TAPEHUB_TICKFLOW_API_KEY` 提供并传入 SDK 客户端，禁止写入代码/manifest/日志；未配置时不启用（能力目录仍可见，`enabled=false`），显式请求返回 `PROVIDER_DISABLED`；
 - 标的代码映射：`CN-SSE-600000 → 600000.SH`、`CN-SZSE-… → .SZ`、`CN-BSE-… → .BJ`、`HK-HKEX-00700 → 00700.HK`、`US-NASDAQ-AAPL → AAPL.US`（美股 NYSE/NASDAQ/CBOE 统一 US 后缀，exchange 段仅作标准代码规范）；
 - 周期映射：`PT1M→1m`、`PT5M→5m`、`PT10M→10m`、`PT15M→15m`、`PT30M→30m`、`PT1H→60m`、`P1D→1d`、`P1W→1w`、`P1M→1M`；季线 `1Q` 无法用 ISO 8601 Duration 表达，年线 `1Y` 超出项目「最大支持到月线」的周期范围，均不声明；
 - 复权映射：`qfq→forward`（比例前复权）、`hfq→backward`、`none→none`（差值加法变体不对外暴露）；SDK 自身默认 forward，适配器始终显式传参；港股/美股复权语义未经探针实证（美股复权口径可能与 A 股不同），生效性以探针报告为准；
@@ -513,7 +522,7 @@ AlphaFeed（REST API `GET https://api.alphafeed.org/v1/klines`，官方 SDK `alp
 | --- | --- | --- | --- | --- | --- |
 | stock | alphafeed（默认） | `af.klines.get` | PT1M/PT5M/PT15M/PT30M/PT1H、P1D/P1W/P1M | none/qfq/hfq | 全部（extensions: prev_close） |
 
-- API Key 通过环境变量 `TAPEHUB_ALPHAFEED_API_KEY` 提供并传入 SDK 客户端，禁止写入代码/manifest/日志；未配置时能力目录正常，数据请求返回 `PROVIDER_NOT_IMPLEMENTED`；
+- API Key 通过环境变量 `TAPEHUB_ALPHAFEED_API_KEY` 提供并传入 SDK 客户端，禁止写入代码/manifest/日志；未配置时不启用（能力目录仍可见，`enabled=false`），显式请求返回 `PROVIDER_DISABLED`；
 - 标的代码映射：`CN-SSE-600519 → 600519.SH`、`CN-SZSE-… → .SZ`、`CN-BSE-… → .BJ`（示例 600519.SH / 000001.SZ / 920047.BJ 已按文档核实）；
 - 周期映射：`PT1M→1m`、`PT5M→5m`、`PT15M→15m`、`PT30M→30m`、`PT1H→60m`、`P1D→1d`、`P1W→1w`、`P1M→1M`；**上游无 10m 周期**，`PT10M` 不声明；季线 `1Q` 无法用 ISO 8601 Duration 表达，年线 `1Y` 超出项目周期上界，均不声明；
 - 复权映射：`qfq→forward`、`hfq→backward`、`none→none`（差值加法变体不对外暴露）；上游自身默认 forward，适配器始终显式传参；
@@ -527,7 +536,7 @@ Tushare（官方 SDK `tushare`：`ts.pro_bar` / `pro.fut_daily`）：
 | stock | tushare（默认） | `ts.pro_bar`（asset='E'） | P1D/P1W/P1M | none/qfq/hfq | 全部（extensions: pre_close/change/pct_chg） |
 | contract | tushare（默认） | `pro.fut_daily` | P1D | none | 全部（extensions: pre_close/settle/oi） |
 
-- Token 通过环境变量 `TAPEHUB_TUSHARE_TOKEN` 提供并传入 `ts.pro_api`，禁止写入代码/manifest/日志；未配置时能力目录正常，数据请求返回 `PROVIDER_NOT_IMPLEMENTED`；
+- Token 通过环境变量 `TAPEHUB_TUSHARE_TOKEN` 提供并传入 `ts.pro_api`，禁止写入代码/manifest/日志；未配置时不启用（能力目录仍可见，`enabled=false`），显式请求返回 `PROVIDER_DISABLED`；
 - 股票代码映射：`CN-SSE-600000 → 600000.SH`、`CN-SZSE-… → .SZ`（后缀已按文档示例核实；北交所 .BJ 未在所引文档示例中出现，暂不声明）；
 - 期货合约映射：`CN-SHFE-CU2401 → CU2401.SHF`（后缀仅核实上期所，文档示例 CU1811.SHF；DCE/CZCE/INE/GFEX/CFFEX 待逐所核实后补充）；主力连续另有专门接口（doc_id=189），本次未接入；
 - 单位换算（按文档）：股票 `vol` 手→股（×100）、`amount` 千元→元（×1000）；期货 `vol` 保持手、`amount` 万元→元（×10000）；
@@ -544,7 +553,7 @@ TqSdk（官方 SDK `tqsdk`：`TqApi(auth=TqAuth(...)).get_kline_serial(...)`）�
 | etf | tqsdk（默认） | `api.get_kline_serial`（adj_type） | PT1M/PT5M/PT15M/PT30M/PT1H、P1D | none/qfq/hfq | 无 amount；volume 单位未核实，原样透出 |
 
 - 变体与 default_variant 均为 `tqsdk`（与 Provider 同名，官方 SDK 包名；背后为天勤行情平台，与东方财富无关）：缺省请求即可路由，也可显式传 `variant=tqsdk`；
-- `default_provider` 声明：`[contract, continuous, weighted-index, etf]`（ETF 为唯一声明者）；
+- 缺省路由（provider_routing.yaml 裁决）：期货三类与 ETF 归 tqsdk；
   stock/index 仅声明能力，缺省仍由 akshare 承担，tqsdk 股票/指数需显式 `provider=tqsdk`；
 - **权限说明（usage/mddatas 原文，诚实标注）**：数据可见性由**天勤平台账户
   档位**决定（免费版/专业版），与 SDK 及其版本无关。免费版账户仅期货/期权
@@ -555,7 +564,7 @@ TqSdk（官方 SDK `tqsdk`：`TqApi(auth=TqAuth(...)).get_kline_serial(...)`）�
 - 复权映射（API 参考 `adj_type` 仅对股票/基金有效）：`qfq→F`、`hfq→B`、`none→None`
   （期货/指数恒为 None，显式传参不依赖上游默认值）；上游「暂不支持复权获取多合约 K 线」
   与本适配器单合约调用不冲突；
-- 快期账户凭据（`TqAuth(用户名, 密码)`，必填）通过环境变量 `TAPEHUB_TQSDK_AUTH_USER` / `TAPEHUB_TQSDK_AUTH_PASSWORD` 提供并传入 SDK 客户端，禁止写入代码/manifest/日志；任一未配置时能力目录正常，数据请求返回 `PROVIDER_NOT_IMPLEMENTED`；
+- 快期账户凭据（`TqAuth(用户名, 密码)`，必填）通过环境变量 `TAPEHUB_TQSDK_AUTH_USER` / `TAPEHUB_TQSDK_AUTH_PASSWORD` 提供并传入 SDK 客户端，禁止写入代码/manifest/日志；任一未配置时不启用（能力目录仍可见，`enabled=false`），显式请求返回 `PROVIDER_DISABLED`；
 - **连接模式 `TAPEHUB_TQSDK_CONN_MODE`**（默认 `shared`，2026-11-05 15.3h 观察期验证后翻转；`per_request` 为回滚配置）：
   - `shared`：进程内唯一长连接 Runtime（`TqSdkRuntime`，专属线程 tick 驱动 + `create_task` 并发协程 +
     `wait_update` 维持推送，2026-11-04 实验验证），首次请求懒启动，此后每请求节省全部建连开销；
@@ -652,7 +661,7 @@ Twelve Data（官方库 `twelvedata`（twelvedata-python）：`TDClient(apikey=.
 | US stock | twelvedata（默认） | `td.time_series`（显式传 `exchange` + `adj`） | PT1M~PT8H（含 PT45M）、P1D/P1W/P1M | none、qfq | volume 有值；无 amount |
 | US etf | twelvedata（默认） | `td.time_series`（显式传 `exchange` + `adj`） | PT1M~PT8H（含 PT45M）、P1D/P1W/P1M | none | volume 有值；无 amount |
 
-- API Key 通过环境变量 `TAPEHUB_TWELVEDATA_API_KEY` 提供并传入 `TDClient(apikey=...)`，禁止写入代码/manifest/日志；未配置时能力目录正常，数据请求返回 `PROVIDER_NOT_IMPLEMENTED`；
+- API Key 通过环境变量 `TAPEHUB_TWELVEDATA_API_KEY` 提供并传入 `TDClient(apikey=...)`，禁止写入代码/manifest/日志；未配置时不启用（能力目录仍可见，`enabled=false`），显式请求返回 `PROVIDER_DISABLED`；
 - 标的代码约定（symbol 段允许斜杠，对应上游货币对写法）：外汇 `GLOBAL-OTC-EUR/USD → EUR/USD`（ISO 4217，OTC 场外聚合报价）；加密货币 `GLOBAL-CRYPTO-BTC/USD → BTC/USD`（聚合对；交易所专属对与 `exchange` 筛选参数暂不支持）；美股 `US-NASDAQ-AAPL → symbol=AAPL&exchange=NASDAQ`（原生 ticker + 显式 exchange 消歧，exchange 段白名单 **NYSE/NASDAQ/CBOE**——OTC 粉单与 IEX 不接入，2026-11-05 目录探针实证分布后收敛）；
 - **美股 adjust 口径**：`qfq` 映射上游 `adjust=all`——**拆股+分红前复权，与国内口径一致**（2026-11-06 探针实证：`adjust=dividends` 对除息日前历史回溯调整生效，AAPL 2026 年 212 个交易日中 150 天与原始价有差异）；`none` → `adjust=none`（原始价）；**参数名陷阱**：上游 REST 只认 `adjust`，传 `adj` 会被静默忽略落回默认（=splits 仅拆股，AAPL 2006 深度数据实证）；`hfq` 上游无等价物不声明；etf 复权行为未核实，仅声明 `none`；
 - interval 枚举（上游完整支持 1min/5min/15min/30min/45min/1h/2h/4h/8h/1day/1week/1month）：本适配器声明全部 12 个周期 `PT1M/PT5M/PT15M/PT30M/PT45M/PT1H/PT2H/PT4H/PT8H/P1D/P1W/P1M`（45min/2h/4h/8h 经数据探针实测可用后补充声明，报告 20261104T061857Z）；

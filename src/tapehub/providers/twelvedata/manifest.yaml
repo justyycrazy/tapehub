@@ -72,13 +72,10 @@
 #   Venture plan"）；且官方交易所页标注 XSHG/XSHE Delay=EOD（任何计划
 #   档位均无日内）。升档后按探针流程实测再回填；
 # - 单接口 Provider：变体与 default_variant 均为 twelvedata（数据源即上游服务自身，与东方财富无关）：缺省请求即可路由，也可显式传 variant=twelvedata。
-#   default_provider 维持 [forex, crypto]：stock 缺省归 akshare、etf 归 tqsdk
-#   （registry 强制每个资产类型恰一缺省），US stock/etf 作为唯一候选时
-#   provider=auto 自然路由到本 Provider。
+#   缺省路由由 provider_routing.yaml 集中裁决（GLOBAL forex/crypto 与
+#   US stock/etf 归本 Provider，US stock 缺省 twelvedata 优先、tickflow 回退）。
 provider: twelvedata
-default_provider: [forex, crypto]
 default_variant: twelvedata
-enabled: true
 
 capabilities:
   # 外汇（OTC 聚合报价）

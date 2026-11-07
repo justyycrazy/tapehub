@@ -96,12 +96,6 @@ def test_capability_catalog(tqsdk_client: TestClient) -> None:  # type: ignore[n
         "index": "tqsdk",
         "etf": "tqsdk",
     }
-    assert entry["default_provider"] == [
-        "contract",
-        "continuous",
-        "weighted-index",
-        "etf",
-    ]
     assert len(entry["capabilities"]) == 7  # 期货三类拆分 + 股票/指数/ETF + quotes
     cap = entry["capabilities"][0]
     assert cap["data_type"] == "bars"
@@ -139,20 +133,17 @@ def test_capability_catalog(tqsdk_client: TestClient) -> None:  # type: ignore[n
 
 
 def test_missing_auth_returns_clear_error(default_client) -> None:  # type: ignore[no-untyped-def]
-    """未配置快期账户时能力目录正常，数据请求返回明确错误。"""
+    """未配置快期账户时：Provider 不启用（能力目录可见），显式请求返回明确错误。"""
     caps = default_client.get("/v1/providers/tqsdk/capabilities")
     assert caps.status_code == 200
-    assert caps.json()["data"]["enabled"] is True
+    assert caps.json()["data"]["enabled"] is False
 
     response = default_client.get("/v1/market/bars", params=BASE_PARAMS)
-    assert response.status_code == 501
+    assert response.status_code == 409
     error = response.json()["error"]
-    assert error["code"] == "PROVIDER_NOT_IMPLEMENTED"
-    assert error["details"]["settings"] == [
-        "TAPEHUB_TQSDK_AUTH_USER",
-        "TAPEHUB_TQSDK_AUTH_PASSWORD",
-    ]
-    assert error["details"]["missing"] == ["user", "password"]
+    assert error["code"] == "PROVIDER_DISABLED"
+    assert "TAPEHUB_TQSDK_AUTH_USER" in error["details"]["disabled_reason"]
+    assert "TAPEHUB_TQSDK_AUTH_PASSWORD" in error["details"]["disabled_reason"]
 
 
 def test_unsupported_option(tqsdk_client: TestClient) -> None:  # type: ignore[no-untyped-def]
@@ -217,7 +208,7 @@ def test_stock_chain_with_qfq_adjust(
     assert data["bars"][0]["amount"] is None
 
 
-def test_etf_default_routes_to_declared_default_provider(
+def test_etf_auto_routes_via_routing_config(
     tqsdk_client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """ETF 是 tqsdk 声明的缺省资产类型：auto 路由命中并回显 meta.variant。"""
@@ -356,9 +347,10 @@ def test_quote_unsupported_asset_type(tqsdk_client: TestClient) -> None:
 
 
 def test_quote_missing_auth_returns_clear_error(default_client) -> None:  # type: ignore[no-untyped-def]
-    """未配置快期账户：快照请求与 bars 同样返回 PROVIDER_NOT_IMPLEMENTED。"""
+    """未配置快期账户：快照请求与 bars 同样返回 PROVIDER_DISABLED。"""
     response = default_client.get("/v1/market/quotes", params=QUOTE_PARAMS)
-    assert response.status_code == 501
+    assert response.status_code == 409
     error = response.json()["error"]
-    assert error["code"] == "PROVIDER_NOT_IMPLEMENTED"
-    assert error["details"]["missing"] == ["user", "password"]
+    assert error["code"] == "PROVIDER_DISABLED"
+    assert "TAPEHUB_TQSDK_AUTH_USER" in error["details"]["disabled_reason"]
+    assert "TAPEHUB_TQSDK_AUTH_PASSWORD" in error["details"]["disabled_reason"]

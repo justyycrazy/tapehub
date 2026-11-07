@@ -140,19 +140,17 @@ class ProviderManifest(BaseModel):
     资产类型下实际声明的 variants。有 capabilities 就必须显式声明，
     不做任何隐式推断；无 capabilities 的空壳 manifest（占位/测试桩）允许省略。
 
-    ``default_provider`` 声明本 Provider 是哪些资产类型的缺省数据源
-    （跨 Provider 的 auto 路由优先级）：列表值逐项声明，空列表 ``[]``
-    表示对任何资产类型都不是缺省。有 capabilities 就必须显式声明；
-    只能声明本 Provider 实际声明了能力的资产类型，不得编造。跨 Provider 的
-    「每个资产类型恰好一个缺省」约束在 ProviderRegistry 构建期统一校验。
+    跨 Provider 的「缺省数据源裁决」不在 manifest 声明——由独立的
+    ``provider_routing.yaml``（完整回退链，注册期强制显式校验）承担；
+    「启用与否」是部署事务（显式环境覆盖 > 凭据推断，见
+    ``registry._apply_enable_decision``），manifest 同样不声明。
+    manifest 只声明「我能做什么」。
     """
 
     model_config = ConfigDict(extra="forbid")
 
     provider: str = Field(pattern=r"^[a-z0-9][a-z0-9-]{0,63}$")
-    enabled: bool = False
     default_variant: DataVariant | dict[AssetType, DataVariant] | None = None
-    default_provider: list[AssetType] | None = None
     capabilities: list[ManifestCapability] = Field(default_factory=list)
     operations: list[ManifestOperation] = Field(default_factory=list)
 
@@ -197,29 +195,6 @@ class ProviderManifest(BaseModel):
                     f"{asset_type.value!r} is not among declared variants "
                     f"{sorted(v.value for v in declared[asset_type])}"
                 )
-        return self
-
-    @model_validator(mode="after")
-    def _default_provider_declares_owned_asset_types(self) -> "ProviderManifest":
-        covered: set[AssetType] = set()
-        for cap in self.capabilities:
-            covered.update(cap.asset_types)
-        if not covered:
-            if self.default_provider is not None:
-                raise ValueError("default_provider declared but no capabilities exist")
-            return self
-        if self.default_provider is None:
-            raise ValueError(
-                "default_provider is required when capabilities are declared; "
-                "declare the asset types this provider is the default source for, "
-                "or an empty list to opt out"
-            )
-        unknown = sorted(set(self.default_provider) - covered, key=lambda item: item.value)
-        if unknown:
-            names = ", ".join(item.value for item in unknown)
-            raise ValueError(
-                f"default_provider declares asset types without capabilities: {names}"
-            )
         return self
 
     def resolved_default_variants(self) -> dict[AssetType, DataVariant]:

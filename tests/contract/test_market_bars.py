@@ -264,7 +264,7 @@ class TestRoutingErrors:
         assert response.json()["error"]["code"] == "PROVIDER_NOT_IMPLEMENTED"
 
     def test_tqsdk_explicit_missing_auth(self, default_client) -> None:  # type: ignore[no-untyped-def]
-        """显式指定 tqsdk 时，凭据未配置返回带 setting 提示的明确错误。"""
+        """显式指定 tqsdk 时，凭据未配置 → 不启用，返回带缺失变量提示的明确错误。"""
         params = {
             **self.PARAMS,
             "provider": "tqsdk",
@@ -274,27 +274,33 @@ class TestRoutingErrors:
             "variant": "tqsdk",
         }
         response = default_client.get("/v1/market/bars", params=params)
-        assert response.status_code == 501
+        assert response.status_code == 409
         error = response.json()["error"]
-        assert error["code"] == "PROVIDER_NOT_IMPLEMENTED"
-        assert error["details"]["missing"] == ["user", "password"]
+        assert error["code"] == "PROVIDER_DISABLED"
+        assert "TAPEHUB_TQSDK_AUTH_USER" in error["details"]["disabled_reason"]
+        assert "TAPEHUB_TQSDK_AUTH_PASSWORD" in error["details"]["disabled_reason"]
 
-    def test_contract_default_routes_to_declared_default_provider(
+    @pytest.mark.skipif(
+        _AKSHARE_SDK_INSTALLED,
+        reason="akshare SDK 已安装时会真实调用上游，凭据缺失场景仅覆盖 SDK 缺失环境",
+    )
+    def test_contract_auto_falls_back_when_default_lacks_credentials(
         self, default_client
     ) -> None:  # type: ignore[no-untyped-def]
-        """contract 缺省路由到声明的 default_provider（tqsdk）；凭据未配置返回 501。"""
+        """contract 缺省源 tqsdk 凭据未配置 → 不启用 → auto 回退链逐个跳过。
+
+        akshare/tushare 等候选均因 SDK 缺失或凭据未配置不可用：无候选时返回
+        NO_PROVIDER_AVAILABLE，绝不静默落到无凭据的上游。
+        """
         params = {
             **self.PARAMS,
             "asset_type": "contract",
             "instrument": "CN-SHFE-cu2607",
         }
         response = default_client.get("/v1/market/bars", params=params)
-        assert response.status_code == 501
+        assert response.status_code == 409
         error = response.json()["error"]
-        # tqsdk 是 contract 的声明缺省源：未配置凭据时在调用期返回明确错误，
-        # 而不是回退到其它 Provider
-        assert error["code"] == "PROVIDER_NOT_IMPLEMENTED"
-        assert error["details"]["missing"] == ["user", "password"]
+        assert error["code"] == "NO_PROVIDER_AVAILABLE"
 
     @pytest.mark.skipif(
         _AKSHARE_SDK_INSTALLED,

@@ -16,13 +16,11 @@
 # - “加权”在上列接口文档中没有对应符号说明，暂不声明 weighted-index 能力；
 # - 指数三个接口均无复权参数，adjust 仅支持 none。
 provider: akshare
-default_provider: [stock, index]
 default_variant:
   stock: eastmoney
   index: eastmoney
   contract: sina
   continuous: sina
-enabled: true
 
 capabilities:
   # 个股（A 股）· 东方财富：日/周/月线，支持不复权/前复权/后复权

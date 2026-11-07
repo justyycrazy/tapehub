@@ -90,16 +90,16 @@ def test_futures_chain(
 
 
 def test_missing_token_returns_clear_error(default_client) -> None:  # type: ignore[no-untyped-def]
-    """未配置 Token 时能力目录正常，数据请求返回明确错误。"""
+    """未配置 Token 时：Provider 不启用（能力目录可见），显式请求返回明确错误。"""
     caps = default_client.get("/v1/providers/tushare/capabilities")
     assert caps.status_code == 200
-    assert caps.json()["data"]["enabled"] is True
+    assert caps.json()["data"]["enabled"] is False
 
-    response = default_client.get("/v1/market/bars", params=BASE_PARAMS)
-    assert response.status_code == 501
+    response = default_client.get("/v1/market/bars", params={**BASE_PARAMS, "provider": "tushare"})
+    assert response.status_code == 409
     error = response.json()["error"]
-    assert error["code"] == "PROVIDER_NOT_IMPLEMENTED"
-    assert error["details"]["setting"] == "TAPEHUB_TUSHARE_TOKEN"
+    assert error["code"] == "PROVIDER_DISABLED"
+    assert "TAPEHUB_TUSHARE_TOKEN" in error["details"]["disabled_reason"]
 
 
 def test_capability_catalog(tushare_client: tuple[TestClient, Any]) -> None:  # type: ignore[no-untyped-def]

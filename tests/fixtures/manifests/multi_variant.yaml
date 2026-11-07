@@ -1,9 +1,7 @@
 # 测试专用多 variant Provider：两个 variant 映射到不同 operation，
 # FakeBarProvider 按 operation 名确定性生成数据，因此两 variant 序列不一致。
 provider: multi-var
-default_provider: [stock]
 default_variant: eastmoney
-enabled: true
 
 capabilities:
   - data_type: bars

@@ -12,7 +12,7 @@ from probes.schema import ProbeFile
 from tapehub.providers.manifest import load_manifest_file
 from tapehub.providers.registry import ProviderRegistry, build_provider_record
 from tapehub.settings import Settings
-from tests.conftest import make_settings
+from tests.conftest import make_settings, single_provider_routing
 
 FIXTURES = Path(__file__).parents[2] / "fixtures"
 
@@ -25,9 +25,8 @@ def _registry() -> ProviderRegistry:
     manifest = load_manifest_file(FIXTURES / "manifests" / "fake_provider.yaml")
     from tests.fixtures.providers.fake_provider import FakeBarProvider
 
-    return ProviderRegistry(
-        [build_provider_record("fake-provider", manifest, FakeBarProvider)]
-    )
+    record = build_provider_record("fake-provider", manifest, FakeBarProvider)
+    return ProviderRegistry([record], single_provider_routing(record))
 
 
 def _probe(**chain: object) -> ProbeFile:
@@ -222,9 +221,8 @@ def _exploding_registry() -> ProviderRegistry:
             raise RuntimeError("simulated push2 rate limit")
 
     manifest = load_manifest_file(FIXTURES / "manifests" / "fake_provider.yaml")
-    return ProviderRegistry(
-        [build_provider_record("fake-provider", manifest, ExplodingAdapter)]
-    )
+    record = build_provider_record("fake-provider", manifest, ExplodingAdapter)
+    return ProviderRegistry([record], single_provider_routing(record))
 
 
 def test_unexpected_sdk_error_becomes_failed_case() -> None:
@@ -240,9 +238,8 @@ def _registry_for(manifest_name: str) -> ProviderRegistry:
     from tests.fixtures.providers.fake_provider import FakeBarProvider
 
     manifest = load_manifest_file(FIXTURES / "manifests" / manifest_name)
-    return ProviderRegistry(
-        [build_provider_record(manifest.provider, manifest, FakeBarProvider)]
-    )
+    record = build_provider_record(manifest.provider, manifest, FakeBarProvider)
+    return ProviderRegistry([record], single_provider_routing(record))
 
 
 def _multi_var_probe(provider: str, chain_extra: dict) -> ProbeFile:

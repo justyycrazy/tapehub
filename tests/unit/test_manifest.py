@@ -14,7 +14,6 @@ from tests.conftest import FIXTURES_DIR
 def test_load_fake_manifest() -> None:
     manifest = load_manifest_file(FIXTURES_DIR / "manifests" / "fake_provider.yaml")
     assert manifest.provider == "fake-provider"
-    assert manifest.enabled is True
     assert len(manifest.capabilities) == 1
     assert len(manifest.operations) == 5
 
@@ -34,7 +33,6 @@ def test_invalid_interval_rejected_at_load() -> None:
 def test_invalid_interval_in_operations_rejected() -> None:
     data = {
         "provider": "broken",
-        "enabled": True,
         "capabilities": [],
         "operations": [
             {
@@ -65,7 +63,6 @@ def test_duplicate_operation_match_rejected() -> None:
     }
     data = {
         "provider": "broken",
-        "enabled": True,
         "capabilities": [],
         "operations": [
             {"match": match, "operation": "op_a"},
@@ -80,7 +77,6 @@ def test_pt1m_and_p1m_are_different_operations() -> None:
     """PT1M 与 P1M 是不同周期，必须映射到不同 operation 才能同时声明。"""
     data = {
         "provider": "two-intervals",
-        "enabled": True,
         "capabilities": [],
         "operations": [
             {
@@ -128,9 +124,7 @@ def test_default_variant_scalar_covers_all_asset_types() -> None:
     """标量 default_variant 作用于全部资产类型，并归一化为映射。"""
     data = {
         "provider": "single-source",
-        "enabled": True,
         "default_variant": "tqsdk",
-        "default_provider": ["contract", "continuous"],
         "capabilities": [_capability_data(["tqsdk"], ["contract", "continuous"])],
         "operations": [],
     }
@@ -143,9 +137,7 @@ def test_default_variant_mapping_resolved() -> None:
     """映射 default_variant 按资产类型覆盖，与声明顺序无关。"""
     data = {
         "provider": "multi-source",
-        "enabled": True,
         "default_variant": {"stock": "eastmoney", "index": "sina"},
-        "default_provider": ["stock", "index"],
         "capabilities": [_capability_data(["eastmoney", "sina", "tencent"], ["stock", "index"])],
         "operations": [],
     }
@@ -160,7 +152,6 @@ def test_default_variant_required_when_capabilities_exist() -> None:
     """有 capabilities 但未声明 default_variant：加载失败，不做隐式推断。"""
     data = {
         "provider": "no-default",
-        "enabled": True,
         "capabilities": [_capability_data(["eastmoney"], ["stock"])],
         "operations": [],
     }
@@ -172,7 +163,6 @@ def test_default_variant_mapping_missing_asset_type_rejected() -> None:
     """映射未覆盖 capabilities 中出现的资产类型：加载失败。"""
     data = {
         "provider": "partial-map",
-        "enabled": True,
         "default_variant": {"stock": "eastmoney"},
         "capabilities": [_capability_data(["eastmoney", "sina"], ["stock", "index"])],
         "operations": [],
@@ -185,7 +175,6 @@ def test_default_variant_not_among_declared_variants_rejected() -> None:
     """default_variant 不在该资产类型声明的 variants 中：加载失败，不编造。"""
     data = {
         "provider": "bad-default",
-        "enabled": True,
         "default_variant": {"stock": "binance"},
         "capabilities": [_capability_data(["eastmoney", "sina"], ["stock"])],
         "operations": [],
@@ -198,62 +187,7 @@ def test_default_variant_forbidden_without_capabilities() -> None:
     """无 capabilities 的空壳 manifest 不允许声明 default_variant。"""
     data = {
         "provider": "empty-shell",
-        "enabled": False,
         "default_variant": "eastmoney",
-        "capabilities": [],
-        "operations": [],
-    }
-    with pytest.raises(ManifestError):
-        manifest_from_dict(data)
-
-
-def test_default_provider_required_when_capabilities_exist() -> None:
-    """有 capabilities 但未声明 default_provider：加载失败，不允许隐式缺省。"""
-    data = {
-        "provider": "no-default-provider",
-        "enabled": True,
-        "default_variant": "eastmoney",
-        "capabilities": [_capability_data(["eastmoney"], ["stock"])],
-        "operations": [],
-    }
-    with pytest.raises(ManifestError):
-        manifest_from_dict(data)
-
-
-def test_default_provider_empty_list_opts_out() -> None:
-    """default_provider: [] 表示对任何资产类型都不是缺省，合法。"""
-    data = {
-        "provider": "opt-out",
-        "enabled": True,
-        "default_variant": "eastmoney",
-        "default_provider": [],
-        "capabilities": [_capability_data(["eastmoney"], ["stock"])],
-        "operations": [],
-    }
-    manifest = manifest_from_dict(data)
-    assert manifest.default_provider == []
-
-
-def test_default_provider_claims_uncovered_asset_type_rejected() -> None:
-    """声明未持有能力的资产类型：加载失败，不编造。"""
-    data = {
-        "provider": "over-claim",
-        "enabled": True,
-        "default_variant": "eastmoney",
-        "default_provider": ["stock", "forex"],
-        "capabilities": [_capability_data(["eastmoney"], ["stock"])],
-        "operations": [],
-    }
-    with pytest.raises(ManifestError):
-        manifest_from_dict(data)
-
-
-def test_default_provider_declared_without_capabilities_rejected() -> None:
-    """无 capabilities 的空壳 manifest 不允许声明 default_provider。"""
-    data = {
-        "provider": "empty-shell",
-        "enabled": False,
-        "default_provider": ["stock"],
         "capabilities": [],
         "operations": [],
     }
@@ -270,9 +204,7 @@ def test_retention_days_declaration_roundtrip() -> None:
     ]
     data = {
         "provider": "rolling",
-        "enabled": True,
         "default_variant": "eastmoney",
-        "default_provider": ["stock"],
         "capabilities": [cap],
         "operations": [],
     }
@@ -295,9 +227,7 @@ def test_start_and_retention_days_mutually_exclusive() -> None:
     ]
     data = {
         "provider": "both",
-        "enabled": True,
         "default_variant": "eastmoney",
-        "default_provider": ["stock"],
         "capabilities": [cap],
         "operations": [],
     }
@@ -309,9 +239,7 @@ def test_quote_operation_with_null_dimensions() -> None:
     """quotes 快照操作：无意义维度（周期/复权）显式 null，加载与查重正常。"""
     data = {
         "provider": "quote-only",
-        "enabled": True,
         "default_variant": "tqsdk",
-        "default_provider": ["contract"],
         "capabilities": [
             {
                 "data_type": "quotes",

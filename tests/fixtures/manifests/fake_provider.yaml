@@ -1,8 +1,6 @@
 # 测试专用 Fake Provider：只用于验证统一查询链路，不代表任何真实数据源的能力。
 provider: fake-provider
-default_provider: [stock, etf, index, contract]
 default_variant: eastmoney
-enabled: true
 
 capabilities:
   - data_type: bars

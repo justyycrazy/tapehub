@@ -20,14 +20,11 @@
 #   extensions 白名单透出）；quote 无 interval/adjust 维度，显式声明空；
 # - 单接口 Provider：变体与 default_variant 均为 tickflow（数据源即上游服务自身）：
 #   缺省请求即可路由，也可显式传 variant=tickflow。
-# - default_provider 保持 []：不抢占既有默认路由（CN stock 快照注册序在前的
-#   tqsdk、US stock K 线注册序在前的 twelvedata 不受影响；tickflow 独占的
-#   HK 能力与 US stock 快照自动路由到本 Provider，重叠能力可显式
-#   provider=tickflow 使用）。
+# - 不声明缺省路由（provider_routing.yaml 裁决：CN stock 快照归 tqsdk、
+#   US stock K 线归 twelvedata；tickflow 独占的 HK 能力与 US stock 快照
+#   自动路由到本 Provider，重叠能力可显式 provider=tickflow 使用）。
 provider: tickflow
-default_provider: []
 default_variant: tickflow
-enabled: true
 
 capabilities:
   - data_type: bars

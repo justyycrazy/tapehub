@@ -1,9 +1,7 @@
 # 测试专用多市场 Fake Provider：同一 asset_type（stock）跨 CN/HK/US 三市场
 # 声明能力，只用于验证探针框架的市场限定目标展开，不代表真实数据源。
 provider: multi-market-provider
-default_provider: []
 default_variant: tickflow
-enabled: true
 
 capabilities:
   - data_type: bars

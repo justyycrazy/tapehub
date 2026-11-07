@@ -68,16 +68,18 @@ def test_forex_chain(twelvedata_client: TestClient, monkeypatch: pytest.MonkeyPa
 
 
 def test_missing_api_key_returns_clear_error(default_client) -> None:  # type: ignore[no-untyped-def]
-    """未配置 API Key 时能力目录正常，数据请求返回明确错误。"""
+    """未配置 API Key 时：Provider 不启用（能力目录可见），显式请求返回明确错误。"""
     caps = default_client.get("/v1/providers/twelvedata/capabilities")
     assert caps.status_code == 200
-    assert caps.json()["data"]["enabled"] is True
+    assert caps.json()["data"]["enabled"] is False
 
-    response = default_client.get("/v1/market/bars", params=FOREX_PARAMS)
-    assert response.status_code == 501
+    response = default_client.get(
+        "/v1/market/bars", params={**FOREX_PARAMS, "provider": "twelvedata"}
+    )
+    assert response.status_code == 409
     error = response.json()["error"]
-    assert error["code"] == "PROVIDER_NOT_IMPLEMENTED"
-    assert error["details"]["setting"] == "TAPEHUB_TWELVEDATA_API_KEY"
+    assert error["code"] == "PROVIDER_DISABLED"
+    assert "TAPEHUB_TWELVEDATA_API_KEY" in error["details"]["disabled_reason"]
 
 
 def test_capability_catalog(twelvedata_client: TestClient) -> None:  # type: ignore[no-untyped-def]
@@ -385,10 +387,10 @@ def test_quote_unsupported_asset_type_422(twelvedata_client: TestClient) -> None
     assert response.json()["error"]["code"] == "UNSUPPORTED_CAPABILITY"
 
 
-def test_quote_missing_api_key_501(default_client) -> None:  # type: ignore[no-untyped-def]
-    """未配置 API Key：快照请求与 bars 同样返回 PROVIDER_NOT_IMPLEMENTED。"""
+def test_quote_missing_api_key_returns_clear_error(default_client) -> None:  # type: ignore[no-untyped-def]
+    """未配置 API Key：快照请求与 bars 同样返回 PROVIDER_DISABLED。"""
     response = default_client.get("/v1/market/quotes", params=QUOTE_PARAMS)
-    assert response.status_code == 501
+    assert response.status_code == 409
     error = response.json()["error"]
-    assert error["code"] == "PROVIDER_NOT_IMPLEMENTED"
-    assert error["details"]["setting"] == "TAPEHUB_TWELVEDATA_API_KEY"
+    assert error["code"] == "PROVIDER_DISABLED"
+    assert "TAPEHUB_TWELVEDATA_API_KEY" in error["details"]["disabled_reason"]

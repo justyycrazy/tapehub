@@ -138,3 +138,10 @@ class ManifestError(TapehubError):
 
     code = ErrorCode.INTERNAL_ERROR
     default_message = "Provider manifest is invalid."
+
+
+class RoutingConfigError(TapehubError):
+    """缺省路由配置加载或校验失败（启动期错误，正常不出现在请求链路）。"""
+
+    code = ErrorCode.INTERNAL_ERROR
+    default_message = "Provider routing config is invalid."

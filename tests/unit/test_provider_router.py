@@ -26,7 +26,8 @@ from tapehub.domain.models import (
 from tapehub.providers.base import BaseProviderAdapter
 from tapehub.providers.manifest import ProviderManifest
 from tapehub.providers.registry import ProviderRegistry, build_provider_record
-from tests.conftest import build_fake_record
+from tapehub.providers.routing import RoutingTable
+from tests.conftest import build_fake_record, single_provider_routing
 
 
 class _YesAdapter(BaseProviderAdapter):
@@ -57,8 +58,12 @@ def fake_record() -> Any:
     return build_fake_record()
 
 
-def _registry(*records: Any) -> ProviderRegistry:
-    return ProviderRegistry(list(records))
+def _registry(*records: Any, routing: RoutingTable | None = None) -> ProviderRegistry:
+    # 单记录缺省独占其声明组合；多记录必须显式给出回退链（与生产一致）
+    if routing is None:
+        assert len(records) == 1, "multi-record registries need an explicit routing table"
+        routing = single_provider_routing(records[0])
+    return ProviderRegistry(list(records), routing)
 
 
 class TestSelectExplicit:
@@ -74,14 +79,14 @@ class TestSelectExplicit:
             router.select(_query(provider="nope"))
 
     def test_disabled_provider(self) -> None:
-        manifest = ProviderManifest(provider="stub-provider", enabled=False)
-        record = build_provider_record("stub-provider", manifest, _YesAdapter)
+        manifest = ProviderManifest(provider="stub-provider")
+        record = build_provider_record("stub-provider", manifest, _YesAdapter, enabled=False)
         router = ProviderRouter(_registry(record))
         with pytest.raises(ProviderDisabledError):
             router.select(_query(provider="stub-provider"))
 
     def test_not_implemented_provider(self) -> None:
-        manifest = ProviderManifest(provider="stub-provider", enabled=True)
+        manifest = ProviderManifest(provider="stub-provider")
         record = build_provider_record("stub-provider", manifest, _YesAdapter)
         record.implemented = False
         router = ProviderRouter(_registry(record))
@@ -89,7 +94,7 @@ class TestSelectExplicit:
             router.select(_query(provider="stub-provider"))
 
     def test_unsupported_capability(self) -> None:
-        manifest = ProviderManifest(provider="empty-provider", enabled=True)
+        manifest = ProviderManifest(provider="empty-provider")
         record = build_provider_record("empty-provider", manifest, _YesAdapter)
         router = ProviderRouter(_registry(record))
         with pytest.raises(UnsupportedCapabilityError):
@@ -119,7 +124,7 @@ class TestSelectAuto:
         assert selection.variant is DataVariant.EASTMONEY
 
     def test_skips_disabled_and_unimplemented(self) -> None:
-        manifest = ProviderManifest(provider="stub-provider", enabled=True)
+        manifest = ProviderManifest(provider="stub-provider")
         stub = build_provider_record("stub-provider", manifest, _YesAdapter)
         router = ProviderRouter(_registry(stub))
         with pytest.raises(NoProviderAvailableError):
@@ -215,9 +220,7 @@ class TestMissingVariantResolution:
 
         return ProviderManifest(
             provider="split-source",
-            enabled=True,
             default_variant={"stock": "sina"},
-            default_provider=["stock"],
             capabilities=[_cap("eastmoney", "PT1M"), _cap("sina", "P1D")],  # type: ignore[arg-type]
         )
 
@@ -239,11 +242,11 @@ class TestMissingVariantResolution:
         assert selection.variant is DataVariant.EASTMONEY
 
 
-class TestDefaultProviderPrecedence:
-    """跨 Provider 缺省声明（default_provider）：排序生效、冲突与缺失拒绝启动。"""
+class TestRoutingPrecedence:
+    """缺省路由配置（完整回退链）：链序生效、强制显式校验拒绝启动。"""
 
     @staticmethod
-    def _record(name: str, *, default_provider: list[str]) -> Any:
+    def _record(name: str) -> Any:
         cap = {
             "data_type": "bars",
             "markets": ["CN"],
@@ -256,36 +259,106 @@ class TestDefaultProviderPrecedence:
         }
         manifest = ProviderManifest(
             provider=name,
-            enabled=True,
             default_variant="eastmoney",
-            default_provider=default_provider,  # type: ignore[arg-type]
             capabilities=[cap],  # type: ignore[arg-type]
         )
         return build_provider_record(name, manifest, _YesAdapter)
 
-    def test_default_provider_ranks_before_registry_order(self) -> None:
-        """注册顺序在后但声明了缺省的 Provider，auto 时排到最前。"""
-        alpha = self._record("alpha-provider", default_provider=[])
-        zeta = self._record("zeta-provider", default_provider=["stock"])
-        router = ProviderRouter(_registry(alpha, zeta))
+    def test_routing_order_ranks_before_registry_order(self) -> None:
+        """注册顺序在后的 Provider，可经路由链排到缺省位。"""
+        alpha = self._record("alpha-provider")
+        zeta = self._record("zeta-provider")
+        routing = {(DataType.BARS, "CN", AssetType.STOCK): ("zeta-provider", "alpha-provider")}
+        router = ProviderRouter(ProviderRegistry([alpha, zeta], routing))
         selection = router.select(_query(variant=None))
         assert selection.record.name == "zeta-provider"
-        # 显式指定不受缺省声明影响
+        # 显式指定不受路由链影响
         explicit = router.select(_query(provider="alpha-provider"))
         assert explicit.record.name == "alpha-provider"
 
-    def test_conflicting_default_providers_rejected(self) -> None:
-        """同一资产类型被声明两次缺省：注册表构建失败。"""
-        first = self._record("first-provider", default_provider=["stock"])
-        second = self._record("second-provider", default_provider=["stock"])
-        with pytest.raises(ValueError, match="multiple default providers"):
-            ProviderRegistry([first, second])
+    def test_disabled_provider_skipped_and_next_in_chain_used(self) -> None:
+        """链首未启用（凭据缺失等）时 auto 路由跳过，落到链上下一个。"""
+        first = self._record("first-provider")
+        second = self._record("second-provider")
+        first.enabled = False
+        routing = {(DataType.BARS, "CN", AssetType.STOCK): ("first-provider", "second-provider")}
+        router = ProviderRouter(ProviderRegistry([first, second], routing))
+        selection = router.select(_query(variant=None))
+        assert selection.record.name == "second-provider"
 
-    def test_missing_default_provider_rejected(self) -> None:
-        """被覆盖的资产类型没有任何缺省声明：注册表构建失败。"""
-        solo = self._record("solo-provider", default_provider=[])
-        with pytest.raises(ValueError, match="without a default provider"):
-            ProviderRegistry([solo])
+    def test_capability_mismatch_falls_back_along_chain(self) -> None:
+        """链首不支持请求的具体维度（周期）时，回退到链上下一个。"""
+        minute_cap = {
+            "data_type": "bars",
+            "markets": ["CN"],
+            "asset_types": ["stock"],
+            "delivery": ["rest"],
+            "variants": ["eastmoney"],
+            "intervals": [{"code": "PT1M"}],
+            "adjustments": ["none"],
+            "fields": ["open", "close"],
+        }
+        manifest = ProviderManifest(
+            provider="minute-provider",
+            default_variant="eastmoney",
+            capabilities=[minute_cap],  # type: ignore[arg-type]
+        )
+        daily = self._record("daily-provider")
+        minute = build_provider_record("minute-provider", manifest, _YesAdapter)
+        routing = {(DataType.BARS, "CN", AssetType.STOCK): ("daily-provider", "minute-provider")}
+        router = ProviderRouter(ProviderRegistry([daily, minute], routing))
+        # P1D：daily 支持 → 命中链首；PT1M：daily 不支持 → 回退 minute
+        assert router.select(_query(variant=None)).record.name == "daily-provider"
+        assert router.select(_query(variant=None, interval="PT1M")).record.name == "minute-provider"
+
+    def test_missing_routing_entry_rejected(self) -> None:
+        """能力覆盖的组合缺路由条目：注册表构建失败（强制显式）。"""
+        solo = self._record("solo-provider")
+        with pytest.raises(ValueError, match="missing entries"):
+            ProviderRegistry([solo], {})
+
+    def test_unknown_provider_in_order_rejected(self) -> None:
+        """order 引用未注册 Provider：注册表构建失败。"""
+        solo = self._record("solo-provider")
+        routing = {(DataType.BARS, "CN", AssetType.STOCK): ("ghost-provider",)}
+        with pytest.raises(ValueError, match="unknown provider"):
+            ProviderRegistry([solo], routing)
+
+    def test_order_provider_without_capability_rejected(self) -> None:
+        """order 引用未声明该组合能力的 Provider：注册表构建失败。"""
+        bars_record = self._record("bars-provider")  # 仅 bars/CN/stock
+        quote_cap = {
+            "data_type": "quotes",
+            "markets": ["CN"],
+            "asset_types": ["stock"],
+            "delivery": ["rest"],
+            "variants": ["eastmoney"],
+            "intervals": [],
+            "adjustments": [],
+            "fields": ["timestamp", "last_price"],
+        }
+        manifest = ProviderManifest(
+            provider="quote-provider",
+            default_variant="eastmoney",
+            capabilities=[quote_cap],  # type: ignore[arg-type]
+        )
+        quote_record = build_provider_record("quote-provider", manifest, _YesAdapter)
+        routing = {
+            (DataType.BARS, "CN", AssetType.STOCK): ("quote-provider",),
+            (DataType.QUOTE, "CN", AssetType.STOCK): ("quote-provider",),
+        }
+        with pytest.raises(ValueError, match="does not declare this capability"):
+            ProviderRegistry([bars_record, quote_record], routing)
+
+    def test_extra_routing_entry_rejected(self) -> None:
+        """路由条目声明了无 Provider 覆盖的组合：注册表构建失败（防拼写漂移）。"""
+        solo = self._record("solo-provider")
+        routing = {
+            (DataType.BARS, "CN", AssetType.STOCK): ("solo-provider",),
+            (DataType.BARS, "US", AssetType.STOCK): ("solo-provider",),
+        }
+        with pytest.raises(ValueError, match="not covered by any provider"):
+            ProviderRegistry([solo], routing)
 
 
 # ---------------------------------------------------------------------------
@@ -296,9 +369,7 @@ class TestDefaultProviderPrecedence:
 def _quote_manifest_data() -> dict[str, Any]:
     return {
         "provider": "quote-source",
-        "enabled": True,
         "default_variant": "tqsdk",
-        "default_provider": ["contract"],
         "capabilities": [
             {
                 "data_type": "quotes",

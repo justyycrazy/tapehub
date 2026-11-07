@@ -2,13 +2,16 @@
 
 职责：
 
-- 注册内置 Provider（akshare、tushare、tickflow、alphafeed、tqsdk）；
+- 注册内置 Provider（顺序仅决定初始化顺序，不承载路由语义）；
 - 加载并校验各 Provider 的 manifest.yaml（manifest 属于配置：缺失或校验失败
   直接启动失败，不做单 Provider 隔离）；
-- 管理启用状态（manifest + 环境覆盖）；
+- 凭据驱动的注册：内置 Provider 需要凭据的（.env 相应变量全部非空）才启用；
+  凭据缺失的 Provider 保留能力目录但标记停用（数据请求返回 PROVIDER_DISABLED）；
+- 管理启用状态（显式环境覆盖 > 凭据推断；manifest 不承载启用声明）；
 - 可选依赖与延迟导入：适配器模块不在启动期导入任何 SDK；
 - 隔离单个 Provider 的适配器导入错误（可选 SDK 未安装等），不影响服务启动；
-- 校验跨 Provider 的缺省声明：每个被覆盖的资产类型恰好一个 default_provider；
+- 加载缺省路由配置（provider_routing.yaml，跨 Provider 能力冲突的集中裁决）
+  并校验其与能力目录的交叉一致性；
 - 聚合能力目录（与能力查询接口、公共路由共用同一份目录）。
 """
 
@@ -21,25 +24,40 @@ from tapehub.domain.capabilities import Capability
 from tapehub.domain.intervals import Interval
 from tapehub.domain.models import Adjust, AssetType, DataType, DataVariant
 from tapehub.providers.manifest import ProviderManifest, load_builtin_manifest
+from tapehub.providers.routing import RoutingKey, RoutingTable, load_routing_config
 
 if TYPE_CHECKING:
     from tapehub.domain.ports import HistoricalBarProvider, QuoteProvider
 
 logger = logging.getLogger(__name__)
 
-# 注册顺序即 auto 路由的回退优先级（default_provider 声明的资产类型优先，
-# 其余按本顺序取首个完整匹配的候选）。新增 Provider 一律排在既有 Provider
-# 之后：不抢占既有默认路由（tickflow 与 tqsdk 的 CN stock 快照、与
-# twelvedata 的 US stock K 线重叠，重叠能力可显式 provider=tickflow 使用，
-# tickflow 独占的 HK 与 US stock 快照能力自动路由不受影响）。
+# 内置 Provider 注册名单：顺序仅决定初始化顺序与能力目录展示顺序；
+# auto 路由的缺省裁决由 provider_routing.yaml 的完整回退链声明。
 BUILTIN_PROVIDERS: tuple[str, ...] = (
     "akshare",
-    "tushare",
     "alphafeed",
+    "tickflow",
+    "tushare",
     "tqsdk",
     "twelvedata",
-    "tickflow",
 )
+
+# 凭据驱动的注册判定：Provider → 必须全部非空的 Settings 凭据字段。
+# akshare 无凭据概念，恒可注册。判定只看非空（strip 后），不做格式校验——
+# 格式错误的凭据保持「请求时报 UPSTREAM_ERROR」，启动不因凭据内容失败。
+_REQUIRED_CREDENTIALS: dict[str, tuple[str, ...]] = {
+    "alphafeed": ("alphafeed_api_key",),
+    "tickflow": ("tickflow_api_key",),
+    "tushare": ("tushare_token",),
+    "tqsdk": ("tqsdk_auth_user", "tqsdk_auth_password"),
+    "twelvedata": ("twelvedata_api_key",),
+}
+
+
+def _missing_credential_fields(settings: object, name: str) -> list[str]:
+    """返回该 Provider 缺失（空白）的凭据 Settings 字段名列表。"""
+    required = _REQUIRED_CREDENTIALS.get(name, ())
+    return [f for f in required if not str(getattr(settings, f, "") or "").strip()]
 
 
 class _AdapterClass(Protocol):
@@ -66,12 +84,12 @@ class ProviderRecord:
     manifest: ProviderManifest
     capabilities: list[Capability] = field(default_factory=list)
     default_variants: dict[AssetType, DataVariant] = field(default_factory=dict)
-    # 本 Provider 声明为缺省数据源的资产类型（manifest default_provider）
-    default_for: frozenset[AssetType] = frozenset()
     # 适配器可同时实现 HistoricalBarProvider 与 QuoteProvider（鸭子类型）
     adapter: "HistoricalBarProvider | QuoteProvider | None" = None
     implemented: bool = False
     enabled: bool = False
+    # 停用原因（凭据缺失/显式覆盖禁用），供日志与显式请求被拒时诊断
+    disabled_reason: str | None = None
     load_error: str | None = None
 
     def resolve_variant(
@@ -128,9 +146,15 @@ class ProviderRecord:
 
 
 class ProviderRegistry:
-    """Provider 注册表。"""
+    """Provider 注册表。
 
-    def __init__(self, records: list[ProviderRecord]) -> None:
+    ``routing`` 是缺省路由表（provider_routing.yaml 加载结果）：
+    ``(data_type, market, asset_type) → 完整回退链``。构建期强制显式——
+    凡能力目录覆盖的组合必须恰有条目，order 只能引用已注册且实际声明
+    该组合能力的 Provider；违反即启动失败，不做隐式推导。
+    """
+
+    def __init__(self, records: list[ProviderRecord], routing: RoutingTable) -> None:
         self._records: list[ProviderRecord] = []
         self._by_name: dict[str, ProviderRecord] = {}
         for record in records:
@@ -138,47 +162,48 @@ class ProviderRegistry:
                 raise ValueError(f"duplicate provider registration: {record.name!r}")
             self._records.append(record)
             self._by_name[record.name] = record
-        self._validate_default_provider_coverage()
+        self._routing: RoutingTable = routing
+        self._validate_routing_coverage()
 
-    def _validate_default_provider_coverage(self) -> None:
-        """校验缺省 Provider 声明的覆盖性：每个被覆盖的资产类型恰好一个缺省。
-
-        - ``0`` 个：该资产类型在 auto 路由中将退回注册顺序的隐式裁决，禁止；
-        - ``>=2`` 个：多个 Provider 声明同一缺省，配置冲突，禁止。
-        """
-        covered: set[AssetType] = set()
-        declared: dict[AssetType, list[str]] = {}
+    def _validate_routing_coverage(self) -> None:
+        """路由表与能力目录的交叉校验：双向覆盖、order 引用合法。"""
+        covered: set[RoutingKey] = set()
         for record in self._records:
             for cap in record.capabilities:
-                covered.update(cap.asset_types)
-            for asset_type in record.default_for:
-                declared.setdefault(asset_type, []).append(record.name)
-        missing = sorted(covered - set(declared), key=lambda item: item.value)
+                for market in cap.markets:
+                    for asset_type in cap.asset_types:
+                        covered.add((cap.data_type, market, asset_type))
+        declared = set(self._routing)
+        missing = sorted(covered - declared)
         if missing:
-            names = ", ".join(item.value for item in missing)
             raise ValueError(
-                "asset types without a default provider: "
-                f"{names}; every capability-covered asset type must declare "
-                "exactly one default_provider across manifests"
+                "routing config missing entries for covered capabilities: "
+                f"{missing}; every capability-covered (data_type, market, "
+                "asset_type) combination must have an explicit routing entry"
             )
-        conflicts = sorted(
-            (asset_type, names)
-            for asset_type, names in declared.items()
-            if len(names) > 1
-        )
-        if conflicts:
-            details = "; ".join(
-                f"{asset_type.value} -> [{', '.join(names)}]" for asset_type, names in conflicts
-            )
+        extra = sorted(declared - covered)
+        if extra:
             raise ValueError(
-                f"multiple default providers declared for the same asset type: {details}"
+                f"routing config declares capabilities not covered by any provider: {extra}"
             )
+        for key, order in self._routing.items():
+            for name in order:
+                record = self._by_name.get(name)
+                if record is None:
+                    raise ValueError(
+                        f"routing order for {key} references unknown provider {name!r}"
+                    )
+                if not _covers_combination(record, *key):
+                    raise ValueError(
+                        f"routing order for {key} references provider {name!r} "
+                        "which does not declare this capability"
+                    )
 
     def get(self, name: str) -> ProviderRecord | None:
         return self._by_name.get(name)
 
     def list_records(self) -> list[ProviderRecord]:
-        """按注册顺序返回全部记录（固定顺序，保证路由确定性）。"""
+        """按注册顺序返回全部记录（固定顺序，保证目录展示确定性）。"""
         return list(self._records)
 
     def resolve_candidates(
@@ -191,14 +216,16 @@ class ProviderRegistry:
         adjust: Adjust | None = None,
         variant: DataVariant | None = None,
     ) -> list["ResolvedCandidate"]:
-        """启用、已实现且能力可解析的候选，按优先级返回并携带具体变体。
+        """按缺省路由链返回「启用、已实现且能力可解析」的候选。
 
-        优先级：声明为该资产类型缺省（``default_provider``）的 Provider 在前，
-        其余按注册顺序；显式 ``provider=X`` 不经过本方法，不受影响。
+        链序即优先级：第一个可完整解析该请求的 Provider 为缺省数据源；
+        未启用（凭据缺失/显式禁用）或能力不匹配该请求具体维度的条目自动
+        跳过。显式 ``provider=X`` 不经过本方法，不受影响。
         """
-        defaults: list[ResolvedCandidate] = []
-        others: list[ResolvedCandidate] = []
-        for record in self._records:
+        order = self._routing.get((data_type, market, asset_type), ())
+        candidates: list[ResolvedCandidate] = []
+        for name in order:
+            record = self._by_name[name]
             if not (record.enabled and record.implemented and record.adapter is not None):
                 continue
             resolved_variant = record.resolve_variant(
@@ -211,12 +238,20 @@ class ProviderRegistry:
             )
             if resolved_variant is None:
                 continue
-            candidate = ResolvedCandidate(record=record, variant=resolved_variant)
-            if asset_type in record.default_for:
-                defaults.append(candidate)
-            else:
-                others.append(candidate)
-        return defaults + others
+            candidates.append(ResolvedCandidate(record=record, variant=resolved_variant))
+        return candidates
+
+
+def _covers_combination(
+    record: ProviderRecord, data_type: DataType, market: str, asset_type: AssetType
+) -> bool:
+    """Provider 是否声明了该 (data_type, market, asset_type) 组合的能力。"""
+    return any(
+        cap.data_type == data_type
+        and market in cap.markets
+        and asset_type in cap.asset_types
+        for cap in record.capabilities
+    )
 
 
 def build_provider_record(
@@ -224,18 +259,20 @@ def build_provider_record(
     manifest: ProviderManifest,
     adapter_cls: _AdapterClass,
     *,
-    enabled_override: bool | None = None,
+    enabled: bool = True,
     settings: object = None,
 ) -> ProviderRecord:
-    """由 manifest 与适配器类构建注册记录。"""
-    enabled = manifest.enabled if enabled_override is None else enabled_override
+    """由 manifest 与适配器类构建注册记录。
+
+    ``enabled`` 默认 True（测试构造便利）；生产路径由 ``build_default_registry``
+    的启用裁决无条件覆盖（显式环境覆盖 > 凭据推断）。
+    """
     adapter = adapter_cls(name=name, manifest=manifest, settings=settings)
     return ProviderRecord(
         name=name,
         manifest=manifest,
         capabilities=manifest.to_domain_capabilities(),
         default_variants=manifest.resolved_default_variants(),
-        default_for=frozenset(manifest.default_provider or ()),
         adapter=adapter,
         implemented=bool(getattr(adapter_cls, "implemented", False)),
         enabled=enabled,
@@ -245,11 +282,18 @@ def build_provider_record(
 def build_default_registry(settings: object) -> ProviderRegistry:
     """构建内置 Provider 注册表。
 
-    manifest 缺失、格式错误或校验失败属于配置错误：直接抛出，启动失败；
-    适配器导入失败（可选 SDK 未安装等）仍隔离为该 Provider 的
-    ``load_error``，不影响服务启动（数据请求返回 ``PROVIDER_NOT_IMPLEMENTED``）。
+    失败分层：
+
+    - manifest / 路由配置缺失、格式错误或校验失败属于配置错误：直接抛出，
+      启动失败，不做单 Provider 隔离；
+    - 适配器导入失败（可选 SDK 未安装等）仍隔离为该 Provider 的
+      ``load_error``，不影响服务启动（数据请求返回 ``PROVIDER_NOT_IMPLEMENTED``）；
+    - 凭据缺失的 Provider 保留能力目录但标记停用（``enabled=False`` +
+      ``disabled_reason``）：auto 路由跳过，显式请求返回 ``PROVIDER_DISABLED``
+      并携带缺失的凭据变量名。
     """
     overrides = getattr(settings, "provider_enabled_overrides", {}) or {}
+    routing = load_routing_config(getattr(settings, "routing_config_path", None))
     records: list[ProviderRecord] = []
     for name in BUILTIN_PROVIDERS:
         override = overrides.get(name)
@@ -260,12 +304,10 @@ def build_default_registry(settings: object) -> ProviderRegistry:
             adapter_cls = getattr(module, "ProviderAdapter")
             if not _is_adapter_class(adapter_cls):
                 raise TypeError("ProviderAdapter is not a class")
-            record = build_provider_record(
-                name, manifest, adapter_cls, enabled_override=override, settings=settings
-            )
+            record = build_provider_record(name, manifest, adapter_cls, settings=settings)
         except Exception as exc:  # noqa: BLE001 - 适配器导入错误保持隔离（SDK 可选）
             logger.warning("provider %s failed to load: %s: %s", name, type(exc).__name__, exc)
-            fallback = ProviderManifest(provider=name, enabled=False)
+            fallback = ProviderManifest(provider=name)
             record = ProviderRecord(
                 name=name,
                 manifest=fallback,
@@ -275,5 +317,41 @@ def build_default_registry(settings: object) -> ProviderRegistry:
                 enabled=False,
                 load_error=f"{type(exc).__name__}: {exc}",
             )
+            records.append(record)
+            continue
+        _apply_enable_decision(record, name, override, settings)
         records.append(record)
-    return ProviderRegistry(records)
+    return ProviderRegistry(records, routing)
+
+
+def _apply_enable_decision(
+    record: ProviderRecord, name: str, override: bool | None, settings: object
+) -> None:
+    """启用裁决两级：显式环境覆盖 > 凭据推断（manifest 不承载启用声明）。"""
+    missing = _missing_credential_fields(settings, name)
+    env_names = ", ".join(f"TAPEHUB_{f.upper()}" for f in missing)
+    if override is False:
+        record.enabled = False
+        record.disabled_reason = "disabled via TAPEHUB_PROVIDER_ENABLED_OVERRIDES"
+        return
+    if override is True:
+        record.enabled = True
+        if missing:
+            logger.warning(
+                "provider %s explicitly enabled but credentials missing (%s); "
+                "data requests may fail",
+                name,
+                env_names,
+            )
+        return
+    if missing:
+        record.enabled = False
+        record.disabled_reason = f"missing credentials: {env_names}"
+        logger.warning(
+            "provider %s not registered: missing credentials (%s); "
+            "set the environment variables to enable it",
+            name,
+            env_names,
+        )
+        return
+    record.enabled = True
