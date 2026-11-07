@@ -93,6 +93,31 @@ def test_full_mapping_with_payload(monkeypatch: pytest.MonkeyPatch) -> None:
     assert bar.extensions["prev_close"] == 10.1
 
 
+def test_pre_1970_timestamp_mapping(monkeypatch: pytest.MonkeyPatch) -> None:
+    """1970 前负毫秒时间戳映射（纪元算术）。
+
+    Windows 上 ``datetime.fromtimestamp`` 对负秒抛 ``OSError [Errno 22]``
+    （CRT localtime 限制）；探针实证上游确有更早历史数据（GE 1960 年代
+    日线），不得因平台差异丢掉这段数据。UTC 零点归一化输出即北京 08:00。
+    """
+    install(monkeypatch)
+    preset_payload(monkeypatch, klines_payload(["1960-06-15", "1960-06-16"]))
+    adapter = _adapter()
+
+    batch = asyncio.run(
+        adapter.fetch_bars(
+            _query(
+                start=datetime(1960, 1, 1, tzinfo=CN_TIMEZONE),
+                end=datetime(1961, 1, 1, tzinfo=CN_TIMEZONE),
+            )
+        )
+    )
+
+    assert batch.count == 2
+    assert batch.bars[0].timestamp == datetime(1960, 6, 15, 8, tzinfo=CN_TIMEZONE)
+    assert batch.bars[1].timestamp == datetime(1960, 6, 16, 8, tzinfo=CN_TIMEZONE)
+
+
 @pytest.mark.parametrize(
     ("interval", "expected"),
     [
