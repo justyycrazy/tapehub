@@ -121,10 +121,6 @@ def test_pre_1970_timestamp_mapping(monkeypatch: pytest.MonkeyPatch) -> None:
 @pytest.mark.parametrize(
     ("interval", "expected"),
     [
-        ("PT1M", "1m"),
-        ("PT5M", "5m"),
-        ("PT15M", "15m"),
-        ("PT1H", "60m"),
         ("P1W", "1w"),
         ("P1M", "1M"),  # 月线，区别于分钟 PT1M
     ],
@@ -139,6 +135,21 @@ def test_period_codes(
     from tests.fixtures.providers.stub_tickflow import StubTickFlow
 
     assert StubTickFlow.instances[-1].calls[0]["period"] == expected
+
+
+@pytest.mark.parametrize(
+    "interval",
+    ["PT1M", "PT5M", "PT10M", "PT15M", "PT30M", "PT1H"],
+)
+def test_minute_periods_not_supported(
+    interval: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """分钟族不声明（免费档无权限，2026-11-07 拍板与 alphafeed 同口径收敛）：
+    二级路由必须拒绝，auto 路由落到其他 Provider。"""
+    install(monkeypatch)
+    adapter = _adapter()
+    with pytest.raises(UnsupportedCapabilityError):
+        adapter.resolve_operation(_query(interval=Interval.parse(interval)))
 
 
 @pytest.mark.parametrize(

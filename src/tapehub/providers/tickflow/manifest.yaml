@@ -38,21 +38,18 @@ capabilities:
   # 枚举）。history.start 取估计窗口右端零点（approx ±90 天，真实最早可能
   # 更早），per-market 真值带：CN [1990-12-19, 1991-01-18]（不早于上交所
   # 开业日）、HK (1979-08-19, 1980-02-15]、US (1961-09-23, 1962-02-17]。
-  # 分钟族（PT1M~PT1H，含 10m）：免费档无分钟 K 线权限（403 指纹「无分钟
-  # K线查询权限」已三轮实证），历史深度无法核实，保持 null，升档后按探针
-  # 流程实测再回填。
+  # 分钟族（PT1M~PT1H，含 10m）不声明（2026-11-07 拍板，与 alphafeed 同
+  # 口径）：免费档无分钟 K 线权限（403 指纹「无分钟K线查询权限」已三轮
+  # 实证），tickflow 又是 CN stock bars 第二候选——声明无权限的周期会 403
+  # 打断本可由其他 Provider 服务的请求；去掉声明后 US 分钟 K 由 twelvedata
+  # 服务，CN/HK 分钟 K 无人声明、auto 路由诚实返回 NO_PROVIDER_AVAILABLE；
+  # 升档后按探针流程实测再回填。
   - data_type: bars
     markets: [CN]
     asset_types: [stock]
     delivery: [rest]
     variants: [tickflow]
     intervals:
-      - {code: PT1M, history: {start: null, end: null}}
-      - {code: PT5M, history: {start: null, end: null}}
-      - {code: PT10M, history: {start: null, end: null}}
-      - {code: PT15M, history: {start: null, end: null}}
-      - {code: PT30M, history: {start: null, end: null}}
-      - {code: PT1H, history: {start: null, end: null}}
       - {code: P1D, history: {start: 1991-01-18T00:00:00+08:00, end: null}}
       - {code: P1W, history: {start: 1991-01-18T00:00:00+08:00, end: null}}
       - {code: P1M, history: {start: 1991-01-18T00:00:00+08:00, end: null}}
@@ -64,12 +61,6 @@ capabilities:
     delivery: [rest]
     variants: [tickflow]
     intervals:
-      - {code: PT1M, history: {start: null, end: null}}
-      - {code: PT5M, history: {start: null, end: null}}
-      - {code: PT10M, history: {start: null, end: null}}
-      - {code: PT15M, history: {start: null, end: null}}
-      - {code: PT30M, history: {start: null, end: null}}
-      - {code: PT1H, history: {start: null, end: null}}
       - {code: P1D, history: {start: 1980-02-15T00:00:00+08:00, end: null}}
       - {code: P1W, history: {start: 1980-02-15T00:00:00+08:00, end: null}}
       - {code: P1M, history: {start: 1980-02-15T00:00:00+08:00, end: null}}
@@ -81,12 +72,6 @@ capabilities:
     delivery: [rest]
     variants: [tickflow]
     intervals:
-      - {code: PT1M, history: {start: null, end: null}}
-      - {code: PT5M, history: {start: null, end: null}}
-      - {code: PT10M, history: {start: null, end: null}}
-      - {code: PT15M, history: {start: null, end: null}}
-      - {code: PT30M, history: {start: null, end: null}}
-      - {code: PT1H, history: {start: null, end: null}}
       - {code: P1D, history: {start: 1962-02-17T00:00:00+08:00, end: null}}
       - {code: P1W, history: {start: 1962-02-17T00:00:00+08:00, end: null}}
       - {code: P1M, history: {start: 1962-02-17T00:00:00+08:00, end: null}}
@@ -105,42 +90,6 @@ operations:
   # 全部市场 × 周期 × 复权组合都调用同一上游接口 tf.klines.get；
   # quotes 快照按市场各一条，调用 tf.quotes.get；
   # 显式枚举以保证能力目录与内部操作一一对应。
-  - match: {data_type: bars, market: CN, asset_type: stock, interval: PT1M, adjust: none, variant: tickflow}
-    operation: klines
-  - match: {data_type: bars, market: CN, asset_type: stock, interval: PT1M, adjust: qfq, variant: tickflow}
-    operation: klines
-  - match: {data_type: bars, market: CN, asset_type: stock, interval: PT1M, adjust: hfq, variant: tickflow}
-    operation: klines
-  - match: {data_type: bars, market: CN, asset_type: stock, interval: PT5M, adjust: none, variant: tickflow}
-    operation: klines
-  - match: {data_type: bars, market: CN, asset_type: stock, interval: PT5M, adjust: qfq, variant: tickflow}
-    operation: klines
-  - match: {data_type: bars, market: CN, asset_type: stock, interval: PT5M, adjust: hfq, variant: tickflow}
-    operation: klines
-  - match: {data_type: bars, market: CN, asset_type: stock, interval: PT10M, adjust: none, variant: tickflow}
-    operation: klines
-  - match: {data_type: bars, market: CN, asset_type: stock, interval: PT10M, adjust: qfq, variant: tickflow}
-    operation: klines
-  - match: {data_type: bars, market: CN, asset_type: stock, interval: PT10M, adjust: hfq, variant: tickflow}
-    operation: klines
-  - match: {data_type: bars, market: CN, asset_type: stock, interval: PT15M, adjust: none, variant: tickflow}
-    operation: klines
-  - match: {data_type: bars, market: CN, asset_type: stock, interval: PT15M, adjust: qfq, variant: tickflow}
-    operation: klines
-  - match: {data_type: bars, market: CN, asset_type: stock, interval: PT15M, adjust: hfq, variant: tickflow}
-    operation: klines
-  - match: {data_type: bars, market: CN, asset_type: stock, interval: PT30M, adjust: none, variant: tickflow}
-    operation: klines
-  - match: {data_type: bars, market: CN, asset_type: stock, interval: PT30M, adjust: qfq, variant: tickflow}
-    operation: klines
-  - match: {data_type: bars, market: CN, asset_type: stock, interval: PT30M, adjust: hfq, variant: tickflow}
-    operation: klines
-  - match: {data_type: bars, market: CN, asset_type: stock, interval: PT1H, adjust: none, variant: tickflow}
-    operation: klines
-  - match: {data_type: bars, market: CN, asset_type: stock, interval: PT1H, adjust: qfq, variant: tickflow}
-    operation: klines
-  - match: {data_type: bars, market: CN, asset_type: stock, interval: PT1H, adjust: hfq, variant: tickflow}
-    operation: klines
   - match: {data_type: bars, market: CN, asset_type: stock, interval: P1D, adjust: none, variant: tickflow}
     operation: klines
   - match: {data_type: bars, market: CN, asset_type: stock, interval: P1D, adjust: qfq, variant: tickflow}
@@ -159,42 +108,6 @@ operations:
     operation: klines
   - match: {data_type: bars, market: CN, asset_type: stock, interval: P1M, adjust: hfq, variant: tickflow}
     operation: klines
-  - match: {data_type: bars, market: HK, asset_type: stock, interval: PT1M, adjust: none, variant: tickflow}
-    operation: klines
-  - match: {data_type: bars, market: HK, asset_type: stock, interval: PT1M, adjust: qfq, variant: tickflow}
-    operation: klines
-  - match: {data_type: bars, market: HK, asset_type: stock, interval: PT1M, adjust: hfq, variant: tickflow}
-    operation: klines
-  - match: {data_type: bars, market: HK, asset_type: stock, interval: PT5M, adjust: none, variant: tickflow}
-    operation: klines
-  - match: {data_type: bars, market: HK, asset_type: stock, interval: PT5M, adjust: qfq, variant: tickflow}
-    operation: klines
-  - match: {data_type: bars, market: HK, asset_type: stock, interval: PT5M, adjust: hfq, variant: tickflow}
-    operation: klines
-  - match: {data_type: bars, market: HK, asset_type: stock, interval: PT10M, adjust: none, variant: tickflow}
-    operation: klines
-  - match: {data_type: bars, market: HK, asset_type: stock, interval: PT10M, adjust: qfq, variant: tickflow}
-    operation: klines
-  - match: {data_type: bars, market: HK, asset_type: stock, interval: PT10M, adjust: hfq, variant: tickflow}
-    operation: klines
-  - match: {data_type: bars, market: HK, asset_type: stock, interval: PT15M, adjust: none, variant: tickflow}
-    operation: klines
-  - match: {data_type: bars, market: HK, asset_type: stock, interval: PT15M, adjust: qfq, variant: tickflow}
-    operation: klines
-  - match: {data_type: bars, market: HK, asset_type: stock, interval: PT15M, adjust: hfq, variant: tickflow}
-    operation: klines
-  - match: {data_type: bars, market: HK, asset_type: stock, interval: PT30M, adjust: none, variant: tickflow}
-    operation: klines
-  - match: {data_type: bars, market: HK, asset_type: stock, interval: PT30M, adjust: qfq, variant: tickflow}
-    operation: klines
-  - match: {data_type: bars, market: HK, asset_type: stock, interval: PT30M, adjust: hfq, variant: tickflow}
-    operation: klines
-  - match: {data_type: bars, market: HK, asset_type: stock, interval: PT1H, adjust: none, variant: tickflow}
-    operation: klines
-  - match: {data_type: bars, market: HK, asset_type: stock, interval: PT1H, adjust: qfq, variant: tickflow}
-    operation: klines
-  - match: {data_type: bars, market: HK, asset_type: stock, interval: PT1H, adjust: hfq, variant: tickflow}
-    operation: klines
   - match: {data_type: bars, market: HK, asset_type: stock, interval: P1D, adjust: none, variant: tickflow}
     operation: klines
   - match: {data_type: bars, market: HK, asset_type: stock, interval: P1D, adjust: qfq, variant: tickflow}
@@ -212,42 +125,6 @@ operations:
   - match: {data_type: bars, market: HK, asset_type: stock, interval: P1M, adjust: qfq, variant: tickflow}
     operation: klines
   - match: {data_type: bars, market: HK, asset_type: stock, interval: P1M, adjust: hfq, variant: tickflow}
-    operation: klines
-  - match: {data_type: bars, market: US, asset_type: stock, interval: PT1M, adjust: none, variant: tickflow}
-    operation: klines
-  - match: {data_type: bars, market: US, asset_type: stock, interval: PT1M, adjust: qfq, variant: tickflow}
-    operation: klines
-  - match: {data_type: bars, market: US, asset_type: stock, interval: PT1M, adjust: hfq, variant: tickflow}
-    operation: klines
-  - match: {data_type: bars, market: US, asset_type: stock, interval: PT5M, adjust: none, variant: tickflow}
-    operation: klines
-  - match: {data_type: bars, market: US, asset_type: stock, interval: PT5M, adjust: qfq, variant: tickflow}
-    operation: klines
-  - match: {data_type: bars, market: US, asset_type: stock, interval: PT5M, adjust: hfq, variant: tickflow}
-    operation: klines
-  - match: {data_type: bars, market: US, asset_type: stock, interval: PT10M, adjust: none, variant: tickflow}
-    operation: klines
-  - match: {data_type: bars, market: US, asset_type: stock, interval: PT10M, adjust: qfq, variant: tickflow}
-    operation: klines
-  - match: {data_type: bars, market: US, asset_type: stock, interval: PT10M, adjust: hfq, variant: tickflow}
-    operation: klines
-  - match: {data_type: bars, market: US, asset_type: stock, interval: PT15M, adjust: none, variant: tickflow}
-    operation: klines
-  - match: {data_type: bars, market: US, asset_type: stock, interval: PT15M, adjust: qfq, variant: tickflow}
-    operation: klines
-  - match: {data_type: bars, market: US, asset_type: stock, interval: PT15M, adjust: hfq, variant: tickflow}
-    operation: klines
-  - match: {data_type: bars, market: US, asset_type: stock, interval: PT30M, adjust: none, variant: tickflow}
-    operation: klines
-  - match: {data_type: bars, market: US, asset_type: stock, interval: PT30M, adjust: qfq, variant: tickflow}
-    operation: klines
-  - match: {data_type: bars, market: US, asset_type: stock, interval: PT30M, adjust: hfq, variant: tickflow}
-    operation: klines
-  - match: {data_type: bars, market: US, asset_type: stock, interval: PT1H, adjust: none, variant: tickflow}
-    operation: klines
-  - match: {data_type: bars, market: US, asset_type: stock, interval: PT1H, adjust: qfq, variant: tickflow}
-    operation: klines
-  - match: {data_type: bars, market: US, asset_type: stock, interval: PT1H, adjust: hfq, variant: tickflow}
     operation: klines
   - match: {data_type: bars, market: US, asset_type: stock, interval: P1D, adjust: none, variant: tickflow}
     operation: klines

@@ -131,14 +131,10 @@ def test_capability_catalog(tickflow_client: TestClient) -> None:  # type: ignor
     for cap in caps[:3]:
         assert cap["asset_types"] == ["stock"]
         assert cap["variants"] == ["tickflow"]
-        assert [i["code"] for i in cap["intervals"]] == [
-            "PT1M", "PT5M", "PT10M", "PT15M", "PT30M",
-            "PT1H", "P1D", "P1W", "P1M",
-        ]
+        # 分钟族不声明（免费档无权限，2026-11-07 拍板与 alphafeed 同口径）
+        assert [i["code"] for i in cap["intervals"]] == ["P1D", "P1W", "P1M"]
         assert cap["adjustments"] == ["none", "qfq", "hfq"]
         starts = {i["code"]: i["history"]["start"] for i in cap["intervals"]}
-        minute_codes = ("PT1M", "PT5M", "PT10M", "PT15M", "PT30M", "PT1H")
-        assert all(starts[c] is None for c in minute_codes)
         assert starts["P1D"] == starts["P1W"] == starts["P1M"] == expected_starts[cap["markets"][0]]
     # quotes 快照能力：无 interval/adjust 维度，三市场 stock
     quotes_cap = caps[3]
@@ -166,6 +162,18 @@ def test_adjust_hfq_maps_to_backward(
     )
     assert response.status_code == 200
     assert StubTickFlow.instances[-1].calls[0]["adjust"] == "backward"
+
+
+@pytest.mark.parametrize("interval", ["PT1M", "PT10M", "PT1H"])
+def test_minute_periods_unsupported(
+    tickflow_client: TestClient, interval: str
+) -> None:
+    # 分钟族不声明（免费档无权限）：能力目录即拒绝
+    response = tickflow_client.get(
+        "/v1/market/bars", params={**BASE_PARAMS, "interval": interval}
+    )
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "UNSUPPORTED_CAPABILITY"
 
 
 def test_default_variant_routes_to_declared_default(

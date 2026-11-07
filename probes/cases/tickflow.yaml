@@ -13,8 +13,9 @@ pacing:
   # 分钟 K 线 403）按上游错误如实记录，不做跳过——这正是账户档位边界的证据。
   call_interval_s: 6.5
   timeout_s: 60
-  # 预算：availability 81（含分钟族 54 条 403 复证）+ adjust_diff 12 +
-  # history_depth 9 条 × ≤24 + limit_truncation 3 + raw 8 = 最坏 320，期望约 220。
+  # 预算：availability 27（三市场 × P1D/P1W/P1M × 3 复权；分钟族已不声明，
+  # 2026-11-07 拍板）+ adjust_diff 12 + history_depth 9 条 × ≤24 +
+  # limit_truncation 3 + raw 8 = 最坏 266，期望约 150。
   max_calls: 320
 
 # 同一 asset_type（stock）跨三市场声明能力：用市场限定目标（stock@MARKET）
@@ -76,15 +77,8 @@ chain:
     era_step_years: 10   # 1930 起共 10 纪元；步长 5 则仅纪元回溯就要 19 调，装不进 24 预算
     max_calls: 24        # 每条 case 预算：回溯 10 + 二分 ~8 + 验证 1 ≈ 19 最坏，留余量
     intervals: [P1D, P1W, P1M]
-    # 分钟族（PT1M~PT1H，含 60m）免费档 403 已两轮实证，无法探测历史深度，
-    # manifest 保持 null（变体维度不收敛）
-  limit_truncation:
-    targets: [stock@CN, stock@HK, stock@US]
-    # 免费档无分钟权限（403 指纹已在 availability 实证），10000 触顶实证
-    # 需付费档分钟线；本轮以 P1D 超长窗口验证往返与未截断
-    interval: P1D
-    max_range: P1Y
-    documented_max: 10000
+    # 分钟族（PT1M~PT1H，含 60m）不声明（2026-11-07 拍板，免费档无权限、
+    # 与 alphafeed 同口径），历史深度无从探测
 
 raw:
   # ── 实时行情（tf.quotes.get）：三市场字段矩阵与返回形态。SDK 0.1.25 实测
@@ -138,3 +132,10 @@ notes: >
   破除二分收敛点的标的上市日伪影），history_depth 边界提前至 1930、
   era_step_years 10、纳入 P1W/P1M（分钟族 PT1M~PT1H 免费档 403 已两轮
   实证，无法探测历史深度）；预期调用最坏 320。
+  第四轮（2026-11-07 拍板）：分钟族 PT1M~PT1H（含 10m）不再声明，与
+  alphafeed 同口径收敛——免费档无权限，tickflow 又是 CN stock bars 第二
+  候选，声明无权限的周期会 403 打断本可由其他 Provider 服务的请求；
+  availability 由 81 收敛到 27；limit_truncation 一并移除：上轮三条 limit
+  case 已判 suspect（P1D 全年 244/247/250 根 ≠ documented_max 10000），
+  免费档无分钟线时 10000 触顶本就无法实证，单次上限与 partial 标记逻辑
+  由单测 sized_klines_payload 覆盖；预期调用最坏 266。

@@ -504,18 +504,18 @@ TickFlow（REST API `GET https://api.tickflow.org/v1/klines` / `GET /v1/quotes`�
 
 | 资产类型 | 市场 | 变体 | 上游接口 | 周期 | adjust | 标准字段 |
 | --- | --- | --- | --- | --- | --- | --- |
-| stock（bars） | CN/HK/US | tickflow（默认） | `tf.klines.get` | PT1M~PT30M/PT1H、P1D/P1W/P1M | none/qfq/hfq | 全部（extensions: prev_close） |
+| stock（bars） | CN/HK/US | tickflow（默认） | `tf.klines.get` | P1D/P1W/P1M | none/qfq/hfq | 全部（extensions: prev_close） |
 | stock（quotes） | CN/HK/US | tickflow（默认） | `tf.quotes.get(symbols=[...])` | —（快照无周期） | —（快照无复权） | timestamp/last_price/volume/amount（extensions 见下） |
 
 - API Key 通过环境变量 `TAPEHUB_TICKFLOW_API_KEY` 提供并传入 SDK 客户端，禁止写入代码/manifest/日志；未配置时不启用（能力目录仍可见，`enabled=false`），显式请求返回 `PROVIDER_DISABLED`；
 - 标的代码映射：`CN-SSE-600000 → 600000.SH`、`CN-SZSE-… → .SZ`、`CN-BSE-… → .BJ`、`HK-HKEX-00700 → 00700.HK`、`US-NASDAQ-AAPL → AAPL.US`（美股 NYSE/NASDAQ/CBOE 统一 US 后缀，exchange 段仅作标准代码规范）；
-- 周期映射：`PT1M→1m`、`PT5M→5m`、`PT10M→10m`、`PT15M→15m`、`PT30M→30m`、`PT1H→60m`、`P1D→1d`、`P1W→1w`、`P1M→1M`；季线 `1Q` 无法用 ISO 8601 Duration 表达，年线 `1Y` 超出项目「最大支持到月线」的周期范围，均不声明；
+- 周期映射：`P1D→1d`、`P1W→1w`、`P1M→1M`；分钟族（`1m`~`60m`，含 `10m`）不声明（2026-11-07 拍板，与 alphafeed 同口径收敛）：免费档无分钟 K 线权限（403 已三轮实证），tickflow 又是 CN stock bars 第二候选，声明无权限的周期会 403 打断本可由其他 Provider 服务的请求——去掉声明后 US 分钟 K 由 twelvedata 服务，CN/HK 分钟 K 无人声明、auto 路由诚实返回 `NO_PROVIDER_AVAILABLE`；季线 `1Q` 无法用 ISO 8601 Duration 表达，年线 `1Y` 超出项目「最大支持到月线」的周期范围，均不声明；
 - 复权映射：`qfq→forward`（比例前复权）、`hfq→backward`、`none→none`（差值加法变体不对外暴露）；SDK 自身默认 forward，适配器始终显式传参；港股/美股复权语义未经探针实证（美股复权口径可能与 A 股不同），生效性以探针报告为准；
 - 快照字段映射：`last_price/volume/amount` 为标准字段（五档盘口上游无源字段恒 null）；`region/name/change_pct/change_amount/amplitude/turnover_rate/prev_close/open/high/low` 经 extensions 白名单透出。SDK 0.1.25 探针实测：返回 `list[dict]`（非文档 data 包装），**无 `session` 字段**（文档声明存在，防御映射存在才透出），`ext.type`（cn_equity 等）不在白名单不透出；比例字段为**小数比例（1% = 0.01，如 change_pct 0.0162 = 1.62%）**；上游支持逗号分隔批量（本项目单标的快照，单标的单次调用）；
 - 上游单次上限 10000 根：达到上限时响应 `meta.partial=true` 且 `warnings` 提示可能截断；
 - 错误指纹（2026-11-07 探针实证）：免费档分钟线无权限为 SDK `PermissionError`「无分钟K线查询权限」（统一包装 `UPSTREAM_ERROR` 告知用户）；限频探针 6.5s 间隔（≈9 次/分钟）全程未触发；`RateLimitError` 类型存在于 SDK，429 指纹待更高频场景核实；
 - 日线时间戳口径（探针实测）：CN/HK 日线为**北京时间零点**；US 日线为**美东零点**（归一化北京时间随夏令时在 12:00/13:00 漂移）；HK/US 日线 `amount` 上游原值 0（无成交额数据，按原值透出非缺失 null）；
-- 历史深度（history_depth 探针实证，报告 20261107T145801+0800：早上市基准标的 CN 600602（1990-12-19 上交所开业首批老八股）/ HK 00002 / US GE（1892 年上市），二分 90 天粒度收敛 complete=True，日/周/月三周期同值）：CN ≈1991-01-18（不早于上交所开业日 1990-12-19）、HK ≈1980-02-15、US ≈1962-02-17。bars 能力拆 CN/HK/US 三块逐市场声明，`history.start` 取各市场估计窗口右端零点（approx ±90 天，真实最早可能更早；原合并块取跨市场最早 US 值对 CN 过度声明 29 年，已拆块修正）；分钟族（PT1M~PT1H）免费档无分钟权限（403 已三轮实证）无法核实，保持 null。基准标的已永久换为早上市标的：二分收敛点若远离其上市日即为真实库底，后续下探无需再改配置。
+- 历史深度（history_depth 探针实证，报告 20261107T145801+0800：早上市基准标的 CN 600602（1990-12-19 上交所开业首批老八股）/ HK 00002 / US GE（1892 年上市），二分 90 天粒度收敛 complete=True，日/周/月三周期同值）：CN ≈1991-01-18（不早于上交所开业日 1990-12-19）、HK ≈1980-02-15、US ≈1962-02-17。bars 能力拆 CN/HK/US 三块逐市场声明，`history.start` 取各市场估计窗口右端零点（approx ±90 天，真实最早可能更早；原合并块取跨市场最早 US 值对 CN 过度声明 29 年，已拆块修正）；分钟族（PT1M~PT1H）经拍板不再声明（免费档无权限，见周期映射 bullet）。基准标的已永久换为早上市标的：二分收敛点若远离其上市日即为真实库底，后续下探无需再改配置。
 
 AlphaFeed（REST API `GET https://api.alphafeed.org/v1/klines`，官方 SDK `alphafeed`）：
 
