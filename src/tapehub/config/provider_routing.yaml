@@ -67,14 +67,16 @@ defaults:
 
   # US 个股：twelvedata 优先（2026-11-07 拍板维持既有回退结果）；
   # alphafeed 第二候选（官方文档核实美股日线 1d/1w/1M，探针实证后可再议
-  # 升缺省）；tickflow 第三候选，显式 provider=tickflow 亦可选用
+  # 升缺省）；tickflow 第三候选；akshare 末位免凭据兜底（2026-11-08 接入
+  # 东财美股，history.start 与成交量单位未核实，仅 NYSE/NASDAQ）
   - match: {data_type: bars, market: US, asset_type: stock}
-    order: [twelvedata, alphafeed, tickflow]
+    order: [twelvedata, alphafeed, tickflow, akshare]
 
   # HK 个股：alphafeed 缺省（2026-11-07 拍板接管，官方文档核实港股日线
-  # 1d/1w/1M），tickflow 回退（其港股日线探针实证更深，库底存疑时可显式指定）
+  # 1d/1w/1M），tickflow 回退（其港股日线探针实证更深，库底存疑时可显式
+  # 指定）；akshare 末位免凭据兜底（2026-11-08 接入东财港股，未核实项待探针）
   - match: {data_type: bars, market: HK, asset_type: stock}
-    order: [alphafeed, tickflow]
+    order: [alphafeed, tickflow, akshare]
 
   # US ETF：twelvedata 独占
   - match: {data_type: bars, market: US, asset_type: etf}

@@ -20,13 +20,19 @@ class TestLoadRoutingConfig:
         table = load_routing_config()
         assert len(table) == EXPECTED_BUILTIN_ENTRY_COUNT
         # 拍板定稿的关键裁决：US 个股 K 线 twelvedata 优先（alphafeed 第二
-        # 候选 2026-11-07 追加）、tickflow 回退；HK 个股 K 线 alphafeed 接管缺省
+        # 候选 2026-11-07 追加）、tickflow 回退、akshare 末位免凭据兜底
+        # （2026-11-08 接入东财港美股）；HK 个股 K 线 alphafeed 接管缺省
         assert table[(DataType.BARS, "US", AssetType.STOCK)] == (
             "twelvedata",
             "alphafeed",
             "tickflow",
+            "akshare",
         )
-        assert table[(DataType.BARS, "HK", AssetType.STOCK)] == ("alphafeed", "tickflow")
+        assert table[(DataType.BARS, "HK", AssetType.STOCK)] == (
+            "alphafeed",
+            "tickflow",
+            "akshare",
+        )
         # 完整回退链示例：CN 个股六源（baostock 置于首位 2026-11-08 接入拍板）、
         # tqsdk 缺省的期货合约；CN 指数 akshare 优先（库底更深）、baostock 补位；
         # CN ETF tqsdk 缺省、baostock 回退、akshare 末位兜底（2026-11-08 接入）

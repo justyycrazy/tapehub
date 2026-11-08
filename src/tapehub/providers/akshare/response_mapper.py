@@ -5,6 +5,9 @@
 - stock_zh_a_hist（东财个股）：中文列名，成交量单位为**手**（标准化为股，×100）；
 - fund_etf_hist_em（东财 ETF）：与东财个股同上游 kline 端点同中文列（无「股票代码」列），
   成交量单位同为**手**（×100），列映射/扩展白名单/量纲换算直接复用；
+- stock_hk_hist / stock_us_hist（东财港股/美股）：与东财个股同端点同中文列；成交量
+  单位未核实，**原样透出**待探针定标（不预设换算）；时间戳口径：港股交易日=北京
+  同日（北京零点）、美股为美东零点（归一化北京时间 12:00/13:00，对齐 twelvedata）；
 - stock_zh_a_daily（新浪个股）：英文列名，成交量单位为股；
 - stock_zh_a_hist_tx（腾讯个股）：英文列名，成交量单位为股；
 - stock_zh_index_daily_em：英文列名；
@@ -19,8 +22,13 @@ import math
 from datetime import date as date_type
 from datetime import datetime
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from tapehub.domain.models import CN_TIMEZONE, Bar
+
+# 美股 datetime 的显示时区（ZoneInfo 自动处理 EST/EDT 夏令时切换；
+# 命名对齐 twelvedata 的同口径实现）
+NEW_YORK_TIMEZONE = ZoneInfo("America/New_York")
 
 # 列名 → 标准字段名
 _STOCK_EM_COLUMNS = {
@@ -94,8 +102,8 @@ def _to_float(value: Any) -> float | None:
     return result
 
 
-def _to_timestamp(value: Any) -> datetime:
-    """交易日转换为该日 00:00 北京时间（+08:00）。"""
+def _to_timestamp(value: Any, tz: ZoneInfo = CN_TIMEZONE) -> datetime:
+    """交易日转换为该日 00:00 的指定时区感知时间（默认北京时间）。"""
     if isinstance(value, datetime):
         naive = value
     elif isinstance(value, date_type):
@@ -103,7 +111,7 @@ def _to_timestamp(value: Any) -> datetime:
     else:
         text = str(value)[:10]
         naive = datetime.strptime(text, "%Y-%m-%d")
-    return datetime(naive.year, naive.month, naive.day, tzinfo=CN_TIMEZONE)
+    return datetime(naive.year, naive.month, naive.day, tzinfo=tz)
 
 
 def _timestamp_source(columns: dict[str, str]) -> str:
@@ -116,9 +124,10 @@ def to_bar(
     columns: dict[str, str],
     extensions: dict[str, str] | None = None,
     volume_scale: float | None = None,
+    timestamp_tz: ZoneInfo = CN_TIMEZONE,
 ) -> Bar:
     """单行上游数据 → 标准 Bar。列缺失或值为空时标准字段为 null。"""
-    timestamp = _to_timestamp(row.get(_timestamp_source(columns)))
+    timestamp = _to_timestamp(row.get(_timestamp_source(columns)), timestamp_tz)
     values: dict[str, Any] = {}
     for source, field in columns.items():
         if field == "timestamp":
@@ -155,6 +164,17 @@ _MAPPINGS: dict[str, dict[str, Any]] = {
         "columns": _STOCK_EM_COLUMNS,
         "extensions": _STOCK_EM_EXTENSIONS,
         "volume_scale": _STOCK_EM_VOLUME_SCALE,
+    },
+    # 港股/美股与 A 股同列；成交量单位未核实，无 volume_scale（原样透出待探针定标）；
+    # 美股日线为美东零点口径（BarBatch 统一归一化北京时间）
+    "stock_hk_hist": {
+        "columns": _STOCK_EM_COLUMNS,
+        "extensions": _STOCK_EM_EXTENSIONS,
+    },
+    "stock_us_hist": {
+        "columns": _STOCK_EM_COLUMNS,
+        "extensions": _STOCK_EM_EXTENSIONS,
+        "timestamp_tz": NEW_YORK_TIMEZONE,
     },
     "stock_zh_a_daily": {
         "columns": _STOCK_SINA_COLUMNS,

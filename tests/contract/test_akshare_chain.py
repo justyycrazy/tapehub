@@ -17,6 +17,7 @@ from tests.conftest import make_settings
 from tests.fixtures.providers.stub_akshare import (
     StubAkshare,
     em_etf_rows,
+    em_global_rows,
     em_stock_rows,
     sina_index_rows,
     stock_rows_en,
@@ -183,6 +184,62 @@ def test_etf_chain_explicit_provider(
     assert bar["amount"] == 9876543.0
 
 
+def test_hk_chain_explicit_provider(
+    akshare_client: TestClient, akshare_stub: StubAkshare
+) -> None:
+    # HK 个股缺省路由走 alphafeed/tickflow（均需凭据），akshare 为末位免凭据
+    # 兜底，本用例显式 provider=akshare 走东财港股；未传 adjust → stock 默认 qfq
+    akshare_stub.set_rows("stock_hk_hist", em_global_rows(["2026-01-02"]))
+    params = {
+        "provider": "akshare",
+        "asset_type": "stock",
+        "instrument": "HK-HKEX-00700",
+        "interval": "P1D",
+        "start": "2026-01-01T00:00:00+08:00",
+        "end": "2026-01-10T00:00:00+08:00",
+    }
+    response = akshare_client.get("/v1/market/bars", params=params)
+    assert response.status_code == 200
+    body = response.json()
+
+    operation, kwargs = akshare_stub.calls[0]
+    assert operation == "stock_hk_hist"
+    assert kwargs["symbol"] == "00700"
+    assert kwargs["adjust"] == "qfq"  # stock 未传 adjust → 声明默认 qfq
+    assert body["meta"]["provider"] == "akshare"
+    assert body["meta"]["variant"] == "eastmoney"
+    bar = body["data"]["bars"][0]
+    assert bar["timestamp"] == "2026-01-02T00:00:00+08:00"  # 港股=北京零点
+    assert bar["volume"] == 345678.0  # 成交量原样透出（单位待探针定标）
+
+
+def test_us_chain_explicit_provider(
+    akshare_client: TestClient, akshare_stub: StubAkshare
+) -> None:
+    # US 个股缺省路由走 twelvedata/alphafeed/tickflow（均需凭据），akshare 为
+    # 末位免凭据兜底；美股日线时间戳为美东零点 → 北京 13:00（EST）
+    akshare_stub.set_rows("stock_us_hist", em_global_rows(["2026-01-02"]))
+    params = {
+        "provider": "akshare",
+        "asset_type": "stock",
+        "instrument": "US-NYSE-GE",
+        "interval": "P1D",
+        "start": "2026-01-01T00:00:00+08:00",
+        "end": "2026-01-10T00:00:00+08:00",
+    }
+    response = akshare_client.get("/v1/market/bars", params=params)
+    assert response.status_code == 200
+    body = response.json()
+
+    operation, kwargs = akshare_stub.calls[0]
+    assert operation == "stock_us_hist"
+    assert kwargs["symbol"] == "106.GE"
+    assert kwargs["adjust"] == "qfq"
+    bar = body["data"]["bars"][0]
+    assert bar["timestamp"] == "2026-01-02T13:00:00+08:00"  # 美东零点（EST）
+    assert bar["volume"] == 345678.0
+
+
 def test_capability_catalog(akshare_client: TestClient) -> None:
     response = akshare_client.get("/v1/capabilities?provider=akshare")
     assert response.status_code == 200
@@ -197,8 +254,8 @@ def test_capability_catalog(akshare_client: TestClient) -> None:
         "continuous": "sina",
     }
     caps = entry["capabilities"]
-    # bars 九块：个股（东财/新浪/腾讯）、指数（东财/新浪/腾讯）、ETF（东财）、
-    # 期货合约/主力连续（新浪）
+    # bars 十一块：个股（CN 东财/新浪/腾讯 + HK/US 东财）、指数（东财/新浪/腾讯）、
+    # ETF（东财）、期货合约/主力连续（新浪）
     assert [(cap["data_type"], cap["markets"], cap["asset_types"]) for cap in caps] == [
         ("bars", ["CN"], ["stock"]),
         ("bars", ["CN"], ["stock"]),
@@ -207,6 +264,8 @@ def test_capability_catalog(akshare_client: TestClient) -> None:
         ("bars", ["CN"], ["index"]),
         ("bars", ["CN"], ["index"]),
         ("bars", ["CN"], ["etf"]),
+        ("bars", ["HK"], ["stock"]),
+        ("bars", ["US"], ["stock"]),
         ("bars", ["CN"], ["contract"]),
         ("bars", ["CN"], ["continuous"]),
     ]
@@ -216,6 +275,16 @@ def test_capability_catalog(akshare_client: TestClient) -> None:
     assert etf_cap["adjustments"] == ["none", "qfq", "hfq"]
     # history.start 未核实不声明（探针实证人工确认后单独提交回填）
     assert [i["history"]["start"] for i in etf_cap["intervals"]] == [None, None, None]
+    hk_cap, us_cap = caps[7], caps[8]
+    for overseas_cap in (hk_cap, us_cap):
+        assert overseas_cap["variants"] == ["eastmoney"]
+        assert [i["code"] for i in overseas_cap["intervals"]] == ["P1D", "P1W", "P1M"]
+        assert overseas_cap["adjustments"] == ["none", "qfq", "hfq"]
+        assert [i["history"]["start"] for i in overseas_cap["intervals"]] == [
+            None,
+            None,
+            None,
+        ]
 
 
 def test_upstream_exception_wrapped(

@@ -9,8 +9,10 @@ requires:
 pacing:
   call_interval_s: 5.0   # 东方财富 push2 对高频断连限流：首次约 5 分钟恢复，
   timeout_s: 60          # 反复触发需 40 分钟以上；实测 2s 节流即被限流
-  max_calls: 260         # 2026-11-08 ETF 接入后上调（availability/adjust_diff/
-                         # history_depth 随 etf 目标自动展开，约 +50 调用）
+  max_calls: 340         # 2026-11-08 港股/美股接入后上调：availability 47
+                         # （CN stock 15 + index 3 + etf 9 + 期货 2 + HK/US
+                         # stock 各 9）+ adjust_diff 24（P1D 限定）+
+                         # history_depth 9 条 × ≤24 + variant_consistency 27
 
 targets:
   stock:
@@ -28,6 +30,16 @@ targets:
     window: {start: 2025-01-01, end: 2025-12-31}
     min_bars: 10         # 跨周期下限，同 stock 口径
     required_fields: [open, high, low, close, volume, amount]
+  stock@HK:
+    instrument: HK-HKEX-00002
+    window: {start: 2025-01-01, end: 2025-12-31}
+    min_bars: 10         # 跨周期下限，同 stock 口径
+    required_fields: [open, high, low, close, volume]   # amount 币种/单位待核实，不预设必填
+  stock@US:
+    instrument: US-NYSE-GE
+    window: {start: 2025-01-01, end: 2025-12-31}
+    min_bars: 10
+    required_fields: [open, high, low, close, volume]
   contract:
     instrument: CN-SHFE-RB2410
     window: {start: 2024-06-01, end: 2024-09-30}
@@ -41,18 +53,21 @@ chain:
   include_declared: true
   skip: []
   adjust_diff:
-    targets: [stock, etf]
+    targets: [stock, etf, stock@HK, stock@US]
+    intervals: [P1D]     # 周/月与日线同端点同复权参数（对齐 tickflow/alphafeed 做法，控预算）
     window: {start: 2024-06-01, end: 2024-08-31}   # 分红除权高发窗口
     pairs: [[none, qfq], [none, hfq]]
     fields: [close]
   history_depth:
-    targets: [stock, index, etf, contract, continuous]
+    targets: [stock, index, etf, contract, continuous, stock@HK, stock@US]
+    intervals: [P1D]     # 周/月与日线同端点同数据区间，同值声明（控预算）
     full_history_targets: [contract, continuous]
-    earliest: 1991-01-01
-    era_step_years: 5
-    max_calls: 14        # 每条 case 的预算；按 (interval × variant) 全量展开
+    earliest: 1930-01-01 # HK/US 库底可能深于 1991（对齐 tickflow/alphafeed），避免下限触底误报
+    era_step_years: 10
+    max_calls: 24        # 每条 case 的预算；按 (interval × variant) 展开（P1D 限定）
   variant_consistency:
-    # 同一查询在 eastmoney/sina/tencent 下的序列一致性（三源一致性正式结论）
+    # 同一查询在 eastmoney/sina/tencent 下的序列一致性（三源一致性正式结论）；
+    # HK/US 单变体无对比对，纯键 stock 的变体集合不受新能力影响
     targets: [stock, index]
     window: {start: 2025-06-01, end: 2025-12-31}
     fields: [close]
@@ -67,7 +82,14 @@ notes: >
   声明，跨源一致性无从对比（skipped 属结构性，非漏探）。ETF（2026-11-08 接入，
   fund_etf_hist_em）与个股东财接口同端点同列，探针重点核实：成交量单位口径
   （手→股 ×100 是否成立，可用成交额/成交量≈均价交叉验证）、amount 单位（元）、
-  复权三值生效性、history.start（manifest 现未核实不声明，待回填）。已知跨源
+  复权三值生效性、history.start（manifest 现未核实不声明，待回填）。港/美股
+  （2026-11-08 接入，stock_hk_hist / stock_us_hist）与 A 股同端点同列，探针重点
+  核实：成交量单位（未核实原样透出，用成交额÷成交量≈价格交叉验证是否需换算）、
+  amount 币种（HKD/USD）、美股时间戳口径（适配器按美东零点，归一化北京时间
+  12:00/13:00，探针对照实证）、美股市场号覆盖（NASDAQ→105、NYSE→106；CBOE→107
+  待核实后议）、复权三值生效性、history.start（manifest 未核实不声明，待回填）。
+  2026-11-08 起 adjust_diff/history_depth 收敛 P1D：周/月与日线同端点同数据区间
+  （对齐 tickflow/alphafeed 探针做法，控预算）。已知跨源
   语义差异（20261104T041657Z 实证，探针如实判 suspect，不是能力不实也不判
   confirmed）：none 三源完全一致；qfq 东财与腾讯一致、新浪复权因子口径不同
   （±0.24 元）；hfq 三源基准各异（最大 ±105 元），复权序列跨源不可直接混用；

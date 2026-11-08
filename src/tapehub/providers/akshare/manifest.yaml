@@ -19,7 +19,13 @@
 # - ETF（fund_etf_hist_em）与个股东财接口同上游 kline 端点同列（中文 11 列、
 #   无「股票代码」列），成交量口径同为手（标准化为股）；symbol 为纯 6 位代码，
 #   上游按代码首位自动判断沪深（5/6 开头→沪，其余→深）；历史覆盖范围
-#   （history.start）未核实不声明，待探针实证回填。
+#   （history.start）未核实不声明，待探针实证回填；
+# - 港股（stock_hk_hist）/美股（stock_us_hist）与 A 股东财接口同端点同列；
+#   成交量单位未核实，**原样透出**待探针定标（不预设换算）；美股日线时间戳
+#   口径为美东零点（对齐 twelvedata，归一化北京时间 12:00/13:00）、港股为
+#   北京零点；两个接口上游均忽略 beg（lmt=1000000 全量拉取客户端切片），
+#   适配器闭区间内存过滤兜底；美股 symbol 为东财市场号.代码（NASDAQ→105、
+#   NYSE→106），CBOE/OTC 市场号归属未核实不声明；历史覆盖范围未核实不声明。
 provider: akshare
 default_variant:
   stock: eastmoney
@@ -102,6 +108,36 @@ capabilities:
   - data_type: bars
     markets: [CN]
     asset_types: [etf]
+    delivery: [rest]
+    variants: [eastmoney]
+    intervals:
+      - {code: P1D}
+      - {code: P1W}
+      - {code: P1M}
+    adjustments: [none, qfq, hfq]
+    fields: [open, high, low, close, volume, amount]
+
+  # 港股 · 东方财富：日/周/月线，支持不复权/前复权/后复权；成交量单位未核实
+  #   原样透出，history.start 未核实不声明，均待探针实证回填
+  - data_type: bars
+    markets: [HK]
+    asset_types: [stock]
+    delivery: [rest]
+    variants: [eastmoney]
+    intervals:
+      - {code: P1D}
+      - {code: P1W}
+      - {code: P1M}
+    adjustments: [none, qfq, hfq]
+    fields: [open, high, low, close, volume, amount]
+
+  # 美股 · 东方财富：日/周/月线，支持不复权/前复权/后复权；NASDAQ→105、
+  #   NYSE→106（CBOE/OTC 市场号归属未核实不声明）；美股日线时间戳为美东
+  #   零点（归一化北京时间 12:00/13:00）；成交量单位未核实原样透出；
+  #   history.start 未核实不声明，均待探针实证回填
+  - data_type: bars
+    markets: [US]
+    asset_types: [stock]
     delivery: [rest]
     variants: [eastmoney]
     intervals:
@@ -200,6 +236,46 @@ operations:
     operation: fund_etf_hist_em
   - match: {data_type: bars, market: CN, asset_type: etf, interval: P1M, adjust: hfq, variant: eastmoney}
     operation: fund_etf_hist_em
+
+  # 港股 · 东方财富：stock_hk_hist(symbol, period, start_date, end_date, adjust)
+  - match: {data_type: bars, market: HK, asset_type: stock, interval: P1D, adjust: none, variant: eastmoney}
+    operation: stock_hk_hist
+  - match: {data_type: bars, market: HK, asset_type: stock, interval: P1D, adjust: qfq, variant: eastmoney}
+    operation: stock_hk_hist
+  - match: {data_type: bars, market: HK, asset_type: stock, interval: P1D, adjust: hfq, variant: eastmoney}
+    operation: stock_hk_hist
+  - match: {data_type: bars, market: HK, asset_type: stock, interval: P1W, adjust: none, variant: eastmoney}
+    operation: stock_hk_hist
+  - match: {data_type: bars, market: HK, asset_type: stock, interval: P1W, adjust: qfq, variant: eastmoney}
+    operation: stock_hk_hist
+  - match: {data_type: bars, market: HK, asset_type: stock, interval: P1W, adjust: hfq, variant: eastmoney}
+    operation: stock_hk_hist
+  - match: {data_type: bars, market: HK, asset_type: stock, interval: P1M, adjust: none, variant: eastmoney}
+    operation: stock_hk_hist
+  - match: {data_type: bars, market: HK, asset_type: stock, interval: P1M, adjust: qfq, variant: eastmoney}
+    operation: stock_hk_hist
+  - match: {data_type: bars, market: HK, asset_type: stock, interval: P1M, adjust: hfq, variant: eastmoney}
+    operation: stock_hk_hist
+
+  # 美股 · 东方财富：stock_us_hist(symbol, period, start_date, end_date, adjust)
+  - match: {data_type: bars, market: US, asset_type: stock, interval: P1D, adjust: none, variant: eastmoney}
+    operation: stock_us_hist
+  - match: {data_type: bars, market: US, asset_type: stock, interval: P1D, adjust: qfq, variant: eastmoney}
+    operation: stock_us_hist
+  - match: {data_type: bars, market: US, asset_type: stock, interval: P1D, adjust: hfq, variant: eastmoney}
+    operation: stock_us_hist
+  - match: {data_type: bars, market: US, asset_type: stock, interval: P1W, adjust: none, variant: eastmoney}
+    operation: stock_us_hist
+  - match: {data_type: bars, market: US, asset_type: stock, interval: P1W, adjust: qfq, variant: eastmoney}
+    operation: stock_us_hist
+  - match: {data_type: bars, market: US, asset_type: stock, interval: P1W, adjust: hfq, variant: eastmoney}
+    operation: stock_us_hist
+  - match: {data_type: bars, market: US, asset_type: stock, interval: P1M, adjust: none, variant: eastmoney}
+    operation: stock_us_hist
+  - match: {data_type: bars, market: US, asset_type: stock, interval: P1M, adjust: qfq, variant: eastmoney}
+    operation: stock_us_hist
+  - match: {data_type: bars, market: US, asset_type: stock, interval: P1M, adjust: hfq, variant: eastmoney}
+    operation: stock_us_hist
 
   # 期货 · 新浪：futures_zh_daily_sina(symbol)，无日期参数，由适配器内存过滤
   - match: {data_type: bars, market: CN, asset_type: contract, interval: P1D, adjust: none, variant: sina}

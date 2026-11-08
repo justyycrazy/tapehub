@@ -19,6 +19,7 @@ from tapehub.providers.registry import build_provider_record
 from tests.fixtures.providers.stub_akshare import (
     StubAkshare,
     em_etf_rows,
+    em_global_rows,
     em_stock_rows,
     sina_futures_rows,
     sina_index_rows,
@@ -199,6 +200,109 @@ def test_etf_minute_capability_boundary(
     )
     with pytest.raises(UnsupportedCapabilityError):
         akshare_adapter.resolve_operation(query)
+
+
+def test_hk_request_and_response_mapping(
+    akshare_adapter: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    stub = _install_stub(monkeypatch)
+    stub.set_rows("stock_hk_hist", em_global_rows(["2026-01-02"]))
+
+    query = _query(
+        instrument=Instrument.parse("HK-HKEX-00700"),
+        adjust=Adjust.NONE,
+    )
+    batch = asyncio.run(akshare_adapter.fetch_bars(query))
+
+    operation, kwargs = stub.calls[0]
+    assert operation == "stock_hk_hist"
+    # 所有参数显式传递；日期参数上游忽略（全量拉取客户端切片）仍显式传
+    assert kwargs == {
+        "symbol": "00700",
+        "period": "daily",
+        "start_date": "20260101",
+        "end_date": "20260110",
+        "adjust": "",
+    }
+    assert batch.bars[0].timestamp == datetime(2026, 1, 2, tzinfo=CN)  # 港股=北京零点
+    assert batch.bars[0].close == 88.5
+    # 成交量单位未核实，原样透出不换算
+    assert batch.bars[0].volume == 345678.0
+
+
+def test_hk_short_code_zero_filled(
+    akshare_adapter: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # 显式短代码（绕过解析器归一）防御性零填充到 5 位
+    stub = _install_stub(monkeypatch)
+    stub.set_rows("stock_hk_hist", em_global_rows(["2026-01-02"]))
+
+    query = _query(
+        instrument=Instrument.parse("HK-HKEX-700"),
+        adjust=Adjust.QFQ,
+    )
+    asyncio.run(akshare_adapter.fetch_bars(query))
+
+    _, kwargs = stub.calls[0]
+    assert kwargs["symbol"] == "00700"
+    assert kwargs["adjust"] == "qfq"
+
+
+def test_us_symbol_market_codes(
+    akshare_adapter: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # 东财市场号映射：NASDAQ→105、NYSE→106；ticker 大写归一
+    stub = _install_stub(monkeypatch)
+    stub.set_rows("stock_us_hist", em_global_rows(["2026-01-02"]))
+
+    for instrument, expected in [
+        ("US-NASDAQ-AAPL", "105.AAPL"),
+        ("US-NYSE-TTE", "106.TTE"),
+    ]:
+        query = _query(
+            instrument=Instrument.parse(instrument),
+            adjust=Adjust.QFQ,
+        )
+        asyncio.run(akshare_adapter.fetch_bars(query))
+        _, kwargs = stub.calls[-1]
+        assert kwargs["symbol"] == expected
+        assert kwargs["adjust"] == "qfq"
+
+
+def test_us_timestamp_new_york_midnight(
+    akshare_adapter: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # 美股日线为美东零点口径（对齐 twelvedata）：EST→北京 13:00、EDT→北京 12:00
+    stub = _install_stub(monkeypatch)
+    stub.set_rows(
+        "stock_us_hist",
+        em_global_rows(["2026-01-02", "2026-07-01"]),
+    )
+
+    query = _query(
+        instrument=Instrument.parse("US-NYSE-GE"),
+        start=datetime(2026, 1, 1, tzinfo=CN),
+        end=datetime(2026, 7, 10, tzinfo=CN),
+        adjust=Adjust.NONE,
+    )
+    batch = asyncio.run(akshare_adapter.fetch_bars(query))
+
+    assert [bar.timestamp for bar in batch.bars] == [
+        datetime(2026, 1, 2, 13, tzinfo=CN),  # EST（UTC-5）
+        datetime(2026, 7, 1, 12, tzinfo=CN),  # EDT（UTC-4）
+    ]
+    # 成交量原样透出不换算
+    assert batch.bars[0].volume == 345678.0
+
+
+def test_us_cboe_rejected(akshare_adapter: Any) -> None:
+    # CBOE 在东财的市场号归属未核实，不映射不声明
+    query = _query(
+        instrument=Instrument.parse("US-CBOE-BABA"),
+        adjust=Adjust.NONE,
+    )
+    with pytest.raises(UnsupportedCapabilityError):
+        asyncio.run(akshare_adapter.fetch_bars(query))
 
 
 def test_interval_capability_boundary(

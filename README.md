@@ -501,6 +501,8 @@ API 层 → Application 层 → Domain 层
 | index | sina | `stock_zh_index_daily` | P1D | none | 无 amount |
 | index | tencent | `stock_zh_index_daily_tx` | P1D | none | 无 amount（上游 amount 列语义为成交量） |
 | etf | eastmoney | `fund_etf_hist_em` | P1D/P1W/P1M | none/qfq/hfq | 全部 |
+| stock（HK） | eastmoney | `stock_hk_hist` | P1D/P1W/P1M | none/qfq/hfq | 全部 |
+| stock（US） | eastmoney | `stock_us_hist` | P1D/P1W/P1M | none/qfq/hfq | 全部 |
 | contract / continuous | sina | `futures_zh_daily_sina` | P1D | none | 全部（extensions: hold/settle） |
 
 TickFlow（REST API `GET https://api.tickflow.org/v1/klines` / `GET /v1/quotes`，官方 SDK `tickflow`）：
@@ -655,12 +657,15 @@ TqSdk（官方 SDK `tqsdk`：`TqApi(auth=TqAuth(...)).get_kline_serial(...)`）�
 
 - 个股/ETF `volume` 统一为**股**：东财接口（个股与 ETF 同端点同口径）返回手，适配器 ×100 换算；新浪/腾讯为股，原样返回；TqSdk 股票/ETF 的 volume 单位文档未写明，**2026-11-03 探针量级对照判定为股**（600000 日 volume ≈5×10^7），原样透出；
 - `amount` 统一为**元**；指数/期货的上游未标注单位时原样返回（见各接口文档）；
-- 交易所映射（已核实部分）：个股/指数 `SSE→sh`、`SZSE→sz`；指数东财另支持 `CSI→csi`、`BSE→bj`；期货合约符号原样传递（如 `RB2410`），主力连续为品种代码+`0`（如 `RB`→`RB0`）；ETF（东财）为纯 6 位代码原样传递（`CN-SSE-510050 → 510050`、`CN-SZSE-159915 → 159915`），上游按代码首位自动判断沪深（5/6 开头→沪、其余→深）。
+- 交易所映射（已核实部分）：个股/指数 `SSE→sh`、`SZSE→sz`；指数东财另支持 `CSI→csi`、`BSE→bj`；期货合约符号原样传递（如 `RB2410`），主力连续为品种代码+`0`（如 `RB`→`RB0`）；ETF（东财）为纯 6 位代码原样传递（`CN-SSE-510050 → 510050`、`CN-SZSE-159915 → 159915`），上游按代码首位自动判断沪深（5/6 开头→沪、其余→深）；港股（东财）为 5 位数字代码，短代码零填充归一（`HK-HKEX-700 → 00700`）；美股（东财）为**市场号.代码**（`US-NASDAQ-AAPL → 105.AAPL`、`US-NYSE-GE → 106.GE`，ticker 大写归一、含点 ticker 如 `BRK.B` 原样透传），**CBOE/OTC 不支持**（CBOE 在东财的市场号归属未核实，探针后议）；
+- 港股/美股日线时间戳口径（与 twelvedata/tickflow 对齐，待探针实证）：港股交易日=北京同日（北京时间零点）；美股为**美东零点**（归一化北京时间随夏令时在 12:00/13:00 漂移）；
+- 港股/美股成交量单位未核实（A 股手→股 ×100 口径**不适用**），**原样透出**，待探针以成交额÷成交量≈价格交叉验证后回填换算（如需）；`stock_hk_hist`/`stock_us_hist` 上游忽略 beg 日期参数（`lmt=1000000` 全量拉取客户端切片），每次调用拉全量历史的性能成本与新浪指数/期货接口相同，窗口过滤由适配器闭区间内存复核兜底；
+- 缺省路由：CN ETF bars 为 `tqsdk → baostock → akshare`（akshare 末位兜底）；HK/US 个股 bars 为 `… → akshare` 末位免凭据兜底（2026-11-08 接入，history.start 与成交量单位未核实项待探针回填）。
 
 未接入说明（诚实边界，不编造能力）：
 
 - `fund_etf_hist_min_em`（东财 ETF 分钟线）不接入：1 分钟走 trends2 仅近 5 个交易日、5/15/30/60 分钟 kline 分支无服务端日期过滤（每次全量拉取客户端切片）；CN ETF 分钟族已由 Baostock 声明（2026-01-05 起，探针实证），重叠价值低（2026-11-08 拍板）；
-- ETF（`fund_etf_hist_em`，2026-11-08 接入）`history.start` 未核实不声明，待探针实证人工确认后回填；缺省路由 CN ETF bars 为 `tqsdk → baostock → akshare`（akshare 末位兜底，与 CN 个股链风格一致）；
+- ETF（`fund_etf_hist_em`，2026-11-08 接入）`history.start` 未核实不声明，待探针实证人工确认后回填；
 - `futures_hist_em`（东财期货）需要**中文合约名**（如“热卷主连”），无法从标准代码映射，第一版不接入；
 - 加权（`weighted-index`）在上述接口文档中没有符号说明，暂不声明能力；
 - 历史覆盖范围（`history`）已由数据探针实测回填（报告 20261106T211255+0800）：个股各源 `≈1999-12-08`（二分近似，窗口粒度 90 天、complete=True，真值≈标的上市日 1999-11-10；P1W/P1M 与 P1D 同上游端点同数据区间，同值声明）、指数各源 `≈1991-01-01`（探针下限触底）；期货为**全量模式精确值**（新浪期货接口无日期参数，适配器每次拉全量历史后内存过滤，单次调用直接读最早 bar）：单合约 RB2410 实测 `2023-10-17`（各合约以自身上市/摘牌日为准），主力连续 RB 实测 `2009-03-27`（与上期所螺纹钢期货上市日一致，相互印证）；

@@ -21,6 +21,13 @@ _EXCHANGE_PREFIXES = {
     "BSE": "bj",
 }
 
+# 美股东财市场号（secid 前缀，仅列出已在上游文档中确认的）：105=NASDAQ、
+# 106=NYSE；CBOE/OTC 的市场号归属未核实，不声明不映射（探针核实后议）
+_US_EM_MARKET_CODES = {
+    "NASDAQ": "105",
+    "NYSE": "106",
+}
+
 # 各上游接口文档中确认支持的交易所前缀
 _STOCK_PREFIX_EXCHANGES = ("SSE", "SZSE")
 _INDEX_PREFIX_EXCHANGES = {
@@ -105,6 +112,26 @@ def index_symbol(query: BarQuery) -> str:
     return _prefixed_symbol(query, allowed)
 
 
+def hk_symbol(query: BarQuery) -> str:
+    """港股符号：纯数字 5 位代码（上游 secid 116.{symbol}）；短代码零填充归一。"""
+    symbol = query.instrument.symbol
+    if query.instrument.exchange != "HKEX" or not symbol.isdigit():
+        raise _unsupported(
+            query, f"exchange {query.instrument.exchange!r} is not supported here"
+        )
+    return symbol.zfill(5)
+
+
+def us_symbol(query: BarQuery) -> str:
+    """美股符号：东财市场号.代码（如 105.AAPL / 106.TTE）；ticker 大写归一。"""
+    market_code = _US_EM_MARKET_CODES.get(query.instrument.exchange)
+    if market_code is None:
+        raise _unsupported(
+            query, f"exchange {query.instrument.exchange!r} is not supported here"
+        )
+    return f"{market_code}.{query.instrument.symbol.upper()}"
+
+
 def futures_symbol(query: BarQuery) -> str:
     """期货符号（新浪）：单一合约原样传递；主力连续为品种代码 + "0"（如 RB → RB0）。"""
     if query.asset_type.value == "continuous":
@@ -128,6 +155,25 @@ def build_request(operation: str, query: BarQuery) -> dict[str, str]:
         # 上游按代码首位自动判断沪深，无需额外映射
         return {
             "symbol": stock_symbol(query),
+            "period": period_param(query.interval),
+            "start_date": start_date,
+            "end_date": end_date,
+            "adjust": adjust_param(query.adjust),
+        }
+    if operation == "stock_hk_hist":
+        # 港股与 A 股东财接口同参数形状；日期参数上游忽略（全量拉取客户端
+        # 切片），仍显式传递，窗口过滤由适配器内存复核兜底
+        return {
+            "symbol": hk_symbol(query),
+            "period": period_param(query.interval),
+            "start_date": start_date,
+            "end_date": end_date,
+            "adjust": adjust_param(query.adjust),
+        }
+    if operation == "stock_us_hist":
+        # 美股与港股同参数形状；symbol 为东财市场号.代码，由交易所映射
+        return {
+            "symbol": us_symbol(query),
             "period": period_param(query.interval),
             "start_date": start_date,
             "end_date": end_date,
@@ -160,4 +206,12 @@ def build_request(operation: str, query: BarQuery) -> dict[str, str]:
     raise _unsupported(query, f"unknown operation {operation!r}")
 
 
-__all__ = ["build_request", "date_window", "futures_symbol", "index_symbol", "stock_symbol"]
+__all__ = [
+    "build_request",
+    "date_window",
+    "futures_symbol",
+    "hk_symbol",
+    "index_symbol",
+    "stock_symbol",
+    "us_symbol",
+]
