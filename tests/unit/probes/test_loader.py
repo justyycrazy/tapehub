@@ -68,6 +68,51 @@ def test_explicit_skip_applied() -> None:
     assert skipped[0].skip_reason == "explicit skip: 合约已到期摘牌"
 
 
+def test_explicit_skip_applies_to_analysis_cases() -> None:
+    """显式 skip 对分析探针生效：history_depth 命中即跳过，未命中不受影响。"""
+    probe = _probe(
+        skip=[
+            {"case": "history-depth-stock-P1D-eastmoney", "reason": "已收敛，人工确认回填"}
+        ],
+        history_depth={"targets": ["stock"], "earliest": "2000-01-01", "max_calls": 8},
+    )
+    expanded = expand_probe(probe, _manifest())  # type: ignore[arg-type]
+    by_id = {c.case_id: c for c in expanded.chain_cases}
+    assert (
+        by_id["history-depth-stock-P1D-eastmoney"].skip_reason
+        == "explicit skip: 已收敛，人工确认回填"
+    )
+    # 未命中显式条目的分析 case 保持原状（无 skip，不静默漏探）
+    assert by_id["history-depth-stock-PT1M-eastmoney"].skip_reason is None
+
+
+def test_explicit_skip_never_overrides_builder_reason() -> None:
+    """显式 skip 不覆盖构造器自带的跳过原因（如复权未声明）。"""
+    probe = _probe(
+        skip=[
+            {
+                "case": "adjust-diff-stock-P1D-none-vs-qfq-eastmoney",
+                "reason": "无关原因，不应生效",
+            }
+        ],
+        adjust_diff={
+            "targets": ["stock"],
+            "window": {"start": "2024-01-01", "end": "2024-12-31"},
+            "pairs": [["none", "qfq"]],
+        },
+    )
+    expanded = expand_probe(probe, _manifest())  # type: ignore[arg-type]
+    case = next(
+        c
+        for c in expanded.chain_cases
+        if c.case_id == "adjust-diff-stock-P1D-none-vs-qfq-eastmoney"
+    )
+    # fake manifest 只声明 none：构造器原因保留，不被显式条目覆盖
+    assert case.skip_reason is not None
+    assert "not declared" in case.skip_reason
+    assert "无关原因" not in case.skip_reason
+
+
 def test_adjust_diff_cases_generated() -> None:
     probe = _probe(
         adjust_diff={

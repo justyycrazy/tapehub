@@ -452,6 +452,28 @@ def _availability_case(
     )
 
 
+def _apply_explicit_skips(probe: ProbeFile, chain_cases: list[ChainCase]) -> None:
+    """把显式 skip 条目统一应用到未带跳过原因的 chain case。
+
+    availability / 市场不匹配 case 在各自构造器里已优先匹配显式 skip；
+    分析探针（adjust_diff / history_depth / limit_truncation /
+    variant_consistency）展开时不感知 skip 配置，这里按 case id 补齐，
+    使「显式跳过必须给原因（进报告，防止静默漏探）」对全部分析探针生效。
+    已带原因（如复权未声明、单 variant 无从对比）的 case 不覆盖。
+    """
+    if not probe.chain:
+        return
+    explicit = {skip.case: skip.reason for skip in probe.chain.skip}
+    chain_cases[:] = [
+        dataclasses.replace(
+            case, skip_reason=f"explicit skip: {explicit[case.case_id]}"
+        )
+        if case.skip_reason is None and case.case_id in explicit
+        else case
+        for case in chain_cases
+    ]
+
+
 def expand_probe(probe: ProbeFile, manifest: ProviderManifest) -> ExpandedProbe:
     """把探针文件与 manifest 能力矩阵合并展开。"""
     capabilities = manifest.to_domain_capabilities()
@@ -545,6 +567,8 @@ def expand_probe(probe: ProbeFile, manifest: ProviderManifest) -> ExpandedProbe:
                     continue
                 base, caps = found
                 chain_cases.extend(builder(base, config, caps))
+
+    _apply_explicit_skips(probe, chain_cases)
 
     raw_cases = [
         RawPlan(spec=case, expected_calls=len(case.call) + (1 if case.client else 0))
