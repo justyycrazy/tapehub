@@ -76,8 +76,10 @@ Provider 适配器实现 Domain Port。
 
 ## 数据与 API 约定（详见 README「请求规范」）
 
-- instrument 标准代码 `{market}-{exchange}-{symbol}` 全大写（如 `CN-SSE-600000`），
-  Provider 专用代码（`sh600000`、`CU2401.SHF`）由适配器转换；
+- instrument 标准代码 `{market}-{exchange}-{symbol}` 规范全大写（如 `CN-SSE-600000`）；
+  输入大小写不敏感，服务端在 Domain 层归一为全大写并回显；上游需要交易所
+  原生大小写的（如 tqsdk 的 `SHFE.cu2607` 小写品种）由适配器还原，还原表只收
+  探针实证条目；Provider 专用代码（`sh600000`、`CU2401.SHF`）由适配器转换；
 - interval 用 ISO 8601 Duration：`PT1M`（1 分钟）≠ `P1M`（1 月），周期代码之间不做换算；
 - `asset_type` 必填不推断：stock/index/etf/contract/continuous/weighted-index/option/forex/crypto；
 - `adjust` 声明默认值按资产类型：stock → `qfq`（前复权），其余 → `none`；

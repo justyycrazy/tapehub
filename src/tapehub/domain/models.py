@@ -25,12 +25,13 @@ def ensure_aware(value: datetime, field: str) -> datetime:
         raise ValueError(f"{field} must include a timezone")
     return value
 
-# 标准标的代码：{market}-{exchange}-{symbol}，例如 CN-SSE-600000。
-# market/exchange 必须大写；symbol 大小写与字符集遵从交易所/Provider 约定：
-# 允许大小写字母、数字与 . _ - /（斜杠用于 Twelve Data 的货币对，
-# 如 GLOBAL-OTC-EUR/USD）。
+# 标准标的代码：{market}-{exchange}-{symbol}，规范形式全大写（CN-SSE-600000）。
+# 输入大小写不敏感：解析时三段统一大写归一，Instrument 字段恒为规范大写；
+# 期货品种等需要交易所原生大小写的上游（如 tqsdk 的 SHFE.cu2607）由各
+# Provider 适配器自行还原。字符集允许字母、数字与 . _ - /（斜杠用于
+# Twelve Data 的货币对，如 GLOBAL-OTC-EUR/USD）。
 _INSTRUMENT_RE = re.compile(
-    r"^([A-Z][A-Z0-9]{0,7})-([A-Z][A-Z0-9]{0,15})-([A-Za-z0-9/][A-Za-z0-9/._-]{0,31})$"
+    r"^([A-Za-z][A-Za-z0-9]{0,7})-([A-Za-z][A-Za-z0-9]{0,15})-([A-Za-z0-9/][A-Za-z0-9/._-]{0,31})$"
 )
 
 
@@ -98,8 +99,24 @@ class DataType(StrEnum):
     QUOTE = "quotes"
 
 
+def _code_to_fields(value: str) -> dict[str, str]:
+    """标准代码字符串 → 三段字段（统一大写归一），非法输入抛 ``ValueError``。"""
+    match = _INSTRUMENT_RE.match(value)
+    if match is None:
+        raise ValueError(
+            f"invalid instrument {value!r}: expected '{{MARKET}}-{{EXCHANGE}}-{{SYMBOL}}' "
+            "(e.g. CN-SSE-600000; case-insensitive, normalized to uppercase)"
+        )
+    market, exchange, symbol = match.groups()
+    return {
+        "market": market.upper(),
+        "exchange": exchange.upper(),
+        "symbol": symbol.upper(),
+    }
+
+
 class Instrument(BaseModel):
-    """标准标的：{market}-{exchange}-{symbol}。"""
+    """标准标的：{market}-{exchange}-{symbol}，三段统一大写（大小写不敏感输入）。"""
 
     model_config = ConfigDict(frozen=True)
 
@@ -111,15 +128,17 @@ class Instrument(BaseModel):
     @classmethod
     def _parse_code(cls, value: object) -> object:
         # 允许字段直接接收标准代码字符串，如 instrument="CN-SSE-600000"
+        # 或任意大小写变体（cn-sse-cu2607）；字符串与字段直构两条路径都
+        # 大写归一，保证不变式：Instrument 三段恒为规范大写
         if isinstance(value, str):
-            match = _INSTRUMENT_RE.match(value)
-            if match is None:
-                raise ValueError(
-                    f"invalid instrument {value!r}: expected '{{MARKET}}-{{EXCHANGE}}-{{SYMBOL}}' "
-                    "(e.g. CN-SSE-600000, uppercase)"
-                )
-            market, exchange, symbol = match.groups()
-            return {"market": market, "exchange": exchange, "symbol": symbol}
+            return _code_to_fields(value)
+        if isinstance(value, dict):
+            normalized = dict(value)
+            for field in ("market", "exchange", "symbol"):
+                item = normalized.get(field)
+                if isinstance(item, str):
+                    normalized[field] = item.upper()
+            return normalized
         return value
 
     @property
@@ -131,17 +150,10 @@ class Instrument(BaseModel):
 
     @classmethod
     def parse(cls, value: str) -> "Instrument":
-        """解析标准标的代码，非法输入抛出 ``ValueError``。"""
+        """解析标准标的代码（大小写不敏感，归一为全大写），非法输入抛 ``ValueError``。"""
         if not isinstance(value, str):
             raise ValueError("instrument must be a string")
-        match = _INSTRUMENT_RE.match(value)
-        if match is None:
-            raise ValueError(
-                f"invalid instrument {value!r}: expected '{{MARKET}}-{{EXCHANGE}}-{{SYMBOL}}' "
-                "(e.g. CN-SSE-600000, uppercase)"
-            )
-        market, exchange, symbol = match.groups()
-        return cls(market=market, exchange=exchange, symbol=symbol)
+        return cls(**_code_to_fields(value))
 
 
 class Bar(BaseModel):

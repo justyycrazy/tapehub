@@ -159,10 +159,16 @@ class TestRequestValidation:
         assert response.json()["error"]["code"] == "INVALID_REQUEST"
 
     def test_invalid_instrument(self, fake_client) -> None:  # type: ignore[no-untyped-def]
-        for instrument in ("600000", "CN.SSE.600000", "cn-sse-600000"):
+        for instrument in ("600000", "CN.SSE.600000"):
             response = self._post(fake_client, instrument=instrument)
             assert response.status_code == 422
             assert response.json()["error"]["code"] == "INVALID_REQUEST"
+
+    def test_instrument_case_insensitive(self, fake_client) -> None:  # type: ignore[no-untyped-def]
+        """输入大小写不敏感：小写标准代码归一为全大写后正常受理并回显规范大写。"""
+        response = self._post(fake_client, instrument="cn-sse-600000")
+        assert response.status_code == 200
+        assert response.json()["data"]["instrument"] == "CN-SSE-600000"
 
     def test_start_not_earlier_than_end(self, fake_client) -> None:  # type: ignore[no-untyped-def]
         reversed_params = {
@@ -269,7 +275,7 @@ class TestRoutingErrors:
             **self.PARAMS,
             "provider": "tqsdk",
             "asset_type": "contract",
-            "instrument": "CN-SHFE-cu2607",
+            "instrument": "CN-SHFE-CU2607",
             # 显式传 variant=tqsdk（缺省时按 default_variant 解析为同名变体）
             "variant": "tqsdk",
         }
@@ -295,7 +301,7 @@ class TestRoutingErrors:
         params = {
             **self.PARAMS,
             "asset_type": "contract",
-            "instrument": "CN-SHFE-cu2607",
+            "instrument": "CN-SHFE-CU2607",
         }
         response = default_client.get("/v1/market/bars", params=params)
         assert response.status_code == 409

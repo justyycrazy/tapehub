@@ -403,7 +403,7 @@ def _quote_query(**overrides: Any):
 
     base: dict[str, Any] = {
         "asset_type": AssetType.CONTRACT,
-        "instrument": Instrument.parse("CN-SHFE-au2612"),
+        "instrument": Instrument.parse("CN-SHFE-AU2612"),
         "variant": DataVariant.TQSDK,
     }
     base.update(overrides)

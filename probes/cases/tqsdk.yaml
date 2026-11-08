@@ -11,22 +11,23 @@ pacing:
   call_interval_s: 3.0
   timeout_s: 120
   # 可用性 36 + adjust_diff 24 case×2 调用 + history_depth 30 case×~13 + limit 1
-  # + connection 9+12（创建+首调+释放）+ raw quote 6 case×2 调用 ≈ 622
+  # + connection 9+12（创建+首调+释放）+ raw quote 7 case×2 调用 ≈ 624
   # （深度探针全周期同轮测量：保留边界随时间前移，矩阵须同一时点）
   max_calls: 700
 
 targets:
   contract:
-    # au2612 为示例合约：运行前请按上期所挂牌信息核对，探针失败会如实记录
-    instrument: CN-SHFE-au2612
+    # au2612 为示例合约：运行前请按上期所挂牌信息核对，探针失败会如实记录。
+    # 标准代码统一大写（AU2612），SHFE 品种小写由适配器还原为上游写法
+    instrument: CN-SHFE-AU2612
     window: {start: 2026-07-01, end: 2026-11-30}
     min_bars: 30
   continuous:
-    instrument: CN-SHFE-cu
+    instrument: CN-SHFE-CU
     window: {start: 2026-07-01, end: 2026-11-30}
     min_bars: 60
   weighted-index:
-    instrument: CN-SHFE-au
+    instrument: CN-SHFE-AU
     window: {start: 2026-07-01, end: 2026-11-30}
     min_bars: 60
   stock:
@@ -130,6 +131,23 @@ raw:
     call:
       - {method: get_quote, kwargs: {symbol: "SHFE.au2612"}}
     expect: {status: ok, min_fields: [last_price, bid_price1, ask_price1, volume]}
+  - id: quote-contract-uppercase
+    purpose: 大写合约上游敏感性实证（SHFE.AU2612，观察不判定，为 request_mapper 品种大小写还原表提供证据）
+    module: tqsdk
+    client:
+      attr: TqApi
+      kwargs:
+        auth:
+          $ctor:
+            attr: TqAuth
+            kwargs:
+              user_name: "$TAPEHUB_TQSDK_AUTH_USER"
+              password: "$TAPEHUB_TQSDK_AUTH_PASSWORD"
+        disable_print: true
+    call:
+      - {method: get_quote, kwargs: {symbol: "SHFE.AU2612"}}
+    expect: {status: ok, min_fields: [last_price]}
+    assert: false
   - id: quote-continuous
     purpose: 主力连续实时快照字段可用性（断言）
     module: tqsdk

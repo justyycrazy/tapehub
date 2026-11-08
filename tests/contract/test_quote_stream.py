@@ -22,7 +22,7 @@ from tests.fixtures.providers import fake_tqsdk_runtime as fake_rt
 _STREAM_PARAMS = {
     "provider": "tqsdk",
     "asset_type": "contract",
-    "instrument": "CN-SHFE-au2612",
+    "instrument": "CN-SHFE-AU2612",
 }
 
 

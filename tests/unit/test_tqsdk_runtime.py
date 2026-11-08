@@ -300,7 +300,7 @@ def test_adapter_shared_mode_full_chain(
     cn = ZoneInfo("Asia/Shanghai")
     query = BarQuery(
         asset_type=AssetType.CONTRACT,
-        instrument=Instrument.parse("CN-SHFE-au2612"),
+        instrument=Instrument.parse("CN-SHFE-AU2612"),
         interval=Interval.parse("P1D"),
         start=datetime(2026, 1, 1, tzinfo=cn),
         end=datetime(2026, 1, 10, tzinfo=cn),
@@ -335,7 +335,7 @@ def _quote_query(**overrides: object):  # type: ignore[no-untyped-def]
 
     base: dict[str, object] = {
         "asset_type": AssetType.CONTRACT,
-        "instrument": Instrument.parse("CN-SHFE-au2612"),
+        "instrument": Instrument.parse("CN-SHFE-AU2612"),
         "variant": DataVariant.TQSDK,
     }
     base.update(overrides)

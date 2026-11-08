@@ -25,7 +25,7 @@ from tests.fixtures.providers.stub_tqsdk import (
 def _query(**overrides: Any) -> BarQuery:
     base: dict[str, Any] = {
         "asset_type": AssetType.CONTRACT,
-        "instrument": Instrument.parse("CN-SHFE-cu2607"),
+        "instrument": Instrument.parse("CN-SHFE-CU2607"),
         "interval": Interval.parse("P1D"),
         "start": datetime(2026, 1, 1, tzinfo=CN_TIMEZONE),
         "end": datetime(2026, 1, 10, tzinfo=CN_TIMEZONE),
@@ -159,10 +159,13 @@ def test_unsupported_interval_rejected_by_operation_routing(
 @pytest.mark.parametrize(
     ("asset_type", "instrument", "expected"),
     [
-        (AssetType.CONTRACT, "CN-SHFE-cu2607", "SHFE.cu2607"),
+        # 标准 symbol 恒为大写；SHFE 品种小写由适配器还原（探针实证），
+        # CZCE 大写直通
+        (AssetType.CONTRACT, "CN-SHFE-CU2607", "SHFE.cu2607"),
+        (AssetType.CONTRACT, "cn-shfe-cu2607", "SHFE.cu2607"),
         (AssetType.CONTRACT, "CN-CZCE-SR609", "CZCE.SR609"),
-        (AssetType.CONTINUOUS, "CN-SHFE-cu", "KQ.m@SHFE.cu"),
-        (AssetType.WEIGHTED_INDEX, "CN-SHFE-bu", "KQ.i@SHFE.bu"),
+        (AssetType.CONTINUOUS, "CN-SHFE-CU", "KQ.m@SHFE.cu"),
+        (AssetType.WEIGHTED_INDEX, "CN-SHFE-BU", "KQ.i@SHFE.bu"),
         (AssetType.STOCK, "CN-SSE-600000", "SSE.600000"),
         (AssetType.STOCK, "CN-SZSE-000001", "SZSE.000001"),
         (AssetType.INDEX, "CN-SSE-000016", "SSE.000016"),

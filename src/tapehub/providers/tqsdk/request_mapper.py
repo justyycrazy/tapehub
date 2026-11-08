@@ -2,9 +2,10 @@
 
 接口签名均已按官方文档核实：
 
-- 合约代码统一为 ``交易所代码.品种代码``（交易所全大写，品种代码遵从交易所
-  大小写约定）：单一合约 ``SHFE.cu2607``；主力连续 ``KQ.m@SHFE.cu``；
-  指数连续/加权 ``KQ.i@SHFE.bu``；
+- 合约代码统一为 ``交易所代码.品种代码``（交易所全大写）：单一合约
+  ``SHFE.cu2607``；主力连续 ``KQ.m@SHFE.cu``；指数连续/加权
+  ``KQ.i@SHFE.bu``。标准 symbol 恒为大写（domain 层归一），交易所原生
+  小写品种（如 SHFE.cu）由本适配器还原大小写；
 - 股票/指数/ETF 同格式：``SSE.600000`` / ``SZSE.000001``、指数 ``SSE.000016``、
   ETF ``SSE.510050``（usage/mddatas 文档示例）；
 - ``get_kline_serial(symbol, duration_seconds, data_length, adj_type)``：
@@ -49,10 +50,21 @@ _ADJ_TYPE: dict[Adjust, str | None] = {
     Adjust.HFQ: "B",
 }
 
+# 品种代码大小写还原表：标准 symbol 恒为大写（domain 层归一），交易所原生
+# 小写的品种代码在此还原。只收录已核实条目——SHFE 品种小写（2026-11-03/04
+# 探针 cu/au/bu 实证）；CZCE/CFFEX 品种大写直通无需映射；DCE/INE/GFEX
+# 大小写约定未核实，暂按大写直通，探针实证后逐所回填（写错比透传更隐蔽，
+# 绝不预填未核实条目）。注意：SHFE 期权合约代码为混合大小写（如
+# cu2607C50000 风格），接入 option 资产类型时须另行核实，不得沿用整段小写。
+_LOWERCASE_PRODUCT_EXCHANGES = frozenset({"SHFE"})
+
 
 def upstream_symbol(instrument: Instrument, asset_type: AssetType) -> str:
     """标准标的 → TqSdk 合约代码（K 线与快照共用同一映射）。"""
-    base = f"{instrument.exchange}.{instrument.symbol}"
+    symbol = instrument.symbol
+    if instrument.exchange in _LOWERCASE_PRODUCT_EXCHANGES:
+        symbol = symbol.lower()
+    base = f"{instrument.exchange}.{symbol}"
     if asset_type == AssetType.CONTRACT:
         return base
     if asset_type == AssetType.CONTINUOUS:

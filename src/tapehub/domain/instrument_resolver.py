@@ -9,8 +9,8 @@
 规则依据为公开市场代码约定（交易所代码段规则、ISO 4217 货币码表），
 不代表任何上游数据源的能力声明：
 
-- R0 已是标准代码：原样回显（market/exchange 大写归一，symbol 保留
-  交易所大小写约定；asset_type 无法由格式判定 → null）；
+- R0 已是标准代码：大写归一回显（三段统一大写，输入大小写不敏感；
+  asset_type 无法由格式判定 → null）；
 - R1 纯数字 1~5 位：港股，零填充到 5 位（asset_type 不判定）；
 - R2 纯数字 6 位：A 股，交易所与资产类型由代码段推导——0 段为
   指数/个股双关（如 000001 同时是上证指数与平安银行），双候选；
@@ -164,27 +164,11 @@ def _candidate(
 
 
 def _rule_standard_code(text: str) -> list[InstrumentCandidate] | None:
-    """R0 标准代码回显：market/exchange 大写归一，symbol 保留大小写约定。"""
+    """R0 标准代码回显：三段大写归一（Instrument.parse 内统一处理）。"""
     try:
         return [InstrumentCandidate(instrument=Instrument.parse(text), asset_type=None)]
     except ValueError:
-        pass
-    # 小写 market/exchange（如 cn-sse-600000）大写归一后重试；symbol 段
-    # 原样保留（期货品种大小写随交易所，如 CN-SHFE-cu2607）
-    parts = text.split("-")
-    if len(parts) == 3:
-        normalized = "-".join(
-            (parts[0].upper(), parts[1].upper(), parts[2])
-        )
-        try:
-            return [
-                InstrumentCandidate(
-                    instrument=Instrument.parse(normalized), asset_type=None
-                )
-            ]
-        except ValueError:
-            return None
-    return None
+        return None
 
 
 def _rule_suffix_style(text: str) -> list[InstrumentCandidate] | None:

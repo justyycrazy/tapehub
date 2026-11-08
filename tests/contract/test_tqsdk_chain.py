@@ -24,7 +24,7 @@ from tests.fixtures.providers.stub_tqsdk import (
 BASE_PARAMS = {
     "provider": "tqsdk",
     "asset_type": "contract",
-    "instrument": "CN-SHFE-cu2607",
+    "instrument": "CN-SHFE-CU2607",
     "interval": "P1D",
     # 时间边界必须带时区偏移；CN 标的统一用北京时间表达
     "start": "2026-01-01T00:00:00+08:00",
@@ -56,7 +56,7 @@ def test_full_chain_continuous(
     params = {
         **BASE_PARAMS,
         "asset_type": "continuous",
-        "instrument": "CN-SHFE-cu",
+        "instrument": "CN-SHFE-CU",
     }
     response = tqsdk_client.get("/v1/market/bars", params=params)
     assert response.status_code == 200
@@ -68,7 +68,7 @@ def test_full_chain_continuous(
     assert api.calls[0]["symbol"] == "KQ.m@SHFE.cu"
 
     data = body["data"]
-    assert data["instrument"] == "CN-SHFE-cu"
+    assert data["instrument"] == "CN-SHFE-CU"
     assert len(data["bars"]) == 2
     timestamps = [bar["timestamp"] for bar in data["bars"]]
     assert timestamps == sorted(timestamps)
@@ -165,7 +165,7 @@ def test_weighted_index_chain(
     params = {
         **BASE_PARAMS,
         "asset_type": "weighted-index",
-        "instrument": "CN-SHFE-bu",
+        "instrument": "CN-SHFE-BU",
     }
     response = tqsdk_client.get("/v1/market/bars", params=params)
     assert response.status_code == 200
@@ -235,7 +235,7 @@ def test_etf_auto_routes_via_routing_config(
 QUOTE_PARAMS = {
     "provider": "tqsdk",
     "asset_type": "contract",
-    "instrument": "CN-SHFE-au2612",
+    "instrument": "CN-SHFE-AU2612",
     "variant": "tqsdk",
 }
 
@@ -254,7 +254,7 @@ def test_quote_full_chain(
     assert api.quote_calls == ["SHFE.au2612"]
 
     data = body["data"]
-    assert data["instrument"] == "CN-SHFE-au2612"
+    assert data["instrument"] == "CN-SHFE-AU2612"
     assert data["asset_type"] == "contract"
     quote = data["quote"]
     # 行情时间统一北京时间（上游为北京时间墙钟字符串）
@@ -327,7 +327,7 @@ def test_quote_auto_routes_and_symbol_mapping(
     preset_quote(monkeypatch, DEFAULT_QUOTE_FIELDS)
     params = {
         "asset_type": "continuous",
-        "instrument": "CN-SHFE-cu",
+        "instrument": "CN-SHFE-CU",
         # provider/variant 缺省：auto + default_variant（tqsdk）具体化
     }
     response = tqsdk_client.get("/v1/market/quotes", params=params)

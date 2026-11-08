@@ -28,13 +28,23 @@ class TestInstrument:
         assert instrument.symbol == "600000"
         assert instrument.code == "CN-SSE-600000"
 
+    def test_parse_normalizes_case(self) -> None:
+        """输入大小写不敏感，三段统一大写归一（期货品种随交易所由适配器还原）。"""
+        instrument = Instrument.parse("cn-sse-cu2607")
+        assert instrument.code == "CN-SSE-CU2607"
+        assert Instrument.parse("CN-SHFE-CU2607").symbol == "CU2607"
+
+    def test_field_construction_normalizes_case(self) -> None:
+        """字段直构同样大写归一，保证不变式：Instrument 三段恒为规范大写。"""
+        instrument = Instrument(market="cn", exchange="shfe", symbol="cu2607")
+        assert instrument.code == "CN-SHFE-CU2607"
+
     @pytest.mark.parametrize(
         "raw",
         [
             "CN.SSE.600000",  # 点分隔不是标准格式
             "600000",
             "CN-SSE",
-            "cn-sse-600000",  # 必须大写
             "",
         ],
     )

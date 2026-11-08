@@ -183,10 +183,10 @@ class TestStandardCodeEcho:
         assert codes(result) == ["CN-SSE-600000"]
         assert types(result) == [None]
 
-    def test_echo_normalizes_market_exchange_case(self) -> None:
-        """market/exchange 大写归一；symbol 保留（期货品种大小写随交易所）。"""
+    def test_echo_normalizes_case(self) -> None:
+        """三段大写归一（期货品种的交易所原生大小写由适配器还原）。"""
         assert codes(resolve_instrument("cn-sse-600000")) == ["CN-SSE-600000"]
-        assert codes(resolve_instrument("CN-SHFE-cu2607")) == ["CN-SHFE-cu2607"]
+        assert codes(resolve_instrument("CN-SHFE-cu2607")) == ["CN-SHFE-CU2607"]
 
     def test_echo_accepts_slash_symbol(self) -> None:
         assert codes(resolve_instrument("GLOBAL-OTC-EUR/USD")) == [

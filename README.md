@@ -149,7 +149,7 @@ GET /v1/market/bars?provider=akshare&asset_type=stock&instrument=CN-SSE-600000&i
 ### 实时快照（tqsdk / twelvedata / tickflow）
 
 ```http
-GET /v1/market/quotes?provider=tqsdk&asset_type=contract&instrument=CN-SHFE-au2612
+GET /v1/market/quotes?provider=tqsdk&asset_type=contract&instrument=CN-SHFE-AU2612
 GET /v1/market/quotes?provider=twelvedata&asset_type=forex&instrument=GLOBAL-OTC-EUR/USD
 ```
 
@@ -168,7 +168,7 @@ tqsdk 成功响应（节选，字段白名单以 P5 探针实证为准，见 TqS
 ```json
 {
   "data": {
-    "instrument": "CN-SHFE-au2612",
+    "instrument": "CN-SHFE-AU2612",
     "asset_type": "contract",
     "quote": {
       "timestamp": "2026-11-04T10:14:46.500000+08:00",
@@ -202,7 +202,7 @@ tqsdk 行为要点：
 ### 实时行情流（SSE，tqsdk / twelvedata）
 
 ```http
-GET /v1/market/quotes/stream?provider=tqsdk&asset_type=contract&instrument=CN-SHFE-au2612
+GET /v1/market/quotes/stream?provider=tqsdk&asset_type=contract&instrument=CN-SHFE-AU2612
 GET /v1/market/quotes/stream?provider=twelvedata&asset_type=forex&instrument=GLOBAL-OTC-EUR/USD
 Accept: text/event-stream
 ```
@@ -256,10 +256,12 @@ Accept: text/event-stream
 
 ### instrument 标准代码
 
-格式为 `{market}-{exchange}-{symbol}`，全部大写，例如 `CN-SSE-600000`、
-`US-NASDAQ-AAPL`（美股股票）、`US-NYSE-SPY`（美股 ETF）。美股 exchange 段
-取交易所简称（`NYSE`/`NASDAQ`/`CBOE`，twelvedata 白名单），symbol 段为交易所
-原生 ticker（如 `AAPL`、`BRK.B`）。
+格式为 `{market}-{exchange}-{symbol}`，规范形式全大写，例如 `CN-SSE-600000`、
+`US-NASDAQ-AAPL`（美股股票）、`US-NYSE-SPY`（美股 ETF）。**输入大小写不敏感**
+（`cn-shfe-cu2607` 同样受理），服务端统一归一为全大写并以规范形式回显；
+期货品种的交易所原生大小写由 Provider 适配器还原（如 tqsdk 的 `SHFE.cu2607`）。
+美股 exchange 段取交易所简称（`NYSE`/`NASDAQ`/`CBOE`，twelvedata 白名单），
+symbol 段为交易所原生 ticker（如 `AAPL`、`BRK.B`）。
 
 - `market`、`exchange` 由服务端解析，调用方无需重复传递；
 - **不接受** `CN.SSE.600000`、`600000` 等非标准格式；Provider 专用代码（如 akshare 的 `sh600000`、`RB0`）由适配器转换；
@@ -298,7 +300,7 @@ GET /v1/instruments/resolve?q=AAPL&exchange=NASDAQ
 
 | 输入模式 | 解析结果 | 说明 |
 | --- | --- | --- |
-| 已是标准代码 | 原样回显（market/exchange 大写归一） | symbol 保留大小写（期货品种随交易所） |
+| 已是标准代码 | 大写归一回显（三段统一大写） | 输入大小写不敏感，期货品种的交易所原生大小写由适配器还原 |
 | 纯 6 位数字 | A 股：`6/5/0/3/399/4/8/92` 段定交易所与资产类型 | `000xxx` 为指数/个股双关（上证指数系列与深市个股共用代码段），双候选；`001/002/003` 深市个股单候选 |
 | 纯数字 1~5 位 | `HK-HKEX-` + 零填充 5 位 | `700` → `HK-HKEX-00700`；港股代码段不判资产类型（`02800` 是 ETF） |
 | 纯字母 1~5 位 / 含点字母 | 美股 ticker 三候选（NYSE/NASDAQ/CBOE） | ticker 推不出交易所，可用 `exchange` 提示收窄 |
@@ -587,7 +589,7 @@ TqSdk（官方 SDK `tqsdk`：`TqApi(auth=TqAuth(...)).get_kline_serial(...)`）�
     2026-11-05 15.3h 观察期实证：recycle triggered → gen2 重建 0.94s → 回收后请求全 200、
     活跃订阅自动重订，证据见 probes/results/shared_observation.log 末尾结论段）、
     停机/回收时在飞请求显式失败（可快速重试）。两种模式标准化语义完全一致，`shared` 问题可一键切回；
-- 合约代码映射（交易所全大写，品种代码大小写遵从交易所规定）：`CN-SHFE-cu2607 → SHFE.cu2607`、`CN-CZCE-SR609 → CZCE.SR609`；主力连续 `CN-SHFE-cu → KQ.m@SHFE.cu`；指数连续/加权 `CN-SHFE-bu → KQ.i@SHFE.bu`（标准 symbol 允许小写品种代码，如 tqsdk 的小写品种约定）；
+- 合约代码映射（交易所全大写；标准 symbol 恒为大写，交易所原生小写品种由适配器还原，还原表只收探针实证条目）：`CN-SHFE-CU2607 → SHFE.cu2607`（SHFE 品种小写，2026-11-03/04 探针 cu/au/bu 实证）、`CN-CZCE-SR609 → CZCE.SR609`（大写直通）；主力连续 `CN-SHFE-CU → KQ.m@SHFE.cu`；指数连续/加权 `CN-SHFE-BU → KQ.i@SHFE.bu`；DCE/INE/GFEX 品种大小写约定未核实，暂按大写直通，探针实证后回填；
 - 周期映射（周期为不超过 1 日的任意秒数）：`PT1M→60`、`PT5M→300`、`PT15M→900`、`PT30M→1800`、`PT1H→3600`、`P1D→86400`；
 - 上游按“最新 N 根”返回（`data_length`）：**单次上限 2026-11-03 探针实测 5000 根**
   （PT1M/PT5M 同时恰好 5000；文档 8000/10000 口径未复现，疑受当前套餐限制，
