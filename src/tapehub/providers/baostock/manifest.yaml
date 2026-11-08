@@ -18,8 +18,9 @@
 #   个股分钟族 2020-01-02（精确，官方口径 2020-01-03 差一天）、指数
 #   ≈1991-01-18（官方口径 2006-01-01 显著偏保守）、ETF 2005-02-23（精确，
 #   2004 全年空；官方口径 2026-01-05 仅指 V0.9.3 新增每日更新 API）；
-# - 指数无分钟线（官方明示，探针实证空结果不报错），分钟族仅个股声明；
-#   周/月线仅每周/月最后一个交易日有数据（探针实证：周二单日窗口查周线空）；
+# - 指数无分钟线（官方明示，探针实证空结果不报错），分钟族仅个股与 ETF
+#   声明；周/月线仅每周/月最后一个交易日有数据（探针实证：周二单日窗口
+#   查周线空）；
 # - ETF 复权经探针实证生效（2024 全年 qfq/hfq 逐行差异），回填
 #   [none, qfq, hfq]；指数复权为 no-op（零差异），维持 [none]；
 # - 个股分钟族单次上限 5000 根（PT5M 探针实证：2025 全年窗口返回最早 5000
@@ -61,7 +62,9 @@ capabilities:
     adjustments: [none]
     fields: [open, high, low, close, volume, amount]
 
-  # ETF：仅日/周/月；复权经探针实证生效（2024 全年 qfq/hfq 逐行差异）
+  # ETF：日/周/月 + 分钟族；日线复权经探针实证生效（2024 全年 qfq/hfq
+  #   逐行差异），分钟族 2026-01-05 起（探针实证四周期齐备、形态与个股
+  #   分钟同构、hfq 复权管线生效，官方口径一致）
   - data_type: bars
     markets: [CN]
     asset_types: [etf]
@@ -71,6 +74,10 @@ capabilities:
       - {code: P1D, history: {start: 2005-02-23T00:00:00+08:00, end: null}}
       - {code: P1W, history: {start: 2005-02-23T00:00:00+08:00, end: null}}
       - {code: P1M, history: {start: 2005-02-23T00:00:00+08:00, end: null}}
+      - {code: PT5M, history: {start: 2026-01-05T00:00:00+08:00, end: null}}
+      - {code: PT15M, history: {start: 2026-01-05T00:00:00+08:00, end: null}}
+      - {code: PT30M, history: {start: 2026-01-05T00:00:00+08:00, end: null}}
+      - {code: PT1H, history: {start: 2026-01-05T00:00:00+08:00, end: null}}
     adjustments: [none, qfq, hfq]
     fields: [open, high, low, close, volume, amount]
 
@@ -145,4 +152,28 @@ operations:
   - match: {data_type: bars, market: CN, asset_type: etf, interval: P1M, adjust: qfq, variant: baostock}
     operation: history_k_data_plus
   - match: {data_type: bars, market: CN, asset_type: etf, interval: P1M, adjust: hfq, variant: baostock}
+    operation: history_k_data_plus
+  - match: {data_type: bars, market: CN, asset_type: etf, interval: PT5M, adjust: none, variant: baostock}
+    operation: history_k_data_plus
+  - match: {data_type: bars, market: CN, asset_type: etf, interval: PT5M, adjust: qfq, variant: baostock}
+    operation: history_k_data_plus
+  - match: {data_type: bars, market: CN, asset_type: etf, interval: PT5M, adjust: hfq, variant: baostock}
+    operation: history_k_data_plus
+  - match: {data_type: bars, market: CN, asset_type: etf, interval: PT15M, adjust: none, variant: baostock}
+    operation: history_k_data_plus
+  - match: {data_type: bars, market: CN, asset_type: etf, interval: PT15M, adjust: qfq, variant: baostock}
+    operation: history_k_data_plus
+  - match: {data_type: bars, market: CN, asset_type: etf, interval: PT15M, adjust: hfq, variant: baostock}
+    operation: history_k_data_plus
+  - match: {data_type: bars, market: CN, asset_type: etf, interval: PT30M, adjust: none, variant: baostock}
+    operation: history_k_data_plus
+  - match: {data_type: bars, market: CN, asset_type: etf, interval: PT30M, adjust: qfq, variant: baostock}
+    operation: history_k_data_plus
+  - match: {data_type: bars, market: CN, asset_type: etf, interval: PT30M, adjust: hfq, variant: baostock}
+    operation: history_k_data_plus
+  - match: {data_type: bars, market: CN, asset_type: etf, interval: PT1H, adjust: none, variant: baostock}
+    operation: history_k_data_plus
+  - match: {data_type: bars, market: CN, asset_type: etf, interval: PT1H, adjust: qfq, variant: baostock}
+    operation: history_k_data_plus
+  - match: {data_type: bars, market: CN, asset_type: etf, interval: PT1H, adjust: hfq, variant: baostock}
     operation: history_k_data_plus

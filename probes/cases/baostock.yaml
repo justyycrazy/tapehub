@@ -335,5 +335,11 @@ notes: >
   （最早 5000 根、尾部截断）→ 适配器 partial 语义已补（行数 ≥5000 判
   partial）；PT5M 大窗口时延 22~49s（重查询）。ETF target window 维持
   2026-01-05 起（availability 稳定窗口，不代表数据起点）。
-  下轮预期调用：availability 33（ETF 三复权回填后 +6）+ adjust_diff 4 +
-  raw 56 = 93（history_depth 已全量 skip）。
+  分钟族补探（2026-11-08，~20 调）：指数无分钟线实证稳固（三指数 × 5m/60m
+  × 2025/2015 五组合全空）；ETF 分钟族实证齐备——沪深两所（510050/159915）
+  均有数据、起点精确 2026-01-05（2025Q4 全空、2026-01-02 单日空、四周期
+  首根同日、与官方口径一致）、fields/time 与个股分钟同构（time=bar 终点）、
+  hfq 复权管线生效（1056 行全差异）→ ETF 分钟族已声明（PT5M/PT15M/PT30M/
+  PT1H × 三复权，history.start 2026-01-05）。
+  下轮预期调用：availability 45（ETF 分钟族声明后 +12）+ adjust_diff 4 +
+  raw 56 = 105（history_depth 已全量 skip）。

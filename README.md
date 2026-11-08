@@ -724,12 +724,12 @@ Baostock（证券宝，官方 SDK `baostock`：`bs.login()` → `bs.query_histor
 | --- | --- | --- | --- | --- | --- | --- |
 | stock（bars） | CN | baostock（默认） | `bs.query_history_k_data_plus` | P1D/P1W/P1M、PT5M/PT15M/PT30M/PT1H | none/qfq/hfq | 全部（extensions 见下） |
 | index（bars） | CN | baostock（默认） | 同上 | P1D/P1W/P1M | none | 全部（extensions: prev_close/pct_change） |
-| etf（bars） | CN | baostock（默认） | 同上 | P1D/P1W/P1M | none/qfq/hfq | 全部（extensions 见下） |
+| etf（bars） | CN | baostock（默认） | 同上 | P1D/P1W/P1M、PT5M/PT15M/PT30M/PT1H | none/qfq/hfq | 全部（extensions 见下） |
 
 - 免费无凭据数据平台（无需注册）：**恒启用**（与 akshare 同类），`TAPEHUB_PROVIDER_ENABLED_OVERRIDES` 可显式禁用；未安装 SDK 时数据请求返回 `PROVIDER_NOT_IMPLEMENTED`；
 - 会话模型：`login()/logout()` 为**模块级全局单连接**（单例 socket、非线程安全），适配器以模块级锁串行化「登录→查询→取数」，**懒登录 + 进程内复用**（首次请求登录，此后复用）；查询返回未登录（10001001）/网络类（10002xxx）错误码时**重登一次并重试一次**；不主动 logout（进程退出即断，baostock ≥0.8.9 已修复退出 socket 泄漏）；
 - 标的代码映射：`CN-SSE-600000 → sh.600000`、`CN-SZSE-000001 → sz.000001`（沪深两市统一「前缀.6 位代码」，stock/index/etf 同格式；北交所未支持不声明）；
-- 周期映射：`P1D→d`、`P1W→w`、`P1M→m`、`PT5M→5`、`PT15M→15`、`PT30M→30`、`PT1H→60`（上游 60 分钟线）；**分钟族仅个股声明**（指数无分钟线——探针实证传分钟 frequency 返回空结果不报错；ETF 分钟暂不声明）；周/月线仅每周/月最后一个交易日有数据（探针实证：周二单日窗口查周线返回空）；
+- 周期映射：`P1D→d`、`P1W→w`、`P1M→m`、`PT5M→5`、`PT15M→15`、`PT30M→30`、`PT1H→60`（上游 60 分钟线）；**分钟族仅个股与 ETF 声明**（指数无分钟线——探针实证传分钟 frequency 返回空结果不报错；ETF 分钟 2026-01-05 起，探针实证四周期齐备、形态与个股分钟同构、hfq 复权管线生效，官方口径一致，20261108 补探）；周/月线仅每周/月最后一个交易日有数据（探针实证：周二单日窗口查周线返回空）；
 - fields 三套按官方「历史行情指标参数」显式写全：日线含 `preclose/turn/tradestatus/pctChg/isST`（估值四项 `peTTM/pbMRQ/psTTM/pcfNcfTTM` 仅个股）、周月线无 `preclose/tradestatus/isST/估值`、分钟线仅 `date/time + OHLC + 量额`；extensions 白名单：个股日线 `prev_close/turnover_rate/pct_change/trade_status/is_st/pe_ttm/pb_mrq/ps_ttm/pcf_ncf_ttm`，指数日线 `prev_close/pct_change`，周月线 `turnover_rate/pct_change`，分钟线无；
 - 复权映射：`none→3`、`qfq→2`、`hfq→1`（上游默认 "3"，适配器始终显式传参）；上游为**涨跌幅复权法**（官方声明与同花顺/通达信口径不同）——复权序列与其他 CN Provider 不保证一致，**跨源对比仅 none 可靠**；**复权生效性（探针实证，报告 20261108T002941+0800）**：个股日线 adjust_diff confirmed、分钟族真生效（PT5M 3072 行全差异、首分歧 2024-06-03 除权日）、**ETF qfq/hfq 生效**（2024 全年 242 行全差异，回填三复权）、**指数为 no-op**（qfq 与 none 零差异，维持 [none]）；
 - 单位：`volume` 上游已是**股**（无需换算，与 akshare 东财「手」不同）、`amount` 为元；上游行值全为字符串、缺失为空串 `""`（→ null，不用 0 冒充）；
@@ -738,7 +738,7 @@ Baostock（证券宝，官方 SDK `baostock`：`bs.login()` → `bs.query_histor
 - 数据更新时间（官方）：日K 交易日 17:30、复权因子 18:00、分钟K 20:00、周K 周六 17:30、月K 每月 1 号 17:30——当日 17:30 前请求当日日线为空属上游入库节奏；
 - **单次返回上限 5000 根**（探针实证：PT5M 2025 全年窗口恰返回最早 5000 根、尾部截断；PT15M/PT30M/PT1H 全年 3872/1936/968 根均完整）：达到上限时响应 `meta.partial=true` 且 `warnings` 提示（窗口起点侧完整、尾部取不到，调用方需缩小窗口）；上游无条数上限参数（服务端分批经 `rs.next()` 对调用者透明）；PT5M 大窗口时延 22~49s（重查询，timeout 需留余量）；
 - 错误经字符串 `error_code/error_msg` 返回（"0"=成功，不抛异常），非零统一包装 `UPSTREAM_ERROR`（details 透出 `upstream_error_code`/`upstream_error_msg`）；**空结果语义（探针实证）**：指数 + 分钟 frequency、无效代码、超范围日期、无效周期均返回空结果集不报错（错误码仅 SDK stderr 打印），适配器按空批次如实透出；有 IP 黑名单机制（10001011，访问规则见 baostock.com/blacklist，具体限频未公布，探针 pacing 2s 保守节流）；
-- 历史覆盖范围（history.start 探针实测回填，报告 20261108T002941+0800，人工确认；二分 90 天粒度 approx 者真实最早可能更早）：个股日/周/月 ≈**1991-01-18**（官方口径 1990-12-19 偏乐观；与 tickflow CN 收敛点同日、alphafeed ≈1991-01-14 接近，几家 CN 库大概率同源）、个股分钟族 **2020-01-02**（精确，官方 2020-01-03 差一天）、指数 ≈**1991-01-18**（官方口径 2006-01-01 显著偏保守）、ETF **2005-02-23**（精确，2004 全年空；官方口径 2026-01-05 仅指 V0.9.3 新增每日更新 API）；
+- 历史覆盖范围（history.start 探针实测回填，报告 20261108T002941+0800，人工确认；二分 90 天粒度 approx 者真实最早可能更早）：个股日/周/月 ≈**1991-01-18**（官方口径 1990-12-19 偏乐观；与 tickflow CN 收敛点同日、alphafeed ≈1991-01-14 接近，几家 CN 库大概率同源）、个股分钟族 **2020-01-02**（精确，官方 2020-01-03 差一天）、指数 ≈**1991-01-18**（官方口径 2006-01-01 显著偏保守）、ETF **2005-02-23**（精确，2004 全年空；官方口径 2026-01-05 仅指 V0.9.3 新增每日更新 API）、**ETF 分钟族 2026-01-05**（精确，官方口径一致；2025Q4 全空、四周期首根同日）；
 - 缺省路由（2026-11-08 接入拍板）：CN 个股 K 线缺省 **baostock**（回退链首位：免费无凭据、个股官方口径 1990-12-19 起深于既有各源、分钟族免费有权限）；CN 指数 K 线缺省 akshare（库底 ≈1991-01-01 深于 baostock 官方口径 2006-01-01，浅库底源置首位会在路由选择阶段截胡更早区间——回退只在路由选择阶段发生），baostock 末位补位；CN ETF 缺省 tqsdk，baostock 回退（tqsdk 凭据未配置时自动跳过）；
 - 文档矛盾点（探针实证定案，报告 20261108T002941+0800）：参数说明写 `start/end`、示例代码写 `start_date/end_date`——**SDK 函数签名只接受 `start_date/end_date`**（传 `start` 报 TypeError，适配器按示例风格实现正确）；`end` 闭/开区间两页文档矛盾——**闭区间（包含）**（stock/index 单日窗口各返回 1 行，适配器按闭区间实现正确）。
 
