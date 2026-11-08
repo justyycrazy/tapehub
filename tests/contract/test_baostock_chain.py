@@ -58,6 +58,14 @@ def _first_query_kwargs(stub: StubBaostock) -> dict[str, Any]:
     raise AssertionError("no query call recorded")
 
 
+def _last_query_kwargs(stub: StubBaostock) -> dict[str, Any]:
+    """最后一次 query_history_k_data_plus 调用参数。"""
+    for name, kwargs in reversed(stub.calls):
+        if name == "query_history_k_data_plus":
+            return kwargs
+    raise AssertionError("no query call recorded")
+
+
 def test_full_chain_default_adjust_is_qfq(
     baostock_client: TestClient, baostock_stub: StubBaostock
 ) -> None:
@@ -218,11 +226,39 @@ def test_capability_catalog(baostock_client: TestClient) -> None:
     assert [i["code"] for i in index_cap["intervals"]] == ["P1D", "P1W", "P1M"]
     assert index_cap["adjustments"] == ["none"]
     assert [i["code"] for i in etf_cap["intervals"]] == ["P1D", "P1W", "P1M"]
-    assert etf_cap["adjustments"] == ["none"]
-    # history 未核实保持 null（探针实证 + 人工确认后单独回填）
-    for cap in caps:
-        for interval_entry in cap["intervals"]:
-            assert interval_entry["history"]["start"] is None
+    # ETF 复权经探针实证生效（2024 全年 qfq/hfq 逐行差异），回填三复权
+    assert etf_cap["adjustments"] == ["none", "qfq", "hfq"]
+    # history.start 探针实证回填（报告 20261108T002941+0800，人工确认）：
+    # 个股/指数 ≈1991-01-18（二分 90 天粒度 approx）、分钟族 2020-01-02（精确）、
+    # ETF 2005-02-23（精确）
+    daily_start = "1991-01-18T00:00:00+08:00"
+    minute_start = "2020-01-02T00:00:00+08:00"
+    etf_start = "2005-02-23T00:00:00+08:00"
+    stock_starts = [i["history"]["start"] for i in stock_cap["intervals"]]
+    assert stock_starts == [daily_start] * 3 + [minute_start] * 4
+    assert [i["history"]["start"] for i in index_cap["intervals"]] == [daily_start] * 3
+    assert [i["history"]["start"] for i in etf_cap["intervals"]] == [etf_start] * 3
+
+
+def test_etf_adjust_qfq_chain(
+    baostock_client: TestClient, baostock_stub: StubBaostock
+) -> None:
+    """ETF 复权链路：显式 adjust=qfq → adjustflag "2"（探针实证生效后回填）。"""
+    baostock_stub.result = daily_stock_rows(["2026-01-05"])
+
+    response = baostock_client.get(
+        "/v1/market/bars",
+        params={**BASE_PARAMS, "asset_type": "etf", "instrument": "CN-SSE-510050",
+                "adjust": "qfq"},
+    )
+    assert response.status_code == 200
+    assert _first_query_kwargs(baostock_stub)["adjustflag"] == "2"
+    assert baostock_client.get(
+        "/v1/market/bars",
+        params={**BASE_PARAMS, "asset_type": "etf", "instrument": "CN-SSE-510050",
+                "adjust": "hfq"},
+    ).status_code == 200
+    assert _last_query_kwargs(baostock_stub)["adjustflag"] == "1"
 
 
 def test_upstream_error_wrapped(

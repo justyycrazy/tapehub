@@ -358,7 +358,7 @@ def test_pagination(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_suspended_row_semantics(monkeypatch: pytest.MonkeyPatch) -> None:
-    # 停牌日（官方口径）：OHLC=前收、量额=0、换手率空串 → null
+    # 停牌日（探针实证 147 行口径）：OHLC=前收、量额=0、换手率空串 → null
     stub = _install_stub(monkeypatch)
     stub.result = daily_suspended_rows(["2026-01-05"])
 
@@ -370,3 +370,16 @@ def test_suspended_row_semantics(monkeypatch: pytest.MonkeyPatch) -> None:
     extensions = bar.extensions
     assert extensions is not None
     assert "turnover_rate" not in extensions  # 空串缺失 → 不写入
+
+
+def test_partial_when_row_limit_reached(monkeypatch: pytest.MonkeyPatch) -> None:
+    # 上游单次返回上限 5000 根（探针实证）：达到即置 partial（窗口尾部截断）
+    stub = _install_stub(monkeypatch)
+    stub.result = daily_stock_rows(["2026-01-%02d" % d for d in range(1, 11)] * 500)
+
+    batch = asyncio.run(_adapter().fetch_bars(_query()))
+    assert batch.partial is True
+
+    stub.result = daily_stock_rows(["2026-01-05"])
+    batch = asyncio.run(_adapter().fetch_bars(_query()))
+    assert batch.partial is False

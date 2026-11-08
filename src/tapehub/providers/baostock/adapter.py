@@ -16,7 +16,11 @@
   非零错误码统一包装为 ``UPSTREAM_ERROR``（details 透出上游错误码字符串，
   本 Provider 无凭据可泄露）；SDK 异常由应用层统一包装，不穿透 API；
 - 上游接口不支持 offset/limit，统一分页由共享 ``paginate_bars`` 完成；
-  上游按日期过滤的边界由适配器在标准化后按闭区间 [start, end] 精确复核。
+  上游按日期过滤的边界由适配器在标准化后按闭区间 [start, end] 精确复核；
+- **单次返回上限 5000 根**（2026-11-08 探针实证，报告 20261108T002941+0800：
+  PT5M 全年窗口返回最早 5000 根、尾部截断）：返回行数达到 5000 时置
+  ``partial=True``，由应用层透出截断 warning——窗口起点侧数据完整、
+  窗口尾部取不到，调用方需自行缩小窗口。
 """
 
 import threading
@@ -29,6 +33,9 @@ from tapehub.providers.baostock.request_mapper import build_request
 from tapehub.providers.baostock.response_mapper import to_standard_bars
 from tapehub.providers.base import BaseProviderAdapter, call_in_thread
 from tapehub.providers.pagination import paginate_bars
+
+# 上游单次返回行数上限（探针实证：恰 5000 根截断，返回窗口内最早 5000 根）
+_UPSTREAM_ROW_LIMIT = 5000
 
 # baostock 的 login/query_* 作用于模块级单例 socket 会话（进程全局），
 # 非线程安全：call_in_thread 并发时必须串行化全部会话操作
@@ -134,6 +141,8 @@ class ProviderAdapter(BaseProviderAdapter):
             received_at=datetime.now(CN_TIMEZONE),
             offset=query.offset,
             limit=query.limit,
+            # 行数触及上游单次上限 → 窗口尾部被截断（返回的是最早 5000 根）
+            partial=len(rows) >= _UPSTREAM_ROW_LIMIT,
         )
 
     def _query_upstream(self, bs: Any, kwargs: dict[str, str]) -> Any:

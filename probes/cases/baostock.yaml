@@ -48,7 +48,21 @@ targets:
 
 chain:
   include_declared: true
-  skip: []
+  skip:
+    # history.start 六条已收敛（20261108T002941+0800：个股/指数 ≈1991-01-18
+    # 三周期同值、ETF 2005-02-23 经 raw 边界精确实测），不再重复消耗配额
+    - case: history-depth-stock-P1D-baostock
+      reason: 已收敛 ≈1991-01-18（90 天粒度 approx、complete=True），已人工确认回填
+    - case: history-depth-stock-P1W-baostock
+      reason: 已收敛，与 P1D 同上游同区间同值，已人工确认回填
+    - case: history-depth-stock-P1M-baostock
+      reason: 已收敛，与 P1D 同上游同区间同值，已人工确认回填
+    - case: history-depth-index-P1D-baostock
+      reason: 已收敛 ≈1991-01-18（官方口径 2006-01-01 偏保守），已人工确认回填
+    - case: history-depth-index-P1W-baostock
+      reason: 已收敛，与 P1D 同值，已人工确认回填
+    - case: history-depth-index-P1M-baostock
+      reason: 已收敛，与 P1D 同值，已人工确认回填
   adjust_diff:
     # 个股复权生效性（官方「涨跌幅复权法」，与同花顺/通达信口径不同）：
     # 日线足以判定，收敛 interval 控制预算；指数/ETF 首版仅声明 none 无可比
@@ -298,8 +312,28 @@ raw:
     assert: false
 
 notes: >
-  首轮探针待运行。判定与回填约定：manifest 各周期 history.start 一律等
-  探针实证 + 人工确认后单独提交回填（项目惯例，首版全部省略 history）。
-  raw 观察 case 的行数判读依据见各 case purpose；error_code 指纹经适配器
-  details（upstream_error_code/upstream_error_msg）透出，单测覆盖映射。
-  pacing 2s 间隔为黑名单机制留余量（官方未公布限频数值）。
+  首轮实证（20261108T002941+0800，157/280 调 + 22 补探调，全部离线可复核）：
+  availability 27 全 confirmed、0 failed；adjust_diff 日线 qfq/hfq 均生效
+  （涨跌幅复权法）。history.start 已人工确认回填：个股/指数 ≈1991-01-18
+  （二分 90 天粒度 approx、complete=True、12 探测/条，三周期同值；个股与
+  tickflow CN 收敛点同日、与 alphafeed ≈1991-01-14 接近，几家 CN 库大概率
+  同源；官方口径个股 1990-12-19 / 指数 2006-01-01 均与实测不符——前者偏乐观、
+  后者显著偏保守）；分钟族 2020-01-02（raw 边界精确：2019-12 窗口空、四周期
+  首根同日；官方 2020-01-03 差一天）；ETF 2005-02-23（raw 逐年+月粒度精确：
+  2004 全年空、2005-01~02-22 空；官方口径 2026-01-05 仅指 V0.9.3 新增每日
+  更新 API，与 query_history_k_data_plus 实际覆盖无关）。
+  复权回填：ETF qfq/hfq 经 2024 全年逐行对比实证生效（242 行全差异），
+  adjustments 回填 [none,qfq,hfq]；指数 qfq/hfq 为 no-op（零差异）维持
+  [none]；个股分钟族复权生效（PT5M 3072 行全差异、首分歧 2024-06-03 除权日）。
+  口径实证：start/end 参数表风格在 SDK 签名层报 TypeError（start_date/
+  end_date 唯一合法，适配器现实现正确）；end 闭区间（stock/index 单日窗口
+  各返回 1 行）；分钟 time 为 bar 终点口径（0935/0945/1000/1030 首根全吻合）；
+  指数无分钟线/无效代码/超范围日期/无效周期均空结果不报错（错误码仅 SDK
+  stderr 打印，适配器按空批次透出）；周线仅每周最后交易日有数据（周二单日
+  窗口空）；停牌行 147 行实测 OHLC=前收、量额=0、turn 空串（与官方口径
+  吻合，""→null 映射依据）。单次上限：PT5M 2025 全年窗口恰返回 5000 根
+  （最早 5000 根、尾部截断）→ 适配器 partial 语义已补（行数 ≥5000 判
+  partial）；PT5M 大窗口时延 22~49s（重查询）。ETF target window 维持
+  2026-01-05 起（availability 稳定窗口，不代表数据起点）。
+  下轮预期调用：availability 33（ETF 三复权回填后 +6）+ adjust_diff 4 +
+  raw 56 = 93（history_depth 已全量 skip）。
