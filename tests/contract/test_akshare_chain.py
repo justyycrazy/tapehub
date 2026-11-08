@@ -273,18 +273,19 @@ def test_capability_catalog(akshare_client: TestClient) -> None:
     assert etf_cap["variants"] == ["eastmoney"]
     assert [i["code"] for i in etf_cap["intervals"]] == ["P1D", "P1W", "P1M"]
     assert etf_cap["adjustments"] == ["none", "qfq", "hfq"]
-    # history.start 未核实不声明（探针实证人工确认后单独提交回填）
-    assert [i["history"]["start"] for i in etf_cap["intervals"]] == [None, None, None]
+    # history.start 探针实证回填（报告 20261108T150042+0800，人工确认，
+    # approx ±90 天；P1W/P1M 与 P1D 同上游端点同数据区间，同值声明）
+    etf_start = "2005-03-20T00:00:00+08:00"
+    hk_start = "1989-01-27T00:00:00+08:00"
+    us_start = "1986-02-21T00:00:00+08:00"
+    assert [i["history"]["start"] for i in etf_cap["intervals"]] == [etf_start] * 3
     hk_cap, us_cap = caps[7], caps[8]
+    assert [i["history"]["start"] for i in hk_cap["intervals"]] == [hk_start] * 3
+    assert [i["history"]["start"] for i in us_cap["intervals"]] == [us_start] * 3
     for overseas_cap in (hk_cap, us_cap):
         assert overseas_cap["variants"] == ["eastmoney"]
         assert [i["code"] for i in overseas_cap["intervals"]] == ["P1D", "P1W", "P1M"]
         assert overseas_cap["adjustments"] == ["none", "qfq", "hfq"]
-        assert [i["history"]["start"] for i in overseas_cap["intervals"]] == [
-            None,
-            None,
-            None,
-        ]
 
 
 def test_upstream_exception_wrapped(
