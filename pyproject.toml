@@ -22,6 +22,8 @@ akshare = ["akshare>=1.14"]
 tickflow = ["tickflow"]
 alphafeed = ["alphafeed"]
 tushare = ["tushare"]
+# baostock（证券宝）：免费无凭据数据平台；>=0.9.3 为多节点与 ETF 数据版本
+baostock = ["baostock>=0.9.3"]
 tqsdk = ["tqsdk"]
 # websockets：实时快照/快照流 WS 直连（td.websocket 封装不适配共享连接
 # 动态增删）；>=14 为新 asyncio 实现（websockets.connect 别名）

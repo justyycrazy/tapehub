@@ -351,9 +351,10 @@ GET /v1/instruments/resolve?q=AAPL&exchange=NASDAQ
 | `alphafeed` | AlphaFeed（独立数据服务体系） |
 | `tickflow` | TickFlow（独立数据服务体系） |
 | `twelvedata` | Twelve Data（外汇/加密货币/美股数据服务） |
+| `baostock` | Baostock 证券宝（免费 A 股数据平台，与东方财富无关） |
 
 - **变体名反映真实数据源**：仅 akshare 的上游确为东方财富/新浪/腾讯；
-  TqSdk、Tushare、AlphaFeed、TickFlow、Twelve Data 与东方财富无关，
+  TqSdk、Tushare、AlphaFeed、TickFlow、Twelve Data、Baostock 与东方财富无关，
   变体与其 Provider 同名（即各自的上游服务/包名）；
 - **`variant` 可选，无全局默认值**。未传递时表示不表达数据源偏好：
   该维度不参与能力过滤，由每个 Provider 在 manifest 中**必填声明**的
@@ -478,7 +479,8 @@ API 层 → Application 层 → Domain 层
 - **凭据驱动的注册**：内置 Provider 中需要凭据的（alphafeed/tickflow/tushare/
   tqsdk/twelvedata），`.env` 相应变量全部非空（strip 后）才启用；凭据缺失的
   Provider **能力目录仍可见但 `enabled=false`**，auto 路由跳过，显式请求返回
-  `PROVIDER_DISABLED`（details 携带缺失的变量名）。akshare 无凭据概念恒启用。
+  `PROVIDER_DISABLED`（details 携带缺失的变量名）。akshare/baostock 无凭据
+  概念恒启用。
   启用裁决：显式 `TAPEHUB_PROVIDER_ENABLED_OVERRIDES` > 凭据推断 > manifest
   `enabled`（显式启用可越过凭据推断作运维逃生门，日志告警）。只判非空不做
   格式校验：格式错误的凭据在请求时报 `UPSTREAM_ERROR`，启动不因凭据内容失败；
@@ -716,7 +718,30 @@ M3 流同源；REST `td.quote` 按需路径已于 2026-11-05 退役）：
   调大即可；冷订阅首包超时 `TAPEHUB_TWELVEDATA_FIRST_SNAPSHOT_TIMEOUT`
   （默认 5s）返回 `QUOTE_NOT_READY`（408），活跃订阅即时读缓存。
 
-六个内置 Provider（akshare、tickflow、alphafeed、tushare、tqsdk、twelvedata）均已接入，接口签名与数据口径按各自官方文档核实；未配置凭据或未安装 SDK 时数据请求返回 `PROVIDER_NOT_IMPLEMENTED`，`provider=auto` 在无可用候选时返回 `NO_PROVIDER_AVAILABLE`，也**绝不返回写死的模拟行情**。
+Baostock（证券宝，官方 SDK `baostock`：`bs.login()` → `bs.query_history_k_data_plus()` → `bs.logout()`）：
+
+| 资产类型 | 市场 | 变体 | 上游接口 | 周期 | adjust | 标准字段 |
+| --- | --- | --- | --- | --- | --- | --- |
+| stock（bars） | CN | baostock（默认） | `bs.query_history_k_data_plus` | P1D/P1W/P1M、PT5M/PT15M/PT30M/PT1H | none/qfq/hfq | 全部（extensions 见下） |
+| index（bars） | CN | baostock（默认） | 同上 | P1D/P1W/P1M | none | 全部（extensions: prev_close/pct_change） |
+| etf（bars） | CN | baostock（默认） | 同上 | P1D/P1W/P1M | none | 全部（extensions 见下） |
+
+- 免费无凭据数据平台（无需注册）：**恒启用**（与 akshare 同类），`TAPEHUB_PROVIDER_ENABLED_OVERRIDES` 可显式禁用；未安装 SDK 时数据请求返回 `PROVIDER_NOT_IMPLEMENTED`；
+- 会话模型：`login()/logout()` 为**模块级全局单连接**（单例 socket、非线程安全），适配器以模块级锁串行化「登录→查询→取数」，**懒登录 + 进程内复用**（首次请求登录，此后复用）；查询返回未登录（10001001）/网络类（10002xxx）错误码时**重登一次并重试一次**；不主动 logout（进程退出即断，baostock ≥0.8.9 已修复退出 socket 泄漏）；
+- 标的代码映射：`CN-SSE-600000 → sh.600000`、`CN-SZSE-000001 → sz.000001`（沪深两市统一「前缀.6 位代码」，stock/index/etf 同格式；北交所未支持不声明）；
+- 周期映射：`P1D→d`、`P1W→w`、`P1M→m`、`PT5M→5`、`PT15M→15`、`PT30M→30`、`PT1H→60`（上游 60 分钟线）；**分钟族仅个股声明**（官方明示指数无分钟线；ETF 分钟数据 2026-01-05 起新增、接口文档不全暂不声明）；
+- fields 三套按官方「历史行情指标参数」显式写全：日线含 `preclose/turn/tradestatus/pctChg/isST`（估值四项 `peTTM/pbMRQ/psTTM/pcfNcfTTM` 仅个股）、周月线无 `preclose/tradestatus/isST/估值`、分钟线仅 `date/time + OHLC + 量额`；extensions 白名单：个股日线 `prev_close/turnover_rate/pct_change/trade_status/is_st/pe_ttm/pb_mrq/ps_ttm/pcf_ncf_ttm`，指数日线 `prev_close/pct_change`，周月线 `turnover_rate/pct_change`，分钟线无；
+- 复权映射：`none→3`、`qfq→2`、`hfq→1`（上游默认 "3"，适配器始终显式传参）；上游为**涨跌幅复权法**（官方声明与同花顺/通达信口径不同）——复权序列与其他 CN Provider 不保证一致，**跨源对比仅 none 可靠**；指数/ETF 首版仅声明 none（官方指数示例不传 adjustflag、ETF 复权支持未核实，探针观察后议回填）；
+- 单位：`volume` 上游已是**股**（无需换算，与 akshare 东财「手」不同）、`amount` 为元；上游行值全为字符串、缺失为空串 `""`（→ null，不用 0 冒充）；
+- 时间戳口径：日/周/月线为交易日 00:00 北京时间；分钟线由 `date + time`（YYYYMMDDHHMMSSsss）解析为北京时间（bar 起点/终点口径探针实证后回填）；
+- 停牌日（官方口径）：OHLC=前收盘价、成交量/额=0（原值透出非缺失）、换手率空串 → null；
+- 数据更新时间（官方）：日K 交易日 17:30、复权因子 18:00、分钟K 20:00、周K 周六 17:30、月K 每月 1 号 17:30——当日 17:30 前请求当日日线为空属上游入库节奏；
+- 上游无单次条数上限参数（服务端分批经 `rs.next()` 对调用者透明），无 partial 语义；错误经字符串 `error_code/error_msg` 返回（"0"=成功，不抛异常），非零统一包装 `UPSTREAM_ERROR`（details 透出 `upstream_error_code`/`upstream_error_msg`）；有 IP 黑名单机制（10001011，访问规则见 baostock.com/blacklist，具体限频未公布，探针 pacing 2s 保守节流）；
+- 历史覆盖范围（官方口径，`history.start` 首版全部未声明——探针实证 + 人工确认后单独回填）：个股日/周/月 1990-12-19 起、个股分钟线 2020-01-03 起（近 5 年滚动窗口存疑待实证）、指数 2006-01-01 起（上证指数 1990 年即发布，官方口径可能偏保守）、ETF 2026-01-05 起；
+- 缺省路由（2026-11-08 接入拍板）：CN 个股 K 线缺省 **baostock**（回退链首位：免费无凭据、个股官方口径 1990-12-19 起深于既有各源、分钟族免费有权限）；CN 指数 K 线缺省 akshare（库底 ≈1991-01-01 深于 baostock 官方口径 2006-01-01，浅库底源置首位会在路由选择阶段截胡更早区间——回退只在路由选择阶段发生），baostock 末位补位；CN ETF 缺省 tqsdk，baostock 回退（tqsdk 凭据未配置时自动跳过）；
+- 文档矛盾点（探针实证中，README 口径待回填）：参数说明写 `start/end`、示例代码写 `start_date/end_date`（适配器按示例风格实现）；`end` 闭/开区间 stockKData 页称「包含」、indexData 页称「不包含」（适配器按闭区间实现）。
+
+七个内置 Provider（akshare、alphafeed、baostock、tickflow、tushare、tqsdk、twelvedata）均已接入，接口签名与数据口径按各自官方文档核实；未配置凭据或未安装 SDK 时数据请求返回 `PROVIDER_NOT_IMPLEMENTED`，`provider=auto` 在无可用候选时返回 `NO_PROVIDER_AVAILABLE`，也**绝不返回写死的模拟行情**。
 
 ### 新增 / 接入 Provider
 

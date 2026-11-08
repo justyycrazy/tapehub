@@ -263,6 +263,18 @@ wheels = [
 ]
 
 [[package]]
+name = "baostock"
+version = "0.9.4"
+source = { registry = "https://mirrors.aliyun.com/pypi/simple/" }
+dependencies = [
+    { name = "pandas" },
+]
+sdist = { url = "https://mirrors.aliyun.com/pypi/packages/66/61/8ad575eb83d4b22852a922e669bc13c9723675343e885b0040ab11a6a321/baostock-0.9.4.tar.gz", hash = "sha256:54dd26ec53100da02dcd47a21fc487ed5b2e12a4124af7961143d8ca0bc682e9" }
+wheels = [
+    { url = "https://mirrors.aliyun.com/pypi/packages/56/df/6984deaa036cc3467f85411d01a48018eb86ed7477e74f33aa5b012ace05/baostock-0.9.4-py3-none-any.whl", hash = "sha256:0bf71c6069ab5890ff3596632f9c3f8f1fbc6bfcac582c2f9d6a5c11ab2cfaf8" },
+]
+
+[[package]]
 name = "beautifulsoup4"
 version = "4.15.0"
 source = { registry = "https://mirrors.aliyun.com/pypi/simple/" }
@@ -1887,6 +1899,9 @@ akshare = [
 alphafeed = [
     { name = "alphafeed" },
 ]
+baostock = [
+    { name = "baostock" },
+]
 tickflow = [
     { name = "tickflow" },
 ]
@@ -1912,6 +1927,7 @@ dev = [
 requires-dist = [
     { name = "akshare", marker = "extra == 'akshare'", specifier = ">=1.14" },
     { name = "alphafeed", marker = "extra == 'alphafeed'" },
+    { name = "baostock", marker = "extra == 'baostock'", specifier = ">=0.9.3" },
     { name = "fastapi", specifier = ">=0.115" },
     { name = "pydantic", specifier = ">=2.7" },
     { name = "pydantic-settings", specifier = ">=2.3" },
@@ -1924,7 +1940,7 @@ requires-dist = [
     { name = "uvicorn", specifier = ">=0.30" },
     { name = "websockets", marker = "extra == 'twelvedata'", specifier = ">=14" },
 ]
-provides-extras = ["akshare", "tickflow", "alphafeed", "tushare", "tqsdk", "twelvedata"]
+provides-extras = ["akshare", "tickflow", "alphafeed", "tushare", "baostock", "tqsdk", "twelvedata"]
 
 [package.metadata.requires-dev]
 dev = [

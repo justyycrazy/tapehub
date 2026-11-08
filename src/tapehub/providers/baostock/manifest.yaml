@@ -1,0 +1,131 @@
+# baostock 适配器：能力声明与内部操作映射。
+# 接口签名均已按官方文档核实：https://baostock.com/mainContent?file=pythonAPI.md
+#
+# 说明：
+# - variant 为数据源变体：baostock 为独立免费数据平台（证券宝，无需注册、
+#   无凭据概念，恒可注册），变体与其 Provider 同名；
+# - 单一上游函数 query_history_k_data_plus 覆盖全部 K 线查询，login()/logout()
+#   为全局单连接模型（模块级单例 socket、非线程安全），错误经字符串
+#   error_code/error_msg 返回（"0"=成功），行值全为字符串、缺失为空串 ""；
+# - fields 三套（官方「历史行情指标参数」）：日线含 preclose/turn/tradestatus/
+#   pctChg/isST 与估值四项（peTTM/pbMRQ/psTTM/pcfNcfTTM，仅个股日线）；
+#   周/月线无 preclose/tradestatus/isST/估值；分钟线仅 date/time + OHLC + 量额；
+# - 复权为「涨跌幅复权法」（官方声明与同花顺/通达信口径不同），adjustflag
+#   显式传参：3=不复权（上游默认）、2=前复权、1=后复权；
+# - 历史覆盖范围（history.start）由数据探针实测回填（官方口径：个股日/周/月
+#   1990-12-19 起、个股分钟线 2020-01-03 起近 5 年、指数 2006-01-01 起、
+#   ETF 2026-01-05 起），首版全部省略 history（未核实不声明）；
+# - 指数无分钟线（官方明示），分钟族仅个股声明；周/月线仅每周/月最后一个
+#   交易日有数据（数据落点，非查询限制，探针实证后回填 README）；
+# - ETF 数据 2026-01-05 起（V0.9.3 新增，官方文档不全），首版仅声明日/周/月、
+#   复权先声明 none（ETF 复权支持由探针观察后议回填）。
+provider: baostock
+default_variant:
+  stock: baostock
+  index: baostock
+  etf: baostock
+
+capabilities:
+  # 个股（A 股）：日/周/月 + 分钟族，支持不复权/前复权/后复权
+  - data_type: bars
+    markets: [CN]
+    asset_types: [stock]
+    delivery: [rest]
+    variants: [baostock]
+    intervals:
+      - {code: P1D}
+      - {code: P1W}
+      - {code: P1M}
+      - {code: PT5M}
+      - {code: PT15M}
+      - {code: PT30M}
+      - {code: PT1H}
+    adjustments: [none, qfq, hfq]
+    fields: [open, high, low, close, volume, amount]
+
+  # 指数：仅日/周/月（无分钟线），无复权
+  - data_type: bars
+    markets: [CN]
+    asset_types: [index]
+    delivery: [rest]
+    variants: [baostock]
+    intervals:
+      - {code: P1D}
+      - {code: P1W}
+      - {code: P1M}
+    adjustments: [none]
+    fields: [open, high, low, close, volume, amount]
+
+  # ETF：仅日/周/月（V0.9.3 新增数据 2026-01-05 起），复权支持待探针实证
+  - data_type: bars
+    markets: [CN]
+    asset_types: [etf]
+    delivery: [rest]
+    variants: [baostock]
+    intervals:
+      - {code: P1D}
+      - {code: P1W}
+      - {code: P1M}
+    adjustments: [none]
+    fields: [open, high, low, close, volume, amount]
+
+operations:
+  # 个股：7 周期 × 3 复权，全部指向 query_history_k_data_plus
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: P1D, adjust: none, variant: baostock}
+    operation: history_k_data_plus
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: P1D, adjust: qfq, variant: baostock}
+    operation: history_k_data_plus
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: P1D, adjust: hfq, variant: baostock}
+    operation: history_k_data_plus
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: P1W, adjust: none, variant: baostock}
+    operation: history_k_data_plus
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: P1W, adjust: qfq, variant: baostock}
+    operation: history_k_data_plus
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: P1W, adjust: hfq, variant: baostock}
+    operation: history_k_data_plus
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: P1M, adjust: none, variant: baostock}
+    operation: history_k_data_plus
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: P1M, adjust: qfq, variant: baostock}
+    operation: history_k_data_plus
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: P1M, adjust: hfq, variant: baostock}
+    operation: history_k_data_plus
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: PT5M, adjust: none, variant: baostock}
+    operation: history_k_data_plus
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: PT5M, adjust: qfq, variant: baostock}
+    operation: history_k_data_plus
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: PT5M, adjust: hfq, variant: baostock}
+    operation: history_k_data_plus
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: PT15M, adjust: none, variant: baostock}
+    operation: history_k_data_plus
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: PT15M, adjust: qfq, variant: baostock}
+    operation: history_k_data_plus
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: PT15M, adjust: hfq, variant: baostock}
+    operation: history_k_data_plus
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: PT30M, adjust: none, variant: baostock}
+    operation: history_k_data_plus
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: PT30M, adjust: qfq, variant: baostock}
+    operation: history_k_data_plus
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: PT30M, adjust: hfq, variant: baostock}
+    operation: history_k_data_plus
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: PT1H, adjust: none, variant: baostock}
+    operation: history_k_data_plus
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: PT1H, adjust: qfq, variant: baostock}
+    operation: history_k_data_plus
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: PT1H, adjust: hfq, variant: baostock}
+    operation: history_k_data_plus
+
+  # 指数：仅不复权（官方指数示例不传 adjustflag，适配器同样显式传 "3"）
+  - match: {data_type: bars, market: CN, asset_type: index, interval: P1D, adjust: none, variant: baostock}
+    operation: history_k_data_plus
+  - match: {data_type: bars, market: CN, asset_type: index, interval: P1W, adjust: none, variant: baostock}
+    operation: history_k_data_plus
+  - match: {data_type: bars, market: CN, asset_type: index, interval: P1M, adjust: none, variant: baostock}
+    operation: history_k_data_plus
+
+  # ETF：仅不复权（复权支持待探针实证后议回填）
+  - match: {data_type: bars, market: CN, asset_type: etf, interval: P1D, adjust: none, variant: baostock}
+    operation: history_k_data_plus
+  - match: {data_type: bars, market: CN, asset_type: etf, interval: P1W, adjust: none, variant: baostock}
+    operation: history_k_data_plus
+  - match: {data_type: bars, market: CN, asset_type: etf, interval: P1M, adjust: none, variant: baostock}
+    operation: history_k_data_plus

@@ -74,6 +74,7 @@ class DataVariant(StrEnum):
     ALPHAFEED = "alphafeed"
     TICKFLOW = "tickflow"
     TWELVEDATA = "twelvedata"
+    BAOSTOCK = "baostock"
 
 
 class Adjust(StrEnum):

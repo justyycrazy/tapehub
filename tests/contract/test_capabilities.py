@@ -38,9 +38,9 @@ def test_default_catalog_lists_all_builtin_providers(default_client) -> None:  #
     assert len(quotes) == 1
     assert quotes[0]["intervals"] == []
     assert quotes[0]["adjustments"] == []
-    # 全部内置 Provider 均已接入；启用判定 = 凭据推断（akshare 无凭据概念恒启用）
+    # 全部内置 Provider 均已接入；启用判定 = 凭据推断（akshare/baostock 无凭据概念恒启用）
     for entry in body["data"]:
-        assert entry["enabled"] is (entry["provider"] == "akshare")
+        assert entry["enabled"] is (entry["provider"] in ("akshare", "baostock"))
         assert len(entry["capabilities"]) >= 1
     meta = body["meta"]
     assert meta["request_id"].startswith("req_")

@@ -1,0 +1,305 @@
+# Baostock 数据探针：全声明维度可用性、复权生效性、历史深度与官方文档
+# 矛盾点/边界行为实测（参数名风格、end 闭/开区间、分钟线边界、指数无分钟线、
+# ETF 数据起点与复权支持、周线落点、停牌行形态、错误指纹）。
+probe: baostock
+version: 1
+
+requires:
+  # 免费无凭据数据平台（证券宝）：只依赖 SDK 安装，无环境变量前提
+  extras: [baostock]
+
+pacing:
+  # 上游无公开限频数值，但有 IP 黑名单机制（10001011，访问规则见
+  # baostock.com/blacklist）：2s 间隔保守节流；适配器为全局单连接
+  # （懒登录复用），探针链路与 raw 共享同一会话。
+  call_interval_s: 2.0
+  timeout_s: 60
+  # 预算：availability 27（stock 7 周期 × 3 复权 + index/etf 各 3）+
+  # adjust_diff 4 + history_depth 6 条 × ≤24（最坏 144，现实约 60-70）+
+  # raw 14 条 × 4 调 = 最坏 231，期望约 150。
+  max_calls: 280
+
+# 基准标的沿用 tickflow/alphafeed 探针定稿的「早上市标的」原则（破除二分
+# 收敛点 = 标的自身上市日伪影）：
+targets:
+  stock:
+    instrument: CN-SSE-600602
+    # 云赛智联（原真空电子），1990-12-19 上交所开业首批「老八股」且现存续；
+    # 官方口径个股日/周/月 1990-12-19 起，收敛点即真实库底
+    window: {start: 2025-01-01, end: 2025-12-31}
+    # 跨周期下限（D≈243 / W≈52 / M≈12 / 分钟≈每交易日 48 根），只拦截空结果
+    min_bars: 10
+    required_fields: [open, high, low, close, volume, amount]
+  index:
+    instrument: CN-SSE-000001
+    # 上证指数：官方口径指数日/周/月 2006-01-01 起（待实证——上证指数
+    # 1990 年即发布，官方口径可能偏保守）
+    window: {start: 2025-01-01, end: 2025-12-31}
+    min_bars: 10
+    required_fields: [open, high, low, close, volume, amount]
+  etf:
+    instrument: CN-SSE-510050
+    # 华夏上证 50ETF（2004-12-30 上市，最早 CN ETF 之一）；官方口径 ETF
+    # 数据 2026-01-05 起（V0.9.3 新增），窗口从官方起点起算
+    window: {start: 2026-01-05, end: 2026-12-31}
+    # 月线 2026 年内约 11 根，min_bars 10 贴近月线真实值
+    min_bars: 10
+    required_fields: [open, high, low, close, volume, amount]
+
+chain:
+  include_declared: true
+  skip: []
+  adjust_diff:
+    # 个股复权生效性（官方「涨跌幅复权法」，与同花顺/通达信口径不同）：
+    # 日线足以判定，收敛 interval 控制预算；指数/ETF 首版仅声明 none 无可比
+    targets: [stock]
+    window: {start: 2024-06-01, end: 2024-08-31}   # 分红除权高发窗口
+    intervals: [P1D]
+    pairs: [[none, qfq], [none, hfq]]
+    fields: [close]
+  history_depth:
+    # 官方口径：个股 1990-12-19 起、指数 2006-01-01 起。earliest 1980 从
+    # 1980/1990 纪元快速回溯，二分收敛实证真实库底（指数口径重点核实：
+    # 上证指数 1990 年发布，官方「2006-01-01」可能偏保守）。分钟族与 ETF
+    # 不进 history_depth：官方已给精确固定起点（2020-01-03 / 2026-01-05），
+    # 用 raw 边界验证更省预算（见 raw bs-minute-boundary-stock /
+    # bs-etf-boundary）。
+    targets: [stock, index]
+    earliest: 1980-01-01
+    era_step_years: 10   # 1980 起共 5 纪元；个股/指数预期 1-2 个空纪元即命中
+    max_calls: 24        # 每条 case 预算：回溯 + 二分 + 验证
+    intervals: [P1D, P1W, P1M]
+
+raw:
+  # ── raw 链统一形态：module_func login → query_history_k_data_plus →
+  #    get_data → to_dict(orient=records)。末步把 ResultData 的 DataFrame
+  #    转为 list[dict]，使 min_rows 行数判定可用；样本（≤3 行）即字段矩阵
+  #    观察。baostock 的 logout 是模块级函数且适配器不主动登出（懒登录
+  #    复用、进程退出即断），探针不设独立 logout case。
+  #
+  # ── 会话生命周期与基础可用性（assert: true，可判定）──
+  - id: bs-lifecycle-login-query
+    purpose: 登录→查询→取数生命周期（error_code "0" + 行数断言；建连与查询证据）
+    module: baostock
+    call:
+      - {module_func: login}
+      - {module_func: query_history_k_data_plus, kwargs: {code: "sh.600602",
+         fields: "date,code,open,high,low,close,volume,amount",
+         start_date: "2025-06-01", end_date: "2025-06-30",
+         frequency: "d", adjustflag: "3"}}
+      - {method: get_data}
+      - {method: to_dict, kwargs: {orient: records}}
+    expect: {status: ok, min_rows: 1}
+    assert: true
+
+  # ── 官方文档矛盾点与边界行为（assert: false 仅观察，行数判读见注释）──
+  - id: bs-start-param-name-observe
+    purpose: |
+      参数名风格实证：官方参数说明写 start/end、全部示例代码写
+      start_date/end_date。本 case 用 start/end（参数表风格）查 9 日窗口：
+      行数 ≈8 → 参数表风格生效；行数 ≈2600+（2015-01-01 默认起点起）→
+      被忽略落默认。适配器当前按示例风格 start_date/end_date 实现。
+    module: baostock
+    call:
+      - {module_func: login}
+      - {module_func: query_history_k_data_plus, kwargs: {code: "sh.600602",
+         fields: "date,code,open,high,low,close,volume,amount",
+         start: "2025-06-01", end: "2025-06-10",
+         frequency: "d", adjustflag: "3"}}
+      - {method: get_data}
+      - {method: to_dict, kwargs: {orient: records}}
+    expect: {status: ok, min_rows: 0}
+    assert: false
+  - id: bs-end-inclusive-stock
+    purpose: |
+      end 闭/开区间实证（个股）：单日窗口 [2025-06-10, 2025-06-10]（周二，
+      必有行情）。行数 1 → end 包含（stockKData 页口径）；行数 0 → end
+      不包含（indexData 页口径）。适配器当前按闭区间实现。
+    module: baostock
+    call:
+      - {module_func: login}
+      - {module_func: query_history_k_data_plus, kwargs: {code: "sh.600602",
+         fields: "date,code,open,high,low,close,volume,amount",
+         start_date: "2025-06-10", end_date: "2025-06-10",
+         frequency: "d", adjustflag: "3"}}
+      - {method: get_data}
+      - {method: to_dict, kwargs: {orient: records}}
+    expect: {status: ok, min_rows: 0}
+    assert: false
+  - id: bs-end-inclusive-index
+    purpose: |
+      end 闭/开区间实证（指数）：同上单日窗口。stockKData 与 indexData 两页
+      口径矛盾，两资产类型分别实证。
+    module: baostock
+    call:
+      - {module_func: login}
+      - {module_func: query_history_k_data_plus, kwargs: {code: "sh.000001",
+         fields: "date,code,open,high,low,close,volume,amount",
+         start_date: "2025-06-10", end_date: "2025-06-10",
+         frequency: "d", adjustflag: "3"}}
+      - {method: get_data}
+      - {method: to_dict, kwargs: {orient: records}}
+    expect: {status: ok, min_rows: 0}
+    assert: false
+  - id: bs-minute-boundary-stock
+    purpose: |
+      个股分钟线下界与 time 口径实证：官方口径 5/15/30/60 分钟线
+      2020-01-03 起（近 5 年）。窗口 2019-12-15~2020-01-31，观察样本首行
+      date/time——首根 bar 应为 2020-01-03，time（YYYYMMDDHHMMSSsss）为
+      093000xxx 或 093500xxx 即 bar 起点/终点口径的直接证据；亦验证
+      time 缺失形态（空串）。manifest 分钟族 history.start 待本 case 回填。
+    module: baostock
+    call:
+      - {module_func: login}
+      - {module_func: query_history_k_data_plus, kwargs: {code: "sh.600602",
+         fields: "date,time,code,open,high,low,close,volume,amount,adjustflag",
+         start_date: "2019-12-15", end_date: "2020-01-31",
+         frequency: "5", adjustflag: "3"}}
+      - {method: get_data}
+      - {method: to_dict, kwargs: {orient: records}}
+    expect: {status: ok, min_rows: 0}
+    assert: false
+  - id: bs-index-minute-fingerprint
+    purpose: 指数分钟线指纹（官方明示指数无分钟线；观察错误码或空结果）
+    module: baostock
+    call:
+      - {module_func: login}
+      - {module_func: query_history_k_data_plus, kwargs: {code: "sh.000001",
+         fields: "date,time,code,open,high,low,close,volume,amount,adjustflag",
+         start_date: "2025-06-01", end_date: "2025-06-30",
+         frequency: "5", adjustflag: "3"}}
+      - {method: get_data}
+      - {method: to_dict, kwargs: {orient: records}}
+    expect: {status: ok, min_rows: 0}
+    assert: false
+  - id: bs-etf-boundary
+    purpose: |
+      ETF 数据起点实证：官方口径 2026-01-05 起（V0.9.3）。窗口
+      2025-12-01~2026-01-31，样本首行 date 应为 2026-01-05。
+      manifest ETF history.start 待本 case 回填。
+    module: baostock
+    call:
+      - {module_func: login}
+      - {module_func: query_history_k_data_plus, kwargs: {code: "sh.510050",
+         fields: "date,code,open,high,low,close,volume,amount",
+         start_date: "2025-12-01", end_date: "2026-01-31",
+         frequency: "d", adjustflag: "3"}}
+      - {method: get_data}
+      - {method: to_dict, kwargs: {orient: records}}
+    expect: {status: ok, min_rows: 0}
+    assert: false
+  - id: bs-etf-adjust-observe
+    purpose: |
+      ETF 复权支持观察：adjustflag=2（前复权）小窗口。返回数据 → ETF 支持
+      复权（manifest adjustments 可回填 qfq/hfq）；报错/空结果 → 维持
+      [none]。决定 ETF 复权能力是否回填。
+    module: baostock
+    call:
+      - {module_func: login}
+      - {module_func: query_history_k_data_plus, kwargs: {code: "sh.510050",
+         fields: "date,code,open,high,low,close,volume,amount",
+         start_date: "2026-02-01", end_date: "2026-02-28",
+         frequency: "d", adjustflag: "2"}}
+      - {method: get_data}
+      - {method: to_dict, kwargs: {orient: records}}
+    expect: {status: ok, min_rows: 0}
+    assert: false
+  - id: bs-index-adjust-observe
+    purpose: |
+      指数复权支持观察：官方指数示例不传 adjustflag；本 case 传
+      adjustflag=2 观察行为（返回数据/报错/忽略），决定指数复权能力
+      是否回填。
+    module: baostock
+    call:
+      - {module_func: login}
+      - {module_func: query_history_k_data_plus, kwargs: {code: "sh.000001",
+         fields: "date,code,open,high,low,close,volume,amount",
+         start_date: "2025-06-01", end_date: "2025-06-30",
+         frequency: "d", adjustflag: "2"}}
+      - {method: get_data}
+      - {method: to_dict, kwargs: {orient: records}}
+    expect: {status: ok, min_rows: 0}
+    assert: false
+  - id: bs-weekly-midweek-observe
+    purpose: |
+      周线落点语义实证：官方「周线每周最后一个交易日才可以获取」。周二
+      单日窗口查周线：空结果 → 周线仅周最后一个交易日有数据（数据落点）；
+      返回当周未完成 bar → 语义不同。README 口径待本 case 回填。
+    module: baostock
+    call:
+      - {module_func: login}
+      - {module_func: query_history_k_data_plus, kwargs: {code: "sh.600602",
+         fields: "date,code,open,high,low,close,volume,amount",
+         start_date: "2025-06-10", end_date: "2025-06-10",
+         frequency: "w", adjustflag: "3"}}
+      - {method: get_data}
+      - {method: to_dict, kwargs: {orient: records}}
+    expect: {status: ok, min_rows: 0}
+    assert: false
+  - id: bs-suspended-rows-observe
+    purpose: |
+      停牌日行形态观察：乐视网（sz.300104）2018 下半年长期停牌期。官方
+      口径：OHLC=前收盘价、成交量/额=0、换手率空串——样本直接核对
+      （适配器映射 ""→null、0 如实透出的上游依据）。
+    module: baostock
+    call:
+      - {module_func: login}
+      - {module_func: query_history_k_data_plus, kwargs: {code: "sz.300104",
+         fields: "date,code,open,high,low,close,preclose,volume,amount,adjustflag,turn,tradestatus",
+         start_date: "2018-06-01", end_date: "2018-12-31",
+         frequency: "d", adjustflag: "3"}}
+      - {method: get_data}
+      - {method: to_dict, kwargs: {orient: records}}
+    expect: {status: ok, min_rows: 0}
+    assert: false
+
+  # ── 错误指纹（assert: false 仅观察；供适配器错误分类与 README 回填）──
+  - id: bs-invalid-code-fingerprint
+    purpose: 无效证券代码指纹（预期 10004011；观察错误码或空结果）
+    module: baostock
+    call:
+      - {module_func: login}
+      - {module_func: query_history_k_data_plus, kwargs: {code: "ab.12345",
+         fields: "date,code,open,high,low,close",
+         start_date: "2025-06-01", end_date: "2025-06-30",
+         frequency: "d", adjustflag: "3"}}
+      - {method: get_data}
+      - {method: to_dict, kwargs: {orient: records}}
+    expect: {status: ok, min_rows: 0}
+    assert: false
+  - id: bs-beyond-date-fingerprint
+    purpose: |
+      超日期支持范围指纹（预期 10004013 BSERR_BEYOND_DATE_SUPPORT）：查询
+      1970 年（早于个股 1990-12-19 库底），观察错误码或空结果——空结果即
+      「早于库底返回空」的诚实口径证据。
+    module: baostock
+    call:
+      - {module_func: login}
+      - {module_func: query_history_k_data_plus, kwargs: {code: "sh.600602",
+         fields: "date,code,open,high,low,close",
+         start_date: "1970-01-01", end_date: "1970-12-31",
+         frequency: "d", adjustflag: "3"}}
+      - {method: get_data}
+      - {method: to_dict, kwargs: {orient: records}}
+    expect: {status: ok, min_rows: 0}
+    assert: false
+  - id: bs-invalid-frequency-fingerprint
+    purpose: 无效周期指纹（frequency="7"，观察错误码或空结果）
+    module: baostock
+    call:
+      - {module_func: login}
+      - {module_func: query_history_k_data_plus, kwargs: {code: "sh.600602",
+         fields: "date,code,open,high,low,close",
+         start_date: "2025-06-01", end_date: "2025-06-30",
+         frequency: "7", adjustflag: "3"}}
+      - {method: get_data}
+      - {method: to_dict, kwargs: {orient: records}}
+    expect: {status: ok, min_rows: 0}
+    assert: false
+
+notes: >
+  首轮探针待运行。判定与回填约定：manifest 各周期 history.start 一律等
+  探针实证 + 人工确认后单独提交回填（项目惯例，首版全部省略 history）。
+  raw 观察 case 的行数判读依据见各 case purpose；error_code 指纹经适配器
+  details（upstream_error_code/upstream_error_msg）透出，单测覆盖映射。
+  pacing 2s 间隔为黑名单机制留余量（官方未公布限频数值）。

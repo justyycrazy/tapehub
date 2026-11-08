@@ -30,20 +30,25 @@ version: 1
 defaults:
   # —— bars · 历史 K 线 ——
 
-  # CN 个股：akshare 上游不稳定降为末位（2026-11-07 调整）；tqsdk 不参与
-  # 本组合的 auto 路由（能力保留、仅显式 provider=tqsdk 可用），链上不写
-  # 即明确不参与——校验只要求组合有条目与 order 引用合法，不要求穷举。
+  # CN 个股：baostock 置于首位（2026-11-08 接入拍板：免费无凭据、个股日/周/月
+  # 官方口径 1990-12-19 起深于既有各源、分钟族免费有权限）；akshare 上游不稳
+  # 定降为末位（2026-11-07 调整）；tqsdk 不参与本组合的 auto 路由（能力保留、
+  # 仅显式 provider=tqsdk 可用），链上不写即明确不参与——校验只要求组合有
+  # 条目与 order 引用合法，不要求穷举。
   - match: {data_type: bars, market: CN, asset_type: stock}
-    order: [alphafeed, tickflow, tushare, akshare]
+    order: [baostock, alphafeed, tickflow, tushare, akshare]
 
-  # CN 指数：akshare 独占（tqsdk 虽声明指数日线，不参与本组合的
-  # auto 路由，仅显式 provider=tqsdk 可用）
+  # CN 指数：akshare 优先（库底 ≈1991-01-01 深于 baostock 官方口径 2006-01-01，
+  # baostock 置末位补位，避免浅库底源在路由选择阶段截胡更早区间——回退只在
+  # 路由选择阶段发生，执行失败不切换）；tqsdk 虽声明指数日线，不参与本组合的
+  # auto 路由，仅显式 provider=tqsdk 可用
   - match: {data_type: bars, market: CN, asset_type: index}
-    order: [akshare]
+    order: [akshare, baostock]
 
-  # CN ETF：tqsdk 独占（twelvedata 的 etf 仅 US 市场）
+  # CN ETF：tqsdk 缺省；baostock 回退（2026-11-08 接入，数据 2026-01-05 起，
+  # tqsdk 凭据未配置时自动跳过 → baostock 生效；twelvedata 的 etf 仅 US 市场）
   - match: {data_type: bars, market: CN, asset_type: etf}
-    order: [tqsdk]
+    order: [tqsdk, baostock]
 
   # CN 期货合约：tqsdk 缺省；回退 akshare（新浪源）。tushare 虽声明
   # 期货日线，不参与本组合的 auto 路由（仅显式 provider=tushare 可用）

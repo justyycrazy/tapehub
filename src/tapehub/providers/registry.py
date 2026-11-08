@@ -36,6 +36,7 @@ logger = logging.getLogger(__name__)
 BUILTIN_PROVIDERS: tuple[str, ...] = (
     "akshare",
     "alphafeed",
+    "baostock",
     "tickflow",
     "tushare",
     "tqsdk",
