@@ -16,6 +16,7 @@ from tapehub.providers.registry import build_default_registry
 from tests.conftest import make_settings
 from tests.fixtures.providers.stub_akshare import (
     StubAkshare,
+    em_etf_rows,
     em_stock_rows,
     sina_index_rows,
     stock_rows_en,
@@ -148,6 +149,73 @@ def test_unsupported_instrument_error_mapping(
     response = akshare_client.get("/v1/market/bars", params=params)
     assert response.status_code == 422
     assert response.json()["error"]["code"] == "UNSUPPORTED_CAPABILITY"
+
+
+def test_etf_chain_explicit_provider(
+    akshare_client: TestClient, akshare_stub: StubAkshare
+) -> None:
+    # CN ETF 缺省路由走 baostock（链上 akshare 为末位兜底），本用例显式
+    # provider=akshare 走东财 ETF；未传 adjust → ETF 声明默认 none
+    akshare_stub.set_rows("fund_etf_hist_em", em_etf_rows(["2026-01-02"]))
+    params = {
+        "provider": "akshare",
+        "asset_type": "etf",
+        "instrument": "CN-SSE-510050",
+        "interval": "P1D",
+        "start": "2026-01-01T00:00:00+08:00",
+        "end": "2026-01-10T00:00:00+08:00",
+    }
+    response = akshare_client.get("/v1/market/bars", params=params)
+    assert response.status_code == 200
+    body = response.json()
+
+    operation, kwargs = akshare_stub.calls[0]
+    assert operation == "fund_etf_hist_em"
+    assert kwargs["symbol"] == "510050"
+    assert kwargs["adjust"] == ""  # ETF 未传 adjust → 声明默认 none → 不复权
+    assert kwargs["period"] == "daily"
+
+    assert body["meta"]["provider"] == "akshare"
+    assert body["meta"]["variant"] == "eastmoney"
+    bar = body["data"]["bars"][0]
+    assert bar["timestamp"] == "2026-01-02T00:00:00+08:00"
+    assert bar["volume"] == 2345600.0  # 东财成交量手 → 股
+    assert bar["amount"] == 9876543.0
+
+
+def test_capability_catalog(akshare_client: TestClient) -> None:
+    response = akshare_client.get("/v1/capabilities?provider=akshare")
+    assert response.status_code == 200
+    entry = response.json()["data"][0]
+    assert entry["provider"] == "akshare"
+    assert entry["enabled"] is True
+    assert entry["default_variant"] == {
+        "stock": "eastmoney",
+        "index": "eastmoney",
+        "etf": "eastmoney",
+        "contract": "sina",
+        "continuous": "sina",
+    }
+    caps = entry["capabilities"]
+    # bars 九块：个股（东财/新浪/腾讯）、指数（东财/新浪/腾讯）、ETF（东财）、
+    # 期货合约/主力连续（新浪）
+    assert [(cap["data_type"], cap["markets"], cap["asset_types"]) for cap in caps] == [
+        ("bars", ["CN"], ["stock"]),
+        ("bars", ["CN"], ["stock"]),
+        ("bars", ["CN"], ["stock"]),
+        ("bars", ["CN"], ["index"]),
+        ("bars", ["CN"], ["index"]),
+        ("bars", ["CN"], ["index"]),
+        ("bars", ["CN"], ["etf"]),
+        ("bars", ["CN"], ["contract"]),
+        ("bars", ["CN"], ["continuous"]),
+    ]
+    etf_cap = caps[6]
+    assert etf_cap["variants"] == ["eastmoney"]
+    assert [i["code"] for i in etf_cap["intervals"]] == ["P1D", "P1W", "P1M"]
+    assert etf_cap["adjustments"] == ["none", "qfq", "hfq"]
+    # history.start 未核实不声明（探针实证人工确认后单独提交回填）
+    assert [i["history"]["start"] for i in etf_cap["intervals"]] == [None, None, None]
 
 
 def test_upstream_exception_wrapped(

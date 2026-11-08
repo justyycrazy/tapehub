@@ -9,7 +9,8 @@ requires:
 pacing:
   call_interval_s: 5.0   # 东方财富 push2 对高频断连限流：首次约 5 分钟恢复，
   timeout_s: 60          # 反复触发需 40 分钟以上；实测 2s 节流即被限流
-  max_calls: 190
+  max_calls: 260         # 2026-11-08 ETF 接入后上调（availability/adjust_diff/
+                         # history_depth 随 etf 目标自动展开，约 +50 调用）
 
 targets:
   stock:
@@ -22,6 +23,11 @@ targets:
     instrument: CN-SSE-000001
     window: {start: 2025-01-01, end: 2025-12-31}
     min_bars: 100
+  etf:
+    instrument: CN-SSE-510050
+    window: {start: 2025-01-01, end: 2025-12-31}
+    min_bars: 10         # 跨周期下限，同 stock 口径
+    required_fields: [open, high, low, close, volume, amount]
   contract:
     instrument: CN-SHFE-RB2410
     window: {start: 2024-06-01, end: 2024-09-30}
@@ -35,12 +41,12 @@ chain:
   include_declared: true
   skip: []
   adjust_diff:
-    targets: [stock]
+    targets: [stock, etf]
     window: {start: 2024-06-01, end: 2024-08-31}   # 分红除权高发窗口
     pairs: [[none, qfq], [none, hfq]]
     fields: [close]
   history_depth:
-    targets: [stock, index, contract, continuous]
+    targets: [stock, index, etf, contract, continuous]
     full_history_targets: [contract, continuous]
     earliest: 1991-01-01
     era_step_years: 5
@@ -57,9 +63,12 @@ notes: >
   应全为 null，从 availability 的 null_rates 核对；新浪期货接口无日期参数，
   适配器每次调用拉全量历史后内存过滤，contract/continuous 因此走 history_depth
   全量模式（full_history_targets：单次调用直接读最早 bar，精确值无粒度误差），
-  stock/index 仍走纪元回溯 + 二分（approx，窗口粒度 90 天）；P1W/P1M 仅东财
-  声明，跨源一致性无从对比（skipped 属结构性，非漏探）。已知跨源语义差异
-  （20261104T041657Z 实证，探针如实判 suspect，不是能力不实也不判 confirmed）：
-  none 三源完全一致；qfq 东财与腾讯一致、新浪复权因子口径不同（±0.24 元）；
-  hfq 三源基准各异（最大 ±105 元），复权序列跨源不可直接混用；指数未复权价
-  新浪多一位小数（±0.005，容差内判 confirmed）。
+  stock/index/etf 仍走纪元回溯 + 二分（approx，窗口粒度 90 天）；P1W/P1M 仅东财
+  声明，跨源一致性无从对比（skipped 属结构性，非漏探）。ETF（2026-11-08 接入，
+  fund_etf_hist_em）与个股东财接口同端点同列，探针重点核实：成交量单位口径
+  （手→股 ×100 是否成立，可用成交额/成交量≈均价交叉验证）、amount 单位（元）、
+  复权三值生效性、history.start（manifest 现未核实不声明，待回填）。已知跨源
+  语义差异（20261104T041657Z 实证，探针如实判 suspect，不是能力不实也不判
+  confirmed）：none 三源完全一致；qfq 东财与腾讯一致、新浪复权因子口径不同
+  （±0.24 元）；hfq 三源基准各异（最大 ±105 元），复权序列跨源不可直接混用；
+  指数未复权价新浪多一位小数（±0.005，容差内判 confirmed）。

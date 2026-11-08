@@ -500,6 +500,7 @@ API 层 → Application 层 → Domain 层
 | index | eastmoney | `stock_zh_index_daily_em` | P1D | none | 全部 |
 | index | sina | `stock_zh_index_daily` | P1D | none | 无 amount |
 | index | tencent | `stock_zh_index_daily_tx` | P1D | none | 无 amount（上游 amount 列语义为成交量） |
+| etf | eastmoney | `fund_etf_hist_em` | P1D/P1W/P1M | none/qfq/hfq | 全部 |
 | contract / continuous | sina | `futures_zh_daily_sina` | P1D | none | 全部（extensions: hold/settle） |
 
 TickFlow（REST API `GET https://api.tickflow.org/v1/klines` / `GET /v1/quotes`，官方 SDK `tickflow`）：
@@ -652,12 +653,14 @@ TqSdk（官方 SDK `tqsdk`：`TqApi(auth=TqAuth(...)).get_kline_serial(...)`）�
 
 单位约定（按官方文档）：
 
-- 个股 `volume` 统一为**股**：东财接口返回手，适配器 ×100 换算；新浪/腾讯为股，原样返回；TqSdk 股票/ETF 的 volume 单位文档未写明，**2026-11-03 探针量级对照判定为股**（600000 日 volume ≈5×10^7），原样透出；
+- 个股/ETF `volume` 统一为**股**：东财接口（个股与 ETF 同端点同口径）返回手，适配器 ×100 换算；新浪/腾讯为股，原样返回；TqSdk 股票/ETF 的 volume 单位文档未写明，**2026-11-03 探针量级对照判定为股**（600000 日 volume ≈5×10^7），原样透出；
 - `amount` 统一为**元**；指数/期货的上游未标注单位时原样返回（见各接口文档）；
-- 交易所映射（已核实部分）：个股/指数 `SSE→sh`、`SZSE→sz`；指数东财另支持 `CSI→csi`、`BSE→bj`；期货合约符号原样传递（如 `RB2410`），主力连续为品种代码+`0`（如 `RB`→`RB0`）。
+- 交易所映射（已核实部分）：个股/指数 `SSE→sh`、`SZSE→sz`；指数东财另支持 `CSI→csi`、`BSE→bj`；期货合约符号原样传递（如 `RB2410`），主力连续为品种代码+`0`（如 `RB`→`RB0`）；ETF（东财）为纯 6 位代码原样传递（`CN-SSE-510050 → 510050`、`CN-SZSE-159915 → 159915`），上游按代码首位自动判断沪深（5/6 开头→沪、其余→深）。
 
 未接入说明（诚实边界，不编造能力）：
 
+- `fund_etf_hist_min_em`（东财 ETF 分钟线）不接入：1 分钟走 trends2 仅近 5 个交易日、5/15/30/60 分钟 kline 分支无服务端日期过滤（每次全量拉取客户端切片）；CN ETF 分钟族已由 Baostock 声明（2026-01-05 起，探针实证），重叠价值低（2026-11-08 拍板）；
+- ETF（`fund_etf_hist_em`，2026-11-08 接入）`history.start` 未核实不声明，待探针实证人工确认后回填；缺省路由 CN ETF bars 为 `tqsdk → baostock → akshare`（akshare 末位兜底，与 CN 个股链风格一致）；
 - `futures_hist_em`（东财期货）需要**中文合约名**（如“热卷主连”），无法从标准代码映射，第一版不接入；
 - 加权（`weighted-index`）在上述接口文档中没有符号说明，暂不声明能力；
 - 历史覆盖范围（`history`）已由数据探针实测回填（报告 20261106T211255+0800）：个股各源 `≈1999-12-08`（二分近似，窗口粒度 90 天、complete=True，真值≈标的上市日 1999-11-10；P1W/P1M 与 P1D 同上游端点同数据区间，同值声明）、指数各源 `≈1991-01-01`（探针下限触底）；期货为**全量模式精确值**（新浪期货接口无日期参数，适配器每次拉全量历史后内存过滤，单次调用直接读最早 bar）：单合约 RB2410 实测 `2023-10-17`（各合约以自身上市/摘牌日为准），主力连续 RB 实测 `2009-03-27`（与上期所螺纹钢期货上市日一致，相互印证）；

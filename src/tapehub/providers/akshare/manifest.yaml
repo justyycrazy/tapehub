@@ -15,11 +15,16 @@
 # - 期货东财接口 futures_hist_em 需要中文合约名（如“热卷主连”），无法从
 #   标准标的代码映射，第一版不接入；
 # - “加权”在上列接口文档中没有对应符号说明，暂不声明 weighted-index 能力；
-# - 指数三个接口均无复权参数，adjust 仅支持 none。
+# - 指数三个接口均无复权参数，adjust 仅支持 none；
+# - ETF（fund_etf_hist_em）与个股东财接口同上游 kline 端点同列（中文 11 列、
+#   无「股票代码」列），成交量口径同为手（标准化为股）；symbol 为纯 6 位代码，
+#   上游按代码首位自动判断沪深（5/6 开头→沪，其余→深）；历史覆盖范围
+#   （history.start）未核实不声明，待探针实证回填。
 provider: akshare
 default_variant:
   stock: eastmoney
   index: eastmoney
+  etf: eastmoney
   contract: sina
   continuous: sina
 
@@ -92,6 +97,20 @@ capabilities:
     adjustments: [none]
     fields: [open, high, low, close, volume]
 
+  # ETF · 东方财富：日/周/月线，支持不复权/前复权/后复权（与个股同端点同列，
+  #   成交量单位手）；history.start 未核实不声明，待探针实证回填
+  - data_type: bars
+    markets: [CN]
+    asset_types: [etf]
+    delivery: [rest]
+    variants: [eastmoney]
+    intervals:
+      - {code: P1D}
+      - {code: P1W}
+      - {code: P1M}
+    adjustments: [none, qfq, hfq]
+    fields: [open, high, low, close, volume, amount]
+
   # 期货 · 新浪：单一合约（如 RB2410），仅日线；start 为探针标的 RB2410 上市
   #   首日实测（全量模式精确定值，报告 20261106T211255+0800）——capability 为
   #   asset_type 级声明，各合约数据以自身上市日起、随摘牌止
@@ -161,6 +180,26 @@ operations:
     operation: stock_zh_index_daily
   - match: {data_type: bars, market: CN, asset_type: index, interval: P1D, adjust: none, variant: tencent}
     operation: stock_zh_index_daily_tx
+
+  # ETF · 东方财富：fund_etf_hist_em(symbol, period, start_date, end_date, adjust)
+  - match: {data_type: bars, market: CN, asset_type: etf, interval: P1D, adjust: none, variant: eastmoney}
+    operation: fund_etf_hist_em
+  - match: {data_type: bars, market: CN, asset_type: etf, interval: P1D, adjust: qfq, variant: eastmoney}
+    operation: fund_etf_hist_em
+  - match: {data_type: bars, market: CN, asset_type: etf, interval: P1D, adjust: hfq, variant: eastmoney}
+    operation: fund_etf_hist_em
+  - match: {data_type: bars, market: CN, asset_type: etf, interval: P1W, adjust: none, variant: eastmoney}
+    operation: fund_etf_hist_em
+  - match: {data_type: bars, market: CN, asset_type: etf, interval: P1W, adjust: qfq, variant: eastmoney}
+    operation: fund_etf_hist_em
+  - match: {data_type: bars, market: CN, asset_type: etf, interval: P1W, adjust: hfq, variant: eastmoney}
+    operation: fund_etf_hist_em
+  - match: {data_type: bars, market: CN, asset_type: etf, interval: P1M, adjust: none, variant: eastmoney}
+    operation: fund_etf_hist_em
+  - match: {data_type: bars, market: CN, asset_type: etf, interval: P1M, adjust: qfq, variant: eastmoney}
+    operation: fund_etf_hist_em
+  - match: {data_type: bars, market: CN, asset_type: etf, interval: P1M, adjust: hfq, variant: eastmoney}
+    operation: fund_etf_hist_em
 
   # 期货 · 新浪：futures_zh_daily_sina(symbol)，无日期参数，由适配器内存过滤
   - match: {data_type: bars, market: CN, asset_type: contract, interval: P1D, adjust: none, variant: sina}

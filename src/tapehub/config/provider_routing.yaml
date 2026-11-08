@@ -46,9 +46,11 @@ defaults:
     order: [akshare, baostock]
 
   # CN ETF：tqsdk 缺省；baostock 回退（2026-11-08 接入，数据 2026-01-05 起，
-  # tqsdk 凭据未配置时自动跳过 → baostock 生效；twelvedata 的 etf 仅 US 市场）
+  # tqsdk 凭据未配置时自动跳过 → baostock 生效）；akshare 末位兜底（2026-11-08
+  # 接入东财 ETF 日/周/月，history.start 未核实，与 CN 个股链中 akshare 置末位
+  # 风格一致）；twelvedata 的 etf 仅 US 市场
   - match: {data_type: bars, market: CN, asset_type: etf}
-    order: [tqsdk, baostock]
+    order: [tqsdk, baostock, akshare]
 
   # CN 期货合约：tqsdk 缺省；回退 akshare（新浪源）。tushare 虽声明
   # 期货日线，不参与本组合的 auto 路由（仅显式 provider=tushare 可用）

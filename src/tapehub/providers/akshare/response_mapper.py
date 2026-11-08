@@ -3,6 +3,8 @@
 列名与单位均已按官方文档核实：
 
 - stock_zh_a_hist（东财个股）：中文列名，成交量单位为**手**（标准化为股，×100）；
+- fund_etf_hist_em（东财 ETF）：与东财个股同上游 kline 端点同中文列（无「股票代码」列），
+  成交量单位同为**手**（×100），列映射/扩展白名单/量纲换算直接复用；
 - stock_zh_a_daily（新浪个股）：英文列名，成交量单位为股；
 - stock_zh_a_hist_tx（腾讯个股）：英文列名，成交量单位为股；
 - stock_zh_index_daily_em：英文列名；
@@ -144,6 +146,12 @@ def to_bar(
 # operation → 响应映射配置
 _MAPPINGS: dict[str, dict[str, Any]] = {
     "stock_zh_a_hist": {
+        "columns": _STOCK_EM_COLUMNS,
+        "extensions": _STOCK_EM_EXTENSIONS,
+        "volume_scale": _STOCK_EM_VOLUME_SCALE,
+    },
+    # 东财 ETF 与个股同端点同列（ETF 无「股票代码」列，dict 按列名取值天然兼容）
+    "fund_etf_hist_em": {
         "columns": _STOCK_EM_COLUMNS,
         "extensions": _STOCK_EM_EXTENSIONS,
         "volume_scale": _STOCK_EM_VOLUME_SCALE,

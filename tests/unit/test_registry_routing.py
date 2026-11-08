@@ -29,7 +29,7 @@ class TestLoadRoutingConfig:
         assert table[(DataType.BARS, "HK", AssetType.STOCK)] == ("alphafeed", "tickflow")
         # 完整回退链示例：CN 个股六源（baostock 置于首位 2026-11-08 接入拍板）、
         # tqsdk 缺省的期货合约；CN 指数 akshare 优先（库底更深）、baostock 补位；
-        # CN ETF tqsdk 缺省、baostock 回退
+        # CN ETF tqsdk 缺省、baostock 回退、akshare 末位兜底（2026-11-08 接入）
         assert table[(DataType.BARS, "CN", AssetType.STOCK)] == (
             "baostock",
             "alphafeed",
@@ -38,7 +38,7 @@ class TestLoadRoutingConfig:
             "akshare",
         )
         assert table[(DataType.BARS, "CN", AssetType.INDEX)] == ("akshare", "baostock")
-        assert table[(DataType.BARS, "CN", AssetType.ETF)] == ("tqsdk", "baostock")
+        assert table[(DataType.BARS, "CN", AssetType.ETF)] == ("tqsdk", "baostock", "akshare")
         assert table[(DataType.BARS, "CN", AssetType.CONTRACT)] == (
             "tqsdk",
             "akshare",

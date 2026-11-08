@@ -123,6 +123,16 @@ def build_request(operation: str, query: BarQuery) -> dict[str, str]:
             "end_date": end_date,
             "adjust": adjust_param(query.adjust),
         }
+    if operation == "fund_etf_hist_em":
+        # ETF 与个股东财接口同参数形状；symbol 为纯 6 位代码（SSE/SZSE），
+        # 上游按代码首位自动判断沪深，无需额外映射
+        return {
+            "symbol": stock_symbol(query),
+            "period": period_param(query.interval),
+            "start_date": start_date,
+            "end_date": end_date,
+            "adjust": adjust_param(query.adjust),
+        }
     if operation == "stock_zh_a_daily":
         return {
             "symbol": stock_symbol(query),

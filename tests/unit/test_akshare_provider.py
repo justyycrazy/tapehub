@@ -18,6 +18,7 @@ from tapehub.providers.manifest import load_builtin_manifest
 from tapehub.providers.registry import build_provider_record
 from tests.fixtures.providers.stub_akshare import (
     StubAkshare,
+    em_etf_rows,
     em_stock_rows,
     sina_futures_rows,
     sina_index_rows,
@@ -133,6 +134,71 @@ def test_em_stock_weekly_period(
 
     _, kwargs = stub.calls[0]
     assert kwargs["period"] == "weekly"
+
+
+def test_etf_request_and_response_mapping(
+    akshare_adapter: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    stub = _install_stub(monkeypatch)
+    stub.set_rows("fund_etf_hist_em", em_etf_rows(["2026-01-01", "2026-01-02"]))
+
+    query = _query(
+        asset_type=AssetType.ETF,
+        instrument=Instrument.parse("CN-SSE-510050"),
+        adjust=Adjust.NONE,
+    )
+    batch = asyncio.run(akshare_adapter.fetch_bars(query))
+
+    operation, kwargs = stub.calls[0]
+    assert operation == "fund_etf_hist_em"
+    # ETF 与个股东财接口同参数形状；symbol 为纯 6 位代码，所有参数显式传递
+    assert kwargs == {
+        "symbol": "510050",
+        "period": "daily",
+        "start_date": "20260101",
+        "end_date": "20260110",
+        "adjust": "",
+    }
+    assert batch.bars[0].close == 3.15
+    # 成交量单位为手，标准化为股（×100）
+    assert batch.bars[0].volume == 2345600.0
+    extensions = batch.bars[0].extensions
+    assert extensions is not None
+    assert extensions["pct_change"] == 1.6
+    assert extensions["turnover_rate"] == 0.9
+
+
+def test_etf_szse_symbol(
+    akshare_adapter: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # 深市 ETF（1 开头）：纯 6 位代码透传，上游按代码首位自动判断沪深
+    stub = _install_stub(monkeypatch)
+    stub.set_rows("fund_etf_hist_em", em_etf_rows(["2026-01-02"]))
+
+    query = _query(
+        asset_type=AssetType.ETF,
+        instrument=Instrument.parse("CN-SZSE-159915"),
+        adjust=Adjust.QFQ,
+    )
+    asyncio.run(akshare_adapter.fetch_bars(query))
+
+    _, kwargs = stub.calls[0]
+    assert kwargs["symbol"] == "159915"
+    assert kwargs["adjust"] == "qfq"
+
+
+def test_etf_minute_capability_boundary(
+    akshare_adapter: Any,
+) -> None:
+    # ETF 分钟族未声明（fund_etf_hist_min_em 不接入），应在二级路由被拒绝
+    query = _query(
+        asset_type=AssetType.ETF,
+        instrument=Instrument.parse("CN-SSE-510050"),
+        interval=Interval.parse("PT5M"),
+        adjust=Adjust.NONE,
+    )
+    with pytest.raises(UnsupportedCapabilityError):
+        akshare_adapter.resolve_operation(query)
 
 
 def test_interval_capability_boundary(
