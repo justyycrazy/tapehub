@@ -20,6 +20,7 @@ from tests.fixtures.providers.stub_akshare import (
     StubAkshare,
     em_etf_rows,
     em_global_rows,
+    em_index_rows,
     em_stock_rows,
     sina_futures_rows,
     sina_index_rows,
@@ -355,6 +356,79 @@ def test_tencent_index_amount_is_volume(
     bar = batch.bars[0]
     assert bar.volume == 999.0  # 腾讯指数 amount 列语义为成交量
     assert bar.amount is None
+
+
+def test_em_index_request_and_response_mapping(
+    akshare_adapter: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    stub = _install_stub(monkeypatch)
+    stub.set_rows("index_zh_a_hist", em_index_rows(["2026-01-01", "2026-01-02"]))
+
+    query = _query(
+        asset_type=AssetType.INDEX,
+        instrument=Instrument.parse("CN-SSE-000001"),
+        adjust=Adjust.NONE,
+    )
+    batch = asyncio.run(akshare_adapter.fetch_bars(query))
+
+    operation, kwargs = stub.calls[0]
+    assert operation == "index_zh_a_hist"
+    # 指数东财与个股东财同参数形状；symbol 为纯 6 位代码，无复权参数
+    assert kwargs == {
+        "symbol": "000001",
+        "period": "daily",
+        "start_date": "20260101",
+        "end_date": "20260110",
+    }
+    assert batch.bars[0].close == 3262.56
+    # 成交量单位为手，原样透出不换算（与新浪/腾讯指数口径一致）
+    assert batch.bars[0].volume == 561375.0
+    assert batch.bars[0].amount == 603340526739.8
+    extensions = batch.bars[0].extensions
+    assert extensions is not None
+    assert extensions["pct_change"] == -1.58
+    assert extensions["turnover_rate"] == 0.0
+
+
+def test_em_index_weekly_monthly_period(
+    akshare_adapter: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    stub = _install_stub(monkeypatch)
+    stub.set_rows("index_zh_a_hist", em_index_rows(["2026-01-09"]))
+
+    asyncio.run(akshare_adapter.fetch_bars(_query(
+        asset_type=AssetType.INDEX,
+        instrument=Instrument.parse("CN-SSE-000001"),
+        adjust=Adjust.NONE,
+        interval=Interval.parse("P1W"),
+    )))
+    asyncio.run(akshare_adapter.fetch_bars(_query(
+        asset_type=AssetType.INDEX,
+        instrument=Instrument.parse("CN-SSE-000001"),
+        adjust=Adjust.NONE,
+        interval=Interval.parse("P1M"),
+    )))
+
+    assert stub.calls[0][1]["period"] == "weekly"
+    assert stub.calls[1][1]["period"] == "monthly"
+
+
+def test_em_index_szse_csi_bse_symbol(
+    akshare_adapter: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # 指数东财为纯 6 位代码，上游按指数代码映射表判定市场；
+    # 交易所覆盖与旧前缀式接口一致（SSE/SZSE/CSI/BSE，探针实测）
+    stub = _install_stub(monkeypatch)
+    stub.set_rows("index_zh_a_hist", em_index_rows(["2026-01-02"]))
+
+    for instrument in ("CN-SZSE-399001", "CN-CSI-000905", "CN-BSE-899050"):
+        asyncio.run(akshare_adapter.fetch_bars(_query(
+            asset_type=AssetType.INDEX,
+            instrument=Instrument.parse(instrument),
+            adjust=Adjust.NONE,
+        )))
+        _, kwargs = stub.calls[-1]
+        assert kwargs["symbol"] == instrument.split("-")[-1]
 
 
 def test_futures_continuous_symbol(

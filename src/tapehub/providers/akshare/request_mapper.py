@@ -78,7 +78,7 @@ def adjust_param(adjust: Adjust) -> str:
 
 
 def period_param(interval: Interval) -> str:
-    """周期参数映射；仅 stock_zh_a_hist 支持周/月线。"""
+    """周期参数映射；东财 kline 族接口（个股/ETF/指数/港美股）通用。"""
     period = _PERIOD_BY_INTERVAL.get(interval)
     if period is None:
         raise UnsupportedCapabilityError(
@@ -107,9 +107,16 @@ def stock_symbol(query: BarQuery) -> str:
 
 
 def index_symbol(query: BarQuery) -> str:
-    """指数符号：三个上游接口都用带前缀符号（sh000001 / sz399001 / csi000905）。"""
-    allowed = _INDEX_PREFIX_EXCHANGES.get(query.variant, ())
-    return _prefixed_symbol(query, allowed)
+    """指数符号：eastmoney（index_zh_a_hist）用纯 6 位代码，上游按指数代码
+    映射表判定市场；sina/tencent 用带前缀符号（sh000001 / sz399001）。"""
+    if query.variant == DataVariant.EASTMONEY:
+        allowed = _INDEX_PREFIX_EXCHANGES[DataVariant.EASTMONEY]
+        if query.instrument.exchange not in allowed:
+            raise _unsupported(
+                query, f"exchange {query.instrument.exchange!r} is not supported here"
+            )
+        return query.instrument.symbol
+    return _prefixed_symbol(query, _INDEX_PREFIX_EXCHANGES.get(query.variant, ()))
 
 
 def hk_symbol(query: BarQuery) -> str:
@@ -193,8 +200,15 @@ def build_request(operation: str, query: BarQuery) -> dict[str, str]:
             "end_date": end_date,
             "adjust": adjust_param(query.adjust),
         }
-    if operation == "stock_zh_index_daily_em":
-        return {"symbol": index_symbol(query), "start_date": start_date, "end_date": end_date}
+    if operation == "index_zh_a_hist":
+        # 指数东财与个股东财同端点同参数形状（period daily/weekly/monthly）；
+        # symbol 为纯 6 位代码，上游按指数代码映射表自动判定市场；无复权参数
+        return {
+            "symbol": index_symbol(query),
+            "period": period_param(query.interval),
+            "start_date": start_date,
+            "end_date": end_date,
+        }
     if operation == "stock_zh_index_daily":
         # 新浪指数接口不支持日期参数，返回全量历史，由适配器内存过滤
         return {"symbol": index_symbol(query)}

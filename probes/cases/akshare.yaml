@@ -9,10 +9,10 @@ requires:
 pacing:
   call_interval_s: 5.0   # 东方财富 push2 对高频断连限流：首次约 5 分钟恢复，
   timeout_s: 60          # 反复触发需 40 分钟以上；实测 2s 节流即被限流
-  max_calls: 340         # 2026-11-08 港股/美股接入后上调：availability 47
-                         # （CN stock 15 + index 3 + etf 9 + 期货 2 + HK/US
+  max_calls: 340         # 2026-11-08 指数东财接入 W/M 后复核：availability 49
+                         # （CN stock 15 + index 5 + etf 9 + 期货 2 + HK/US
                          # stock 各 9）+ adjust_diff 24（P1D 限定）+
-                         # history_depth 9 条 × ≤24 + variant_consistency 27
+                         # history_depth 9 条 × ≤24 + variant_consistency 29
 
 targets:
   stock:
@@ -24,7 +24,9 @@ targets:
   index:
     instrument: CN-SSE-000001
     window: {start: 2025-01-01, end: 2025-12-31}
-    min_bars: 100
+    # 跨周期下限（指数东财 2026-11-08 接入 P1W/P1M：W≈53 / M≈12 根），
+    # 只用于拦截空结果；按日线标定会产生周/月假阳性
+    min_bars: 10
   etf:
     instrument: CN-SSE-510050
     window: {start: 2025-01-01, end: 2025-12-31}
@@ -73,13 +75,19 @@ chain:
     fields: [close]
     tolerance: 0.01      # 指数新浪源多一位小数（±0.005）属表示层精度差，不是口径不一致
 
+raw: []
+
 notes: >
   指数腾讯源的 amount 列语义为成交量（映射到 volume），新浪/腾讯指数的 amount
   应全为 null，从 availability 的 null_rates 核对；新浪期货接口无日期参数，
   适配器每次调用拉全量历史后内存过滤，contract/continuous 因此走 history_depth
   全量模式（full_history_targets：单次调用直接读最早 bar，精确值无粒度误差），
-  stock/index/etf 仍走纪元回溯 + 二分（approx，窗口粒度 90 天）；P1W/P1M 仅东财
-  声明，跨源一致性无从对比（skipped 属结构性，非漏探）。ETF（2026-11-08 接入，
+  stock/index/etf 仍走纪元回溯 + 二分（approx，窗口粒度 90 天）；指数 P1W/P1M
+  与个股 P1W/P1M 均仅东财声明，跨源一致性无从对比（skipped 属结构性，非漏探）。
+  指数东财（2026-11-08 接入 W/M，换用 index_zh_a_hist）：声明前经 raw 探针实证
+  （报告 20261108T162519+0800，周/月可用性 confirmed），声明后由 chain 可用性
+  case 常态复验；成交量单位手原样透出（×100 交叉验证成立，用户决策保持与
+  新浪/腾讯指数一致），交易所覆盖 SSE/SZSE/CSI/BSE 探针实测。ETF（2026-11-08 接入，
   fund_etf_hist_em）与个股东财接口同端点同列，探针重点核实：成交量单位口径
   （手→股 ×100 是否成立，可用成交额/成交量≈均价交叉验证）、amount 单位（元）、
   复权三值生效性、history.start（manifest 现未核实不声明，待回填）。港/美股

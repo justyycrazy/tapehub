@@ -53,8 +53,8 @@ class StubAkshare:
         return self._respond("stock_zh_a_hist_tx", **kwargs)
 
     # 指数
-    def stock_zh_index_daily_em(self, **kwargs: Any) -> StubDataFrame:
-        return self._respond("stock_zh_index_daily_em", **kwargs)
+    def index_zh_a_hist(self, **kwargs: Any) -> StubDataFrame:
+        return self._respond("index_zh_a_hist", **kwargs)
 
     def stock_zh_index_daily(self, **kwargs: Any) -> StubDataFrame:
         return self._respond("stock_zh_index_daily", **kwargs)
@@ -103,6 +103,27 @@ def em_etf_rows(days: list[str], volume_lots: int = 23456) -> list[dict[str, Any
             "涨跌幅": 1.6,
             "涨跌额": 0.05,
             "换手率": 0.9,
+        }
+        for day in days
+    ]
+
+
+def em_index_rows(days: list[str], volume_lots: int = 561375) -> list[dict[str, Any]]:
+    """index_zh_a_hist 输出行：中文列名（无「股票代码」列），成交量单位为手
+    （原样透出，桩值即手量级，用于断言不发生 ×100 换算）。"""
+    return [
+        {
+            "日期": day,
+            "开盘": 3300.0,
+            "收盘": 3262.56,
+            "最高": 3351.72,
+            "最低": 3242.09,
+            "成交量": volume_lots,
+            "成交额": 603340526739.8,
+            "振幅": 3.36,
+            "涨跌幅": -1.58,
+            "涨跌额": -52.31,
+            "换手率": 0.0,
         }
         for day in days
     ]

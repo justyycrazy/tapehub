@@ -116,10 +116,10 @@ def test_index_default_routes_akshare(
     """CN 指数缺省仍为 akshare（库底更深），baostock 末位补位。"""
     akshare_stub = StubAkshare()
     monkeypatch.setitem(sys.modules, "akshare", akshare_stub)
-    akshare_stub.set_rows("stock_zh_index_daily_em", [
-        {"date": "2026-01-05", "open": 3105.3, "high": 3136.4, "low": 3105.3,
-         "close": 3135.9, "volume": 14156718592, "amount": 159887138816.0,
-         "涨跌幅": 1.04},
+    akshare_stub.set_rows("index_zh_a_hist", [
+        {"日期": "2026-01-05", "开盘": 3105.3, "收盘": 3135.9, "最高": 3136.4,
+         "最低": 3105.3, "成交量": 14156718592, "成交额": 159887138816.0,
+         "振幅": 1.0, "涨跌幅": 1.04, "涨跌额": 32.3, "换手率": 0.0},
     ])
     baostock_stub.result = daily_stock_rows(["2026-01-05"])
 

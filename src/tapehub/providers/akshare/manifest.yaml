@@ -16,6 +16,13 @@
 #   标准标的代码映射，第一版不接入；
 # - “加权”在上列接口文档中没有对应符号说明，暂不声明 weighted-index 能力；
 # - 指数三个接口均无复权参数，adjust 仅支持 none；
+# - 指数东财为 index_zh_a_hist（与个股东财同 push2his kline 端点，klt
+#   101/102/103 = 日/周/月）：symbol 为纯 6 位代码，上游按指数代码映射表
+#   判定市场（SSE/SZSE/CSI/BSE 探针实测覆盖，首次调用拉取 17 页映射表，
+#   进程内有缓存）；成交量单位为手，**原样透出不换算**（×100 交叉验证成立：
+#   换算后成交额÷成交量≈10.7 元/股，与新浪/腾讯指数的原样口径保持一致）；
+#   P1W/P1M 与 P1D 同端点同数据区间，同值声明（周期探测报告
+#   20261108T162519+0800；1991 年周线 52 根实测确认，首根 1991-01-04）；
 # - ETF（fund_etf_hist_em）与个股东财接口同上游 kline 端点同列（中文 11 列、
 #   无「股票代码」列），成交量口径同为手（标准化为股，×100 换算经探针实证：
 #   换算后成交额÷成交量≈价格）；symbol 为纯 6 位代码，上游按代码首位自动
@@ -74,7 +81,8 @@ capabilities:
     adjustments: [none, qfq, hfq]
     fields: [open, high, low, close, volume, amount]
 
-  # 指数 · 东方财富：日线（symbol 前缀支持 sh/sz/csi/bj）
+  # 指数 · 东方财富：日/周/月线（index_zh_a_hist，与个股东财同端点；
+  #   symbol 纯 6 位代码，上游按代码映射表判定市场）；成交量单位手，原样透出
   - data_type: bars
     markets: [CN]
     asset_types: [index]
@@ -82,6 +90,8 @@ capabilities:
     variants: [eastmoney]
     intervals:
       - {code: P1D, history: {start: 1991-01-01T00:00:00+08:00, end: null}}
+      - {code: P1W, history: {start: 1991-01-01T00:00:00+08:00, end: null}}
+      - {code: P1M, history: {start: 1991-01-01T00:00:00+08:00, end: null}}
     adjustments: [none]
     fields: [open, high, low, close, volume, amount]
 
@@ -217,9 +227,13 @@ operations:
   - match: {data_type: bars, market: CN, asset_type: stock, interval: P1D, adjust: hfq, variant: tencent}
     operation: stock_zh_a_hist_tx
 
-  # 指数：三个源均无 adjust
+  # 指数：三个源均无 adjust；东财 index_zh_a_hist（period = daily/weekly/monthly）
   - match: {data_type: bars, market: CN, asset_type: index, interval: P1D, adjust: none, variant: eastmoney}
-    operation: stock_zh_index_daily_em
+    operation: index_zh_a_hist
+  - match: {data_type: bars, market: CN, asset_type: index, interval: P1W, adjust: none, variant: eastmoney}
+    operation: index_zh_a_hist
+  - match: {data_type: bars, market: CN, asset_type: index, interval: P1M, adjust: none, variant: eastmoney}
+    operation: index_zh_a_hist
   - match: {data_type: bars, market: CN, asset_type: index, interval: P1D, adjust: none, variant: sina}
     operation: stock_zh_index_daily
   - match: {data_type: bars, market: CN, asset_type: index, interval: P1D, adjust: none, variant: tencent}

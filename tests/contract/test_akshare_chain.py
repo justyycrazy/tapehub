@@ -18,6 +18,7 @@ from tests.fixtures.providers.stub_akshare import (
     StubAkshare,
     em_etf_rows,
     em_global_rows,
+    em_index_rows,
     em_stock_rows,
     sina_index_rows,
     stock_rows_en,
@@ -117,6 +118,39 @@ def test_index_chain(akshare_client: TestClient, akshare_stub: StubAkshare) -> N
     assert bar["close"] == 3005.0
     assert bar["amount"] is None
     assert bar["volume"] == 1.0
+
+
+def test_index_em_chain_default_variant_weekly(
+    akshare_client: TestClient, akshare_stub: StubAkshare
+) -> None:
+    # CN 指数缺省路由走 akshare（eastmoney，index_zh_a_hist）；周/月线已声明
+    akshare_stub.set_rows("index_zh_a_hist", em_index_rows(["2026-01-09"]))
+    params = {
+        "asset_type": "index",
+        "instrument": "CN-SSE-000001",
+        "interval": "P1W",
+        "start": "2026-01-01T00:00:00+08:00",
+        "end": "2026-01-10T00:00:00+08:00",
+    }
+    response = akshare_client.get("/v1/market/bars", params=params)
+    assert response.status_code == 200
+    body = response.json()
+
+    operation, kwargs = akshare_stub.calls[0]
+    assert operation == "index_zh_a_hist"
+    # 指数东财：纯 6 位代码 + period 周期参数，无复权参数
+    assert kwargs == {
+        "symbol": "000001",
+        "period": "weekly",
+        "start_date": "20260101",
+        "end_date": "20260110",
+    }
+    assert body["meta"]["provider"] == "akshare"
+    assert body["meta"]["variant"] == "eastmoney"
+    bar = body["data"]["bars"][0]
+    assert bar["timestamp"] == "2026-01-09T00:00:00+08:00"
+    assert bar["volume"] == 561375.0  # 指数成交量原样透出（手），不 ×100
+    assert bar["amount"] == 603340526739.8
 
 
 def test_unsupported_variant_capability(
@@ -273,6 +307,15 @@ def test_capability_catalog(akshare_client: TestClient) -> None:
     assert etf_cap["variants"] == ["eastmoney"]
     assert [i["code"] for i in etf_cap["intervals"]] == ["P1D", "P1W", "P1M"]
     assert etf_cap["adjustments"] == ["none", "qfq", "hfq"]
+    # 指数东财：日/周/月线（index_zh_a_hist），无复权，history.start 同值声明
+    index_em_cap = caps[3]
+    assert index_em_cap["variants"] == ["eastmoney"]
+    assert [i["code"] for i in index_em_cap["intervals"]] == ["P1D", "P1W", "P1M"]
+    assert index_em_cap["adjustments"] == ["none"]
+    assert (
+        [i["history"]["start"] for i in index_em_cap["intervals"]]
+        == ["1991-01-01T00:00:00+08:00"] * 3
+    )
     # history.start 探针实证回填（报告 20261108T150042+0800，人工确认，
     # approx ±90 天；P1W/P1M 与 P1D 同上游端点同数据区间，同值声明）
     etf_start = "2005-03-20T00:00:00+08:00"

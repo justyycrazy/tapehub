@@ -10,7 +10,8 @@
   同日（北京零点）、美股为美东零点（归一化北京时间 12:00/13:00，对齐 twelvedata）；
 - stock_zh_a_daily（新浪个股）：英文列名，成交量单位为股；
 - stock_zh_a_hist_tx（腾讯个股）：英文列名，成交量单位为股；
-- stock_zh_index_daily_em：英文列名；
+- index_zh_a_hist（东财指数）：与东财个股同端点同中文列；成交量单位为手，
+  **原样透出不换算**（×100 交叉验证成立，用户决策保持指数三源一致的原样口径）；
 - stock_zh_index_daily（新浪指数）：无成交额列；
 - stock_zh_index_daily_tx：无独立成交额列，上游 amount 列语义为成交量（单位手）；
 - futures_zh_daily_sina：无日期参数接口，含 hold（持仓量）、settle（结算价）。
@@ -62,9 +63,6 @@ _STOCK_SINA_EXTENSIONS = {"outstanding_share": "outstanding_share", "turnover": 
 
 _STOCK_TX_COLUMNS = dict(_STOCK_SINA_COLUMNS)
 _STOCK_TX_EXTENSIONS = {"turnover": "turnover"}
-
-_INDEX_EM_COLUMNS = dict(_STOCK_SINA_COLUMNS)
-_INDEX_EM_EXTENSIONS: dict[str, str] = {}
 
 _INDEX_SINA_COLUMNS = {
     "date": "timestamp",
@@ -165,6 +163,12 @@ _MAPPINGS: dict[str, dict[str, Any]] = {
         "extensions": _STOCK_EM_EXTENSIONS,
         "volume_scale": _STOCK_EM_VOLUME_SCALE,
     },
+    # 东财指数与个股同端点同列；成交量单位手、原样透出（无 volume_scale，
+    # 与新浪/腾讯指数口径一致）
+    "index_zh_a_hist": {
+        "columns": _STOCK_EM_COLUMNS,
+        "extensions": _STOCK_EM_EXTENSIONS,
+    },
     # 港股/美股与 A 股同列；成交量单位未核实，无 volume_scale（原样透出待探针定标）；
     # 美股日线为美东零点口径（BarBatch 统一归一化北京时间）
     "stock_hk_hist": {
@@ -184,7 +188,6 @@ _MAPPINGS: dict[str, dict[str, Any]] = {
         "columns": _STOCK_TX_COLUMNS,
         "extensions": _STOCK_TX_EXTENSIONS,
     },
-    "stock_zh_index_daily_em": {"columns": _INDEX_EM_COLUMNS, "extensions": _INDEX_EM_EXTENSIONS},
     "stock_zh_index_daily": {"columns": _INDEX_SINA_COLUMNS},
     "stock_zh_index_daily_tx": {"columns": _INDEX_TX_COLUMNS},
     "futures_zh_daily_sina": {
