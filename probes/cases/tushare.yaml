@@ -16,7 +16,10 @@ targets:
   stock:
     instrument: CN-SSE-600000
     window: {start: 2025-01-01, end: 2025-12-31}
-    min_bars: 100
+    # min_bars 跨周期统一生效：月线 2025 年内约 12 根，下限取 10 贴近月线
+    # 真实值（对齐 akshare/baostock/tickflow 的跨周期下限口径）；
+    # 日线的量级与字段质量由 required_fields 兜底
+    min_bars: 10
     required_fields: [open, high, low, close, volume, amount]
   contract:
     instrument: CN-SHFE-CU2401
@@ -52,26 +55,43 @@ raw:
       - {method: fut_daily, kwargs: {ts_code: "M2409.DCE", start_date: "20240801", end_date: "20240831"}}
     expect: {status: ok, min_rows: 1}
   - id: fut-czce-suffix
-    purpose: 探测郑商所后缀（.CZCE 三位年码，声明外）
+    purpose: 探测郑商所后缀（.ZCE，声明外）。tushare 郑商所合约代码为 4 位年月码
+      （SR2601，同 CU1811 约定），非交易所原生 3 位码（SR601）——2026-11-12 实证：
+      3 位码一律空（含现活合约，曾误判为积分门槛），4 位码正常返回；另 fut_basic
+      的 exchange 参数用交易所代码 CZCE（与后缀 .ZCE 是两套约定）。合约随时间
+      过期，届时轮换为当时的现活合约
     module: tushare
     client: {attr: pro_api, kwargs: {token: "$TAPEHUB_TUSHARE_TOKEN"}}
     call:
-      - {method: fut_daily, kwargs: {ts_code: "SR409.CZCE", start_date: "20240801", end_date: "20240831"}}
+      - {method: fut_daily, kwargs: {ts_code: "SR2601.ZCE", start_date: "20251101", end_date: "20251112"}}
     expect: {status: ok, min_rows: 1}
   - id: fut-ine-suffix
-    purpose: 探测上期能源后缀（小写 sc.INE，声明外）
+    purpose: 探测上期能源后缀（.INE，声明外；tushare 统一大写，交易所原生
+      小写品种 sc 无需保留）
     module: tushare
     client: {attr: pro_api, kwargs: {token: "$TAPEHUB_TUSHARE_TOKEN"}}
     call:
-      - {method: fut_daily, kwargs: {ts_code: "sc2409.INE", start_date: "20240801", end_date: "20240831"}}
+      - {method: fut_daily, kwargs: {ts_code: "SC2409.INE", start_date: "20240801", end_date: "20240831"}}
     expect: {status: ok, min_rows: 1}
   - id: fut-cffex-suffix
-    purpose: 探测中金所后缀（.CFFEX，声明外）
+    purpose: 探测中金所后缀（.CFX，声明外）
     module: tushare
     client: {attr: pro_api, kwargs: {token: "$TAPEHUB_TUSHARE_TOKEN"}}
     call:
-      - {method: fut_daily, kwargs: {ts_code: "IF2409.CFFEX", start_date: "20240801", end_date: "20240831"}}
+      - {method: fut_daily, kwargs: {ts_code: "IF2409.CFX", start_date: "20240801", end_date: "20240831"}}
     expect: {status: ok, min_rows: 1}
+  # 单次上限直接实测：总览页（doc_id=134）的连续合约格式（XXL 主连）可在
+  # fut_daily 上打穿 2000 条上限——contract 生命周期短、经链路探针触及不了
+  # 上限（limit_truncation suspect 即此原因），故以 raw 直测上游
+  - id: fut-continuous-cap
+    purpose: 用主连合约 CUL.SHF 跨 16 年窗口实测单次 2000 条上限。2026-11-12
+      实测恰返回 2000 根、保留最新端（窗口内最早 20171011）：截断方向为
+      「保尾截头」，即上游按最新往回截断，请求更早历史需分段取数
+    module: tushare
+    client: {attr: pro_api, kwargs: {token: "$TAPEHUB_TUSHARE_TOKEN"}}
+    call:
+      - {method: fut_daily, kwargs: {ts_code: "CUL.SHF", start_date: "20100101", end_date: "20251231"}}
+    expect: {status: ok, min_rows: 2000}
   # 错误指纹仅观察：采集“接口不存在/无权限”类原始报错文本，供错误码细分参考
   - id: unknown-api-fingerprint
     purpose: 采集未知接口名的原始错误指纹（仅观察，不判定）
@@ -83,5 +103,14 @@ raw:
     expect: {status: error, error_contains: ""}
 
 notes: >
-  官方文档注解 adj「仅日线复权」，manifest 中周线/月线声明的 qfq/hfq 以
-  adjust_diff 实证；若复权为 no-op，人工将 P1W/P1M 的 adjustments 收敛为 [none]。
+  adjust_diff 已实证（报告 20261112T110412+0800）：P1W/P1M 的 qfq/hfq 与
+  none 存在真实差异，官方「adj 仅日线复权」偏保守，manifest adjustments
+  维持 [none, qfq, hfq] 不收敛。
+  期货后缀实测（框架修复后报告 20261112T110412 / 20261112T111752）：
+  .DCE / .INE / .CFX confirmed；.ZCE 可用（4 位年月码
+  SR2601.ZCE 实测返回数据；此前 3 位原生码全空系代码格式所致，
+  并非积分档位门槛）。fut_daily 单次上限经主连 CUL.SHF 实测恰为 2000 条、
+  保尾截头（fut-continuous-cap）。四所后缀是否扩容进能力目录（manifest markets 与
+  request_mapper 代码映射）待人工确认后另行接入，探针不自动改 manifest。
+  history_depth：stock P1D/P1W/P1M ≈1999-12-08（approx ±90 天、两轮
+  复现），回填待人工确认；contract 未配 history_depth，history 保持 null。
