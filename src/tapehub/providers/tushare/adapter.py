@@ -9,8 +9,10 @@
 - 同步 SDK 调用通过 ``call_in_thread`` 隔离到线程池，不阻塞事件循环；
 - 两级路由：manifest operations 选中 pro_bar（股票）或 fut_daily（期货单一合约），
   上游函数名仅存在于本适配器与 manifest 内部；
-- fut_daily 单次上限 2000 条：达到上限时批次标记 ``partial=true``，
-  API 层据此在 warnings 中提示可能截断；
+- fut_daily 单次上限 2000 条（主连 CUL.SHF 16 年窗口实测恰 2000，报告
+  20261112T124404+0800）：达到上限时批次标记 ``partial=true``，API 层据此
+  在 warnings 中提示可能截断；上游截断为「保尾截头」——保留最新 2000 根，
+  partial=true 时缺的是窗口头部更早数据；
 - 统一分页由共享 ``paginate_bars`` 完成，闭区间 [start, end] 在标准化后复核；
 - 上游 SDK 异常/积分限频的具体类型未在文档中核实，统一由应用层包装为
   UPSTREAM_ERROR（40203 等积分错误码待核实后补充）。

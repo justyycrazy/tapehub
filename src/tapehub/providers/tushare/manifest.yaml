@@ -2,32 +2,43 @@
 # 接口签名均已按官方文档核实：https://tushare.pro/document/2
 #
 # 说明：
-# - 股票使用模块级函数 ts.pro_bar（asset='E'，freq D/W/M，adj 仅日线复权）；
+# - 股票使用模块级函数 ts.pro_bar（asset='E'，freq D/W/M；文档注解 adj
+#   「仅日线复权」偏保守，探针实证周/月线复权真实生效，报告
+#   20261112T110412+0800）；
 # - 期货单一合约使用 pro 对象方法 pro.fut_daily（无复权，单次上限 2000 条，
-#   达到上限时响应标记 partial=true）；
+#   经主连 CUL.SHF 实测恰为 2000；上游截断为「保尾截头」——保留最新 2000 根，
+#   partial=true 时缺窗口头部更早数据，探针报告 20261112T124404+0800）；
 # - 股票 ts_code 后缀已按文档示例核实：000001.SH / 000001.SZ（SSE/SZSE）；
 #   北交所 .BJ 为 tushare 通用约定但未在所引文档示例中出现，暂不声明；
-# - 期货 ts_code 后缀仅核实上期所：CU1811.SHF（文档示例）；其余交易所
-#   后缀（DCE/CZCE/INE/GFEX/CFFEX）暂不声明，待逐所核实；
-# - 主力连续另有专门接口（doc_id=189），本次未接入；
+# - 期货 ts_code 后缀：上期所 .SHF 已声明；.DCE / .INE（统一大写）/
+#   .CFX / .ZCE（4 位年月码，非交易所原生 3 位码）经探针实证可用
+#   （报告 20261112T124404+0800），扩容进能力目录待人工决策；主连 XXL
+#   代码（如 CUL.SHF）经 fut_daily 实证可用，接入 continuous 资产类型
+#   无需另用专门接口；
 # - 单位换算按文档：股票 vol 手→股（×100）、amount 千元→元（×1000）；
 #   期货 vol 保持手、amount 万元→元（×10000）；
-# - 历史覆盖范围（history）未核实，保持 null，不编造；
+# - 历史覆盖范围（history）：stock 日/周/月经数据探针实测回填（报告
+#   20261112T124404+0800，人工确认；二分估计粒度 90 天 approx，真值≈标的
+#   上市日 1999-11-10 落在估算窗口内，与 akshare 个股二分口径同日互证）；
+#   contract 未配 history_depth，保持 null，不编造（capability 为
+#   asset_type 级声明，各合约数据以自身上市日起、随摘牌止）；
 # - 单接口体系 Provider：变体与 default_variant 均为 tushare（数据源即上游服务自身，与东方财富无关）：缺省请求即可路由，也可显式传 variant=tushare。
 provider: tushare
 default_variant: tushare
 
 capabilities:
-  # 股票：ts.pro_bar，日/周/月线，三种复权
+  # 股票：ts.pro_bar，日/周/月线，三种复权；history.start 探针实测回填
+  #   （报告 20261112T124404+0800，人工确认；二分估计粒度 90 天 approx，
+  #   三周期各自二分收敛、结果一致）
   - data_type: bars
     markets: [CN]
     asset_types: [stock]
     delivery: [rest]
     variants: [tushare]
     intervals:
-      - {code: P1D, history: {start: null, end: null}}
-      - {code: P1W, history: {start: null, end: null}}
-      - {code: P1M, history: {start: null, end: null}}
+      - {code: P1D, history: {start: 1999-12-08T00:00:00+08:00, end: null}}
+      - {code: P1W, history: {start: 1999-12-08T00:00:00+08:00, end: null}}
+      - {code: P1M, history: {start: 1999-12-08T00:00:00+08:00, end: null}}
     adjustments: [none, qfq, hfq]
     fields: [open, high, low, close, volume, amount]
 
