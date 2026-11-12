@@ -92,6 +92,49 @@ raw:
     call:
       - {method: fut_daily, kwargs: {ts_code: "CUL.SHF", start_date: "20100101", end_date: "20251231"}}
     expect: {status: ok, min_rows: 2000}
+  # ── continuous（主力连续）接入前置核实（2026-11-12 规划）：tapehub continuous
+  # 映射 XXL 主连（决策已定），CFFEX 例外预期用主力 IF.CFX（IFL.CFX 为当月
+  # 连续非主连）；SHFE 主力 CU.SHF 作对照，佐证 XXL 深度优势。capability 无法
+  # 按交易所拆分，五所连续代码全部实证后才能声明 CN continuous——探针先行
+  - id: fut-shfe-main-cu
+    purpose: SHFE 主力合约 CU.SHF（XX 直拼）与主连 CUL.SHF 对照：确认主力与
+      主连的历史深度差异，佐证 continuous → XXL 选型
+    module: tushare
+    client: {attr: pro_api, kwargs: {token: "$TAPEHUB_TUSHARE_TOKEN"}}
+    call:
+      - {method: fut_daily, kwargs: {ts_code: "CU.SHF", start_date: "20251101", end_date: "20251112"}}
+    expect: {status: ok, min_rows: 1}
+  - id: fut-czce-continuous-l
+    purpose: CZCE 主连候选 SRL.ZCE（4 位年月码体系下品种+L）；若查空补测
+      XX 直拼 SR.ZCE
+    module: tushare
+    client: {attr: pro_api, kwargs: {token: "$TAPEHUB_TUSHARE_TOKEN"}}
+    call:
+      - {method: fut_daily, kwargs: {ts_code: "SRL.ZCE", start_date: "20251101", end_date: "20251112"}}
+    expect: {status: ok, min_rows: 1}
+  - id: fut-dce-continuous-l
+    purpose: DCE 主连候选 ML.DCE（品种+L）；若查空补测 XX 直拼 M.DCE
+    module: tushare
+    client: {attr: pro_api, kwargs: {token: "$TAPEHUB_TUSHARE_TOKEN"}}
+    call:
+      - {method: fut_daily, kwargs: {ts_code: "ML.DCE", start_date: "20251101", end_date: "20251112"}}
+    expect: {status: ok, min_rows: 1}
+  - id: fut-ine-continuous-l
+    purpose: INE 主连候选 SCL.INE（品种+L，品种按 tushare 统一大写）；若查空
+      补测 XX 直拼 SC.INE
+    module: tushare
+    client: {attr: pro_api, kwargs: {token: "$TAPEHUB_TUSHARE_TOKEN"}}
+    call:
+      - {method: fut_daily, kwargs: {ts_code: "SCL.INE", start_date: "20251101", end_date: "20251112"}}
+    expect: {status: ok, min_rows: 1}
+  - id: fut-cffex-main-if
+    purpose: CFFEX 主力 IF.CFX（主连候选——IFL.CFX 为当月连续、IFL1-3 为
+      次月/当季/下季，均非主连，故 CFFEX 预期映射主力 XX）
+    module: tushare
+    client: {attr: pro_api, kwargs: {token: "$TAPEHUB_TUSHARE_TOKEN"}}
+    call:
+      - {method: fut_daily, kwargs: {ts_code: "IF.CFX", start_date: "20251101", end_date: "20251112"}}
+    expect: {status: ok, min_rows: 1}
   # 错误指纹仅观察：采集“接口不存在/无权限”类原始报错文本，供错误码细分参考
   - id: unknown-api-fingerprint
     purpose: 采集未知接口名的原始错误指纹（仅观察，不判定）
