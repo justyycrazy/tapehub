@@ -5,8 +5,9 @@
 #
 # 说明：
 # - TqSdk 为官方 Python SDK：TqApi(auth=TqAuth(账户, 密码)) 鉴权必填（快期账户）；
-# - 合约代码格式 交易所.合约（交易所全大写，品种代码大小写遵从交易所规定，
-#   如 SHFE.cu2607 / CZCE.SR609）；主力连续 KQ.m@<交易所>.<品种>；
+# - 合约代码格式 交易所.合约（交易所全大写；标准 symbol 恒为大写 4 位年月，
+#   交易所原生写法由适配器还原——SHFE 品种小写如 SHFE.cu2607、CZCE 合约
+#   4→3 位年月码如 CZCE.RM701，均探针实证）；主力连续 KQ.m@<交易所>.<品种>；
 #   指数连续（加权）KQ.i@<交易所>.<品种>；
 # - get_kline_serial(symbol, duration_seconds, data_length, adj_type)：
 #   周期为不超过 1 日的任意秒数（日线 86400）；data_length 默认 200；

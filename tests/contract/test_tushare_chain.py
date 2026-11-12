@@ -92,9 +92,8 @@ def test_futures_chain(
 @pytest.mark.parametrize(
     ("code", "expected_ts_code"),
     [
-        # CZCE 原生 3 位年月码 → tushare 4 位（10 年窗口唯一解析，探针实证）
-        ("CN-CZCE-SR601", "SR2601.ZCE"),
-        ("CN-CZCE-SR509", "SR2509.ZCE"),
+        # CZCE 与统一标准码同为 4 位年月，直通（探针实证 4 位可用、3 位旧写法全空）
+        ("CN-CZCE-RM2701", "RM2701.ZCE"),
         # 其余四所后缀直拼（探针实证，报告 20261112T124404+0800）
         ("CN-DCE-V2601", "V2601.DCE"),
     ],
@@ -105,7 +104,7 @@ def test_futures_chain_exchange_suffixes(
     monkeypatch: pytest.MonkeyPatch,
     tushare_client: tuple[TestClient, Any],
 ) -> None:
-    """扩容后的期货交易所后缀贯穿 HTTP 全链路（含 CZCE 3→4 位码转换）。"""
+    """扩容后的期货交易所后缀贯穿 HTTP 全链路（CZCE 4 位年月码直通）。"""
     http, stub = tushare_client
     stub.set_rows("fut_daily", futures_rows(["2026-01-02"]))
 

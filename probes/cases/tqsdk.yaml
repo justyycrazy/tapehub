@@ -18,11 +18,12 @@ pacing:
   # 本身已有 11-03 盘中实证（hfq/none 差异显著）。复权 case 判定以盘中
   # 运行为准；另实测天勤不支持 BSE 前缀（BSE.920000 快速报
   # 「non-existent instrument」graphql 错误，闸门 case quote-bse-fingerprint）
-  # 可用性 54（stock/stock@CN-SZSE 各 18 + index 6 + etf 18 + contract/
-  # continuous/weighted-index 各 6）+ adjust_diff 36 case×2 调用（stock/
-  # stock@CN-SZSE/etf × 6 周期 × 2 pair）+ history_depth 30 case×~13 + limit 1
-  # + connection 9+12（创建+首调+释放）+ raw quote 8 case×2 调用（含 BSE 闸门）
-  # ≈ 668
+  # 可用性 60（stock/stock@CN-SZSE 各 18 + index 6 + etf 18 + contract/
+  # continuous/weighted-index 各 6 + contract@CN-CZCE 6）+ adjust_diff 36
+  # case×2 调用（stock/stock@CN-SZSE/etf × 6 周期 × 2 pair）+
+  # history_depth 30 case×~13 + limit 1
+  # + connection 9+12（创建+首调+释放）+ raw 10 case×2 调用（quote 矩阵含
+  # BSE 闸门 + 郑商所 3/4 位 kline 对照）≈ 678
   # （深度探针全周期同轮测量：保留边界随时间前移，矩阵须同一时点）
   max_calls: 700
 
@@ -32,6 +33,16 @@ targets:
     # 标准代码统一大写（AU2612），SHFE 品种小写由适配器还原为上游写法
     instrument: CN-SHFE-AU2612
     window: {start: 2026-07-01, end: 2026-11-30}
+    min_bars: 30
+  contract@CN-CZCE:
+    # 郑商所合约：标准码统一 4 位年月（公开现行约定；tushare/新浪 侧
+    # 2026-11-12 实证 4 位可用、3 位全空）。2026-11-12 探针实证 TianQin
+    # 只认 3 位（CZCE.RM701 有数据、4 位 CZCE.RM2701 无响应挂起），
+    # 适配器做 4→3 位还原（RM2701 → RM701），chain 可用性即还原链路的
+    # 常态复验；3/4 位对照原始证据见 raw case kline-czce-4digit /
+    # kline-czce-3digit
+    instrument: CN-CZCE-RM2701
+    window: {start: 2026-07-01, end: 2026-12-31}
     min_bars: 30
   continuous:
     instrument: CN-SHFE-CU
@@ -271,6 +282,43 @@ raw:
     call:
       - {method: get_quote, kwargs: {symbol: "BSE.920000"}}
     expect: {status: ok, min_fields: [last_price]}
+    assert: false
+  - id: kline-czce-4digit
+    purpose: 郑商所 4 位年月码上游接受度实证（get_kline_serial CZCE.RM2701，
+      观察不判定；2026-11-12 已实证 4 位无响应挂起——TianQin 只认 3 位，
+      适配器据此做 4→3 位还原，本 case 常态复验该结论）
+    module: tqsdk
+    client:
+      attr: TqApi
+      kwargs:
+        auth:
+          $ctor:
+            attr: TqAuth
+            kwargs:
+              user_name: "$TAPEHUB_TQSDK_AUTH_USER"
+              password: "$TAPEHUB_TQSDK_AUTH_PASSWORD"
+        disable_print: true
+    call:
+      - {method: get_kline_serial, kwargs: {symbol: "CZCE.RM2701", duration_seconds: 86400, data_length: 2}}
+    expect: {status: ok, min_rows: 1}
+    assert: false
+  - id: kline-czce-3digit
+    purpose: 郑商所 3 位年月码上游接受度实证（get_kline_serial CZCE.RM701，
+      观察不判定，与 4 位对照）
+    module: tqsdk
+    client:
+      attr: TqApi
+      kwargs:
+        auth:
+          $ctor:
+            attr: TqAuth
+            kwargs:
+              user_name: "$TAPEHUB_TQSDK_AUTH_USER"
+              password: "$TAPEHUB_TQSDK_AUTH_PASSWORD"
+        disable_print: true
+    call:
+      - {method: get_kline_serial, kwargs: {symbol: "CZCE.RM701", duration_seconds: 86400, data_length: 2}}
+    expect: {status: ok, min_rows: 1}
     assert: false
 
 notes: >

@@ -9,10 +9,12 @@ requires:
 pacing:
   call_interval_s: 5.0   # 东方财富 push2 对高频断连限流：首次约 5 分钟恢复，
   timeout_s: 60          # 反复触发需 40 分钟以上；实测 2s 节流即被限流
-  max_calls: 340         # 2026-11-08 指数东财接入 W/M 后复核：availability 49
-                         # （CN stock 15 + index 5 + etf 9 + 期货 2 + HK/US
-                         # stock 各 9）+ adjust_diff 24（P1D 限定）+
+  max_calls: 343         # 2026-11-12 郑商所合约接入后复核：availability 50
+                         # （CN stock 15 + index 5 + etf 9 + 期货 3（含
+                         # contract@CN-CZCE）+ HK/US stock 各 9）+
+                         # adjust_diff 24（P1D 限定）+
                          # history_depth 9 条 × ≤24 + variant_consistency 29
+                         # + raw 3
 
 targets:
   stock:
@@ -45,6 +47,14 @@ targets:
   contract:
     instrument: CN-SHFE-RB2410
     window: {start: 2024-06-01, end: 2024-09-30}
+    min_bars: 20
+  contract@CN-CZCE:
+    # 郑商所合约：标准码统一 4 位年月（公开现行约定；tushare 侧 2026-11-12
+    # 实证 4 位可用、3 位全空）。适配器当前原样透传，chain 可用性即「4 位
+    # 直通新浪」的行为证据；新浪对 3/4 位码的接受度由对照 raw case
+    # sina-futures-czce-4digit / sina-futures-czce-3digit 实证
+    instrument: CN-CZCE-RM2701
+    window: {start: 2026-07-01, end: 2026-12-31}
     min_bars: 20
   continuous:
     instrument: CN-SHFE-RB
@@ -90,6 +100,20 @@ raw:
     call:
       - {module_func: stock_zh_a_hist, kwargs: {symbol: "920000", period: "daily", start_date: "20251101", end_date: "20251112", adjust: ""}}
     expect: {status: ok, min_rows: 0}
+    assert: false
+  - id: sina-futures-czce-4digit
+    purpose: 新浪期货郑商所 4 位年月码接受度实证（RM2701，观察不判定，为合约代码还原表提供证据）
+    module: akshare
+    call:
+      - {module_func: futures_zh_daily_sina, kwargs: {symbol: "RM2701"}}
+    expect: {status: ok, min_rows: 1}
+    assert: false
+  - id: sina-futures-czce-3digit
+    purpose: 新浪期货郑商所 3 位年月码接受度实证（RM701，观察不判定，与 4 位对照）
+    module: akshare
+    call:
+      - {module_func: futures_zh_daily_sina, kwargs: {symbol: "RM701"}}
+    expect: {status: ok, min_rows: 1}
     assert: false
 
 notes: >

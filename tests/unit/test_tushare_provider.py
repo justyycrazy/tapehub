@@ -168,10 +168,11 @@ def test_futures_partial_on_row_limit(monkeypatch: pytest.MonkeyPatch) -> None:
         ("CN-DCE-V2601", AssetType.CONTRACT, "V2601.DCE"),
         ("CN-INE-SC2409", AssetType.CONTRACT, "SC2409.INE"),
         ("CN-CFFEX-IF2409", AssetType.CONTRACT, "IF2409.CFX"),
-        # CZCE 原生 3 位年月码 → tushare 4 位（10 年窗口唯一解析，探针实证
-        # SR2601.ZCE 有数据）
-        ("CN-CZCE-SR601", AssetType.CONTRACT, "SR2601.ZCE"),
-        ("CN-CZCE-SR509", AssetType.CONTRACT, "SR2509.ZCE"),
+        # CZCE 与统一标准码同为 4 位年月，直通（探针实证 SR2601.ZCE 有数据、
+        # 3 位旧写法全空）
+        ("CN-CZCE-RM2701", AssetType.CONTRACT, "RM2701.ZCE"),
+        # 3 位旧写法输入不做年份猜测，如实透传给上游（查空如实表现）
+        ("CN-CZCE-SR601", AssetType.CONTRACT, "SR601.ZCE"),
         # 主力连续：多数交易所品种+L（XXL 主连），CFFEX 主力直拼
         # （探针实证，报告 20261112T133250+0800）
         ("CN-SHFE-CU", AssetType.CONTINUOUS, "CUL.SHF"),
@@ -212,17 +213,20 @@ def test_unsupported_futures_exchange(monkeypatch: pytest.MonkeyPatch) -> None:
         asyncio.run(adapter.fetch_bars(query))
 
 
-def test_czce_invalid_month_code(monkeypatch: pytest.MonkeyPatch) -> None:
-    """CZCE 非 3 位年月码在转换层明确拒绝（如位数不足或含非数字段）。"""
-    install(monkeypatch)
+def test_czce_irregular_symbol_passthrough(monkeypatch: pytest.MonkeyPatch) -> None:
+    """CZCE 不规则合约代码（位数不足等）不做映射层拒绝或年份猜测，
+    如实透传给上游——上游查空/报错即最诚实的行为表现。"""
+    stub = install(monkeypatch)
+    stub.set_rows("fut_daily", futures_rows(["2026-01-05"]))
     adapter = _adapter()
     query = _query(
         asset_type=AssetType.CONTRACT,
         instrument=Instrument.parse("CN-CZCE-SR60"),
         adjust=Adjust.NONE,
     )
-    with pytest.raises(UnsupportedCapabilityError):
-        asyncio.run(adapter.fetch_bars(query))
+    asyncio.run(adapter.fetch_bars(query))
+    _, kwargs = stub.last_pro.calls[0]
+    assert kwargs["ts_code"] == "SR60.ZCE"
 
 
 def test_unsupported_stock_exchange(monkeypatch: pytest.MonkeyPatch) -> None:

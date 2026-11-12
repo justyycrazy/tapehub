@@ -4,8 +4,9 @@
 
 - 合约代码统一为 ``交易所代码.品种代码``（交易所全大写）：单一合约
   ``SHFE.cu2607``；主力连续 ``KQ.m@SHFE.cu``；指数连续/加权
-  ``KQ.i@SHFE.bu``。标准 symbol 恒为大写（domain 层归一），交易所原生
-  小写品种（如 SHFE.cu）由本适配器还原大小写；
+  ``KQ.i@SHFE.bu``。标准 symbol 恒为大写 4 位年月（domain 层归一），交易所
+  原生写法由本适配器还原：SHFE 品种小写（SHFE.cu）；CZCE 合约为 3 位年月码
+  （CZCE.RM701，2026-11-12 探针实证只认 3 位、4 位 CZCE.RM2701 挂起无响应）；
 - 股票/指数/ETF 同格式：``SSE.600000`` / ``SZSE.000001``、指数 ``SSE.000016``、
   ETF ``SSE.510050``（usage/mddatas 文档示例）；
 - ``get_kline_serial(symbol, duration_seconds, data_length, adj_type)``：
@@ -20,6 +21,8 @@
   A股股票/ETF 实时五档需专业版账户（运行期事实，不作为能力缺口声明）。
 """
 
+import re
+from collections.abc import Callable
 from typing import Any
 
 from tapehub.domain.errors import UnsupportedCapabilityError
@@ -50,20 +53,52 @@ _ADJ_TYPE: dict[Adjust, str | None] = {
     Adjust.HFQ: "B",
 }
 
-# 品种代码大小写还原表：标准 symbol 恒为大写（domain 层归一），交易所原生
-# 小写的品种代码在此还原。只收录已核实条目——SHFE 品种小写（2026-11-03/04
-# 探针 cu/au/bu 实证）；CZCE/CFFEX 品种大写直通无需映射；DCE/INE/GFEX
-# 大小写约定未核实，暂按大写直通，探针实证后逐所回填（写错比透传更隐蔽，
-# 绝不预填未核实条目）。注意：SHFE 期权合约代码为混合大小写（如
-# cu2607C50000 风格），接入 option 资产类型时须另行核实，不得沿用整段小写。
-_LOWERCASE_PRODUCT_EXCHANGES = frozenset({"SHFE"})
+# 上游写法还原表：标准 symbol 恒为大写 4 位年月（domain 层归一），交易所
+# 原生写法（品种大小写 / 年月码位数）在此还原。只收录探针实证条目，
+# 绝不预填未核实约定（写错比透传更隐蔽）：
+# - SHFE：品种小写（2026-11-03/04 探针 cu/au/bu 实证；2026-11-12 大写
+#   SHFE.AU2612 探针实证失败）；整段小写；
+# - CZCE：合约 4 位年月码 → 3 位（RM2701 → RM701，2026-11-12 探针实证
+#   TianQin 只认 3 位、4 位 CZCE.RM2701 无响应挂起直至超时）。转换只作用
+#   于匹配「品种+2 位年+2 位月」的合约代码；主连/加权品种码（无年月段）
+#   与不规则代码原样透传。3 位旧写法输入（SR601）不二次加工，如实透传；
+# - DCE/INE/GFEX：写法约定未核实，暂直通，探针实证后逐所回填。
+# 注意：SHFE 期权（cu2607C50000 混合大小写）、CZCE 期权（品种+年月+C/P+
+# 行权价）代码结构均不同，接入 option 资产类型时须另行核实，不得沿用
+# 本表的整段小写 / 4→3 规则。
+_CZCE_MONTH_CODE_RE = re.compile(r"^([A-Z]{1,2})(\d{2})(\d{2})$")
+
+
+def _rewrite_shfe_symbol(symbol: str) -> str:
+    """SHFE 品种整段小写还原（cu2607 / cu）。"""
+    return symbol.lower()
+
+
+def _rewrite_czce_symbol(symbol: str) -> str:
+    """CZCE 合约 4 位年月码 → 3 位原生码（RM2701 → RM701）。
+
+    去掉年份十位（RM2701 → RM7 + 01）；非「品种+2 位年+2 位月」形态
+    （主连/加权品种码、3 位旧写法、不规则代码）原样透传。
+    """
+    matched = _CZCE_MONTH_CODE_RE.match(symbol)
+    if matched is None:
+        return symbol
+    product, year, month = matched.group(1), matched.group(2), matched.group(3)
+    return f"{product}{year[1]}{month}"
+
+
+_SYMBOL_REWRITES: dict[str, Callable[[str], str]] = {
+    "SHFE": _rewrite_shfe_symbol,
+    "CZCE": _rewrite_czce_symbol,
+}
 
 
 def upstream_symbol(instrument: Instrument, asset_type: AssetType) -> str:
     """标准标的 → TqSdk 合约代码（K 线与快照共用同一映射）。"""
     symbol = instrument.symbol
-    if instrument.exchange in _LOWERCASE_PRODUCT_EXCHANGES:
-        symbol = symbol.lower()
+    rewrite = _SYMBOL_REWRITES.get(instrument.exchange)
+    if rewrite is not None:
+        symbol = rewrite(symbol)
     base = f"{instrument.exchange}.{symbol}"
     if asset_type == AssetType.CONTRACT:
         return base

@@ -159,11 +159,13 @@ def test_unsupported_interval_rejected_by_operation_routing(
 @pytest.mark.parametrize(
     ("asset_type", "instrument", "expected"),
     [
-        # 标准 symbol 恒为大写；SHFE 品种小写由适配器还原（探针实证），
-        # CZCE 大写直通
+        # 标准 symbol 恒为大写 4 位年月；交易所原生写法由适配器还原
+        #（探针实证：SHFE 品种小写、CZCE 合约 4→3 位年月码）
         (AssetType.CONTRACT, "CN-SHFE-CU2607", "SHFE.cu2607"),
         (AssetType.CONTRACT, "cn-shfe-cu2607", "SHFE.cu2607"),
-        (AssetType.CONTRACT, "CN-CZCE-SR609", "CZCE.SR609"),
+        (AssetType.CONTRACT, "CN-CZCE-RM2609", "CZCE.RM609"),
+        # CZCE 主连品种码无年月段，还原表正则天然 no-op 直通
+        (AssetType.CONTINUOUS, "CN-CZCE-SR", "KQ.m@CZCE.SR"),
         (AssetType.CONTINUOUS, "CN-SHFE-CU", "KQ.m@SHFE.cu"),
         (AssetType.WEIGHTED_INDEX, "CN-SHFE-BU", "KQ.i@SHFE.bu"),
         (AssetType.STOCK, "CN-SSE-600000", "SSE.600000"),

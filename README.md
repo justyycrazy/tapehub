@@ -553,7 +553,7 @@ Tushare（官方 SDK `tushare`：`ts.pro_bar` / `pro.fut_daily`）：
 
 - Token 通过环境变量 `TAPEHUB_TUSHARE_TOKEN` 提供并传入 `ts.pro_api`，禁止写入代码/manifest/日志；未配置时不启用（能力目录仍可见，`enabled=false`），显式请求返回 `PROVIDER_DISABLED`；
 - 股票代码映射：`CN-SSE-600000 → 600000.SH`、`CN-SZSE-… → .SZ`（后缀已按文档示例核实）；北交所 `CN-BSE-920000 → 920000.BJ`（文档 doc_id=14 后缀表列明 + 探针实证，报告 20261112T172921+0800：目录 355 在市标的全部 920 段、920000.BJ daily/adj_factor 双证；83/87/43 段老代码已被 920 段替换，不再有效）；
-- 期货合约映射（五所后缀探针实证，报告 20261112T124404+0800）：`CN-SHFE-CU2401 → CU2401.SHF`、`CN-DCE-V2601 → V2601.DCE`、`CN-INE-SC2409 → SC2409.INE`、`CN-CFFEX-IF2409 → IF2409.CFX`；CZCE 在 tushare 为 4 位年月码（SR2601.ZCE 探针实证有数据），标准代码用交易所原生 3 位（`CN-CZCE-SR601 → SR2601.ZCE`，适配器按 10 年窗口唯一解析；广期所 .GFE 未核实不声明）；
+- 期货合约映射（五所后缀探针实证，报告 20261112T124404+0800）：`CN-SHFE-CU2401 → CU2401.SHF`、`CN-DCE-V2601 → V2601.DCE`、`CN-INE-SC2409 → SC2409.INE`、`CN-CFFEX-IF2409 → IF2409.CFX`；CZCE 在 tushare 为 4 位年月码，与统一标准码同形直通（`CN-CZCE-RM2701 → RM2701.ZCE`；实证 4 位可用、3 位旧写法全空，旧写法输入如实透传不猜年份；广期所 .GFE 未核实不声明）；
 - 主力连续映射（总览页连续合约格式 XX=主力 / XXL=主连；探针实证报告 20261112T133250+0800）：品种+L 主连——`CN-SHFE-CU → CUL.SHF`、`CN-CZCE-SR → SRL.ZCE`、`CN-DCE-M → ML.DCE`、`CN-INE-SC → SCL.INE`；CFFEX 例外直拼主力 `CN-CFFEX-IF → IF.CFX`（该所 IFL/IFL1-3 为当月/次月/当季/下季月份系列非主连）；不参与 CN contract/continuous 的 auto 路由（仅显式 `provider=tushare`）；
 - 单位换算（按文档）：股票 `vol` 手→股（×100）、`amount` 千元→元（×1000）；期货 `vol` 保持手、`amount` 万元→元（×10000）；
 - `fut_daily` 单次上限 2000 条（主连 CUL.SHF 16 年窗口实测恰 2000，报告 20261112T124404+0800）：达到上限时响应 `meta.partial=true` 且 `warnings` 提示可能截断；上游截断为「保尾截头」（保留最新 2000 根，partial 时缺窗口头部更早数据）；该接口要求上游账户 2000 积分；
@@ -592,7 +592,7 @@ TqSdk（官方 SDK `tqsdk`：`TqApi(auth=TqAuth(...)).get_kline_serial(...)`）�
     2026-11-05 15.3h 观察期实证：recycle triggered → gen2 重建 0.94s → 回收后请求全 200、
     活跃订阅自动重订，证据见 probes/results/shared_observation.log 末尾结论段）、
     停机/回收时在飞请求显式失败（可快速重试）。两种模式标准化语义完全一致，`shared` 问题可一键切回；
-- 合约代码映射（交易所全大写；标准 symbol 恒为大写，交易所原生小写品种由适配器还原，还原表只收探针实证条目）：`CN-SHFE-CU2607 → SHFE.cu2607`（SHFE 品种小写，2026-11-03/04 探针 cu/au/bu 实证）、`CN-CZCE-SR609 → CZCE.SR609`（大写直通）；主力连续 `CN-SHFE-CU → KQ.m@SHFE.cu`；指数连续/加权 `CN-SHFE-BU → KQ.i@SHFE.bu`；DCE/INE/GFEX 品种大小写约定未核实，暂按大写直通，探针实证后回填；
+- 合约代码映射（交易所全大写；标准 symbol 恒为大写 4 位年月，交易所原生写法由适配器还原，还原表只收探针实证条目）：`CN-SHFE-CU2607 → SHFE.cu2607`（SHFE 品种小写，2026-11-03/04 探针 cu/au/bu 实证；2026-11-12 大写 SHFE.AU2612 实证失败）、`CN-CZCE-RM2701 → CZCE.RM701`（CZCE 合约 4→3 位年月码，2026-11-12 探针实证 TianQin 只认 3 位、4 位无响应挂起；主连品种码无年月段直通）；主力连续 `CN-SHFE-CU → KQ.m@SHFE.cu`；指数连续/加权 `CN-SHFE-BU → KQ.i@SHFE.bu`；DCE/INE/GFEX 写法约定未核实，暂按大写直通，探针实证后回填；
 - 周期映射（周期为不超过 1 日的任意秒数）：`PT1M→60`、`PT5M→300`、`PT15M→900`、`PT30M→1800`、`PT1H→3600`、`P1D→86400`；
 - 上游按“最新 N 根”返回（`data_length`）：**单次上限 2026-11-03 探针实测 5000 根**
   （PT1M/PT5M 同时恰好 5000；文档 8000/10000 口径未复现，疑受当前套餐限制，

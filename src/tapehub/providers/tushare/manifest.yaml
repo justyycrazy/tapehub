@@ -15,9 +15,9 @@
 #   history.start 沿用 CN stock 库级声明（BSE 标的均 2020 年后上市，
 #   各标的数据以自身上市日起）；
 # - 期货 ts_code 后缀五所接入（探针实证，报告 20261112T124404+0800）：
-#   .SHF / .DCE / .INE / .CFX / .ZCE——其中 CZCE 在 tushare 为 4 位年月码
-#   （SR2601），标准代码用交易所原生 3 位（CN-CZCE-SR601），由适配器转换
-#   （SR601 → SR2601，10 年窗口唯一解析）；
+#   .SHF / .DCE / .INE / .CFX / .ZCE——CZCE 在 tushare 为 4 位年月码，与
+#   统一标准码同形（CN-CZCE-SR2601 → SR2601.ZCE 直通；实证 4 位可用、
+#   3 位旧写法全空）；
 # - 主力连续（continuous）：总览页连续合约格式 XX=主力 / XXL=主连，映射
 #   **品种+L 主连**（CN-SHFE-CU → CUL.SHF / CN-CZCE-SR → SRL.ZCE /
 #   CN-DCE-M → ML.DCE / CN-INE-SC → SCL.INE），CFFEX 例外直拼主力
