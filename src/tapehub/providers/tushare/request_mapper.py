@@ -5,7 +5,8 @@
 - 股票：模块级 ``ts.pro_bar(ts_code, asset='E', freq, adj, start_date, end_date)``；
   freq 枚举 D/W/M（默认 D），adj 枚举 None/qfq/hfq（仅日线复权，默认 None 未复权）；
 - 期货单一合约：``pro.fut_daily(ts_code, start_date, end_date)``（无复权）；
-- ts_code 股票后缀已按文档示例核实 .SH/.SZ；期货后缀五所经探针实证
+- ts_code 股票后缀 .SH/.SZ 已按文档示例核实；北交所 BSE→BJ 经探针实证
+  （报告 20261112T172921+0800，全市场 920 段）；期货后缀五所经探针实证
   （报告 20261112T124404+0800）：SHF/DCE/INE/CFX/ZCE——其中 CZCE 在 tushare
   为 4 位年月码（SR2601），标准代码用交易所原生 3 位（CN-CZCE-SR601），
   由 :func:`_czce_symbol` 转换；
@@ -44,10 +45,12 @@ _ADJUST_CODES: dict[Adjust, str | None] = {
     Adjust.HFQ: "hfq",
 }
 
-# 期货 ts_code 后缀（标准代码 exchange 段 → tushare 后缀）：探针实证条目
-# （报告 20261112T124404+0800，.SHF 出自文档示例，其余四所 raw 实证；
-# 证伪即移除，绝不预填未核实条目）
-_STOCK_SUFFIXES = {"SSE": "SH", "SZSE": "SZ"}
+# 股票/期货 ts_code 后缀（标准代码 exchange 段 → tushare 后缀）：探针实证条目。
+# BSE→BJ 经探针实证（报告 20261112T172921+0800：目录 355 在市标的全部 920 段
+# + 920000.BJ daily 真实日线；文档 doc_id=14 后缀表核实，83 段老代码已迁移）；
+# 期货五所（报告 20261112T124404+0800，.SHF 出自文档示例，其余四所 raw 实证）；
+# 证伪即移除，绝不预填未核实条目
+_STOCK_SUFFIXES = {"SSE": "SH", "SZSE": "SZ", "BSE": "BJ"}
 _FUTURES_SUFFIXES = {
     "SHFE": "SHF",
     "DCE": "DCE",

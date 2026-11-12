@@ -84,6 +84,16 @@ def test_stock_request_and_response_mapping(monkeypatch: pytest.MonkeyPatch) -> 
     assert extensions["pct_chg"] == 1.0
 
 
+def test_bse_stock_request_mapping(monkeypatch: pytest.MonkeyPatch) -> None:
+    """北交所 BSE→BJ 后缀映射（探针实证报告 20261112T172921+0800：目录 355
+    在市标的全部 920 段 + 920000.BJ daily/adj_factor 双证）。"""
+    stub = install(monkeypatch)
+    stub.pro_bar_rows = stock_rows(["2026-01-05"])
+    adapter = _adapter()
+    asyncio.run(adapter.fetch_bars(_query(instrument=Instrument.parse("CN-BSE-920000"))))
+    assert stub.pro_bar_calls[0]["ts_code"] == "920000.BJ"
+
+
 @pytest.mark.parametrize(
     ("interval", "expected"),
     [("P1D", "D"), ("P1W", "W"), ("P1M", "M")],

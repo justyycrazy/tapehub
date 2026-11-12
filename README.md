@@ -552,7 +552,7 @@ Tushare（官方 SDK `tushare`：`ts.pro_bar` / `pro.fut_daily`）：
 | continuous | tushare（默认） | `pro.fut_daily` | P1D | none | 全部（extensions: pre_close/settle/oi） |
 
 - Token 通过环境变量 `TAPEHUB_TUSHARE_TOKEN` 提供并传入 `ts.pro_api`，禁止写入代码/manifest/日志；未配置时不启用（能力目录仍可见，`enabled=false`），显式请求返回 `PROVIDER_DISABLED`；
-- 股票代码映射：`CN-SSE-600000 → 600000.SH`、`CN-SZSE-… → .SZ`（后缀已按文档示例核实；北交所 .BJ 未在所引文档示例中出现，暂不声明）；
+- 股票代码映射：`CN-SSE-600000 → 600000.SH`、`CN-SZSE-… → .SZ`（后缀已按文档示例核实）；北交所 `CN-BSE-920000 → 920000.BJ`（文档 doc_id=14 后缀表列明 + 探针实证，报告 20261112T172921+0800：目录 355 在市标的全部 920 段、920000.BJ daily/adj_factor 双证；83/87/43 段老代码已被 920 段替换，不再有效）；
 - 期货合约映射（五所后缀探针实证，报告 20261112T124404+0800）：`CN-SHFE-CU2401 → CU2401.SHF`、`CN-DCE-V2601 → V2601.DCE`、`CN-INE-SC2409 → SC2409.INE`、`CN-CFFEX-IF2409 → IF2409.CFX`；CZCE 在 tushare 为 4 位年月码（SR2601.ZCE 探针实证有数据），标准代码用交易所原生 3 位（`CN-CZCE-SR601 → SR2601.ZCE`，适配器按 10 年窗口唯一解析；广期所 .GFE 未核实不声明）；
 - 主力连续映射（总览页连续合约格式 XX=主力 / XXL=主连；探针实证报告 20261112T133250+0800）：品种+L 主连——`CN-SHFE-CU → CUL.SHF`、`CN-CZCE-SR → SRL.ZCE`、`CN-DCE-M → ML.DCE`、`CN-INE-SC → SCL.INE`；CFFEX 例外直拼主力 `CN-CFFEX-IF → IF.CFX`（该所 IFL/IFL1-3 为当月/次月/当季/下季月份系列非主连）；不参与 CN contract/continuous 的 auto 路由（仅显式 `provider=tushare`）；
 - 单位换算（按文档）：股票 `vol` 手→股（×100）、`amount` 千元→元（×1000）；期货 `vol` 保持手、`amount` 万元→元（×10000）；

@@ -10,10 +10,10 @@ requires:
 pacing:
   call_interval_s: 1.5
   timeout_s: 60
-  # 期货扩容后 chain 展开：availability 11 + adjust_diff 12 + history_depth
-  # （stock 三周期 + contract 全量 + continuous 各约 13/2/13）+ limit 1 +
-  # raw 11×2，合计约 100，留余量
-  max_calls: 160
+  # chain 展开：availability 11 + adjust_diff 12 + history_depth
+  # （stock 三周期 + contract 全量 + continuous）+ limit 1 +
+  # raw 14×2（含北交所 3 case），合计约 133，留余量
+  max_calls: 200
 
 targets:
   stock:
@@ -24,6 +24,10 @@ targets:
     # 日线的量级与字段质量由 required_fields 兜底
     min_bars: 10
     required_fields: [open, high, low, close, volume, amount]
+  # 北交所不设独立 chain 目标：探针框架 chain 为市场级粒度（capability 每
+  # 市场恰取一个基准标的），BSE 是 CN 内交易所段，适配器链路与 SSE/SZSE
+  # 完全同构（仅 _STOCK_SUFFIXES 一个查表值，单测确定性覆盖）。BSE 接入
+  # 证据由 raw case 承载（目录 + daily + 复权因子，2026-11-12 三证）
   contract:
     instrument: CN-SHFE-CU2401
     window: {start: 2023-09-01, end: 2023-12-29}
@@ -144,6 +148,44 @@ raw:
     client: {attr: pro_api, kwargs: {token: "$TAPEHUB_TUSHARE_TOKEN"}}
     call:
       - {method: fut_daily, kwargs: {ts_code: "IF.CFX", start_date: "20251101", end_date: "20251112"}}
+    expect: {status: ok, min_rows: 1}
+  # ── 北交所（BSE/.BJ）接入前置核实（2026-11-12 规划）：总览页 doc_id=14
+  #    交易所后缀表已列明 BSE/.BJ（备注「9开头的股票」），文档核实完成。
+  #    首轮实证（报告 20261112T172236+0800）：目录 case confirmed——355 只
+  #    在市标的**全部为 920 段**（尾样本 920000 安徽凤凰 2020-12-23 /
+  #    920002 万达轴承等均为存量平移股），文档「9开头」备注与现状一致；
+  #    830799.BJ daily 返回 0 行——83 段老代码已被 920 段替换，不再有效。
+  #    直测标的按目录结果轮换为 920000.BJ。三证 confirmed（报告
+  #    20261112T172921+0800 / 20261112T175738+0800）后已扩容
+  #    request_mapper._STOCK_SUFFIXES（先例：期货四所后缀）
+  - id: bj-stock-directory-probe
+    purpose: 北交所目录核实（stock_basic exchange=BSE 在市列表）：确认 .BJ 标的
+      真实存在并记录代码段构成。首轮结论（20261112T172236）：全市场统一 920
+      段，83/87/43 老段已迁移替换；常态复验目录仍在市
+    module: tushare
+    client: {attr: pro_api, kwargs: {token: "$TAPEHUB_TUSHARE_TOKEN"}}
+    call:
+      - {method: query, kwargs: {api_name: "stock_basic", exchange: "BSE", list_status: "L"}}
+    expect: {status: ok, min_rows: 1}
+  - id: bj-stock-daily-probe
+    purpose: 北交所个股日线直测（920000.BJ 安徽凤凰，精选层存量平移股、
+      2020-12-23 上市、代码稳定存续）：验证 daily 接口对 .BJ 后缀真实返回
+      数据。首轮 830799.BJ 为空系 83 段老代码被 920 段替换（报告
+      20261112T172236），按目录结果轮换；标的退市时同样按目录 case 轮换
+    module: tushare
+    client: {attr: pro_api, kwargs: {token: "$TAPEHUB_TUSHARE_TOKEN"}}
+    call:
+      - {method: query, kwargs: {api_name: "daily", ts_code: "920000.BJ", start_date: "20251101", end_date: "20251112"}}
+    expect: {status: ok, min_rows: 1}
+  - id: bj-stock-adj-factor-probe
+    purpose: 北交所复权因子直测（adj_factor ts_code=920000.BJ）：daily 与
+      复权因子两类上游输入齐备即证明 pro_bar 对 .BJ 的 qfq/hfq 复权管线
+      可用（复权组合为 SDK 客户端侧逻辑，与市场无关，SSE 由 chain
+      adjust_diff 常态复验）
+    module: tushare
+    client: {attr: pro_api, kwargs: {token: "$TAPEHUB_TUSHARE_TOKEN"}}
+    call:
+      - {method: query, kwargs: {api_name: "adj_factor", ts_code: "920000.BJ", start_date: "20251101", end_date: "20251112"}}
     expect: {status: ok, min_rows: 1}
   # 错误指纹仅观察：采集“接口不存在/无权限”类原始报错文本，供错误码细分参考
   - id: unknown-api-fingerprint
