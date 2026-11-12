@@ -10,10 +10,10 @@ requires:
 pacing:
   call_interval_s: 10.0
   timeout_s: 60
-  # 常态全量深度覆盖：固定 80（60 availability = 24 forex/crypto + 24 stock×2 复权
-  # + 12 etf + 2 limit + 6 raw×3）+ 48 条 history_depth case × 16 = 848 最坏，
-  # 实际约 12 探/case ≈ 700。免费档 800/天为硬上限：预算设 780，尾段 depth
-  # case 可能被预算闸门截断（框架如实记录），剩余次日重跑即可补齐。
+  # 本轮构成：availability 60 固定 + adjust_diff 2 case×2 + history_depth
+  # 9 case×16 最坏（典型 ~8/case）+ limit 2 + raw 8 case×3 = 约 230 最坏、
+  # 典型 ~170。免费档 800/天为硬上限：预算 780 保留（单日可完整跑全量 +
+  # 截断续跑余量，框架对截断如实记录）。
   max_calls: 780
 
 targets:
@@ -42,13 +42,26 @@ targets:
 chain:
   include_declared: true
   skip: []
+  adjust_diff:
+    # stock/etf 复权入库回归：qfq=adjust=all（拆股+分红）——stock 于
+    # 2026-11-06 由不入库专项探针实证、2026-11-12 起入链；etf 于 2026-11-12
+    # raw 直测实证生效（SPY 除息窗口全 19 交易日差异）并扩容声明后入链；
+    # PT1H 顺带回归日内周期
+    targets: [stock, etf]
+    window: {start: 2024-06-01, end: 2024-08-31}   # 分红除权高发窗口
+    intervals: [P1D, PT1H]
+    pairs: [[none, qfq]]
+    fields: [close]
   history_depth:
-    targets: [forex, crypto, stock, etf]
-    earliest: 2000-01-01   # forex 粗周期已实测触底（≥2000-01-01，真实更早），维持该下限；
-                           # AAPL 上市于 1980（2006-12-20 已实测可见），earliest 收敛下限
-    era_step_years: 5
-    max_calls: 16        # 每条 case 的预算：6 纪元回溯 + 二分（约 11 探 + 1 验证）
-    intervals: [PT1M, PT5M, PT15M, PT30M, PT45M, PT1H, PT2H, PT4H, PT8H, P1D, P1W, P1M]
+    # 粗周期（P1D/P1W/P1M）此前在 earliest=2000-01-01 触底（manifest 明注
+    # 「真实更早、待精化」），下限外推至 1970 精化；日内 9 周期 20261107 轮
+    # 与已回填值 ±1 粒度内漂移不再重探；crypto 现值 2017-08 为收敛值非触底，
+    # 不重探（targets 收敛为三键）
+    targets: [forex, stock, etf]
+    earliest: 1970-01-01
+    era_step_years: 10   # 1970→2026 共 6 档，控回溯次数（每 case 最坏 ~13 ≤ 16）
+    max_calls: 16        # 每条 case 的预算：回溯 N + 二分 M + 验证
+    intervals: [P1D, P1W, P1M]
   limit_truncation:
     targets: [forex, stock]
     interval: PT1M
@@ -120,6 +133,28 @@ raw:
       - {method: as_json, kwargs: {}}
     expect: {status: error, error_contains: ""}
 
+  # ── US ETF 复权直测（2026-11-12 改造）：链内 adjust_diff 对未声明 qfq 的
+  #    etf 会 skipped（展开器按声明矩阵标记 skip_reason），故仿 td-cboe-etf
+  #    三段式直测上游。SPY 季度分红除息日 2024-06-21 落在窗口内，除息日前
+  #    bar 若 all 与 none 存在差异即复权生效 → manifest etf 扩容 [none, qfq]
+  #    的依据；**必须显式传 adjust**（不传上游默认 splits 仅拆股）
+  - id: td-etf-adjust-none
+    purpose: SPY 日线 adjust=none 基线（除息窗口，与 td-etf-adjust-all 对比）
+    module: twelvedata
+    client: {attr: TDClient, kwargs: {apikey: "$TAPEHUB_TWELVEDATA_API_KEY"}}
+    call:
+      - {method: time_series, kwargs: {symbol: "SPY", interval: "1day", adjust: "none", start_date: "2024-06-01", end_date: "2024-06-30", outputsize: 30}}
+      - {method: as_json, kwargs: {}}
+    expect: {status: ok, min_rows: 1}
+  - id: td-etf-adjust-all
+    purpose: SPY 日线 adjust=all（拆股+分红前复权）；与 none 基线同窗口对比
+    module: twelvedata
+    client: {attr: TDClient, kwargs: {apikey: "$TAPEHUB_TWELVEDATA_API_KEY"}}
+    call:
+      - {method: time_series, kwargs: {symbol: "SPY", interval: "1day", adjust: "all", start_date: "2024-06-01", end_date: "2024-06-30", outputsize: 30}}
+      - {method: as_json, kwargs: {}}
+    expect: {status: ok, min_rows: 1}
+
 notes: >
   crypto 的 volume 上游可能缺失（→ null），从 availability 的 null_rates 核对；
   45min/2h/4h/8h 已于 2026-11-04 经实测确认可用并回填 manifest 声明
@@ -153,4 +188,18 @@ notes: >
   24 周期 history.start 已按估计日零点回填（人工确认：stock 日内
   ≈2019-02-01~2020-04-11、etf 日内 ≈2020-02-15~2020-04-11，粗周期
   触底 2000-01-01 待精化）；forex/crypto 本轮估计与已回填值 ±1 粒度内
-  漂移，维持原值。
+  漂移，维持原值；
+  2026-11-12 改造（粗周期精化 + etf 复权直测 + adjust_diff 入链）：粗周期
+  （P1D/P1W/P1M）earliest 2000→1970 外推精化（targets 收敛 forex/stock/etf，
+  crypto 为收敛值不重探；日内 9 周期不重探）；stock 复权 adjust_diff 首次
+  入链（P1D/PT1H，qfq=all 与 none 应有除息差异）；etf 复权 raw 直测
+  （td-etf-adjust-none/all，SPY 2024-06 除息窗口——链内对未声明 qfq 会
+  skipped 故走 raw）——证实生效则 manifest etf 扩容 [none, qfq]；
+  2026-11-12 本轮结果（报告 20261112T143502+0800，188/780）：
+  confirmed 69 / observe 12 零 failed——stock adjust_diff P1D/PT1H 入链
+  confirmed（差异真实）；etf 复权 raw 全窗口 19/19 交易日差异 ~2.9%
+  （累计分红回溯量级合理）→ manifest etf 扩容 [none, qfq]、adjust_diff
+  targets 加 etf；粗周期精化：US stock ≈1981-01-18（三周期一致，真值≈
+  AAPL IPO 1980-12-12 落窗口内）、US etf ≈1993-03（SPY 1993-01-22 上市
+  落窗口内）、forex P1D ≈2003-12-25 收敛——回填待人工确认；forex P1W/P1M
+  在 1970 下限仍触底（周/月档案深于 1970，approx=True，真实更早）。
