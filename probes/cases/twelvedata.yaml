@@ -53,15 +53,15 @@ chain:
     pairs: [[none, qfq]]
     fields: [close]
   history_depth:
-    # 粗周期（P1D/P1W/P1M）此前在 earliest=2000-01-01 触底（manifest 明注
-    # 「真实更早、待精化」），下限外推至 1970 精化；日内 9 周期 20261107 轮
-    # 与已回填值 ±1 粒度内漂移不再重探；crypto 现值 2017-08 为收敛值非触底，
-    # 不重探（targets 收敛为三键）
-    targets: [forex, stock, etf]
-    earliest: 1970-01-01
-    era_step_years: 10   # 1970→2026 共 6 档，控回溯次数（每 case 最坏 ~13 ≤ 16）
-    max_calls: 16        # 每条 case 的预算：回溯 N + 二分 M + 验证
-    intervals: [P1D, P1W, P1M]
+    # 2026-11-12 精化后仅 forex P1W/P1M 残留待收敛：1970 下限仍触底（周/月
+    # 档案深于 1970——官方轨迹 [1970,1980) 档 262 根周线 ≈5 年量级，真实起点
+    # ≈1975），下限再外推至 1950 收敛；stock/etf 粗周期本轮已收敛、forex P1D
+    # 已收敛（≈2003-12-25）、crypto 为收敛值——均不再重探
+    targets: [forex]
+    earliest: 1950-01-01
+    era_step_years: 10   # 1950→2026 共 8 档（回溯至 1960-70 空档止）+ 二分
+    max_calls: 16
+    intervals: [P1W, P1M]
   limit_truncation:
     targets: [forex, stock]
     interval: PT1M
@@ -202,4 +202,12 @@ notes: >
   targets 加 etf；粗周期精化：US stock ≈1981-01-18（三周期一致，真值≈
   AAPL IPO 1980-12-12 落窗口内）、US etf ≈1993-03（SPY 1993-01-22 上市
   落窗口内）、forex P1D ≈2003-12-25 收敛——回填待人工确认；forex P1W/P1M
-  在 1970 下限仍触底（周/月档案深于 1970，approx=True，真实更早）。
+  在 1970 下限仍触底（周/月档案深于 1970，approx=True，真实更早）；
+  2026-11-12 收敛轮（报告 20261112T155931+0800，134/780；earliest 1950 /
+  targets [forex] / intervals [P1W, P1M]）：forex P1W/P1M 均收敛
+  ≈1975-01-23（首个非空 90 天窗 [1974-10-25, 1975-01-23]：周线 4 根 /
+  月线 1 根，其前所有窗口验证为空）——粗周期 9 周期全部收敛，经用户确认
+  回填。方法论教训：手动无节流脚本会吃免费档 429 限频、产生假空档（本轮
+  曾误判 1960-1970 档与 1970 年代多窗为空），以框架 10s 节流结果为准；
+  另触底分支的 estimate=earliest 为无证据下限，一律不回填（下限值须先
+  外推收敛或保持 null）。

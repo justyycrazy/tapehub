@@ -25,8 +25,11 @@
 # - 响应 values 默认倒序（最新在前），由共享分页组件统一升序排序；
 # - 历史覆盖范围（history.start）由全量深度探针实测回填（报告 20261104T072650Z、
 #   20261104T084302Z，人工确认）：日内周期 forex ≈2020-01-31~04-08、crypto
-#   ≈2020-01-07~04-07（粒度 90 天，approx，回填值取估计日零点）；forex P1D/P1W/P1M
-#   触底 2000-01-01（真实更早、待精化）；crypto 日/周 ≈2017-08-29、月 ≈2017-08-02；
+#   ≈2020-01-07~04-07（粒度 90 天，approx，回填值取估计日零点）；粗周期
+#   2026-11-12 精化收敛（下限自 2000-01-01 外推——该触底值为无证据下限已
+#   废弃；报告 20261112T143502+0800 / 20261112T155931+0800，人工确认）：
+#   forex P1D ≈2003-12-25、P1W/P1M ≈1975-01-23（下限 1950 起二分收敛）；
+#   crypto 日/周 ≈2017-08-29、月 ≈2017-08-02；
 # - 区间无数据行为（2026-11-04 探针实测核实，报告 20261104T065529Z）：上游返回
 #   400 BadRequestError "No data is available on the specified dates" 而非空列表，
 #   适配器按指纹归一化为空结果；其余未核实异常统一由应用层包装为 UPSTREAM_ERROR；
@@ -70,8 +73,11 @@
 # - 美股 history.start 已按 2026-11-07 全量探针回填（报告
 #   probes/results/twelvedata/20261107T111630+0800.json，人工确认；
 #   二分估计粒度 90 天 approx，回填值取估计日零点）：stock 日内
-#   ≈2019-02-01~2020-04-11、etf 日内 ≈2020-02-15~2020-04-11，
-#   日/周/月触底 2000-01-01（真实更早待精化）；
+#   ≈2019-02-01~2020-04-11、etf 日内 ≈2020-02-15~2020-04-11；粗周期
+#   2026-11-12 精化收敛（下限外推，报告 20261112T143502+0800，人工确认）：
+#   stock 三周期 ≈1981-01-18（真值≈AAPL IPO 1980-12-12 落窗口内）、
+#   etf P1D/P1W ≈1993-03-17、P1M ≈1993-01-20（真值≈SPY 上市 1993-01-22，
+#   月线桶 1993-01）；
 # - CN/HK 不声明（2026-11-05 探针实证）：目录虽有 China stock 5,433 /
 #   etf 1,745、Hong Kong stock 11,201 / etf 442，但免费档 Basic 可用标的
 #   仅 China stock 000001、China etf 511880、HK stock 1299 各 1 个（其余
@@ -101,9 +107,11 @@ capabilities:
       - {code: PT2H, history: {start: 2020-01-31T00:00:00+08:00, end: null}}
       - {code: PT4H, history: {start: 2020-01-31T00:00:00+08:00, end: null}}
       - {code: PT8H, history: {start: 2020-01-31T00:00:00+08:00, end: null}}
-      - {code: P1D, history: {start: 2000-01-01T00:00:00+08:00, end: null}}
-      - {code: P1W, history: {start: 2000-01-01T00:00:00+08:00, end: null}}
-      - {code: P1M, history: {start: 2000-01-01T00:00:00+08:00, end: null}}
+      # 粗周期 2026-11-12 精化收敛（下限 1950 外推，报告 20261112T143502 /
+      # 20261112T155931，人工确认；2000-01-01 为无证据下限值已废弃）
+      - {code: P1D, history: {start: 2003-12-25T00:00:00+08:00, end: null}}
+      - {code: P1W, history: {start: 1975-01-23T00:00:00+08:00, end: null}}
+      - {code: P1M, history: {start: 1975-01-23T00:00:00+08:00, end: null}}
     adjustments: [none]
     fields: [open, high, low, close]
 
@@ -148,16 +156,18 @@ capabilities:
       - {code: PT2H, history: {start: 2019-07-18T00:00:00+08:00, end: null}}
       - {code: PT4H, history: {start: 2019-07-18T00:00:00+08:00, end: null}}
       - {code: PT8H, history: {start: 2019-07-18T00:00:00+08:00, end: null}}
-      - {code: P1D, history: {start: 2000-01-01T00:00:00+08:00, end: null}}
-      - {code: P1W, history: {start: 2000-01-01T00:00:00+08:00, end: null}}
-      - {code: P1M, history: {start: 2000-01-01T00:00:00+08:00, end: null}}
+      # 粗周期 2026-11-12 精化收敛（真值≈AAPL IPO 1980-12-12 落窗口内）
+      - {code: P1D, history: {start: 1981-01-18T00:00:00+08:00, end: null}}
+      - {code: P1W, history: {start: 1981-01-18T00:00:00+08:00, end: null}}
+      - {code: P1M, history: {start: 1981-01-18T00:00:00+08:00, end: null}}
     adjustments: [none, qfq]
     fields: [open, high, low, close, volume]
 
   # 美股 ETF：复权经探针实证生效（SPY 2024-06 除息窗口 adjust=all 与 none
   #   全 19 交易日差异 ~2.9%，累计分红回溯量级合理，报告 20261112T143502+0800，
   #   人工确认）扩容 [none, qfq]；hfq 上游无等价物不声明；history 同报告回填
-  #   （日内 2020-02-15/04-11，粗周期触底 2000-01-01 待精化）
+  #   （日内 2020-02-15/04-11；粗周期 2026-11-12 精化收敛：P1D/P1W ≈1993-03-17、
+  #   P1M ≈1993-01-20，真值≈SPY 上市 1993-01-22）
   - data_type: bars
     markets: [US]
     asset_types: [etf]
@@ -173,9 +183,10 @@ capabilities:
       - {code: PT2H, history: {start: 2020-02-15T00:00:00+08:00, end: null}}
       - {code: PT4H, history: {start: 2020-02-15T00:00:00+08:00, end: null}}
       - {code: PT8H, history: {start: 2020-02-15T00:00:00+08:00, end: null}}
-      - {code: P1D, history: {start: 2000-01-01T00:00:00+08:00, end: null}}
-      - {code: P1W, history: {start: 2000-01-01T00:00:00+08:00, end: null}}
-      - {code: P1M, history: {start: 2000-01-01T00:00:00+08:00, end: null}}
+      # 粗周期 2026-11-12 精化收敛（真值≈SPY 上市 1993-01-22，月线桶 1993-01）
+      - {code: P1D, history: {start: 1993-03-17T00:00:00+08:00, end: null}}
+      - {code: P1W, history: {start: 1993-03-17T00:00:00+08:00, end: null}}
+      - {code: P1M, history: {start: 1993-01-20T00:00:00+08:00, end: null}}
     adjustments: [none, qfq]
     fields: [open, high, low, close, volume]
 
