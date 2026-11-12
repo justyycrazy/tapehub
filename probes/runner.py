@@ -689,6 +689,12 @@ def _jsonable(value: Any) -> Any:
 def _count_rows(result: Any) -> int | None:
     if isinstance(result, (list, tuple, dict)):
         return len(result)
+    # 表形结果（pandas DataFrame/Series，如 tushare 全系接口返回 DataFrame）：
+    # 框架不 import pandas（保持 Provider 无关、可选依赖隔离），按 shape
+    # 鸭子类型识别，shape[0] 即行数
+    shape = getattr(result, "shape", None)
+    if isinstance(shape, tuple) and shape and isinstance(shape[0], int):
+        return shape[0]
     return None
 
 

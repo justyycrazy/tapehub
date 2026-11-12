@@ -156,6 +156,60 @@ def test_raw_runner_with_fake_module(monkeypatch: pytest.MonkeyPatch) -> None:
     assert by_id["fake-observe"].verdict == "observe"
 
 
+class _FakeDataFrame:
+    """最小 DataFrame 形状桩（不引入 pandas）：shape[0] 为行数。"""
+
+    def __init__(self, rows: int) -> None:
+        self.shape = (rows, 15)
+
+    def __repr__(self) -> str:
+        return f"<FakeDataFrame rows={self.shape[0]}>"
+
+
+def test_raw_runner_counts_dataframe_rows(monkeypatch: pytest.MonkeyPatch) -> None:
+    """tushare 等上游全系返回 pandas DataFrame：raw 判定须按 shape 识别行数。"""
+    fake = types.ModuleType("probe_fake_sdk_df")
+    fake.fetch_table = lambda **kw: _FakeDataFrame(22)  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "probe_fake_sdk_df", fake)
+
+    probe = ProbeFile.model_validate(
+        _probe().model_dump()
+        | {
+            "raw": [
+                {
+                    "id": "fake-df-ok",
+                    "module": "probe_fake_sdk_df",
+                    "call": [{"module_func": "fetch_table"}],
+                    "expect": {"status": "ok", "min_rows": 1},
+                },
+                {
+                    "id": "fake-df-too-strict",
+                    "module": "probe_fake_sdk_df",
+                    "call": [{"module_func": "fetch_table"}],
+                    "expect": {"status": "ok", "min_rows": 100},
+                },
+            ]
+        }
+    )
+    result = asyncio.run(run_provider_probe(probe, _registry(), _settings()))
+    by_id = {c.case_id: c for c in result.cases if c.kind == "raw"}
+    assert by_id["fake-df-ok"].verdict == "confirmed"
+    assert by_id["fake-df-ok"].observation["rows"] == 22
+    assert by_id["fake-df-too-strict"].verdict == "failed"
+
+
+def test_count_rows_table_shapes() -> None:
+    """_count_rows 边界：表形鸭子类型识别，非表形对象仍返回 None。"""
+    from probes.runner import _count_rows
+
+    assert _count_rows(_FakeDataFrame(22)) == 22  # DataFrame 形（rows, cols）
+    assert _count_rows(type("S", (), {"shape": (22,)})()) == 22  # Series 形（rows,）
+    assert _count_rows([1, 2]) == 2
+    assert _count_rows({"k": 1}) == 1
+    assert _count_rows(object()) is None  # 无 shape
+    assert _count_rows(type("X", (), {"shape": 3})()) is None  # shape 非元组
+
+
 def test_raw_runner_error_expectation(monkeypatch: pytest.MonkeyPatch) -> None:
     fake = types.ModuleType("probe_fake_sdk_err")
 
