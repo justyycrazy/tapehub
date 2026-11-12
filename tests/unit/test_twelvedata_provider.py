@@ -302,16 +302,25 @@ def test_us_etf_chain(monkeypatch: pytest.MonkeyPatch) -> None:
     assert kwargs["adjust"] == "none"
 
 
-def test_us_etf_qfq_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
-    """ETF 复权未核实不声明：qfq 请求在二级路由拒绝。"""
+def test_us_etf_qfq_maps_to_adjust_all(monkeypatch: pytest.MonkeyPatch) -> None:
+    """ETF qfq 已声明（2026-11-12 探针实证复权生效）：映射上游 adjust=all。"""
+    from tests.fixtures.providers.stub_twelvedata import StubTDClient
+
     install(monkeypatch)
+    preset_values(monkeypatch, values_rows(["2026-01-05"]))
     adapter = _adapter()
-    with pytest.raises(UnsupportedCapabilityError):
-        asyncio.run(
-            adapter.fetch_bars(
-                _us_query(asset_type=AssetType.ETF, instrument=Instrument.parse("US-NYSE-SPY"))
+
+    asyncio.run(
+        adapter.fetch_bars(
+            _us_query(
+                asset_type=AssetType.ETF,
+                instrument=Instrument.parse("US-NYSE-SPY"),
+                adjust=Adjust.QFQ,
             )
         )
+    )
+    kwargs = StubTDClient.instances[-1].calls[0]
+    assert kwargs["adjust"] == "all"  # etf 与 stock 同映射：qfq → adjust=all
 
 
 def test_us_cboe_exchange_allowed(monkeypatch: pytest.MonkeyPatch) -> None:

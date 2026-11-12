@@ -110,12 +110,13 @@ def test_capability_catalog(twelvedata_client: TestClient) -> None:  # type: ign
             assert cap["adjustments"] == ["none"]
             assert cap["fields"] == ["open", "high", "low", "close"]
 
-    # 美股 stock/etf（US market）：volume 有值；stock 的 qfq 映射
-    # adjust=all（拆股+分红前复权，与国内口径一致，2026-11-06 探针实证）
+    # 美股 stock/etf（US market）：volume 有值；qfq 均映射 adjust=all
+    # （拆股+分红前复权，与国内口径一致：stock 2026-11-06、etf 2026-11-12
+    # 探针实证生效，SPY 除息窗口全 19 交易日差异）
     us_caps = {tuple(cap["asset_types"])[0]: cap for cap in bars_caps if cap["markets"] == ["US"]}
     assert set(us_caps) == {"stock", "etf"}
     assert us_caps["stock"]["adjustments"] == ["none", "qfq"]
-    assert us_caps["etf"]["adjustments"] == ["none"]
+    assert us_caps["etf"]["adjustments"] == ["none", "qfq"]
     for cap in us_caps.values():
         assert cap["fields"] == ["open", "high", "low", "close", "volume"]
         # history 已按 2026-11-07 探针报告回填（估计日零点，approx）：全部非 null
