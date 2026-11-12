@@ -106,19 +106,22 @@ def cmd_run(args: argparse.Namespace) -> int:
     async def _run_all() -> bool:
         any_failed = False
         for probe in probes:
-            print(f"=== 运行探针：{probe.probe}（{'dry-run' if args.dry_run else '真实调用'}）===")
+            print(
+                f"=== 运行探针：{probe.probe}（{'dry-run' if args.dry_run else '真实调用'}）===",
+                flush=True,
+            )
             result = await run_provider_probe(probe, registry, settings, execute=not args.dry_run)
             if not args.dry_run:
                 json_path, md_path = write_results(result, args.results_dir)
-                print(f"  JSON 证据：{json_path}")
-                print(f"  Markdown 报告：{md_path}")
+                print(f"  JSON 证据：{json_path}", flush=True)
+                print(f"  Markdown 报告：{md_path}", flush=True)
             counts = result.verdict_counts()
-            print(f"  判定统计：{counts}")
+            print(f"  判定统计：{counts}", flush=True)
             if result.file_skip_reason:
-                print(f"  文件级跳过：{result.file_skip_reason}")
+                print(f"  文件级跳过：{result.file_skip_reason}", flush=True)
             for case in result.cases:
                 if case.verdict == "failed":
-                    print(f"  [failed] {case.case_id}: {case.reason}")
+                    print(f"  [failed] {case.case_id}: {case.reason}", flush=True)
                     any_failed = True
         return any_failed
 

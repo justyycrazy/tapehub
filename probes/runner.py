@@ -137,6 +137,23 @@ def _module_available(name: str) -> bool:
         return False
 
 
+def _print_progress(phase: str, kind: str, case_id: str, detail: str = "") -> None:
+    """实时进度输出：每条 case 开始/完成立即刷新（后台运行可逐条观察）。
+
+    stdout 重定向到文件时 Python 默认块缓冲，进度会滞留缓冲区直到进程
+    结束才一次性落盘——显式 flush 使判定/耗时实时可见，卡住的 case 通过
+    「最后一条 RUN 行」直接定位。"""
+    suffix = f" {detail}" if detail else ""
+    print(f"  [{phase:<9}] {kind:<18} {case_id}{suffix}", flush=True)
+
+
+def _progress_detail(result: CaseResult, budget: CallBudget) -> str:
+    """完成行的附加信息：调用数、耗时与预算水位。"""
+    calls = (result.observation or {}).get("calls_made", 0)
+    seconds = (result.duration_ms or 0) / 1000
+    return f"({calls} 调, {seconds:.1f}s, 预算 {budget.used}/{budget.max_calls})"
+
+
 async def run_provider_probe(
     probe: ProbeFile,
     registry: ProviderRegistry,
@@ -177,11 +194,29 @@ async def run_provider_probe(
                 budget=budget,
             )
             for case in expanded.chain_cases:
-                cases.append(await _run_chain_case(ctx, case))
+                _print_progress("RUN", case.kind, case.case_id)
+                result = await _run_chain_case(ctx, case)
+                cases.append(result)
+                _print_progress(
+                    result.verdict, case.kind, case.case_id,
+                    _progress_detail(result, budget),
+                )
             for plan in expanded.raw_cases:
-                cases.append(await _run_raw_case(ctx, plan))
+                _print_progress("RUN", "raw", plan.spec.id)
+                result = await _run_raw_case(ctx, plan)
+                cases.append(result)
+                _print_progress(
+                    result.verdict, "raw", plan.spec.id,
+                    _progress_detail(result, budget),
+                )
             for plan in expanded.connection_cases:
-                cases.append(await _run_connection_case(ctx, plan))
+                _print_progress("RUN", "connection", plan.spec.id)
+                result = await _run_connection_case(ctx, plan)
+                cases.append(result)
+                _print_progress(
+                    result.verdict, "connection", plan.spec.id,
+                    _progress_detail(result, budget),
+                )
             budget_used = budget.used
         else:
             cases = [_skipped_result(case, file_skip) for case in expanded.chain_cases]
