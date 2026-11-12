@@ -14,9 +14,12 @@ pacing:
   # （懒登录复用），探针链路与 raw 共享同一会话。
   call_interval_s: 2.0
   timeout_s: 60
-  # 预算：availability 45（stock 21 + index 3 + etf 21，含 ETF 分钟族 12）+
-  # adjust_diff 4 + raw 23 条 × 4 调 = 期望 141（history_depth 六条已收敛
-  # 全量 skip，不占预算）。
+  # 预算：availability 66（stock 基准 21 + stock@CN-SZSE 追加 21 + index 3 +
+  # etf 21，含 ETF 分钟族 12）+ adjust_diff 8（stock/stock@CN-SZSE 各 2 case
+  # × 2 调）+ raw 23 条 × 4 调 = 期望 166（history_depth 六条已收敛全量
+  # skip，不占预算）。⚠ 分钟族重查询可能贴线/超时：2026-11-12 盘后实测
+  # 3 例 TIMEOUT（timeout_s=60，PT5M-hfq/PT15M-none 双所同现，属上游瞬时
+  # 时延非能力缺口，上轮同查询时延 22~49s），failed 时重跑复验即可。
   max_calls: 280
 
 # 基准标的沿用 tickflow/alphafeed 探针定稿的「早上市标的」原则（破除二分
@@ -28,6 +31,15 @@ targets:
     # 官方口径个股日/周/月 1990-12-19 起，收敛点即真实库底
     window: {start: 2025-01-01, end: 2025-12-31}
     # 跨周期下限（D≈243 / W≈52 / M≈12 / 分钟≈每交易日 48 根），只拦截空结果
+    min_bars: 10
+    required_fields: [open, high, low, close, volume, amount]
+  stock@CN-SZSE:
+    instrument: CN-SZSE-000001
+    # 平安银行（深市主板，1991-04-03 上市）：交易所限定追加目标，sz. 前缀
+    # 分支 chain 级实证（此前仅文档示例核实；框架 2026-11-12 起支持交易所
+    # 限定键）。不进 history_depth：与 stock 同库同查询，库底证据已由
+    # 基准标的收敛；BSE 不声明（官方仅覆盖沪深两市，代码层明确拒绝）
+    window: {start: 2025-01-01, end: 2025-12-31}
     min_bars: 10
     required_fields: [open, high, low, close, volume, amount]
   index:
@@ -65,8 +77,9 @@ chain:
       reason: 已收敛，与 P1D 同值，已人工确认回填
   adjust_diff:
     # 个股复权生效性（官方「涨跌幅复权法」，与同花顺/通达信口径不同）：
-    # 日线足以判定，收敛 interval 控制预算；指数/ETF 首版仅声明 none 无可比
-    targets: [stock]
+    # 日线足以判定，收敛 interval 控制预算；指数/ETF 首版仅声明 none 无可比。
+    # stock@CN-SZSE 为逐所细分复验（2026-11-12 接入）
+    targets: [stock, stock@CN-SZSE]
     window: {start: 2024-06-01, end: 2024-08-31}   # 分红除权高发窗口
     intervals: [P1D]
     pairs: [[none, qfq], [none, hfq]]

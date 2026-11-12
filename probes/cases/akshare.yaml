@@ -75,7 +75,22 @@ chain:
     fields: [close]
     tolerance: 0.01      # 指数新浪源多一位小数（±0.005）属表示层精度差，不是口径不一致
 
-raw: []
+raw:
+  # ── 北交所个股支持性指纹（2026-11-12 探针）：东财 A 股接口 symbol 为纯
+  #    6 位代码，上游按代码首位判定市场（ETF 口径「5/6→沪、其余→深」），
+  #    BSE 代码段（920 等）的归属与覆盖未实证。本 case 直测观察：返回数据
+  #    且首尾日期落在请求窗口 → BSE 个股可支持（后续议 chain 目标）；空/
+  #    错误/他所数据 → 指纹留档，维持「BSE 未探针不声明」口径。新浪/腾讯
+  #    变体未测（支持性依据以东财缺省变体为准）
+  - id: bse-stock-fingerprint
+    purpose: 北交所个股（CN-BSE-920000 安徽凤凰，tushare 侧已探针证实存续）
+      在东财 A 股接口（stock_zh_a_hist）的支持性指纹（观察不判定）：
+      行数与首尾日期即归属与覆盖的直接证据
+    module: akshare
+    call:
+      - {module_func: stock_zh_a_hist, kwargs: {symbol: "920000", period: "daily", start_date: "20251101", end_date: "20251112", adjust: ""}}
+    expect: {status: ok, min_rows: 0}
+    assert: false
 
 notes: >
   指数腾讯源的 amount 列语义为成交量（映射到 volume），新浪/腾讯指数的 amount
