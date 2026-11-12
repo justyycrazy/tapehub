@@ -141,7 +141,9 @@ def _target_for(probe: ProbeFile, ref: TargetRef) -> tuple[str, TargetSpec] | No
     """按目标引用解析基准标的：限定键优先，不限定键兜底（市场一致才命中）。
 
     - ``stock@HK`` 优先命中键 ``stock@HK``；
-    - 未命中限定键时回退键 ``stock``，但仅当其标的的市场与请求市场一致
+    - ``stock@CN-SSE``（交易所限定）仅精确命中同名键，不回退——裸键的
+      标的属于其他交易所，回退会产生失配证据；
+    - 未命中市场限定键时回退键 ``stock``，但仅当其标的的市场与请求市场一致
       （既有单市场文件用不限定键，行为不变；多市场 Provider 需为每个
       要探的市场提供限定键，否则该市场不生成 case）；
     - 不限定引用（market=None）直接命中键 ``stock``，不校验市场
@@ -151,12 +153,70 @@ def _target_for(probe: ProbeFile, ref: TargetRef) -> tuple[str, TargetSpec] | No
         qualified = probe.targets.get(ref.key)
         if qualified is not None:
             return (ref.key, qualified)
+        if ref.exchange is not None:
+            return None
     plain = probe.targets.get(ref.asset_type.value)
     if plain is None:
         return None
     if ref.market is not None and Instrument.parse(plain.instrument).market != ref.market:
         return None
     return (ref.asset_type.value, plain)
+
+
+def _exchange_targets_for_market(
+    probe: ProbeFile, asset_type: AssetType, market: str
+) -> list[tuple[str, TargetSpec]]:
+    """收集市场内交易所限定目标键（``stock@CN-SSE``），保持声明顺序。
+
+    交易所限定键是市场基准标的（市场限定键/裸键）之外的**追加**目标，
+    用于逐所细分探测（availability/adjust_diff 等按同一能力矩阵为每个
+    交易所目标独立展开）；键与 instrument 的一致性已在加载期校验
+    （schema ``ProbeFile._target_keys``）。"""
+    prefix = f"{asset_type.value}@{market}-"
+    return [(key, spec) for key, spec in probe.targets.items() if key.startswith(prefix)]
+
+
+def _validate_target_coverage(probe: ProbeFile, capabilities: list[Capability]) -> None:
+    """孤儿限定目标硬失败：限定段必须能被能力目录覆盖（加载期诚实报错）。
+
+    - targets 键：带 market 限定的键，其 market 段不在该 manifest 任何
+      capability 的 markets 中 → ValueError（取代展开期的静默忽略；裸键
+      豁免，兼容单市场既有语义）；
+    - 分析探针 targets 引用：``_target_for`` 解析失败（含键缺失与市场
+      不匹配）→ ValueError（取代 ``_base_for`` 的静默 continue）。
+    """
+    covered = {market for cap in capabilities for market in cap.markets}
+    orphan_keys = sorted(
+        key
+        for key in probe.targets
+        if (ref := TargetRef.model_validate(key)).market is not None
+        and ref.market not in covered
+    )
+    if orphan_keys:
+        raise ValueError(
+            f"target keys reference markets not declared by provider manifest "
+            f"{probe.probe!r}: {orphan_keys} (covered markets: {sorted(covered)})"
+        )
+    chain = probe.chain
+    if chain is None:
+        return
+    unresolved: list[str] = []
+    for config in (
+        chain.adjust_diff,
+        chain.history_depth,
+        chain.limit_truncation,
+        chain.variant_consistency,
+    ):
+        if config is None:
+            continue
+        for ref in config.targets:
+            if _target_for(probe, ref) is None:
+                unresolved.append(ref.key)
+    if unresolved:
+        raise ValueError(
+            f"analysis probe targets do not resolve to any declared target in "
+            f"{probe.probe!r}: {sorted(unresolved)}"
+        )
 
 
 def _id_prefix(base: ChainCase) -> str:
@@ -477,6 +537,7 @@ def _apply_explicit_skips(probe: ProbeFile, chain_cases: list[ChainCase]) -> Non
 def expand_probe(probe: ProbeFile, manifest: ProviderManifest) -> ExpandedProbe:
     """把探针文件与 manifest 能力矩阵合并展开。"""
     capabilities = manifest.to_domain_capabilities()
+    _validate_target_coverage(probe, capabilities)
     chain_cases: list[ChainCase] = []
 
     if probe.chain and probe.chain.include_declared:
@@ -494,6 +555,12 @@ def expand_probe(probe: ProbeFile, manifest: ProviderManifest) -> ExpandedProbe:
                                 )
                                 if found is not None:
                                     targets_by_market.append((market, *found))
+                                # 交易所限定键是市场基准标的之外的追加目标：
+                                # 逐所细分探测（键前缀 <asset_type>@<MARKET>-）
+                                for exch_key, exch_target in _exchange_targets_for_market(
+                                    probe, asset_type, market
+                                ):
+                                    targets_by_market.append((market, exch_key, exch_target))
                             if not targets_by_market:
                                 # 声明了 target 但市场全不匹配：保留跳过标记进报告
                                 # （不静默漏探）；未声明任何 target 的 asset_type 不生成

@@ -476,3 +476,91 @@ def test_invalid_target_key_rejected() -> None:
     }
     with pytest.raises(Exception):
         ProbeFile.model_validate(data2)
+
+
+# ── 交易所限定目标（asset_type@MARKET-EXCHANGE）展开 ─────────────────────────
+
+
+def _multi_market_probe_with_exchange_targets() -> ProbeFile:
+    """市场限定基准目标 + 交易所限定追加目标：加法式，不抑制基准目标。"""
+    data = _multi_market_probe().model_dump()
+    data["targets"]["stock@CN-SZSE"] = {
+        "instrument": "CN-SZSE-000001",
+        "window": {"start": "2025-01-01", "end": "2025-03-31"},
+    }
+    data["targets"]["stock@CN-BSE"] = {
+        "instrument": "CN-BSE-920000",
+        "window": {"start": "2025-01-01", "end": "2025-03-31"},
+    }
+    return ProbeFile.model_validate(data)
+
+
+def test_exchange_qualified_availability_expansion() -> None:
+    """交易所限定目标是市场基准目标之外的追加：CN 基准 + SZSE/BSE 各自成 case。"""
+    expanded = expand_probe(
+        _multi_market_probe_with_exchange_targets(),
+        _multi_market_manifest(),  # type: ignore[arg-type]
+    )
+    availability = [c for c in expanded.chain_cases if c.kind == "availability"]
+    # 基准 CN/HK/US 各 4 + SZSE/BSE 各 4 = 20 条，全部可执行
+    assert len(availability) == 20
+    assert all(c.skip_reason is None for c in availability)
+    by_id = {c.case_id: c for c in availability}
+    assert "stock@CN-P1D-none-tickflow" in by_id  # 基准目标不受抑制
+    assert "stock@CN-SZSE-P1D-none-tickflow" in by_id
+    assert "stock@CN-BSE-PT1M-qfq-tickflow" in by_id
+    assert by_id["stock@CN-SZSE-P1D-none-tickflow"].instrument == "CN-SZSE-000001"
+    assert by_id["stock@CN-BSE-PT1M-qfq-tickflow"].instrument == "CN-BSE-920000"
+
+
+def test_exchange_qualified_only_target_for_market() -> None:
+    """市场只声明交易所限定键（无基准键）：该市场按交易所目标展开，不冒用其它标的。"""
+    data = _multi_market_probe_with_exchange_targets().model_dump()
+    del data["targets"]["stock@CN"]  # CN 仅剩 SZSE/BSE 两个交易所目标
+    probe = ProbeFile.model_validate(data)
+    expanded = expand_probe(probe, _multi_market_manifest())  # type: ignore[arg-type]
+    availability = [c for c in expanded.chain_cases if c.kind == "availability"]
+    ids = {c.case_id for c in availability}
+    assert "stock@CN-SZSE-P1D-none-tickflow" in ids
+    assert "stock@CN-BSE-PT1M-qfq-tickflow" in ids
+    assert "stock@CN-P1D-none-tickflow" not in ids
+    assert len(ids) == 16  # CN-SZSE/CN-BSE/HK/US 各 4
+
+
+def test_orphan_market_qualified_key_rejected() -> None:
+    """限定键的 market 段不在能力目录覆盖范围：展开期硬报错（不静默忽略）。"""
+    data = _multi_market_probe().model_dump()
+    data["targets"]["stock@EU"] = {
+        "instrument": "EU-XEUR-CA",  # fixture 能力只声明 CN/HK/US
+        "window": {"start": "2025-01-01", "end": "2025-03-31"},
+    }
+    probe = ProbeFile.model_validate(data)
+    with pytest.raises(ValueError, match="markets not declared"):
+        expand_probe(probe, _multi_market_manifest())  # type: ignore[arg-type]
+
+
+def test_analysis_targets_with_exchange_qualifier() -> None:
+    """分析探针 targets 支持交易所限定引用：id 前缀带交易所段。"""
+    data = _multi_market_probe_with_exchange_targets().model_dump()
+    data["chain"]["adjust_diff"] = {
+        "targets": ["stock@CN", "stock@CN-SZSE"],
+        "window": {"start": "2024-06-01", "end": "2024-08-31"},
+    }
+    probe = ProbeFile.model_validate(data)
+    expanded = expand_probe(probe, _multi_market_manifest())  # type: ignore[arg-type]
+    ids = {c.case_id for c in expanded.chain_cases if c.kind == "adjust_diff"}
+    assert "adjust-diff-stock@CN-P1D-none-vs-qfq-tickflow" in ids
+    assert "adjust-diff-stock@CN-SZSE-P1D-none-vs-qfq-tickflow" in ids
+    assert "adjust-diff-stock@CN-SZSE-PT1M-none-vs-qfq-tickflow" in ids
+
+
+def test_unresolved_analysis_target_rejected() -> None:
+    """分析探针引用无法解析的限定目标：展开期硬报错（取代静默忽略）。"""
+    data = _multi_market_probe().model_dump()
+    data["chain"]["adjust_diff"] = {
+        "targets": ["stock@CN-SZX"],  # 不存在的键（CN 市场内无 SZX 交易所目标）
+        "window": {"start": "2024-06-01", "end": "2024-08-31"},
+    }
+    probe = ProbeFile.model_validate(data)
+    with pytest.raises(ValueError, match="do not resolve"):
+        expand_probe(probe, _multi_market_manifest())  # type: ignore[arg-type]

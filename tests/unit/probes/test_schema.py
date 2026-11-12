@@ -1,8 +1,10 @@
 """探针文件 schema 校验测试（离线）。"""
 
 import pytest
-from probes.schema import CallSpec, ProbeFile, RawCaseSpec
+from probes.schema import CallSpec, ProbeFile, RawCaseSpec, TargetRef
 from pydantic import ValidationError
+
+from tapehub.domain.models import AssetType
 
 
 def _base() -> dict:
@@ -82,3 +84,46 @@ def test_expect_consistency() -> None:
     )
     assert case.assert_ is False
     assert case.expect.error_contains == ""
+
+
+# ── 交易所限定目标引用（asset_type@MARKET-EXCHANGE）──────────────────────
+
+
+def test_target_ref_exchange_qualifier_parses() -> None:
+    """两段限定引用解析：market/exchange 分段正确，key 回写保留交易所段。"""
+    ref = TargetRef.model_validate("stock@CN-SSE")
+    assert ref.asset_type is AssetType.STOCK
+    assert ref.market == "CN"
+    assert ref.exchange == "SSE"
+    assert ref.key == "stock@CN-SSE"
+    # 既有两形态不受影响
+    assert TargetRef.model_validate("stock").key == "stock"
+    assert TargetRef.model_validate("stock@HK").key == "stock@HK"
+
+
+def test_target_ref_exchange_without_market_rejected() -> None:
+    """exchange 限定必须与 market 同现（交易所是市场内的细分段）。"""
+    with pytest.raises(ValidationError, match="requires a market"):
+        TargetRef.model_validate({"asset_type": "stock", "exchange": "SSE"})
+
+
+def test_exchange_qualified_key_instrument_mismatch_rejected() -> None:
+    """交易所限定键的标的与限定段不一致：加载期即拒绝（不留到展开期）。"""
+    data = _base()
+    data["targets"]["stock@CN-SSE"] = {
+        "instrument": "CN-SZSE-000001",  # 键限定 SSE，标的是 SZSE
+        "window": {"start": "2025-01-01", "end": "2025-12-31"},
+    }
+    with pytest.raises(ValidationError, match="does not match qualifier"):
+        ProbeFile.model_validate(data)
+
+
+def test_exchange_qualified_key_consistent_instrument_accepted() -> None:
+    """交易所限定键与标的限定段一致：正常通过。"""
+    data = _base()
+    data["targets"]["stock@CN-SZSE"] = {
+        "instrument": "CN-SZSE-000001",
+        "window": {"start": "2025-01-01", "end": "2025-12-31"},
+    }
+    probe = ProbeFile.model_validate(data)
+    assert probe.targets["stock@CN-SZSE"].instrument == "CN-SZSE-000001"

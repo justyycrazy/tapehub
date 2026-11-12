@@ -20,13 +20,15 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from tapehub.domain.intervals import Interval
-from tapehub.domain.models import Adjust, AssetType
+from tapehub.domain.models import Adjust, AssetType, Instrument
 
 PROBE_SCHEMA_VERSION = 1
 
-# 市场限定目标引用：``stock``（不限定市场，标的自身市场即市场）或
-# ``stock@HK``（限定市场）。同一 asset_type 跨多市场声明能力的 Provider
-# （如 tickflow 的 CN/HK/US stock）必须用限定形式区分各市场的基准标的。
+# 目标限定引用：``stock``（不限定市场，标的自身市场即市场）、``stock@HK``
+# （限定市场）或 ``stock@CN-SSE``（限定市场内交易所）。同一 asset_type 跨多
+# 市场声明能力的 Provider（如 tickflow 的 CN/HK/US stock）必须用限定形式
+# 区分各市场的基准标的；交易所限定键是市场基准标的之外的追加目标，用于
+# 逐所细分探测（适配器交易所映射分支的 chain 级证据）。
 class CaseVerdict(StrEnum):
     """探针判定：统一五种结论，语义见 probes/README.md。"""
 
@@ -43,18 +45,21 @@ class _Strict(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-_TARGET_REF_RE = re.compile(r"^([a-z][a-z0-9-]*)(?:@([A-Z][A-Z0-9]*))?$")
+_TARGET_REF_RE = re.compile(r"^([a-z][a-z0-9-]*)(?:@([A-Z][A-Z0-9]*)(?:-([A-Z][A-Z0-9]*))?)?$")
 
 
 class TargetRef(_Strict):
-    """目标引用：``{asset_type}`` 或 ``{asset_type}@{MARKET}``。
+    """目标引用：``{asset_type}``、``{asset_type}@{MARKET}`` 或
+    ``{asset_type}@{MARKET}-{EXCHANGE}``。
 
     ``market`` 为 ``None`` 表示不限定市场（兼容既有单市场目标）；
+    ``exchange`` 仅能与 ``market`` 同时出现（交易所是市场内的细分段）；
     case id 以 ``key`` 为前缀，限定目标天然与不限定目标的 id 不冲突。
     """
 
     asset_type: AssetType
     market: str | None = None
+    exchange: str | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -64,16 +69,31 @@ class TargetRef(_Strict):
             if match is None:
                 raise ValueError(
                     f"invalid target reference {value!r}: expected "
-                    f"'<asset_type>' or '<asset_type>@<MARKET>'"
+                    f"'<asset_type>', '<asset_type>@<MARKET>' or "
+                    f"'<asset_type>@<MARKET>-<EXCHANGE>'"
                 )
-            return {"asset_type": match.group(1), "market": match.group(2)}
+            return {
+                "asset_type": match.group(1),
+                "market": match.group(2),
+                "exchange": match.group(3),
+            }
         return value
+
+    @model_validator(mode="after")
+    def _exchange_needs_market(self) -> "TargetRef":
+        if self.exchange is not None and self.market is None:
+            raise ValueError(
+                f"target reference {self.key!r}: exchange qualifier requires a market"
+            )
+        return self
 
     @property
     def key(self) -> str:
         """回写探针文件时使用的键 / case id 前缀。"""
         if self.market is None:
             return self.asset_type.value
+        if self.exchange is not None:
+            return f"{self.asset_type.value}@{self.market}-{self.exchange}"
         return f"{self.asset_type.value}@{self.market}"
 
 
@@ -319,9 +339,21 @@ class ProbeFile(_Strict):
     @field_validator("targets")
     @classmethod
     def _target_keys(cls, value: dict[str, TargetSpec]) -> dict[str, TargetSpec]:
-        for key in value:
-            # 键合法性由 TargetRef 同一规则校验（asset_type[@MARKET]）
-            TargetRef.model_validate(key)
+        for key, spec in value.items():
+            # 键合法性由 TargetRef 同一规则校验（asset_type[@MARKET[-EXCHANGE]]）
+            ref = TargetRef.model_validate(key)
+            if ref.exchange is not None:
+                # 交易所限定键的标的必须与限定段一致：加载期诚实失败，
+                # 不留到展开期静默失配
+                instrument = Instrument.parse(spec.instrument)
+                if (
+                    instrument.market != ref.market
+                    or instrument.exchange != ref.exchange
+                ):
+                    raise ValueError(
+                        f"target key {key!r} instrument {spec.instrument!r} does not "
+                        f"match qualifier market={ref.market!r} exchange={ref.exchange!r}"
+                    )
         return value
     chain: ChainSpec | None = None
     raw: list[RawCaseSpec] = Field(default_factory=list)
