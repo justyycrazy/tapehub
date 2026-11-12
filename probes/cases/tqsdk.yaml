@@ -10,6 +10,14 @@ requires:
 pacing:
   call_interval_s: 3.0
   timeout_s: 120
+  # ⚠ 运行时段建议：**盘中（如 09:30-15:00）运行**。2026-11-12 盘后实测
+  # （19:25 启动，实时日志逐 case 实证）：股票/ETF 全部 qfq/hfq 复权 case
+  # 的 get_kline_serial(adj_type=F/B) 均挂满 120s 超时（同标的同周期
+  # adj_type=None 3~6s 正常通过，SSE/SZSE 双所一致）——盘后复权数据服务
+  # 无响应，36 availability + 36 adjust_diff ≈ 2.4h 纯超时燃烧；复权生效性
+  # 本身已有 11-03 盘中实证（hfq/none 差异显著）。复权 case 判定以盘中
+  # 运行为准；另实测天勤不支持 BSE 前缀（BSE.920000 快速报
+  # 「non-existent instrument」graphql 错误，闸门 case quote-bse-fingerprint）
   # 可用性 54（stock/stock@CN-SZSE 各 18 + index 6 + etf 18 + contract/
   # continuous/weighted-index 各 6）+ adjust_diff 36 case×2 调用（stock/
   # stock@CN-SZSE/etf × 6 周期 × 2 pair）+ history_depth 30 case×~13 + limit 1
