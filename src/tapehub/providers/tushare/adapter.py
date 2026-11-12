@@ -7,8 +7,9 @@
 - Token 通过 ``TAPEHUB_TUSHARE_TOKEN`` 环境变量注入（pydantic-settings），
   只经内存传给 SDK 客户端（ts.pro_api），禁止写入代码、manifest、日志或异常响应；
 - 同步 SDK 调用通过 ``call_in_thread`` 隔离到线程池，不阻塞事件循环；
-- 两级路由：manifest operations 选中 pro_bar（股票）或 fut_daily（期货单一合约），
-  上游函数名仅存在于本适配器与 manifest 内部；
+- 两级路由：manifest operations 选中 pro_bar（股票）或 fut_daily（期货单一
+  合约与主力连续——主连品种+L / CFFEX 主力直拼 / CZCE 3→4 位码转换，
+  见 request_mapper），上游函数名仅存在于本适配器与 manifest 内部；
 - fut_daily 单次上限 2000 条（主连 CUL.SHF 16 年窗口实测恰 2000，报告
   20261112T124404+0800）：达到上限时批次标记 ``partial=true``，API 层据此
   在 warnings 中提示可能截断；上游截断为「保尾截头」——保留最新 2000 根，

@@ -52,12 +52,15 @@ defaults:
   - match: {data_type: bars, market: CN, asset_type: etf}
     order: [tqsdk, baostock, akshare]
 
-  # CN 期货合约：tqsdk 缺省；回退 akshare（新浪源）。tushare 虽声明
-  # 期货日线，不参与本组合的 auto 路由（仅显式 provider=tushare 可用）
+  # CN 期货合约：tqsdk 缺省；回退 akshare（新浪源）。tushare 已声明期货
+  # 单一合约（五所后缀探针实证，仅日线无复权），仍不参与本组合的 auto
+  # 路由（仅显式 provider=tushare 可用）
   - match: {data_type: bars, market: CN, asset_type: contract}
     order: [tqsdk, akshare]
 
-  # CN 主力连续：tqsdk 缺省；回退 akshare（新浪源）
+  # CN 主力连续：tqsdk 缺省；回退 akshare（新浪源）。tushare 已声明主连
+  # （品种+L，CFFEX 直拼主力，仅日线无复权），仍不参与 auto 路由
+  # （仅显式 provider=tushare 可用）
   - match: {data_type: bars, market: CN, asset_type: continuous}
     order: [tqsdk, akshare]
 

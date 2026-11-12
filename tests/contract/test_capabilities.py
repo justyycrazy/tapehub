@@ -25,9 +25,10 @@ def test_default_catalog_lists_all_builtin_providers(default_client) -> None:  #
     assert [i["code"] for i in em_stock["intervals"]] == ["P1D", "P1W", "P1M"]
     assert em_stock["adjustments"] == ["none", "qfq", "hfq"]
     # tushare 已接入：凭据未配置 → 不启用，能力目录仍完整可见
+    # （stock / contract / continuous 三条，continuous 为五所主连扩容）
     tushare = next(entry for entry in body["data"] if entry["provider"] == "tushare")
     assert tushare["enabled"] is False
-    assert len(tushare["capabilities"]) == 2
+    assert len(tushare["capabilities"]) == 3
     # tqsdk 已接入：凭据未配置 → 不启用；期货三类拆分 + 股票/指数/ETF + 实时快照
     tqsdk = next(entry for entry in body["data"] if entry["provider"] == "tqsdk")
     assert tqsdk["enabled"] is False

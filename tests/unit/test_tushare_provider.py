@@ -150,13 +150,65 @@ def test_futures_partial_on_row_limit(monkeypatch: pytest.MonkeyPatch) -> None:
     assert batch.partial is True  # 达到 fut_daily 单次 2000 条上限
 
 
+@pytest.mark.parametrize(
+    ("code", "asset_type", "expected"),
+    [
+        # 五所期货后缀（探针实证，报告 20261112T124404+0800）
+        ("CN-SHFE-CU2401", AssetType.CONTRACT, "CU2401.SHF"),
+        ("CN-DCE-V2601", AssetType.CONTRACT, "V2601.DCE"),
+        ("CN-INE-SC2409", AssetType.CONTRACT, "SC2409.INE"),
+        ("CN-CFFEX-IF2409", AssetType.CONTRACT, "IF2409.CFX"),
+        # CZCE 原生 3 位年月码 → tushare 4 位（10 年窗口唯一解析，探针实证
+        # SR2601.ZCE 有数据）
+        ("CN-CZCE-SR601", AssetType.CONTRACT, "SR2601.ZCE"),
+        ("CN-CZCE-SR509", AssetType.CONTRACT, "SR2509.ZCE"),
+        # 主力连续：多数交易所品种+L（XXL 主连），CFFEX 主力直拼
+        # （探针实证，报告 20261112T133250+0800）
+        ("CN-SHFE-CU", AssetType.CONTINUOUS, "CUL.SHF"),
+        ("CN-CZCE-SR", AssetType.CONTINUOUS, "SRL.ZCE"),
+        ("CN-DCE-M", AssetType.CONTINUOUS, "ML.DCE"),
+        ("CN-INE-SC", AssetType.CONTINUOUS, "SCL.INE"),
+        ("CN-CFFEX-IF", AssetType.CONTINUOUS, "IF.CFX"),
+    ],
+)
+def test_futures_ts_code_mapping(
+    code: str,
+    asset_type: AssetType,
+    expected: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    stub = install(monkeypatch)
+    stub.set_rows("fut_daily", futures_rows(["2026-01-05"]))
+    adapter = _adapter()
+
+    query = _query(asset_type=asset_type, instrument=Instrument.parse(code), adjust=Adjust.NONE)
+    asyncio.run(adapter.fetch_bars(query))
+
+    operation, kwargs = stub.last_pro.calls[0]
+    assert operation == "fut_daily"
+    assert kwargs["ts_code"] == expected
+
+
 def test_unsupported_futures_exchange(monkeypatch: pytest.MonkeyPatch) -> None:
-    """期货交易所后缀仅核实上期所（.SHF），其余在映射层明确拒绝。"""
+    """未接入的期货交易所在映射层明确拒绝（广期所 .GFE 未探针核实，证伪即移除）。"""
     install(monkeypatch)
     adapter = _adapter()
     query = _query(
         asset_type=AssetType.CONTRACT,
-        instrument=Instrument.parse("CN-DCE-V2601"),
+        instrument=Instrument.parse("CN-GFEX-LC2601"),
+        adjust=Adjust.NONE,
+    )
+    with pytest.raises(UnsupportedCapabilityError):
+        asyncio.run(adapter.fetch_bars(query))
+
+
+def test_czce_invalid_month_code(monkeypatch: pytest.MonkeyPatch) -> None:
+    """CZCE 非 3 位年月码在转换层明确拒绝（如位数不足或含非数字段）。"""
+    install(monkeypatch)
+    adapter = _adapter()
+    query = _query(
+        asset_type=AssetType.CONTRACT,
+        instrument=Instrument.parse("CN-CZCE-SR60"),
         adjust=Adjust.NONE,
     )
     with pytest.raises(UnsupportedCapabilityError):
