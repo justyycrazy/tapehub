@@ -169,7 +169,8 @@ def test_capability_catalog(tushare_client: tuple[TestClient, Any]) -> None:  # 
     )
     assert [i["code"] for i in continuous_cap["intervals"]] == ["P1D"]
     assert continuous_cap["adjustments"] == ["none"]
-    assert continuous_cap["intervals"][0]["history"]["start"] is None  # 待探针 chain 回填
+    # history.start 探针回填：主连二分下限触底（报告 20261112T135507+0800）
+    assert continuous_cap["intervals"][0]["history"]["start"] == "1991-01-01T00:00:00+08:00"
 
 
 def test_weekly_interval(

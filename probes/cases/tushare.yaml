@@ -10,7 +10,10 @@ requires:
 pacing:
   call_interval_s: 1.5
   timeout_s: 60
-  max_calls: 100
+  # 期货扩容后 chain 展开：availability 11 + adjust_diff 12 + history_depth
+  # （stock 三周期 + contract 全量 + continuous 各约 13/2/13）+ limit 1 +
+  # raw 11×2，合计约 100，留余量
+  max_calls: 160
 
 targets:
   stock:
@@ -25,6 +28,10 @@ targets:
     instrument: CN-SHFE-CU2401
     window: {start: 2023-09-01, end: 2023-12-29}
     min_bars: 20
+  continuous:
+    instrument: CN-SHFE-CU
+    window: {start: 2025-01-01, end: 2025-12-31}
+    min_bars: 10
 
 chain:
   include_declared: true
@@ -35,7 +42,10 @@ chain:
     pairs: [[none, qfq], [none, hfq]]
     fields: [close]
   history_depth:
-    targets: [stock]
+    # contract 走全量模式（已摘牌 CU2401 全量拉取直读最早 bar = 精确上市日，
+    # approx=False）；continuous（CUL.SHF 主连）与 stock 走二分估计
+    targets: [stock, contract, continuous]
+    full_history_targets: [contract]
     earliest: 1991-01-01
     era_step_years: 5
     max_calls: 20

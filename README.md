@@ -557,7 +557,7 @@ Tushare（官方 SDK `tushare`：`ts.pro_bar` / `pro.fut_daily`）：
 - 主力连续映射（总览页连续合约格式 XX=主力 / XXL=主连；探针实证报告 20261112T133250+0800）：品种+L 主连——`CN-SHFE-CU → CUL.SHF`、`CN-CZCE-SR → SRL.ZCE`、`CN-DCE-M → ML.DCE`、`CN-INE-SC → SCL.INE`；CFFEX 例外直拼主力 `CN-CFFEX-IF → IF.CFX`（该所 IFL/IFL1-3 为当月/次月/当季/下季月份系列非主连）；不参与 CN contract/continuous 的 auto 路由（仅显式 `provider=tushare`）；
 - 单位换算（按文档）：股票 `vol` 手→股（×100）、`amount` 千元→元（×1000）；期货 `vol` 保持手、`amount` 万元→元（×10000）；
 - `fut_daily` 单次上限 2000 条（主连 CUL.SHF 16 年窗口实测恰 2000，报告 20261112T124404+0800）：达到上限时响应 `meta.partial=true` 且 `warnings` 提示可能截断；上游截断为「保尾截头」（保留最新 2000 根，partial 时缺窗口头部更早数据）；该接口要求上游账户 2000 积分；
-- 历史 K 线起点（history.start 探针二分，报告 20261112T124404+0800）：stock 日/周/月 ≈1999-12-08（approx ±90 天，真值≈标的上市日 1999-11-10 落在窗口内，与 akshare 个股口径同日互证）；contract/continuous 待探针 chain 实测后回填；
+- 历史 K 线起点（history.start 探针二分，报告 20261112T124404+0800 / 20261112T135507+0800）：stock 日/周/月 ≈1999-12-08（approx ±90 天，真值≈标的上市日 1999-11-10 落在窗口内，与 akshare 个股口径同日互证）；contract = CU2401 上市首日 2023-01-17（全量模式精确定值；capability 为 asset_type 级声明，各合约以自身上市日起、随摘牌止）；continuous 主连 ≈1991-01-01（二分下限触底，真实可能更早）。
 - 上游积分限频/错误码未在文档中核实，统一包装为 `UPSTREAM_ERROR`。
 
 TqSdk（官方 SDK `tqsdk`：`TqApi(auth=TqAuth(...)).get_kline_serial(...)`）：
