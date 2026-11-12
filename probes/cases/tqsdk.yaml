@@ -10,8 +10,11 @@ requires:
 pacing:
   call_interval_s: 3.0
   timeout_s: 120
-  # 可用性 36 + adjust_diff 24 case×2 调用 + history_depth 30 case×~13 + limit 1
-  # + connection 9+12（创建+首调+释放）+ raw quote 7 case×2 调用 ≈ 624
+  # 可用性 54（stock/stock@CN-SZSE 各 18 + index 6 + etf 18 + contract/
+  # continuous/weighted-index 各 6）+ adjust_diff 36 case×2 调用（stock/
+  # stock@CN-SZSE/etf × 6 周期 × 2 pair）+ history_depth 30 case×~13 + limit 1
+  # + connection 9+12（创建+首调+释放）+ raw quote 8 case×2 调用（含 BSE 闸门）
+  # ≈ 668
   # （深度探针全周期同轮测量：保留边界随时间前移，矩阵须同一时点）
   max_calls: 700
 
@@ -35,6 +38,15 @@ targets:
     instrument: CN-SSE-600000
     window: {start: 2026-07-01, end: 2026-11-30}
     min_bars: 60
+  stock@CN-SZSE:
+    # 平安银行（深市主板）：交易所限定追加目标，SZSE. 前缀 chain 级实证
+    #（tqsdk 代码格式 {exchange}.{symbol} 直拼，此前仅 SSE 实测；框架
+    # 2026-11-12 起支持交易所限定键）。BSE 不上 chain 目标：天勤对 BSE
+    # 前缀的支持性未知，由 raw 闸门 quote-bse-fingerprint 先探指纹，
+    # 确认支持后再补目标
+    instrument: CN-SZSE-000001
+    window: {start: 2026-07-01, end: 2026-11-30}
+    min_bars: 60
   index:
     # 指数历史权限经专业版实测可用；失败如实记录
     instrument: CN-SSE-000016
@@ -50,8 +62,9 @@ chain:
   include_declared: true
   skip: []
   adjust_diff:
-    # 股票/ETF adj_type F/B 实证：前/后复权序列应与不复权存在差异（分红除权期）
-    targets: [stock, etf]
+    # 股票/ETF adj_type F/B 实证：前/后复权序列应与不复权存在差异（分红除权期）。
+    # stock@CN-SZSE 为逐所细分复验（2026-11-12 接入）
+    targets: [stock, stock@CN-SZSE, etf]
     window: {start: 2024-06-01, end: 2024-08-31}
     pairs: [[none, qfq], [none, hfq]]
     fields: [close]
@@ -229,6 +242,26 @@ raw:
         disable_print: true
     call:
       - {method: get_quote, kwargs: {symbol: "KQ.i@SHFE.au"}}
+    expect: {status: ok, min_fields: [last_price]}
+    assert: false
+  - id: quote-bse-fingerprint
+    purpose: 北交所支持性闸门（get_quote BSE.920000，观察不判定）：天勤对 BSE
+      代码前缀的支持性未知（文档无 BSE 示例），指纹（数据/错误形态）决定
+      后续是否上 stock@CN-BSE chain 目标——支持性确认前不盲目加 chain 目标
+      （增量约 42 调用预算）
+    module: tqsdk
+    client:
+      attr: TqApi
+      kwargs:
+        auth:
+          $ctor:
+            attr: TqAuth
+            kwargs:
+              user_name: "$TAPEHUB_TQSDK_AUTH_USER"
+              password: "$TAPEHUB_TQSDK_AUTH_PASSWORD"
+        disable_print: true
+    call:
+      - {method: get_quote, kwargs: {symbol: "BSE.920000"}}
     expect: {status: ok, min_fields: [last_price]}
     assert: false
 

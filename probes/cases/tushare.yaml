@@ -10,9 +10,10 @@ requires:
 pacing:
   call_interval_s: 1.5
   timeout_s: 60
-  # chain 展开：availability 11 + adjust_diff 12 + history_depth
-  # （stock 三周期 + contract 全量 + continuous）+ limit 1 +
-  # raw 14×2（含北交所 3 case），合计约 133，留余量
+  # chain 展开：availability 29（stock/contract/continuous 基准 11 +
+  # CN 交易所追加 SZSE/BSE 各 9）+ adjust_diff 36（3 目标 × 3 周期 × 2 pair
+  # × 2 调）+ history_depth（stock 三周期 + contract 全量 + continuous）+
+  # limit 1 + raw 14×2（含北交所 3 case），合计约 175，留余量
   max_calls: 200
 
 targets:
@@ -22,6 +23,21 @@ targets:
     # min_bars 跨周期统一生效：月线 2025 年内约 12 根，下限取 10 贴近月线
     # 真实值（对齐 akshare/baostock/tickflow 的跨周期下限口径）；
     # 日线的量级与字段质量由 required_fields 兜底
+    min_bars: 10
+    required_fields: [open, high, low, close, volume, amount]
+  stock@CN-SZSE:
+    instrument: CN-SZSE-000001
+    # 平安银行（深市主板）：交易所限定追加目标，SZ→SZ 后缀 chain 级实证
+    #（此前仅文档示例 000001.SZ；框架 2026-11-12 起支持交易所限定键）
+    window: {start: 2025-01-01, end: 2025-12-31}
+    min_bars: 10
+    required_fields: [open, high, low, close, volume, amount]
+  stock@CN-BSE:
+    instrument: CN-BSE-920000
+    # 安徽凤凰（精选层存量平移，2020-12-23 上市）：BSE→BJ 后缀 2026-11-12
+    # 接入（raw 三证：目录 920 段/daily/adj_factor，报告 20261112T172921
+    # +0800），本轮 chain 级复验（availability × adjust_diff）
+    window: {start: 2025-01-01, end: 2025-12-31}
     min_bars: 10
     required_fields: [open, high, low, close, volume, amount]
   # 北交所不设独立 chain 目标：探针框架 chain 为市场级粒度（capability 每
@@ -41,7 +57,9 @@ chain:
   include_declared: true
   skip: []
   adjust_diff:
-    targets: [stock]
+    # stock@CN-SZSE/CN-BSE 为逐所细分复验（2026-11-12 接入）：BSE 复权此前
+    # 仅 adj_factor 输入侧直测，本轮补 none/qfq/hfq 全序列对比
+    targets: [stock, stock@CN-SZSE, stock@CN-BSE]
     window: {start: 2024-01-01, end: 2024-12-31}   # 含分红除权日
     pairs: [[none, qfq], [none, hfq]]
     fields: [close]
