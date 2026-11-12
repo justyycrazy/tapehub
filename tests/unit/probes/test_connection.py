@@ -279,6 +279,70 @@ def test_connection_failure_marks_failed(
     assert any("connection refused" in e["text"] for e in conn[0].observation["errors"])
 
 
+def test_first_call_timeout_still_closes_client(monkeypatch: pytest.MonkeyPatch) -> None:
+    """connection 首调超时：已创建的客户端在失败路径上仍被释放（防连接泄漏）。
+
+    2026-11-12 真实探针实证的泄漏形态：_spawn 首调挂起超时后，客户端随
+    异常丢弃、永远无人 close（TqApi 及其私有 loop/asyncgen 由 executor
+    线程持有至进程退出）。
+    """
+
+    class _HangingFirstCallClient:
+        instances: list["_HangingFirstCallClient"] = []
+
+        def __init__(self, **kwargs: object) -> None:
+            self.closed = False
+            _HangingFirstCallClient.instances.append(self)
+
+        def first(self, **kwargs: object) -> None:
+            time.sleep(2)  # 超过 case timeout_s，触发 wait_for 超时
+
+        def close(self) -> None:
+            self.closed = True
+
+    module = types.ModuleType("fake_tqsdk_hang")
+    module.HangingClient = _HangingFirstCallClient  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "fake_tqsdk_hang", module)
+    _HangingFirstCallClient.instances.clear()
+
+    probe = ProbeFile.model_validate(
+        {
+            "probe": "fake-provider",
+            "version": 1,
+            "pacing": {"call_interval_s": 0.01, "timeout_s": 0.2, "max_calls": 10},
+            "targets": {
+                "stock": {
+                    "instrument": "CN-SSE-600000",
+                    "window": {"start": "2025-01-01", "end": "2025-03-31"},
+                    "min_bars": 10,
+                }
+            },
+            "connection": [
+                {
+                    "id": "conn-hang",
+                    "module": "fake_tqsdk_hang",
+                    "client": {"attr": "HangingClient", "kwargs": {}},
+                    "first_call": {"method": "first"},
+                    "close": {"method": "close"},
+                    "rounds": 1,
+                    "concurrent": 1,
+                }
+            ],
+        }
+    )
+    result = asyncio.run(
+        run_provider_probe(
+            probe,
+            _registry(),
+            make_settings(max_limit=1000, catalog_version="test"),
+        )
+    )
+    conn = [c for c in result.cases if c.kind == "connection"]
+    assert conn[0].verdict == "failed"
+    # 首调超时的客户端仍被失败路径释放，而非随异常丢弃
+    assert _HangingFirstCallClient.instances[-1].closed is True
+
+
 def test_connection_dry_run_plans_calls(fake_module: types.ModuleType) -> None:
     result = asyncio.run(
         run_provider_probe(

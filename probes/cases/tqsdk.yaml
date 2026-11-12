@@ -162,6 +162,7 @@ raw:
         disable_print: true
     call:
       - {method: get_quote, kwargs: {symbol: "SHFE.au2612"}}
+    close: {method: close}
     expect: {status: ok, min_fields: [last_price, bid_price1, ask_price1, volume]}
   - id: quote-contract-uppercase
     purpose: 大写合约上游敏感性实证（SHFE.AU2612，观察不判定，为 request_mapper 品种大小写还原表提供证据）
@@ -178,6 +179,7 @@ raw:
         disable_print: true
     call:
       - {method: get_quote, kwargs: {symbol: "SHFE.AU2612"}}
+    close: {method: close}
     expect: {status: ok, min_fields: [last_price]}
     assert: false
   - id: quote-continuous
@@ -195,6 +197,7 @@ raw:
         disable_print: true
     call:
       - {method: get_quote, kwargs: {symbol: "KQ.m@SHFE.cu"}}
+    close: {method: close}
     expect: {status: ok, min_fields: [last_price, bid_price1, ask_price1, volume]}
   - id: quote-index-sse50
     purpose: 上证50 实时快照（免费版四大指数有文档依据，断言）
@@ -211,6 +214,7 @@ raw:
         disable_print: true
     call:
       - {method: get_quote, kwargs: {symbol: "SSE.000016"}}
+    close: {method: close}
     expect: {status: ok, min_fields: [last_price, bid_price1, ask_price1, volume]}
   - id: quote-stock
     purpose: A股个股实时快照（需专业版账户；当前账户盘中实测可得实时五档）
@@ -227,6 +231,7 @@ raw:
         disable_print: true
     call:
       - {method: get_quote, kwargs: {symbol: "SSE.600000"}}
+    close: {method: close}
     expect: {status: ok, min_fields: [last_price]}
     assert: false
   - id: quote-etf
@@ -244,6 +249,7 @@ raw:
         disable_print: true
     call:
       - {method: get_quote, kwargs: {symbol: "SSE.510050"}}
+    close: {method: close}
     expect: {status: ok, min_fields: [last_price]}
     assert: false
   - id: quote-weighted-index
@@ -261,6 +267,7 @@ raw:
         disable_print: true
     call:
       - {method: get_quote, kwargs: {symbol: "KQ.i@SHFE.au"}}
+    close: {method: close}
     expect: {status: ok, min_fields: [last_price]}
     assert: false
   - id: quote-bse-fingerprint
@@ -281,6 +288,7 @@ raw:
         disable_print: true
     call:
       - {method: get_quote, kwargs: {symbol: "BSE.920000"}}
+    close: {method: close}
     expect: {status: ok, min_fields: [last_price]}
     assert: false
   - id: kline-czce-4digit
@@ -300,6 +308,7 @@ raw:
         disable_print: true
     call:
       - {method: get_kline_serial, kwargs: {symbol: "CZCE.RM2701", duration_seconds: 86400, data_length: 2}}
+    close: {method: close}
     expect: {status: ok, min_rows: 1}
     assert: false
   - id: kline-czce-3digit
@@ -318,6 +327,7 @@ raw:
         disable_print: true
     call:
       - {method: get_kline_serial, kwargs: {symbol: "CZCE.RM701", duration_seconds: 86400, data_length: 2}}
+    close: {method: close}
     expect: {status: ok, min_rows: 1}
     assert: false
 

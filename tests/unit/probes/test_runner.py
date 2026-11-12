@@ -198,6 +198,66 @@ def test_raw_runner_counts_dataframe_rows(monkeypatch: pytest.MonkeyPatch) -> No
     assert by_id["fake-df-too-strict"].verdict == "failed"
 
 
+def test_raw_runner_closes_client(monkeypatch: pytest.MonkeyPatch) -> None:
+    """声明 close 的客户端型 raw case：成功/失败路径都释放客户端，
+    且 close 不消耗调用预算（与 connection 探针同款「显式释放」语义）。"""
+
+    class _Client:
+        instances: list["_Client"] = []
+
+        def __init__(self) -> None:
+            self.closed = False
+            _Client.instances.append(self)
+
+        def fetch(self, **kw: object) -> list[dict[str, float]]:
+            if kw.get("boom"):
+                raise RuntimeError("upstream boom")
+            return [{"close": 1.0}, {"close": 2.0}]
+
+        def close(self) -> None:
+            self.closed = True
+
+    fake = types.ModuleType("probe_fake_sdk_client")
+    fake.Client = _Client  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "probe_fake_sdk_client", fake)
+    _Client.instances.clear()
+
+    probe = ProbeFile.model_validate(
+        _probe().model_dump()
+        | {
+            "raw": [
+                {
+                    "id": "client-ok",
+                    "module": "probe_fake_sdk_client",
+                    "client": {"attr": "Client", "kwargs": {}},
+                    "call": [{"method": "fetch"}],
+                    "close": {"method": "close"},
+                    "expect": {"status": "ok", "min_rows": 1},
+                },
+                {
+                    "id": "client-fail",
+                    "module": "probe_fake_sdk_client",
+                    "client": {"attr": "Client", "kwargs": {}},
+                    "call": [{"method": "fetch", "kwargs": {"boom": True}}],
+                    "close": {"method": "close"},
+                    "expect": {"status": "ok", "min_rows": 1},
+                },
+            ]
+        }
+    )
+    result = asyncio.run(run_provider_probe(probe, _registry(), _settings()))
+    by_id = {c.case_id: c for c in result.cases if c.kind == "raw"}
+    ok = by_id["client-ok"]
+    fail = by_id["client-fail"]
+    assert ok.verdict == "confirmed"
+    assert ok.observation["closed"] is True
+    # 构造(1) + 调用(1)；close 是本地释放动作，不计预算
+    assert ok.observation["calls_made"] == 2
+    assert fail.verdict == "failed"
+    assert fail.observation["closed"] is True  # 调用失败仍释放
+    assert [c.closed for c in _Client.instances] == [True, True]
+
+
 def test_count_rows_table_shapes() -> None:
     """_count_rows 边界：表形鸭子类型识别，非表形对象仍返回 None。"""
     from probes.runner import _count_rows

@@ -109,6 +109,9 @@ raw:                               # ── 声明外探索 / 错误指纹（SDK
     client: {attr: pro_api, kwargs: {token: "$TAPEHUB_TUSHARE_TOKEN"}}
     call:                          # 首条作用于 client，后续条作用于上一条结果（链式）
       - {method: fut_daily, kwargs: {ts_code: "M2409.DCE", ...}}
+    close: {method: close}         # 客户端释放方法（可选但建议）：case 结束后
+                                   # 显式释放第三方 SDK 客户端（不消耗调用预算），
+                                   # 防止连接/asyncgen 跨段泄漏
     expect: {status: ok, min_rows: 1}   # 或 {status: error, error_contains: "..."}（空串=任意错误）
     assert: true                   # false = 仅观察（observe），不判定
 
@@ -129,6 +132,7 @@ notes: 本探针要回答的问题与已知存疑点。
 | skip 必须带 reason | 防止静默漏探 |
 | kwargs 引用 | `$TAPEHUB_*` 环境变量（raw/connection 的 kwargs）；`{"$ctor": {attr, module?, kwargs}}` 轻量 SDK 对象构造（如认证对象，仅本地构造不做网络调用，module 缺省继承所在 case）；`{"$deadline_s": 秒数}` 相对当前时刻 → unix epoch。运行时注入，凭据值绝不落盘 |
 | raw call 作用对象 | 首条作用于 client、后续作用于上一条结果（链式）；`target: client` 显式强制回到客户端 |
+| raw close | 客户端型 raw case（声明 `client`）应声明 `close: {method: 客户端释放方法}`——与 connection 探针的 close 必填同款设计，case 结束（含调用失败/预算耗尽）后尽力释放客户端并记录 `closed`；close 是本地释放动作，不消耗调用预算，失败不影响判定 |
 | 跨 kind id 唯一 | raw / connection 与 chain 的 case id 全局唯一；重复在加载期拒绝 |
 
 ## 探针类型语义

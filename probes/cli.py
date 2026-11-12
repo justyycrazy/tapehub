@@ -7,7 +7,8 @@
 
 真实运行会发起上游调用并消耗配额，必须显式 ``--yes``；
 dry-run 只做展开与前提检查，不发任何网络请求。
-退出码：0 正常（允许 skipped/observe），1 存在 failed，2 参数或前提问题。
+退出码：0 正常（允许 skipped/observe），1 存在 failed 或某段异常中止，
+2 参数或前提问题。
 """
 
 from __future__ import annotations
@@ -94,6 +95,73 @@ def cmd_list(args: argparse.Namespace) -> int:
     return 0
 
 
+def _run_sections(
+    probes: list,
+    registry: object,
+    settings: object,
+    *,
+    dry_run: bool,
+    results_dir: Path,
+) -> bool:
+    """逐 Provider 段运行探针；每段独立事件循环，返回是否存在 failed。
+
+    段级隔离：每段用独立的 ``asyncio.run`` 执行——第三方 SDK（如 tqsdk）
+    超时/取消遗留的后台任务与 asyncgen 随本段循环消亡，绝不污染下一段；
+    单段崩溃（含框架级异常）只计入退出码，不中断后续段。段结束（非
+    dry-run）后调用适配器的 ``shutdown_runtime`` 停机钩子（与 API lifespan
+    同款鸭子类型模式），回收 shared 运行时/长连接。
+    """
+    any_failed = False
+    for probe in probes:
+        print(
+            f"=== 运行探针：{probe.probe}（{'dry-run' if dry_run else '真实调用'}）===",
+            flush=True,
+        )
+        try:
+            result = asyncio.run(
+                run_provider_probe(probe, registry, settings, execute=not dry_run)
+            )
+        except Exception as exc:  # noqa: BLE001 - 段级隔离：单段崩溃不拖垮后续段
+            print(f"  [error] 探针段异常中止：{type(exc).__name__}: {exc}", flush=True)
+            any_failed = True
+            continue
+        if not dry_run:
+            json_path, md_path = write_results(result, results_dir)
+            print(f"  JSON 证据：{json_path}", flush=True)
+            print(f"  Markdown 报告：{md_path}", flush=True)
+        counts = result.verdict_counts()
+        print(f"  判定统计：{counts}", flush=True)
+        if result.file_skip_reason:
+            print(f"  文件级跳过：{result.file_skip_reason}", flush=True)
+        for case in result.cases:
+            if case.verdict == "failed":
+                print(f"  [failed] {case.case_id}: {case.reason}", flush=True)
+                any_failed = True
+        if not dry_run:
+            _shutdown_adapter(registry, probe.probe)
+    return any_failed
+
+
+def _shutdown_adapter(registry: object, provider: str) -> None:
+    """段间停机钩子（尽力而为）：回收适配器持有的第三方 SDK 运行时。
+
+    与 ``src/tapehub/api/app.py`` lifespan 同款鸭子类型：不感知具体
+    Provider。tqsdk 为同步 shutdown（join 线程并关闭 TqApi/私有 loop）；
+    twelvedata 在无运行循环时走其内置的 ``asyncio.run`` 兜底。
+    """
+    try:
+        record = registry.get(provider)
+    except Exception:  # noqa: BLE001 - 记录缺失则无事可停
+        return
+    shutdown = getattr(record.adapter, "shutdown_runtime", None)
+    if shutdown is None:
+        return
+    try:
+        shutdown()
+    except Exception as exc:  # noqa: BLE001 - 停机失败不影响运行结果
+        print(f"  [warn] {provider} 停机钩子异常（忽略）：{exc}", flush=True)
+
+
 def cmd_run(args: argparse.Namespace) -> int:
     probes = _select(load_probe_files(args.cases_dir), args.provider)
     if not args.dry_run and not args.yes:
@@ -102,30 +170,13 @@ def cmd_run(args: argparse.Namespace) -> int:
 
     settings = Settings()
     registry = build_default_registry(settings)
-
-    async def _run_all() -> bool:
-        any_failed = False
-        for probe in probes:
-            print(
-                f"=== 运行探针：{probe.probe}（{'dry-run' if args.dry_run else '真实调用'}）===",
-                flush=True,
-            )
-            result = await run_provider_probe(probe, registry, settings, execute=not args.dry_run)
-            if not args.dry_run:
-                json_path, md_path = write_results(result, args.results_dir)
-                print(f"  JSON 证据：{json_path}", flush=True)
-                print(f"  Markdown 报告：{md_path}", flush=True)
-            counts = result.verdict_counts()
-            print(f"  判定统计：{counts}", flush=True)
-            if result.file_skip_reason:
-                print(f"  文件级跳过：{result.file_skip_reason}", flush=True)
-            for case in result.cases:
-                if case.verdict == "failed":
-                    print(f"  [failed] {case.case_id}: {case.reason}", flush=True)
-                    any_failed = True
-        return any_failed
-
-    any_failed = asyncio.run(_run_all())
+    any_failed = _run_sections(
+        probes,
+        registry,
+        settings,
+        dry_run=args.dry_run,
+        results_dir=args.results_dir,
+    )
     return 1 if any_failed else 0
 
 

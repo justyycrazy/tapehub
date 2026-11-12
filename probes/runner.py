@@ -787,78 +787,104 @@ async def _run_raw_case(ctx: RunContext, plan: RawPlan) -> CaseResult:
         reason="",
         dims={"module": spec.module, "purpose": spec.purpose},
     )
-    try:
-        client_kwargs = (
-            _interpolate(spec.client.kwargs, spec.module) if spec.client else {}
-        )
-        call_kwargs = [_interpolate(call.kwargs, spec.module) for call in spec.call]
-    except MissingEnvError as exc:
-        base.reason = f"env missing: {exc.name}"
-        return base
-    except Exception as exc:  # noqa: BLE001 - 单条 case 配置错误不中止整轮运行
-        base.reason = f"kwargs resolve failed: {exc}"
-        return base
 
-    try:
-        module = importlib.import_module(spec.module)
-    except ModuleNotFoundError:
-        base.reason = f"module not installed: {spec.module}"
-        return base
-
-    target: Any = None
-    error: BaseException | None = None
-    calls_made = 0
-    if spec.client is not None:
-        if not await ctx.take_call():
-            base.reason = "call budget exhausted"
-            return base
-        calls_made += 1
+    async def _execute() -> tuple[CaseResult, Any]:
         try:
-            constructor = _resolve_attr(module, spec.client.attr)
-            target = await asyncio.wait_for(
-                asyncio.to_thread(constructor, **client_kwargs), ctx.pacing.timeout_s
+            client_kwargs = (
+                _interpolate(spec.client.kwargs, spec.module) if spec.client else {}
             )
-        except Exception as exc:  # noqa: BLE001 - 构造失败按期望匹配处理
-            error = exc
+            call_kwargs = [_interpolate(call.kwargs, spec.module) for call in spec.call]
+        except MissingEnvError as exc:
+            base.reason = f"env missing: {exc.name}"
+            return base, None
+        except Exception as exc:  # noqa: BLE001 - 单条 case 配置错误不中止整轮运行
+            base.reason = f"kwargs resolve failed: {exc}"
+            return base, None
 
-    owner: Any = target
-    result: Any = target
-    if error is None:
-        for call, kwargs in zip(spec.call, call_kwargs, strict=True):
+        try:
+            module = importlib.import_module(spec.module)
+        except ModuleNotFoundError:
+            base.reason = f"module not installed: {spec.module}"
+            return base, None
+
+        target: Any = None
+        error: BaseException | None = None
+        calls_made = 0
+        if spec.client is not None:
             if not await ctx.take_call():
                 base.reason = "call budget exhausted"
-                base.observation = {"calls_made": calls_made}
-                return base
+                return base, None
             calls_made += 1
             try:
-                root = owner if call.target == "client" else result
-                # method 支持「资源.方法」点链（如 quotes.get）：
-                # 逐段 getattr 解析到最终可调用对象，单段行为不变
-                func = (
-                    _resolve_attr(root, call.method)
-                    if call.method
-                    else _resolve_attr(module, call.module_func or "")
+                constructor = _resolve_attr(module, spec.client.attr)
+                target = await asyncio.wait_for(
+                    asyncio.to_thread(constructor, **client_kwargs), ctx.pacing.timeout_s
                 )
-                result = await asyncio.wait_for(
-                    asyncio.to_thread(func, **kwargs), ctx.pacing.timeout_s
-                )
-            except Exception as exc:  # noqa: BLE001 - 探针必须记录异常而不是崩溃
+            except Exception as exc:  # noqa: BLE001 - 构造失败按期望匹配处理
                 error = exc
-                break
 
-    rows = None if error is not None else _count_rows(result)
-    fields_ok = None if error is not None else _fields_present(result, spec.expect.min_fields)
-    verdict, reason = _raw_verdict(spec, error=error, rows=rows, fields_ok=fields_ok)
-    base.verdict = verdict.value
-    base.reason = reason
-    base.observation = {
-        "calls_made": calls_made,
-        "rows": rows,
-        "error": (
-            {"type": type(error).__name__, "text": str(error)[:500]} if error is not None else None
-        ),
-        "sample": [] if error is not None else _sample_of(result),
-    }
+        owner: Any = target
+        result: Any = target
+        if error is None:
+            for call, kwargs in zip(spec.call, call_kwargs, strict=True):
+                if not await ctx.take_call():
+                    base.reason = "call budget exhausted"
+                    base.observation = {"calls_made": calls_made}
+                    return base, target
+                calls_made += 1
+                try:
+                    root = owner if call.target == "client" else result
+                    # method 支持「资源.方法」点链（如 quotes.get）：
+                    # 逐段 getattr 解析到最终可调用对象，单段行为不变
+                    func = (
+                        _resolve_attr(root, call.method)
+                        if call.method
+                        else _resolve_attr(module, call.module_func or "")
+                    )
+                    result = await asyncio.wait_for(
+                        asyncio.to_thread(func, **kwargs), ctx.pacing.timeout_s
+                    )
+                except Exception as exc:  # noqa: BLE001 - 探针必须记录异常而不是崩溃
+                    error = exc
+                    break
+
+        rows = None if error is not None else _count_rows(result)
+        fields_ok = (
+            None if error is not None else _fields_present(result, spec.expect.min_fields)
+        )
+        verdict, reason = _raw_verdict(spec, error=error, rows=rows, fields_ok=fields_ok)
+        base.verdict = verdict.value
+        base.reason = reason
+        base.observation = {
+            "calls_made": calls_made,
+            "rows": rows,
+            "error": (
+                {"type": type(error).__name__, "text": str(error)[:500]}
+                if error is not None
+                else None
+            ),
+            "sample": [] if error is not None else _sample_of(result),
+        }
+        return base, target
+
+    base, client = await _execute()
+    # 客户端释放（声明了 close 且客户端构造成功时）：与 connection 探针同款
+    # 「显式释放」语义，防止第三方 SDK 连接/asyncgen 跨段泄漏；close 是本地
+    # 释放动作，不消耗调用预算；失败如实记录，不影响 case 判定
+    if spec.close is not None and client is not None:
+        try:
+            close_kwargs = _interpolate(spec.close.kwargs, spec.module)
+            closer = _resolve_attr(client, spec.close.method or "")
+            await asyncio.wait_for(
+                asyncio.to_thread(closer, **close_kwargs), ctx.pacing.timeout_s
+            )
+            base.observation = {**base.observation, "closed": True}
+        except Exception as exc:  # noqa: BLE001 - 释放失败如实记录
+            base.observation = {
+                **base.observation,
+                "closed": False,
+                "close_error": f"{type(exc).__name__}: {str(exc)[:300]}",
+            }
     return base
 
 
@@ -918,7 +944,19 @@ async def _run_connection_case(ctx: RunContext, plan: ConnectionPlan) -> CaseRes
             raise _BudgetAbort()
         t1 = time.perf_counter()
         func = getattr(client, spec.first_call.method or "")
-        await asyncio.wait_for(asyncio.to_thread(func, **first_kwargs), timeout)
+        try:
+            await asyncio.wait_for(asyncio.to_thread(func, **first_kwargs), timeout)
+        except BaseException:
+            # 首调失败（含超时）也要尽力释放已创建的客户端，防止连接泄漏；
+            # 释放失败不掩盖原始异常
+            try:
+                closer = getattr(client, spec.close.method or "")
+                await asyncio.wait_for(
+                    asyncio.to_thread(closer, **close_kwargs), timeout
+                )
+            except Exception:  # noqa: BLE001 - 尽力释放，失败不掩盖原始异常
+                pass
+            raise
         first_ms = round((time.perf_counter() - t1) * 1000, 1)
         return {
             "round": round_index,

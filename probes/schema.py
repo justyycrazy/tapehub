@@ -281,18 +281,34 @@ class ExpectSpec(_Strict):
 
 
 class RawCaseSpec(_Strict):
-    """声明式 raw 探针：按配置反射调用 SDK，不做任何 Provider 专属代码。"""
+    """声明式 raw 探针：按配置反射调用 SDK，不做任何 Provider 专属代码。
+
+    带 ``client`` 的客户端型 case 应声明 ``close``（客户端释放方法）——与
+    connection 探针的 ``close`` 必填同款设计：探针结束后显式释放第三方
+    SDK 客户端（如 TqApi 的 websocket 连接与私有事件循环），防止连接/
+    asyncgen 跨段泄漏。close 不消耗调用预算（纯本地释放，不发上游请求）。
+    """
 
     id: str = Field(pattern=r"^[A-Za-z][A-Za-z0-9._-]*$")
     purpose: str = ""
     module: str
     client: ClientSpec | None = None
     call: list[CallSpec] = Field(min_length=1)
+    close: CallSpec | None = None
     expect: ExpectSpec
     # assert=false 表示仅观察（observe），不参与判定
     assert_: bool = Field(default=True, alias="assert")
 
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    @model_validator(mode="after")
+    def _close_is_client_method(self) -> "RawCaseSpec":
+        if self.close is not None:
+            if self.client is None:
+                raise ValueError("close requires client")
+            if self.close.module_func is not None or self.close.target is not None:
+                raise ValueError("close must be a client method (method), without target")
+        return self
 
 
 class ConnectionCaseSpec(_Strict):
