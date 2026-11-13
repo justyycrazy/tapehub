@@ -58,7 +58,12 @@ from tapehub.domain.models import (
 from tapehub.providers.base import BaseProviderAdapter, call_in_thread
 from tapehub.providers.pagination import paginate_bars
 from tapehub.providers.stream_buffer import StreamBuffer
-from tapehub.providers.tiingo.request_mapper import build_request, tiingo_symbol
+from tapehub.providers.tiingo.request_mapper import (
+    FX_ARCHIVE_FLOOR,
+    UPSTREAM_NO_DATA_FINGERPRINT,
+    build_request,
+    tiingo_symbol,
+)
 from tapehub.providers.tiingo.response_mapper import to_standard_bars, ws_price_to_quote
 from tapehub.providers.tiingo.runtime import TiingoWsRuntime
 
@@ -293,6 +298,11 @@ class ProviderAdapter(BaseProviderAdapter):
     def _fetch_rows(self, api_key: str, operation: str, query: BarQuery) -> list[dict[str, Any]]:
         """先完成参数映射，再延迟导入 httpx 直连 REST（GET，Authorization 头）。"""
         url, params = build_request(operation, query)
+        if operation == "fx_prices" and params["endDate"] < FX_ARCHIVE_FLOOR:
+            # fx 完全越界窗口（endDate 亦早于档案起点）：直接空批，不发请求
+            # （上游对该窗口返回 400，见 request_mapper 边界注释；startDate
+            # 跨边界窗口已在 build_request 钳制，闭区间复核兜底）
+            return []
         try:
             import httpx
         except ImportError as exc:
@@ -309,6 +319,11 @@ class ProviderAdapter(BaseProviderAdapter):
                 "Tiingo upstream rate limit exceeded.",
                 details={"provider": self.name, "status_code": response.status_code},
             )
+        if response.status_code == 400 and UPSTREAM_NO_DATA_FINGERPRINT in response.text:
+            # 请求区间早于上游档案起点（2026-11-13 探针实证：fx 端点硬边界
+            # 2020-01-01，报文见 request_mapper 指纹注释）——上游权威的
+            # 无数据结论，归一化为空结果而非报错
+            return []
         if response.status_code >= 400:
             raise UpstreamError(
                 "Tiingo upstream returned an error response.",

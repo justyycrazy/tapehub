@@ -278,6 +278,128 @@ def test_non_array_payload_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
         asyncio.run(adapter.fetch_bars(_query()))
 
 
+def test_no_data_boundary_normalized_to_empty(monkeypatch: pytest.MonkeyPatch) -> None:
+    """实测核实的边界指纹（2026-11-13 探针实证 + 受控复现：fx 端点档案硬
+    边界 2020-01-01，越界窗口返回两种 400 变体）归一化为空结果作防御兜底
+    ——主路径为请求钳制（见 test_fx_archive_floor_clamped），指纹失配时
+    报错 loud 提示更新。"""
+    install(monkeypatch)
+    adapter = _adapter()
+    for detail in (
+        {"detail": "End date must be >= 2020-01-01"},
+        {"detail": "Start date must be >= 2020-01-01"},
+    ):
+        preset_status(monkeypatch, 400, detail)
+        batch = asyncio.run(adapter.fetch_bars(_query()))
+        assert batch.bars == []
+        assert batch.partial is False
+
+
+def test_fx_archive_floor_clamped(monkeypatch: pytest.MonkeyPatch) -> None:
+    """fx 档案硬边界（2026-11-13 探针实证）：startDate 早于 2020-01-01 的
+    请求钳到档案起点（上游对越界窗口拒绝而非裁剪），窗口与档案的交集
+    如实返回。"""
+    install(monkeypatch)
+    preset_payload(
+        monkeypatch,
+        forex_rows(["2020-01-01T00:00:00.000Z", "2020-06-01T00:00:00.000Z"]),
+    )
+    adapter = _adapter()
+    query = _query(
+        start=datetime(2019, 6, 1, tzinfo=CN_TIMEZONE),  # UTC 2019-05-31T16:00 < 档案起点
+        end=datetime(2020, 12, 1, tzinfo=CN_TIMEZONE),
+    )
+    batch = asyncio.run(adapter.fetch_bars(query))
+
+    call = _last_call()
+    assert call["params"]["startDate"] == "2020-01-01T00:00:00"  # 钳到档案起点
+    # 两根（2020-01-01 / 2020-06-01）都在请求窗 [2019-06-01, 2020-12-01] 北京内
+    assert batch.count == 2
+    assert batch.bars[0].timestamp == datetime(2020, 1, 1, 8, tzinfo=CN_TIMEZONE)
+
+
+def test_fx_window_entirely_before_archive_empty(monkeypatch: pytest.MonkeyPatch) -> None:
+    """完全早于档案起点的 fx 窗口：直接空批，不发请求（上游对该窗口返回
+    400——上游权威的边界结论，与空窗语义一致）。"""
+    install(monkeypatch)
+    preset_payload(monkeypatch, forex_rows(["1991-03-01T00:00:00.000Z"]))
+    adapter = _adapter()
+    query = _query(
+        start=datetime(1990, 1, 1, tzinfo=CN_TIMEZONE),
+        end=datetime(1991, 1, 1, tzinfo=CN_TIMEZONE),
+    )
+    batch = asyncio.run(adapter.fetch_bars(query))
+
+    from tests.fixtures.providers.stub_tiingo import StubClient
+
+    assert batch.bars == []
+    assert batch.partial is False
+    assert StubClient.instances == []  # 早退路径不构造 HTTP 客户端
+
+
+def test_other_bad_request_still_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    """指纹外的其余 400（如无效参数）不属于边界结论：照常上抛，由应用层
+    包装为 UPSTREAM_ERROR。"""
+    install(monkeypatch)
+    preset_status(monkeypatch, 400, {"detail": "Invalid resampleFreq"})
+    adapter = _adapter()
+    with pytest.raises(UpstreamError):
+        asyncio.run(adapter.fetch_bars(_query()))
+
+
+def test_bar_missing_date_contract_violation(monkeypatch: pytest.MonkeyPatch) -> None:
+    """bar 行缺 date 属上游契约违背：明确抛 UPSTREAM_ERROR（不伪造时间，
+    也不以裸 ValueError 形态穿透为 UNEXPECTED）。"""
+    install(monkeypatch)
+    preset_payload(monkeypatch, [{"ticker": "eurusd", "open": 1.0, "close": 1.0}])
+    adapter = _adapter()
+    with pytest.raises(UpstreamError) as excinfo:
+        asyncio.run(adapter.fetch_bars(_query()))
+    assert excinfo.value.details["field"] == "date"
+
+
+def test_crypto_nested_price_data_flattened(monkeypatch: pytest.MonkeyPatch) -> None:
+    """crypto 端点嵌套 priceData 形状（2026-11-13 探针实证）拍平为标准 bar；
+    外层 ticker 分组元数据（baseCurrency 等）不透出。"""
+    install(monkeypatch)
+    preset_payload(
+        monkeypatch,
+        [
+            {
+                "ticker": "btcusd",
+                "baseCurrency": "btc",
+                "quoteCurrency": "usd",
+                "priceData": [
+                    {
+                        "date": "2026-01-01T00:00:00+00:00",
+                        "open": 42000.5,
+                        "high": 43500.0,
+                        "low": 41800.2,
+                        "close": 43120.75,
+                        "volume": 12345.6,
+                        "volumeNotional": 123.45,
+                        "tradesDone": 100,
+                    }
+                ],
+            }
+        ],
+    )
+    adapter = _adapter()
+    query = _query(
+        asset_type=AssetType.CRYPTO,
+        instrument=Instrument.parse("GLOBAL-CRYPTO-BTC/USD"),
+    )
+    batch = asyncio.run(adapter.fetch_bars(query))
+
+    assert batch.count == 1
+    bar = batch.bars[0]
+    # date 带 +00:00（探针实测格式）→ 统一北京时间：UTC 00:00 = 北京 08:00
+    assert bar.timestamp == datetime(2026, 1, 1, 8, tzinfo=CN_TIMEZONE)
+    assert bar.close == 43120.75
+    assert bar.volume == 12345.6  # base 币计
+    assert bar.amount is None  # volumeNotional/tradesDone 不映射成交额
+
+
 # ---------------------------------------------------------------------------
 # 实时快照：急切校验（快照/快照流走 WS 订阅源，链路用例见
 # test_tiingo_ws_runtime.py 与契约测试）

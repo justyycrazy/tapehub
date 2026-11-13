@@ -117,3 +117,57 @@ notes: >
   P1D 二分收敛，日内周期视结论扩探）、单次行数上限与 partial 覆盖判定、
   forex 墙钟口径（tg-fx-date-shape）、扩容周期声明（tg-resample-2hour/
   4hour）、quotes fields 扩容（bid/ask 五档与 volume 经 WS 探针实证后）。
+  2026-11-13 首轮（报告 20261113T163754+0800，confirmed 8 / failed 9 /
+  observe 3；适配器缺陷修复后需重跑）：forex 6 周期 availability 全
+  confirmed；**crypto 6 周期全 failed 系适配器缺陷**——crypto 端点实测
+  返回按 ticker 分组的嵌套结构 {"ticker", "baseCurrency", "quoteCurrency",
+  "priceData": [...]}（官方文档未如实反映，raw 样本三证），适配器按扁平
+  解析致 date=None 解析炸（ValueError Invalid isoformat string: 'None'，
+  availability 判 UNEXPECTED / depth 判 UPSTREAM_ERROR）——已修复（按
+  形状统一拍平 + bars date 缺失契约守护），桩同步改真实形状；fx 端点
+  **档案硬边界 2020-01-01**（end < 2020-01-01 → 400 "End date must be
+  >= 2020-01-01"，depth 回溯第一档撞上判 UPSTREAM_ERROR）——适配器按
+  指纹归一化空结果（twelvedata 空窗先例）；crypto 端点历史外窗口优雅
+  200 [] 无需归一化（目录外受控调用实证）；**tg-resample-2hour/4hour
+  confirmed**（2hour/4hour 扩容声明依据，待人工确认）；tg-fx-date-shape
+  observe matched=True（572 行 5min 日内样本：date 全部带 Z、仅 OHLC
+  无 volume——forex UTC 口径与「无 volume」双实证）；fx 深度回填候选
+  ≈2020-01-01（上游硬边界，精度高于二分估计）、crypto 深度预期 ≈2017-08
+  （软空窗，重跑 depth 收敛后定）。
+  2026-11-13 第二轮（报告 20261113T173648+0800，confirmed 14 / failed 1 /
+  observe 5）：嵌套拍平修复生效——**crypto 6 周期 availability 全
+  confirmed**；crypto depth 收敛 observe（complete=True、10 调、90 天粒度
+  approx）：**earliest_estimate ≈2011-08-25**（显著深于 twelvedata crypto
+  ≈2017-08，末窗 [2011-05-27,08-25] 6 根——真值 ≈2011 年中，回填候选待
+  人工确认）；limit_truncation forex/crypto 双 observe（无 documented_max
+  仅观察，行数见报告）；**forex depth 仍 failed**——受控复现定位第二种
+  400 变体：start < 2020 且 end >= 2020 → "Start date must be >=
+  2020-01-01"（首版指纹仅匹配 End 变体）——指纹放宽为公共后缀
+  "must be >= 2020-01-01" 后第三轮复验。
+  2026-11-13 第三轮（报告 20261113T183740+0800，confirmed 14 / observe 6 /
+  **failed 0——首轮全绿**）：指纹放宽后 depth 不再报错，但 forex depth
+  收敛语义失真（era 档 [2020,2025] 北京起点转 UTC 后早于边界 7 小时 →
+  Start 变体 400 → 归一化吞成空 → 误判「无数据」）——**根因是归一化语义
+  不当**：越界 400 的含义是「拒绝而非裁剪」，窗口与档案有交集时应返回
+  边界后数据；已改为 fx 档案起点钳制（build_request 钳 startDate、完全
+  越界窗口适配器直接空批），指纹归一化降级为防御兜底；crypto depth
+  复证收敛 ≈2011-08-25（与第二轮一致）；limit 观测：1 年 PT1M 窗口
+  forex 6136 根 / crypto 5001 根（远小于分钟级密度，引出密度受控诊断）
+  ——**日内密度实证**：fx 1min 单日 2811 根（充足）、crypto 1min 单日
+  仅 1 根（年窗 5001 根 ≈14 根/天，极稀疏）——crypto 日内周期声明形态
+  回填时需人工裁决；第四轮复验钳制后 forex depth 收敛（预期 ≈2020-01-01
+  + 90 天粒度）。
+  2026-11-13 第四轮（报告 20261113T194428+0800，confirmed 14 / observe 6 /
+  **failed 0**）：钳制修复生效——forex depth 收敛 observe（complete=True、
+  8 调、90 天粒度 approx）：era [2020,2025] 经钳制取到真实 1552 根，
+  **earliest_estimate ≈2020-02-15**（与上游硬边界 2020-01-01 相符，回填
+  可直接采用边界精确值）；crypto depth 三轮一致 ≈2011-08-25；limit 双
+  observe 复测一致（forex 6136 / crypto 5001，1 年 PT1M 窗口——无显式
+  上限拒绝，隐式截断/密度行为待后续专项核实）。
+  回填清单（待人工确认后单独提交，四轮证据齐备）：①fx 全周期
+  history.start ≈2020-01-01（上游硬边界精确值，注意 UTC→北京换算：
+  边界 = 北京 2020-01-01T08:00，建议 2020-01-01T08:00 或保守次日零点）；
+  ②crypto P1D history.start ≈2011-08-25（窗口右端零点，90 天粒度
+  approx，真值可能更早）；③PT2H/PT4H 扩容声明（forex+crypto bars，
+  两轮 confirmed）；④crypto 日内周期声明形态（1min 单日 1 根极稀疏，
+  保留+README 标注 / 收窄声明二选一）。WS 行为探针（目录外脚本）仍待跑。

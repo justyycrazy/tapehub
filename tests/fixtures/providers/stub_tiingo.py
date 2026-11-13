@@ -8,6 +8,7 @@
 行造数工厂按官方文档字段结构（crypto 含 volume，forex 仅 OHLC）。
 """
 
+import json
 from typing import Any
 
 
@@ -15,6 +16,14 @@ class StubResponse:
     def __init__(self, status_code: int, payload: Any) -> None:
         self.status_code = status_code
         self._payload = payload
+        # httpx.Response.text 等价物（适配器 400 指纹检查依赖）
+        if isinstance(payload, str):
+            self.text = payload
+        else:
+            try:
+                self.text = json.dumps(payload, ensure_ascii=False)
+            except (TypeError, ValueError):
+                self.text = str(payload)
 
     def json(self) -> Any:
         if isinstance(self._payload, Exception):
@@ -105,21 +114,28 @@ def forex_rows(dates: list[str]) -> list[dict[str, Any]]:
 
 
 def crypto_rows(dates: list[str]) -> list[dict[str, Any]]:
-    """加密 /tiingo/crypto/prices 行：含 volume（base 币计）等元数据字段。"""
+    """加密 /tiingo/crypto/prices 响应形（2026-11-13 探针实证镜像，报告
+    20261113T163754+0800——官方文档未如实反映的嵌套结构）：
+    按 ticker 分组的外层元素 + ``priceData`` bar 行数组（date 带 +00:00、
+    含 volume（base 币计）/volumeNotional/tradesDone）。
+    """
     return [
         {
             "ticker": "btcusd",
-            "exchange": "coinbaseprmrfd",
             "baseCurrency": "btc",
             "quoteCurrency": "usd",
-            "date": day,
-            "open": 42000.5,
-            "high": 43500.0,
-            "low": 41800.2,
-            "close": 43120.75,
-            "volume": 12345.6,
-            "volumeNotional": 123.45,
-            "tradesDone": 100,
+            "priceData": [
+                {
+                    "date": day,
+                    "open": 42000.5,
+                    "high": 43500.0,
+                    "low": 41800.2,
+                    "close": 43120.75,
+                    "volume": 12345.6,
+                    "volumeNotional": 123.45,
+                    "tradesDone": 100,
+                }
+                for day in dates
+            ],
         }
-        for day in dates
     ]

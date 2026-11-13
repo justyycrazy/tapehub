@@ -39,8 +39,26 @@ WS_FX_ENDPOINT = "wss://api.tiingo.com/fx"
 WS_CRYPTO_THRESHOLD_LEVEL = 2
 WS_FX_THRESHOLD_LEVEL = 7
 
-# 时间边界统一解释为 UTC 墙钟（加密官方口径 UTC；外汇未核实按 UTC，待探针）
+# 时间边界统一解释为 UTC 墙钟（2026-11-13 探针实证：crypto date 带 +00:00、
+# forex date 带 Z，两端点均为 UTC 口径）
 BOUNDARY_ZONE = timezone.utc
+
+# 区间早于上游档案起点的错误指纹（2026-11-13 探针实证 + 目录外受控复现）：
+# fx 端点档案硬边界 2020-01-01（UTC 墙钟），窗口越界返回两种 400 变体——
+# end < 2020 → {"detail": "End date must be >= 2020-01-01"}；start < 2020
+# 且 end >= 2020 → {"detail": "Start date must be >= 2020-01-01"}。主处理
+# 路径为 FX_ARCHIVE_FLOOR 钳制（见下），本指纹归一化仅作防御兜底（上游
+# 若上移边界，指纹失配即报错 loud 提示更新）；crypto 端点对历史外窗口
+# 优雅返回 200 []，无需处理
+UPSTREAM_NO_DATA_FINGERPRINT = "must be >= 2020-01-01"
+
+# fx 端点档案硬边界（UTC 墙钟字符串，与 _boundary_code 输出同构，可按
+# 字典序比较）：上游对越界窗口拒绝而非裁剪，适配器对 fx 请求钳制——
+# startDate 早于档案起点时钳到起点（窗口与档案有交集则如实返回边界后
+# 数据，闭区间复核兜底）；完全越界（endDate 亦早于起点）的窗口由适配器
+# 直接返回空批不发请求。上游档案若前移（边界下移），钳制值需经探针
+# 复核后人工更新（case notes 记录变更探针方法）
+FX_ARCHIVE_FLOOR = "2020-01-01T00:00:00"
 
 _INTERVAL_CODES: dict[Interval, str] = {
     Interval.parse("PT1M"): "1min",
@@ -128,18 +146,20 @@ def build_request(operation: str, query: BarQuery) -> tuple[str, dict[str, str]]
     """
     ticker = tiingo_symbol(query)
     code = interval_code(query.interval)
+    start_code = _boundary_code(query.start)
     if operation == "fx_prices":
         url = f"{REST_BASE}/tiingo/fx/{ticker}/prices"
-        params: dict[str, str] = {}
+        # fx 档案硬边界钳制（见 FX_ARCHIVE_FLOOR 注释）：起点早于档案时
+        # 钳到档案起点（同格式字符串字典序 = 时间序）
+        params: dict[str, str] = {"startDate": max(start_code, FX_ARCHIVE_FLOOR)}
     elif operation == "crypto_prices":
         url = f"{REST_BASE}/tiingo/crypto/prices"
-        params = {"tickers": ticker}
+        params = {"tickers": ticker, "startDate": start_code}
     else:
         raise UnsupportedCapabilityError(
             f"Tiingo has no REST endpoint for operation {operation!r}.",
             details={"provider": "tiingo", "operation": operation},
         )
-    params["startDate"] = _boundary_code(query.start)
     params["endDate"] = _boundary_code(query.end)
     params["resampleFreq"] = code
     return url, params
@@ -147,7 +167,9 @@ def build_request(operation: str, query: BarQuery) -> tuple[str, dict[str, str]]
 
 __all__ = [
     "BOUNDARY_ZONE",
+    "FX_ARCHIVE_FLOOR",
     "REST_BASE",
+    "UPSTREAM_NO_DATA_FINGERPRINT",
     "WS_CRYPTO_ENDPOINT",
     "WS_CRYPTO_THRESHOLD_LEVEL",
     "WS_FX_ENDPOINT",

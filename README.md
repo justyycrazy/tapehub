@@ -773,16 +773,36 @@ websockets/forex 五页）：
   统一小写；exchange 段白名单 forex=`OTC`、crypto=`CRYPTO`）；
 - 周期映射（`resampleFreq` 合法格式 `<n>min|hour|day`、最小 `1min`，上游
   **无周/月线**）：`PT1M→1min`、`PT5M→5min`、`PT15M→15min`、`PT30M→30min`、
-  `PT1H→1hour`、`P1D→1day`——首版仅声明官方示例核实过的六周期，
-  `10min/2hour/4hour/6hour/12hour/24hour` 等格式合法值待数据探针实证后扩容；
-  `startDate`/`endDate`/`resampleFreq` 显式传参（不依赖上游默认值：上游缺省
-  返回原始频度而非声明周期口径）；
-- **历史覆盖范围（history.start）未经探针实证，全部保持 null**（不编造能力）；
-  单次返回行数上限官方未标注（受 1GB/月带宽配额约束），`meta.partial` 恒
-  false（上限与隐式截断行为待探针核实后补充覆盖判定）；
-- 时间边界口径：`startDate`/`endDate` 统一传 UTC 墙钟 `YYYY-MM-DDTHH:MM:SS`——
-  加密货币 `date` 字段官方口径为 UTC；**外汇墙钟口径未核实**，首版同按 UTC
-  解释（待探针实证后修正）；bar 时间戳解析 ISO 8601 后统一北京时间归一化；
+  `PT1H→1hour`、`P1D→1day`——首版仅声明官方示例核实过的六周期（`2hour`/
+  `4hour` 已于 2026-11-13 首轮探针实证可用、报告 20261113T163754+0800，
+  扩容声明待人工确认后单独提交；`10min/6hour/12hour/24hour` 等其余格式
+  合法值仍待实证）；`startDate`/`endDate`/`resampleFreq` 显式传参（不依赖
+  上游默认值：上游缺省返回原始频度而非声明周期口径）；
+- **响应形状（2026-11-13 探针实证，官方文档未如实反映）**：crypto 端点
+  返回按 ticker 分组的嵌套结构 `{"ticker", "baseCurrency", "quoteCurrency",
+  "priceData": [...]}`（bar 行在 `priceData` 内，字段 date/open/high/low/
+  close/volume/volumeNotional/tradesDone）；forex 端点为扁平行（仅 OHLC，
+  无 volume）。适配器按形状统一拍平（嵌套/扁平防御兼容）；
+- **历史覆盖范围（history.start）全部保持 null**（回填需人工确认后单独
+  提交）。边界证据（2026-11-13 三轮探针）：fx 端点档案**硬边界
+  2020-01-01**——上游对越界窗口拒绝而非裁剪（两种 400 变体：`End date
+  must be >= …` / `Start date must be >= …`），适配器对 fx 请求钳制到
+  档案起点、完全越界窗口直接空批（回填候选 ≈2020-01-01 精确值，待
+  确认）；crypto depth 已收敛 **≈2011-08-25**（90 天粒度 approx，真值
+  ≈2011 年中，回填候选待确认）；单次返回行数上限官方未标注（受 1GB/月
+  带宽配额约束），`meta.partial` 恒 false（上限与隐式截断行为待探针核实
+  后补充覆盖判定）；
+- **日内数据密度（2026-11-13 受控调用实证）**：fx 1min 单日 2811 根
+  （密度充足）；crypto 1min 单日仅 1 根、年窗 5001 根（≈14 根/天，极
+  稀疏）——crypto 日内周期的声明形态回填时需人工裁决（缩窗保留/收窄
+  声明/如实标注稀疏）；
+- 时间边界口径（2026-11-13 探针实证）：`startDate`/`endDate` 统一传 UTC
+  墙钟 `YYYY-MM-DDTHH:MM:SS`——两端点均为 UTC（crypto `date` 带 `+00:00`、
+  forex `date` 带 Z，日内分布吻合）；bar 时间戳解析 ISO 8601 后统一北京
+  时间归一化；
+- 区间无数据行为：crypto 端点对历史外窗口返回 200 `[]`（正常空批）；
+  fx 端点的档案边界 400 按指纹 `"End date must be >="` 归一化为空结果
+  （上游权威边界结论，twelvedata 空窗指纹同款先例）；
 - 上游 429（限频）映射 `UPSTREAM_RATE_LIMITED`；其余非 2xx 与 JSON 解析失败
   统一 `UPSTREAM_ERROR`（details 携带 status_code）；
 - 实时快照与快照流（WS 端点 `wss://api.tiingo.com/crypto` 与

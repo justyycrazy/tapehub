@@ -17,15 +17,30 @@
 #   endDate=&resampleFreq=；外汇 GET /tiingo/fx/<ticker>/prices?startDate=&
 #   endDate=&resampleFreq=（每 ticker 独立端点）；resampleFreq 合法格式
 #   <n>min|hour|day、最小 1min，**无周/月线**——本期仅声明文档示例核实过的
-#   1min/5min/15min/30min/1hour/1day 六周期，10min/2hour/4hour/6hour/12hour/
-#   24hour 等格式合法值待数据探针实证后扩容声明；
-# - 历史覆盖范围（history.start）未经数据探针实证，全部保持 null
-#   （不编造能力；探针报告人工确认后单独提交回填）；
+#   1min/5min/15min/30min/1hour/1day 六周期（2hour/4hour 已于 2026-11-13
+#   首轮探针实证可用、报告 20261113T163754+0800，扩容声明待人工确认后
+#   单独提交；10min/6hour/12hour/24hour 等其余格式合法值仍待实证）；
+# - **响应形状（2026-11-13 探针实证，官方文档未如实反映）**：crypto 端点
+#   返回按 ticker 分组的嵌套结构 {"ticker", "baseCurrency", "quoteCurrency",
+#   "priceData": [...]}（bar 行在 priceData 内，字段 date/open/high/low/
+#   close/volume/volumeNotional/tradesDone）；forex 端点为扁平行（仅 OHLC，
+#   无 volume）。适配器按形状统一拍平；
+# - 历史覆盖范围（history.start）全部保持 null（回填需人工确认后单独
+#   提交）。边界证据（2026-11-13 三轮探针，报告 20261113T163754/173648/
+#   183740+0800）：fx 端点档案**硬边界 2020-01-01**（上游拒绝越界窗口，
+#   两种 400 变体，适配器对 fx 请求钳制到档案起点、完全越界窗口直接空批
+#   ——回填候选 ≈2020-01-01 精确值，待确认）；crypto depth 已收敛
+#   **≈2011-08-25**（90 天粒度 approx、10 调 complete，真值 ≈2011 年中，
+#   显著深于 twelvedata crypto ≈2017-08——回填候选，待确认）；
+# - **日内数据密度（2026-11-13 受控调用实证，影响日内周期声明诚实性）**：
+#   fx 1min 单日 2811 根（密度充足）；crypto 1min 单日仅 1 根、年窗 5001
+#   根（≈14 根/天，极稀疏——「分钟级完整性」不成立，crypto 日内周期的
+#   声明形态回填时需人工裁决：缩窗保留/收窄声明/如实标注稀疏）；
 # - 单次返回行数上限：官方文档未标注（受 1GB/月带宽配额约束），
 #   partial 恒 false，上限与隐式截断行为待探针核实；
-# - interval/时间边界口径：加密货币 date 字段为 UTC（ISO 带 Z 后缀，官方
-#   文档口径）；外汇墙钟口径未核实（ISO 时间按 UTC 解释，待探针实证后
-#   修正）；适配器负责北京时间 ↔ UTC 的转换；
+# - interval/时间边界口径（2026-11-13 探针实证）：两端点均为 UTC
+#   （crypto date 带 +00:00、forex date 带 Z，日内分布吻合）；适配器负责
+#   北京时间 ↔ UTC 的转换；
 # - 加密货币 volume 有值（base 币计）、外汇仅 OHLC（volume 恒 null）；
 #   两者均无成交额字段（amount 恒 null）；无复权概念，adjust 仅声明 none；
 # - 免费档限额（账户页与官方文档口径）：50 请求/小时、1000 请求/天、
@@ -37,8 +52,9 @@
 #   "authorization": <token>, "eventData": {"thresholdLevel": <2|7>,
 #   "tickers": [<ticker>]}}，crypto thresholdLevel=2（top-of-book+成交）、
 #   forex thresholdLevel=7（top-of-book）；下行 {service, messageType:
-#   A|U|D|I|E|H, data}，H 为服务端 ~30s 心跳；**待探针实证项**：tickers
-#   服务端过滤是否生效（适配器已按 data.ticker 客户端兜底过滤）、
+#   A|U|D|I|E|H, data}，H 为服务端 ~30s 心跳；**待探针实证项（WS 行为
+#   走目录外脚本，见 probes/cases/tiingo.yaml notes）**：tickers 服务端
+#   过滤是否生效（适配器已按 data.ticker 客户端兜底过滤）、
 #   subscriptionId 增删订阅机制、data 元素对象形态（首版按文档表格字段名
 #   解析，探针实测后修正）、上游退订（eventName=unsubscribe）生效性
 #   （linger 延迟退订语义保留，上游忽略时仅本地释放）；

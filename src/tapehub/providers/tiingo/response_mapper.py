@@ -1,18 +1,20 @@
 """Tiingo 响应映射（ResponseMapper）：REST bars 行 / WS 快照数据 → 统一 Bar / Quote 模型。
 
-bars（REST，官方文档 crypto/forex 页核实）：
+bars（REST，形状按 2026-11-13 数据探针实证，报告 20261113T163754+0800——
+官方文档未如实反映 crypto 端点的嵌套结构）：
 
-- ``/tiingo/crypto/prices`` 返回扁平数组，元素字段：``date``（ISO 8601 带
-  Z 后缀，官方口径 UTC）、``open/high/low/close``、``volume``（base 币计）、
-  ``volumeNotional``/``tradesDone``/``exchange``/``baseCurrency``/
-  ``quoteCurrency`` 等元数据；
-- ``/tiingo/fx/<ticker>/prices`` 元素字段：``date``、``ticker``、
-  ``open/high/low/close``——文档仅列 OHLC，无 volume（标准 volume 为 null，
-  不用 0 冒充）；
-- ``date`` 解析为 ISO aware datetime；裸时间（无时区后缀）按 UTC 解释
-  （加密官方口径 UTC；外汇墙钟口径未核实，待探针实证后修正），统一
-  北京时间归一化由领域层 BarBatch 完成；
-- 缺失值与 NaN 统一映射为 null；amount 上游无成交额字段恒 null。
+- ``/tiingo/crypto/prices`` 返回**按 ticker 分组的嵌套数组**，外层元素字段
+  ``ticker/baseCurrency/quoteCurrency/priceData``，``priceData`` 为 bar 行
+  数组（``date`` 为 ISO 8601 带 ``+00:00``、``open/high/low/close``、
+  ``volume``（base 币计）、``volumeNotional``、``tradesDone``）；
+- ``/tiingo/fx/<ticker>/prices`` 返回扁平数组，元素字段：``date``（ISO 带
+  Z 后缀）、``ticker``、``open/high/low/close``——无 volume（标准 volume
+  为 null，不用 0 冒充）；墙钟口径经探针实证为 UTC（tg-fx-date-shape
+  观察 date 全部带 Z 且日内分布吻合）；
+- 适配器按形状统一拍平（嵌套/扁平防御兼容）；``date`` 缺失/不可解析属
+  上游契约违背，抛 ``UPSTREAM_ERROR``（bar 无时间戳无法标准化）；
+- 裸时间（无时区后缀）按 UTC 解释，统一北京时间归一化由领域层 BarBatch
+  完成；缺失值与 NaN 统一映射为 null；amount 上游无成交额字段恒 null。
 
 quote（WS 快照数据元素，官方文档 websockets/crypto|forex 页字段表）：
 
@@ -56,31 +58,57 @@ def _to_float(value: Any) -> float | None:
 
 
 def _to_timestamp(value: Any) -> datetime:
-    """上游 ``date``（ISO 8601）→ aware datetime；裸时间按 UTC 解释。"""
+    """上游 ``date``（ISO 8601）→ aware datetime；裸时间按 UTC 解释。
+
+    缺失/不可解析属上游契约违背（bar 无时间戳无法标准化），抛
+    ``UPSTREAM_ERROR``——不伪造时间，也不以裸 ``ValueError`` 穿透。
+    """
+    if value is None:
+        raise UpstreamError(
+            "Tiingo bar row has no valid date.",
+            details={"field": "date"},
+        )
     text = str(value).strip().replace("T", " ")
-    parsed = datetime.fromisoformat(text)
+    try:
+        parsed = datetime.fromisoformat(text)
+    except (TypeError, ValueError) as exc:
+        raise UpstreamError(
+            "Tiingo bar row has no valid date.",
+            details={"field": "date"},
+        ) from exc
     if parsed.tzinfo is None:
         return parsed.replace(tzinfo=BOUNDARY_ZONE)
     return parsed
 
 
 def to_standard_bars(rows: list[dict[str, Any]], asset_type: AssetType) -> list[Bar]:
-    """上游行列表 → 标准 Bar 列表（保持上游顺序，由分页组件统一升序排序）。"""
+    """上游行列表 → 标准 Bar 列表（保持上游顺序，由分页组件统一升序排序）。
+
+    2026-11-13 数据探针实证（报告 20261113T163754+0800）：两个端点响应
+    形状不同——``/tiingo/crypto/prices`` 返回**按 ticker 分组的嵌套结构**
+    ``{"ticker", "baseCurrency", "quoteCurrency", "priceData": [...]}``（官方
+    文档未如实反映）；``/tiingo/fx/<ticker>/prices`` 为扁平行（date 带 Z、
+    仅 OHLC）。按形状统一拍平（嵌套/扁平防御兼容），bar 字段名两端点一致
+    （date/open/high/low/close[/volume/volumeNotional/tradesDone]）。
+    """
     del asset_type  # 两资产类型同构解析；差异仅在 volume 键是否出现
     bars: list[Bar] = []
     for row in rows:
-        bars.append(
-            Bar(
-                timestamp=_to_timestamp(row.get("date")),
-                open=_to_float(row.get("open")),
-                high=_to_float(row.get("high")),
-                low=_to_float(row.get("low")),
-                close=_to_float(row.get("close")),
-                # crypto volume 有值（base 币计）；forex 文档无该字段 → null
-                volume=_to_float(row.get("volume")),
-                amount=None,  # 上游无成交额字段
+        nested = row.get("priceData")
+        items = nested if isinstance(nested, list) else [row]
+        for item in items:
+            bars.append(
+                Bar(
+                    timestamp=_to_timestamp(item.get("date")),
+                    open=_to_float(item.get("open")),
+                    high=_to_float(item.get("high")),
+                    low=_to_float(item.get("low")),
+                    close=_to_float(item.get("close")),
+                    # crypto volume 有值（base 币计）；forex 文档无该字段 → null
+                    volume=_to_float(item.get("volume")),
+                    amount=None,  # 上游无成交额字段
+                )
             )
-        )
     return bars
 
 
