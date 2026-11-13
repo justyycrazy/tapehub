@@ -756,7 +756,7 @@ websockets/forex 五页）：
 | 资产类型 | 市场 | 变体 | 上游接口 | 周期 | adjust | 标准字段 |
 | --- | --- | --- | --- | --- | --- | --- |
 | forex（bars） | GLOBAL | tiingo（默认） | `GET /tiingo/fx/<ticker>/prices` | PT1M/PT5M/PT15M/PT30M/PT1H/PT2H/PT4H、P1D | none | 无 volume/amount（外汇文档仅 OHLC） |
-| crypto（bars） | GLOBAL | tiingo（默认） | `GET /tiingo/crypto/prices` | PT2H/PT4H、P1D（日内分钟族不声明，见下） | none | volume 有值（base 币计）；无 amount |
+| crypto（bars） | GLOBAL | tiingo（默认） | `GET /tiingo/crypto/prices` | PT1M/PT5M/PT15M/PT30M/PT1H/PT2H/PT4H、P1D | none | volume 有值（base 币计）；无 amount |
 | forex/crypto（quotes） | GLOBAL | tiingo | WS crypto/fx 端点（thresholdLevel 2/5） | —（快照无周期） | —（快照无复权） | timestamp/last_price + 单档 bid/ask（WS 探针实证后声明，见下） |
 
 - **免费档限额（账户页与官方文档口径，2026-11-13 接入依据）**：50 请求/小时、
@@ -777,10 +777,11 @@ websockets/forex 五页）：
   经 2026-11-13 两轮探针实证后人工确认扩容（`10min/6hour/12hour/24hour`
   等其余格式合法值仍待实证）；`startDate`/`endDate`/`resampleFreq` 显式
   传参（不依赖上游默认值：上游缺省返回原始频度而非声明周期口径）；
-- **crypto 日内分钟族不声明（2026-11-13 人工确认裁决）**：受控诊断实证
-  crypto 1min 单日仅 1 根、年窗 5001 根（≈14 根/天，极稀疏，「分钟级
-  完整性」不成立），PT1M~PT1H 收窄不声明；PT2H/PT4H 粗日内经探针实证
-  （raw 样本逐 2h 桶齐备）保留声明；
+- **crypto 日内分钟族恢复声明（2026-11-13 裁决变更）**：原「不声明」
+  裁决基于「1min 稀疏 ≈14 根/天」误判（见下「纠正密度误判」），前提
+  纠正后恢复 PT1M~PT1H 声明；分段语义如实告知（见下「日内周期单次
+  请求分段」），日内 history.start 保持 null（depth 仅探 P1D，日内
+  depth 待扩探）；
 - **响应形状（2026-11-13 探针实证，官方文档未如实反映）**：crypto 端点
   返回按 ticker 分组的嵌套结构 `{"ticker", "baseCurrency", "quoteCurrency",
   "priceData": [...]}`（bar 行在 `priceData` 内，字段 date/open/high/low/
@@ -791,27 +792,30 @@ websockets/forex 五页）：
   时间 `2020-01-01T08:00:00+08:00`（受控复现实证：越界窗口 400 拒绝
   而非裁剪，两种变体 `End date` / `Start date must be >= …`；适配器对 fx
   请求钳制到档案起点、完全越界窗口直接空批；钳制后 depth 收敛
-  ≈2020-02-15 与边界相符）；crypto 全周期 = depth 二分收敛
+  ≈2020-02-15 与边界相符）；crypto P1D/PT2H/PT4H = depth 二分收敛
   `2011-08-25T00:00:00+08:00`（窗口右端零点，90 天粒度 approx、真值可能
-  更早，三轮一致，显著深于 twelvedata crypto ≈2017-08）；单次返回行数
-  上限官方未标注（受 1GB/月带宽配额约束），`meta.partial` 恒 false
-  （上限与隐式截断行为待探针核实后补充覆盖判定）；
+  更早，三轮一致，显著深于 twelvedata crypto ≈2017-08）；**crypto 日内
+  分钟族（2026-11-13 恢复声明）history.start 保持 null**（depth 仅探
+  P1D，日内 depth 待扩探——分段行为下日窗粒度探针噪声大）；单次返回
+  行数上限官方未标注（受 1GB/月带宽配额约束）；
 - 时间边界口径（2026-11-13 探针实证）：`startDate`/`endDate` 统一传 UTC
   墙钟 `YYYY-MM-DDTHH:MM:SS`——两端点均为 UTC（crypto `date` 带 `+00:00`、
   forex `date` 带 Z，日内分布吻合）；bar 时间戳解析 ISO 8601 后统一北京
   时间归一化；
-- **fx PT1M 单次请求分段（2026-11-13 limit 专项实证，报告
+- **日内周期单次请求分段（2026-11-13 limit 专项实证，报告
   limit-truncation-20261113T2130+0800）**：单次请求仅返回窗口起点首个
-  连续段 ≈6 自然日（保头截尾、静默缺失；段行数随窗口起点漂移
-  5671/6136/7028/7051，不可硬编码 cap）；段后分段查询可行（E7 实证新
-  段 7051 根）；适配器按「末根距请求 end >7 天（段长 + 周末/假日余量）」
-  标记 `meta.partial=true` 提示尾部截断；其余周期不受影响（fx PT5M/
-  PT1H 一月窗完整实证 6333/531 根；crypto 已声明周期段上限 5001 行
-  ≈PT2H 416 天，实用窗长内无影响）；网关侧不做多段聚合（fx PT1M 一年
-  ≈61 段请求会打满小时配额），长窗调用方自行分段；
+  连续段（保头截尾、静默缺失；段后分段查询可行——E7/E9 实证）。
+  **fx PT1M 段长按时间 ≈6 自然日**（段行数随窗口起点漂移
+  5671/6136/7028/7051，不可硬编码 cap）→ 适配器按「末根距请求 end
+  >7 天（段长 + 周末/假日余量）」标记 `meta.partial=true` 提示尾部
+  截断；**crypto 段上限按行数 ≈5001 行**（三次一致）→ 返回行数触顶即
+  标记 partial（PT1M ≈3.5 天/段、PT1H ≈208 天、PT2H ≈416 天、PT4H/
+  P1D 远超实用窗长）；fx PT5M/PT1H 一月窗完整实证不受分段影响；
+  网关侧不做多段聚合（fx PT1M 一年 ≈61 段请求会打满小时配额），长窗
+  调用方自行分段；
 - **纠正密度误判**：crypto 1min 实际密集 ≈1440 根/天（年窗 5001 根系
-  分段截断而非稀疏）；crypto 日内分钟族不声明的裁决基于误判前提，
-  是否恢复声明待重新裁决（fx 1min 密度充足 ≈2811 根/日）；
+  分段截断而非稀疏；fx 1min 密度充足 ≈2811 根/日）——日内分钟族恢复
+  声明的前提纠正记录见上；
 - 区间无数据行为：crypto 端点对历史外窗口返回 200 `[]`（正常空批）；
   fx 端点的档案边界 400 按指纹 `"End date must be >="` 归一化为空结果
   （上游权威边界结论，twelvedata 空窗指纹同款先例）；
@@ -890,7 +894,7 @@ fund-market、futures-prices、options-prices 六页）：
 | contract（bars） | CN | ths（默认） | `GET /api/futures/prices/daily` | P1D | none | 全部（量额单位上游未明示，原值透出） |
 | option（bars） | CN | ths（默认） | `GET /api/options/prices/daily` | P1D | none | 全部（量额单位上游未明示，原值透出） |
 | stock/index/etf（quotes） | CN | ths | `GET /api/a-share|a-share-index|fund/market*/snapshot` | —（快照无周期） | —（快照无复权） | timestamp/last_price/volume/amount（extensions 见下） |
-| contract/option（quotes） | CN | ths | `GET /api/futures|options/prices/intraday`（分时末点） | —（快照无周期） | —（快照无复权） | timestamp/last_price（量额不透出，见下） |
+| contract/option（quotes） | CN | ths | `GET /api/futures|options/prices/intraday`（分时末点） | —（快照无周期） | —（快照无复权） | timestamp/last_price/volume/amount（量额=分时全点求和，见下） |
 
 - **凭据与启用**：API Key 经环境变量 `TAPEHUB_THS_API_KEY` 提供并经请求头传给
   上游，禁止写入代码/manifest/日志；未配置时不启用（能力目录仍可见，
@@ -911,11 +915,16 @@ fund-market、futures-prices、options-prices 六页）：
   `CN-SHFE-CU2601 → CU2601.SHF`（仅 SHFE 后缀文档实证）；option
   `CN-CFFEX-IO2601-C-4000 → IO2601-C-4000.CFE`（仅 CFFEX 后缀文档实证），
   期货/期权 symbol 段原样透传（不做行权价等结构改写）；
-- **上游能力边界（端外，文档明示）**：历史 K 线仅日线 `1d`；A 股/指数窗口
-  ≤10 年、ETF ≤5 自然年（越界上游返回 `code=1003`，经信封错误映射上抛）；
-  期货/期权日 K 端外仅 `time_period=day_1`（显式传参）；同花顺板块/行业指数
-  （`88xxxx.TI`）与商品指数（`850002.TI`）属同花顺特有 TI 类指数，本期不纳入；
-  ETF 行情仅支持 ETF（LOF/场外/REITs 上游返回 `code=3004`）；
+- **上游能力边界（端外，文档明示 + 2026-11-13 三轮探针实证）**：历史 K 线仅
+  日线 `1d`；**窗口口径实测与文档不符**——指数文档写「≤10 年」实测仅支持
+  **最近约 5 年滚动窗口**（越界 `code=1003 'recent five years only'` 拒绝）、
+  A 股个股实测无滚动上限（越界软返空）、ETF ≤5 自然年吻合（越界**返空不报
+  错**）；期货/期权日 K 端外仅 `time_period=day_1`（显式传参）；已知上游缺陷：
+  期权日 K `start=2026-10-01`（单一日期）触发 `code=5003 'daily quote
+  unavailable'`（邻近起点均正常，与调用频率无关——窗口避开即可，适配器照常
+  上抛 `UPSTREAM_ERROR` 不归一化：单点缺陷而非稳定边界）；同花顺板块/行业
+  指数（`88xxxx.TI`）与商品指数（`850002.TI`）属同花顺特有 TI 类指数，本期
+  不纳入；ETF 行情仅支持 ETF（LOF/场外/REITs 上游返回 `code=3004`）；
 - 复权映射（仅 A 股历史 K 线有复权语义）：`none→none`、`qfq→forward`
   （前复权）、`hfq→backward`（后复权）；指数无复权语义（响应 `data.adjust`
   固定 null）、ETF/期货/期权仅声明 none；`ths` 的 `forward` 缺省恰与网关
@@ -925,23 +934,32 @@ fund-market、futures-prices、options-prices 六页）：
 - **期货/期权实时快照取分时末点**（端外仅当前交易日，`session=intraday`、
   `trade_date=0` 显式传参）：`last_price`=末点 `price`、`timestamp`=末点时间
   （防御升序排后取末点；非交易日/盘前 `item=[]` 返回 `UPSTREAM_ERROR`）；
-  **`volume`/`amount` 不透出**——分时点量额口径（逐分钟增量 vs 当日累计）
-  上游未明示，汇总或透传都可能语义错误，能力目录 fields 仅声明
-  `timestamp` + `last_price`（探针核实口径后回填）；
+  `volume`/`amount`=**分时全点求和（当日累计）**——分时点量额为逐分钟增量
+  （2026-11-13 探针实证：各点 `turnover/volume` 恰等于该点 `price`×合约
+  乘数、夜盘开盘三点 volume 5→26→31 非累计序列）；任一点量额缺失或存在
+  无时间戳点即不计算（恒 null，部分和不冒充累计）；
+- **快照 timestamp 口径（探针实证）**：`data.timestamp` 为上游**响应组装
+  时刻**（盘后随墙钟推进、间隔 10s 两次调用精确 +10s），非成交时点；上游
+  快照无独立行情时间字段，按文档「最新上游有效时间」口径透出，盘后请求
+  的快照 timestamp 为请求时刻属预期行为；
 - 快照字段口径（A 股/指数/ETF）：`last_price`/`volume`/`turnover→amount`
   直映；`extensions` 白名单：`open_price/high_price/low_price/prev_price/
   price_change/price_change_ratio_pct`（ETF 另有
   `price_amplitude_ratio_pct`/`turnover_ratio_pct`）；快照不返回中文名
   `name`（上游约定，经元信息域端点解析，网关不透出）；
-- **历史覆盖范围（history.start/end）全部保持 null**（文档未公布，回填需
-  探针实证 + 人工确认后单独提交）；单次返回行数上限官方未标注（`offset`
+- **历史覆盖范围（2026-11-13 探针实证回填，报告 20261113T212034/213321/
+  214147+0800）**：个股日线 `history.start ≈ 2005-02-14`（二分 90 天粒度
+  approx，真实最早可能更早，[2005,2010] era 1153 行完整）；指数/ETF 为
+  **滚动窗口语义**，按 `retention_days=1825` 声明（指数错误消息自述
+  'recent five years only'、ETF 文档 5 自然年吻合；[2022-01-01] 起可达性
+  实证 969 行，边界粗粒度）；单次返回行数上限官方未标注（`offset`
   分页参数行为未核实、适配器未启用），`meta.partial` 恒 false（隐式截断
   行为待探针核实后补充覆盖判定）；
 - 快照为纯 REST 单次调用语义：无首包超时/`QUOTE_NOT_READY`（与
   alphafeed/tickflow 一致），上游无推送接口，不实现快照流（流式请求返回
   `UNSUPPORTED_CAPABILITY`）。
 
-九个内置 Provider（akshare、alphafeed、baostock、tickflow、ths、tiingo、tushare、tqsdk、twelvedata）均已接入，接口签名与数据口径按各自官方文档核实（tiingo 的 WS 消息形态细节与历史深度、ths 的历史深度与期货/期权快照量额口径待数据探针实证回填，已在上述章节如实标注）；未配置凭据或未安装 SDK 时数据请求返回 `PROVIDER_NOT_IMPLEMENTED`，`provider=auto` 在无可用候选时返回 `NO_PROVIDER_AVAILABLE`，也**绝不返回写死的模拟行情**。
+九个内置 Provider（akshare、alphafeed、baostock、tickflow、ths、tiingo、tushare、tqsdk、twelvedata）均已接入，接口签名与数据口径按各自官方文档核实（tiingo 的 WS 消息形态细节与历史深度待数据探针实证回填，已在上述章节如实标注）；未配置凭据或未安装 SDK 时数据请求返回 `PROVIDER_NOT_IMPLEMENTED`，`provider=auto` 在无可用候选时返回 `NO_PROVIDER_AVAILABLE`，也**绝不返回写死的模拟行情**。
 
 ### 新增 / 接入 Provider
 

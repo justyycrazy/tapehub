@@ -56,6 +56,7 @@ from tapehub.domain.errors import (
 from tapehub.domain.intervals import Interval
 from tapehub.domain.models import (
     CN_TIMEZONE,
+    AssetType,
     BarBatch,
     BarQuery,
     Quote,
@@ -86,6 +87,10 @@ _HTTP_TIMEOUT_SECONDS = 20.0
 _FX_ONE_MIN = Interval.parse("PT1M")
 # 尾部缺失容差：段长 ≈6 自然日 + 周末/假日 1 天余量（窗口 ≤7 天不误报）
 _FX_SEGMENT_TOLERANCE = timedelta(days=7)
+# crypto 端点段上限（2026-11-13 limit 专项实证：一周/一月/段后窗三次
+# 均恰 5001 行，alphafeed 式 count>=MAX 判定）——PT1M ≈3.5 天/段、
+# PT1H ≈208 天、PT2H ≈416 天、PT4H/P1D 远超实用窗长
+_CRYPTO_MAX_ROWS = 5001
 
 # 声明 quotes 能力的资产类型（WS 端点分流；与 manifest 声明一致）
 _QUOTE_ASSET_TYPES = ("forex", "crypto")
@@ -304,6 +309,9 @@ class ProviderAdapter(BaseProviderAdapter):
         partial = False
         if query.interval == _FX_ONE_MIN and window:
             partial = (query.end - max(bar.timestamp for bar in window)) > _FX_SEGMENT_TOLERANCE
+        elif query.asset_type is AssetType.CRYPTO and len(bars) >= _CRYPTO_MAX_ROWS:
+            # crypto 段上限按行数（返回行数触顶即截断，方向保头截尾）
+            partial = True
         page = paginate_bars(window, query.offset, query.limit)
         return BarBatch(
             instrument=query.instrument,

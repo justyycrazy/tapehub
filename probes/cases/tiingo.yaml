@@ -53,8 +53,9 @@ chain:
     # limit-truncation-20261113T2130+0800）：单次请求仅返回窗口起点首个
     # 连续段（≈6 自然日，保头截尾、静默缺失）——7 天窗应完整（≈7k 根），
     # 截断即 suspect；适配器已按「末根距 end >7 天」补 partial 判定。
-    # crypto PT1M 已收窄不声明（自动 skip）；crypto 已声明周期（PT2H/
-    # PT4H/P1D）段上限 5001 行远超实用窗长（PT2H≈416 天），不做常态探针
+    # crypto 日内分钟族已恢复声明（2026-11-13 裁决变更），其段上限按行数
+    # ≈5001 行已入适配器 partial 判定（count>=5001），常态探针不必设
+    # （PT1M 段 ≈3.5 天、PT1H ≈208 天、PT2H ≈416 天）；targets 仅 forex
     targets: [forex]
     interval: PT1M
     max_range: P7D
@@ -205,3 +206,8 @@ notes: >
   （末根距 end >7 天）已落地；limit_truncation 改 max_range P7D 常态
   回归。WS 剩余待探针项：subscriptionId 增删订阅、多订阅退订语义、
   fx thresholdLevel=5 精确语义（与文档「5=仅成交」矛盾）。
+  2026-11-13 crypto 日内分钟族恢复声明（人工确认，裁决变更）：密度
+  误判纠正后原收窄前提作废（1min 实际密集 ≈1440 根/天）；PT1M~PT1H
+  恢复声明，history.start 保持 null（depth 仅探 P1D，日内 depth 待扩
+  探——分段行为下日窗粒度探针噪声大）；适配器 partial 判定泛化
+  （crypto 段上限按行数 ≈5001，返回行数触顶即标 partial）。

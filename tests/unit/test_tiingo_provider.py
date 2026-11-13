@@ -229,29 +229,51 @@ def test_unsupported_intervals_rejected_by_operation_routing(
         adapter.resolve_operation(_query(interval=Interval.parse(interval)))
 
 
-def test_crypto_intraday_minute_family_rejected(
+def test_crypto_intraday_minute_family_restored(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """crypto 日内分钟族（PT1M~PT1H）不声明（密度实证裁决，2026-11-13 人工
-    确认）：能力目录即拒绝；PT2H/PT4H 粗日内保留声明。"""
+    """crypto 日内分钟族（PT1M~PT1H）恢复声明（2026-11-13 人工确认：密度
+    误判纠正后原收窄裁决作废），与 PT2H/PT4H/P1D 同端点同 operation。"""
     install(monkeypatch)
     preset_payload(monkeypatch, [])
     adapter = _adapter()
-    for interval in ("PT1M", "PT5M", "PT15M", "PT30M", "PT1H"):
-        query = _query(
-            asset_type=AssetType.CRYPTO,
-            instrument=Instrument.parse("GLOBAL-CRYPTO-BTC/USD"),
-            interval=Interval.parse(interval),
-        )
-        with pytest.raises(UnsupportedCapabilityError):
-            adapter.resolve_operation(query)
-    for interval in ("PT2H", "PT4H", "P1D"):
+    for interval in ("PT1M", "PT5M", "PT15M", "PT30M", "PT1H", "PT2H", "PT4H", "P1D"):
         query = _query(
             asset_type=AssetType.CRYPTO,
             instrument=Instrument.parse("GLOBAL-CRYPTO-BTC/USD"),
             interval=Interval.parse(interval),
         )
         assert adapter.resolve_operation(query) == "crypto_prices"
+
+
+def test_crypto_segment_row_cap_partial(monkeypatch: pytest.MonkeyPatch) -> None:
+    """crypto 段上限按行数 ≈5001（limit 专项实证三次一致）：返回行数触顶
+    即标记 partial=true（保头截尾）；未触顶维持 false。"""
+    from datetime import timedelta
+
+    install(monkeypatch)
+    dense_dates = [
+        (datetime(2025, 6, 1, tzinfo=CN_TIMEZONE) + timedelta(minutes=i))
+        .astimezone(CN_TIMEZONE)
+        .isoformat()
+        for i in range(5001)
+    ]
+    preset_payload(monkeypatch, crypto_rows(dense_dates))
+    adapter = _adapter()
+    query = _query(
+        asset_type=AssetType.CRYPTO,
+        instrument=Instrument.parse("GLOBAL-CRYPTO-BTC/USD"),
+        interval=Interval.parse("PT1M"),
+        start=datetime(2025, 6, 1, tzinfo=CN_TIMEZONE),
+        end=datetime(2025, 12, 1, tzinfo=CN_TIMEZONE),
+    )
+    batch = asyncio.run(adapter.fetch_bars(query))
+    assert batch.count == 5001
+    assert batch.partial is True  # 行数触顶 → 尾部截断
+
+    preset_payload(monkeypatch, crypto_rows(dense_dates[:100]))
+    batch = asyncio.run(adapter.fetch_bars(query))
+    assert batch.partial is False  # 未触顶
 
 
 def test_missing_api_key() -> None:

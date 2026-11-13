@@ -114,18 +114,27 @@ def test_capability_catalog(tiingo_client: TestClient) -> None:
     assert [i["code"] for i in forex_cap["intervals"]] == [
         "PT1M", "PT5M", "PT15M", "PT30M", "PT1H", "PT2H", "PT4H", "P1D",
     ]
-    assert [i["code"] for i in crypto_cap["intervals"]] == ["PT2H", "PT4H", "P1D"]
+    assert [i["code"] for i in crypto_cap["intervals"]] == [
+        "PT1M", "PT5M", "PT15M", "PT30M", "PT1H", "PT2H", "PT4H", "P1D",
+    ]
     for cap in bars_caps:
         assert cap["variants"] == ["tiingo"]
         assert cap["adjustments"] == ["none"]
     # history 已按 2026-11-13 四轮探针回填（人工确认）：fx 全周期 = 上游
-    # 档案硬边界（UTC 2020-01-01 → 北京 08:00，同端点同值）；crypto =
-    # depth 二分收敛窗口右端零点（90 天粒度 approx，同端点同值）
+    # 档案硬边界（UTC 2020-01-01 → 北京 08:00，同端点同值）；crypto 粗周期
+    # （P1D/PT2H/PT4H）= depth 二分收敛窗口右端零点（90 天粒度 approx），
+    # 日内分钟族（2026-11-13 恢复声明）保持 null（depth 仅探 P1D，日内
+    # depth 待扩探）
     for interval in forex_cap["intervals"]:
         assert interval["history"]["start"] == "2020-01-01T08:00:00+08:00"
         assert interval["history"]["end"] is None
     for interval in crypto_cap["intervals"]:
-        assert interval["history"]["start"] == "2011-08-25T00:00:00+08:00"
+        expected = (
+            "2011-08-25T00:00:00+08:00"
+            if interval["code"] in ("PT2H", "PT4H", "P1D")
+            else None
+        )
+        assert interval["history"]["start"] == expected
         assert interval["history"]["end"] is None
 
     fields_by_asset = {tuple(cap["asset_types"])[0]: cap["fields"] for cap in bars_caps}
