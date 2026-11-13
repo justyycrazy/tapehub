@@ -107,15 +107,26 @@ def test_capability_catalog(tiingo_client: TestClient) -> None:
         ("forex",),
         ("crypto",),
     }
+    caps_by_asset = {tuple(cap["asset_types"])[0]: cap for cap in bars_caps}
+    forex_cap = caps_by_asset["forex"]
+    crypto_cap = caps_by_asset["crypto"]
+    # forex 全周期声明（含 PT2H/PT4H 扩容）；crypto 日内分钟族收窄不声明
+    assert [i["code"] for i in forex_cap["intervals"]] == [
+        "PT1M", "PT5M", "PT15M", "PT30M", "PT1H", "PT2H", "PT4H", "P1D",
+    ]
+    assert [i["code"] for i in crypto_cap["intervals"]] == ["PT2H", "PT4H", "P1D"]
     for cap in bars_caps:
         assert cap["variants"] == ["tiingo"]
-        assert [i["code"] for i in cap["intervals"]] == [
-            "PT1M", "PT5M", "PT15M", "PT30M", "PT1H", "P1D",
-        ]
         assert cap["adjustments"] == ["none"]
-        # 历史覆盖未经探针实证：全部保持 null（不编造能力）
-        assert all(i["history"]["start"] is None for i in cap["intervals"])
-        assert all(i["history"]["end"] is None for i in cap["intervals"])
+    # history 已按 2026-11-13 四轮探针回填（人工确认）：fx 全周期 = 上游
+    # 档案硬边界（UTC 2020-01-01 → 北京 08:00，同端点同值）；crypto =
+    # depth 二分收敛窗口右端零点（90 天粒度 approx，同端点同值）
+    for interval in forex_cap["intervals"]:
+        assert interval["history"]["start"] == "2020-01-01T08:00:00+08:00"
+        assert interval["history"]["end"] is None
+    for interval in crypto_cap["intervals"]:
+        assert interval["history"]["start"] == "2011-08-25T00:00:00+08:00"
+        assert interval["history"]["end"] is None
 
     fields_by_asset = {tuple(cap["asset_types"])[0]: cap["fields"] for cap in bars_caps}
     assert fields_by_asset["forex"] == ["open", "high", "low", "close"]

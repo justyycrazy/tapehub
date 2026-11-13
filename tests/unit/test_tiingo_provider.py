@@ -148,6 +148,8 @@ def test_crypto_request_tickers_and_volume(monkeypatch: pytest.MonkeyPatch) -> N
         ("PT15M", "15min"),
         ("PT30M", "30min"),
         ("PT1H", "1hour"),
+        ("PT2H", "2hour"),
+        ("PT4H", "4hour"),
         ("P1D", "1day"),
     ],
 )
@@ -216,15 +218,40 @@ def test_cn_market_stock_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
         asyncio.run(adapter.fetch_bars(query))
 
 
-@pytest.mark.parametrize("interval", ["P1W", "P1M", "PT2H", "P3D"])
+@pytest.mark.parametrize("interval", ["P1W", "P1M", "P3D"])
 def test_unsupported_intervals_rejected_by_operation_routing(
     interval: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """上游 resampleFreq 无周/月线，2h 等待探针实证：能力目录即不声明。"""
+    """上游 resampleFreq 无周/月线：能力目录即不声明。"""
     install(monkeypatch)
     adapter = _adapter()
     with pytest.raises(UnsupportedCapabilityError):
         adapter.resolve_operation(_query(interval=Interval.parse(interval)))
+
+
+def test_crypto_intraday_minute_family_rejected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """crypto 日内分钟族（PT1M~PT1H）不声明（密度实证裁决，2026-11-13 人工
+    确认）：能力目录即拒绝；PT2H/PT4H 粗日内保留声明。"""
+    install(monkeypatch)
+    preset_payload(monkeypatch, [])
+    adapter = _adapter()
+    for interval in ("PT1M", "PT5M", "PT15M", "PT30M", "PT1H"):
+        query = _query(
+            asset_type=AssetType.CRYPTO,
+            instrument=Instrument.parse("GLOBAL-CRYPTO-BTC/USD"),
+            interval=Interval.parse(interval),
+        )
+        with pytest.raises(UnsupportedCapabilityError):
+            adapter.resolve_operation(query)
+    for interval in ("PT2H", "PT4H", "P1D"):
+        query = _query(
+            asset_type=AssetType.CRYPTO,
+            instrument=Instrument.parse("GLOBAL-CRYPTO-BTC/USD"),
+            interval=Interval.parse(interval),
+        )
+        assert adapter.resolve_operation(query) == "crypto_prices"
 
 
 def test_missing_api_key() -> None:

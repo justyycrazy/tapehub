@@ -755,8 +755,8 @@ websockets/forex 五页）：
 
 | 资产类型 | 市场 | 变体 | 上游接口 | 周期 | adjust | 标准字段 |
 | --- | --- | --- | --- | --- | --- | --- |
-| forex（bars） | GLOBAL | tiingo（默认） | `GET /tiingo/fx/<ticker>/prices` | PT1M/PT5M/PT15M/PT30M/PT1H、P1D | none | 无 volume/amount（外汇文档仅 OHLC） |
-| crypto（bars） | GLOBAL | tiingo（默认） | `GET /tiingo/crypto/prices` | PT1M/PT5M/PT15M/PT30M/PT1H、P1D | none | volume 有值（base 币计）；无 amount |
+| forex（bars） | GLOBAL | tiingo（默认） | `GET /tiingo/fx/<ticker>/prices` | PT1M/PT5M/PT15M/PT30M/PT1H/PT2H/PT4H、P1D | none | 无 volume/amount（外汇文档仅 OHLC） |
+| crypto（bars） | GLOBAL | tiingo（默认） | `GET /tiingo/crypto/prices` | PT2H/PT4H、P1D（日内分钟族不声明，见下） | none | volume 有值（base 币计）；无 amount |
 | forex/crypto（quotes） | GLOBAL | tiingo | WS crypto/fx 端点（thresholdLevel 2/7） | —（快照无周期） | —（快照无复权） | timestamp/last_price（bid/ask 防御映射，见下） |
 
 - **免费档限额（账户页与官方文档口径，2026-11-13 接入依据）**：50 请求/小时、
@@ -773,29 +773,29 @@ websockets/forex 五页）：
   统一小写；exchange 段白名单 forex=`OTC`、crypto=`CRYPTO`）；
 - 周期映射（`resampleFreq` 合法格式 `<n>min|hour|day`、最小 `1min`，上游
   **无周/月线**）：`PT1M→1min`、`PT5M→5min`、`PT15M→15min`、`PT30M→30min`、
-  `PT1H→1hour`、`P1D→1day`——首版仅声明官方示例核实过的六周期（`2hour`/
-  `4hour` 已于 2026-11-13 首轮探针实证可用、报告 20261113T163754+0800，
-  扩容声明待人工确认后单独提交；`10min/6hour/12hour/24hour` 等其余格式
-  合法值仍待实证）；`startDate`/`endDate`/`resampleFreq` 显式传参（不依赖
-  上游默认值：上游缺省返回原始频度而非声明周期口径）；
+  `PT1H→1hour`、`PT2H→2hour`、`PT4H→4hour`、`P1D→1day`——`2hour`/`4hour`
+  经 2026-11-13 两轮探针实证后人工确认扩容（`10min/6hour/12hour/24hour`
+  等其余格式合法值仍待实证）；`startDate`/`endDate`/`resampleFreq` 显式
+  传参（不依赖上游默认值：上游缺省返回原始频度而非声明周期口径）；
+- **crypto 日内分钟族不声明（2026-11-13 人工确认裁决）**：受控诊断实证
+  crypto 1min 单日仅 1 根、年窗 5001 根（≈14 根/天，极稀疏，「分钟级
+  完整性」不成立），PT1M~PT1H 收窄不声明；PT2H/PT4H 粗日内经探针实证
+  （raw 样本逐 2h 桶齐备）保留声明；
 - **响应形状（2026-11-13 探针实证，官方文档未如实反映）**：crypto 端点
   返回按 ticker 分组的嵌套结构 `{"ticker", "baseCurrency", "quoteCurrency",
   "priceData": [...]}`（bar 行在 `priceData` 内，字段 date/open/high/low/
   close/volume/volumeNotional/tradesDone）；forex 端点为扁平行（仅 OHLC，
   无 volume）。适配器按形状统一拍平（嵌套/扁平防御兼容）；
-- **历史覆盖范围（history.start）全部保持 null**（回填需人工确认后单独
-  提交）。边界证据（2026-11-13 三轮探针）：fx 端点档案**硬边界
-  2020-01-01**——上游对越界窗口拒绝而非裁剪（两种 400 变体：`End date
-  must be >= …` / `Start date must be >= …`），适配器对 fx 请求钳制到
-  档案起点、完全越界窗口直接空批（回填候选 ≈2020-01-01 精确值，待
-  确认）；crypto depth 已收敛 **≈2011-08-25**（90 天粒度 approx，真值
-  ≈2011 年中，回填候选待确认）；单次返回行数上限官方未标注（受 1GB/月
-  带宽配额约束），`meta.partial` 恒 false（上限与隐式截断行为待探针核实
-  后补充覆盖判定）；
-- **日内数据密度（2026-11-13 受控调用实证）**：fx 1min 单日 2811 根
-  （密度充足）；crypto 1min 单日仅 1 根、年窗 5001 根（≈14 根/天，极
-  稀疏）——crypto 日内周期的声明形态回填时需人工裁决（缩窗保留/收窄
-  声明/如实标注稀疏）；
+- **历史覆盖范围（history.start）已按 2026-11-13 四轮探针回填（人工
+  确认）**：fx 全周期 = 上游档案硬边界 2020-01-01（UTC 墙钟）换算北京
+  时间 `2020-01-01T08:00:00+08:00`（受控复现实证：越界窗口 400 拒绝
+  而非裁剪，两种变体 `End date` / `Start date must be >= …`；适配器对 fx
+  请求钳制到档案起点、完全越界窗口直接空批；钳制后 depth 收敛
+  ≈2020-02-15 与边界相符）；crypto 全周期 = depth 二分收敛
+  `2011-08-25T00:00:00+08:00`（窗口右端零点，90 天粒度 approx、真值可能
+  更早，三轮一致，显著深于 twelvedata crypto ≈2017-08）；单次返回行数
+  上限官方未标注（受 1GB/月带宽配额约束），`meta.partial` 恒 false
+  （上限与隐式截断行为待探针核实后补充覆盖判定）；
 - 时间边界口径（2026-11-13 探针实证）：`startDate`/`endDate` 统一传 UTC
   墙钟 `YYYY-MM-DDTHH:MM:SS`——两端点均为 UTC（crypto `date` 带 `+00:00`、
   forex `date` 带 Z，日内分布吻合）；bar 时间戳解析 ISO 8601 后统一北京

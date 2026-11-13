@@ -66,6 +66,8 @@ _INTERVAL_CODES: dict[Interval, str] = {
     Interval.parse("PT15M"): "15min",
     Interval.parse("PT30M"): "30min",
     Interval.parse("PT1H"): "1hour",
+    Interval.parse("PT2H"): "2hour",
+    Interval.parse("PT4H"): "4hour",
     Interval.parse("P1D"): "1day",
 }
 

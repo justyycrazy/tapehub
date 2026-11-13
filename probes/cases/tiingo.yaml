@@ -40,8 +40,9 @@ chain:
   # 无 adjust_diff：外汇/加密货币无复权概念（能力目录仅声明 none，
   # 无多复权可对比）
   history_depth:
-    # history.start 全部保持 null（文档未公布）：日线先行二分收敛，
-    # 日内周期（1min 起 2020 年前后为行业常态）视首轮结论再扩探
+    # history.start 已按 2026-11-13 四轮探针回填（人工确认）——本探针
+    # 转为常态回归复验：fx 预期 ≈2020-01-01（上游硬边界钳制后精确收敛）、
+    # crypto 预期 ≈2011-08-25（90 天粒度 approx）；漂移超粒度即需排查
     targets: [forex, crypto]
     earliest: 2000-01-01
     era_step_years: 5
@@ -171,3 +172,9 @@ notes: >
   approx，真值可能更早）；③PT2H/PT4H 扩容声明（forex+crypto bars，
   两轮 confirmed）；④crypto 日内周期声明形态（1min 单日 1 根极稀疏，
   保留+README 标注 / 收窄声明二选一）。WS 行为探针（目录外脚本）仍待跑。
+  2026-11-13 回填落地（人工确认）：①fx 全周期 history.start =
+  2020-01-01T08:00:00+08:00（硬边界 UTC→北京精确换算，同端点同值声明）；
+  ②crypto 全周期 history.start = 2011-08-25T00:00:00+08:00（depth 收敛
+  窗口右端零点，approx 标注于 README/notes）；③PT2H/PT4H 扩容（forex
+  全量声明、crypto 保留）；④crypto 日内分钟族（PT1M~PT1H）收窄不声明
+  （密度实证裁决）。history_depth 探针转常态回归复验（预期值见其注释）。
