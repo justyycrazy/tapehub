@@ -15,9 +15,12 @@ pacing:
   call_interval_s: 2.0
   timeout_s: 60
   # 预算：availability 66（stock 基准 21 + stock@CN-SZSE 追加 21 + index 3 +
-  # etf 21，含 ETF 分钟族 12）+ adjust_diff 8（stock/stock@CN-SZSE 各 2 case
-  # × 2 调）+ raw 23 条 × 4 调 = 期望 166（history_depth 六条已收敛全量
-  # skip，不占预算）。⚠ 分钟族重查询可能贴线/超时：2026-11-12 盘后实测
+  # etf 21，含 ETF 分钟族 12）+ adjust_diff 12（stock/stock@CN-SZSE/etf 各
+  # 2 case × 2 调，etf 2026-11-13 入链）+ raw 21 条 × 4 调 = 期望 162
+  #（history_depth 六条已收敛全量 skip，不占预算；bs-lifecycle-login-query
+  # 与 bs-etf-adjust-observe 两条 raw 已退役——生命周期由适配器懒登录下的
+  # chain availability 隐含复验，ETF 复权由链路 adjust_diff 常态复验）。
+  # ⚠ 分钟族重查询可能贴线/超时：2026-11-12 盘后实测
   # 3 例 TIMEOUT（timeout_s=60，PT5M-hfq/PT15M-none 双所同现，属上游瞬时
   # 时延非能力缺口，上轮同查询时延 22~49s），failed 时重跑复验即可。
   max_calls: 280
@@ -77,9 +80,11 @@ chain:
       reason: 已收敛，与 P1D 同值，已人工确认回填
   adjust_diff:
     # 个股复权生效性（官方「涨跌幅复权法」，与同花顺/通达信口径不同）：
-    # 日线足以判定，收敛 interval 控制预算；指数/ETF 首版仅声明 none 无可比。
-    # stock@CN-SZSE 为逐所细分复验（2026-11-12 接入）
-    targets: [stock, stock@CN-SZSE]
+    # 日线足以判定，收敛 interval 控制预算。etf 三复权经 2024 全年逐行对比
+    # 实证（2026-11-08 回填 [none,qfq,hfq]）后入链常态复验，原
+    # bs-etf-adjust-observe 单窗口观察退役；指数复权为 no-op 维持 [none]
+    # 无可比。stock@CN-SZSE 为逐所细分复验（2026-11-12 接入）
+    targets: [stock, stock@CN-SZSE, etf]
     window: {start: 2024-06-01, end: 2024-08-31}   # 分红除权高发窗口
     intervals: [P1D]
     pairs: [[none, qfq], [none, hfq]]
@@ -102,23 +107,10 @@ raw:
   #    get_data → to_dict(orient=records)。末步把 ResultData 的 DataFrame
   #    转为 list[dict]，使 min_rows 行数判定可用；样本（≤3 行）即字段矩阵
   #    观察。baostock 的 logout 是模块级函数且适配器不主动登出（懒登录
-  #    复用、进程退出即断），探针不设独立 logout case。
+  #    复用、进程退出即断），探针不设独立 logout case。会话生命周期由
+  #    chain availability 隐含复验（适配器懒登录，原 bs-lifecycle-login-query
+  #    raw 于 2026-11-13 退役）。
   #
-  # ── 会话生命周期与基础可用性（assert: true，可判定）──
-  - id: bs-lifecycle-login-query
-    purpose: 登录→查询→取数生命周期（error_code "0" + 行数断言；建连与查询证据）
-    module: baostock
-    call:
-      - {module_func: login}
-      - {module_func: query_history_k_data_plus, kwargs: {code: "sh.600602",
-         fields: "date,code,open,high,low,close,volume,amount",
-         start_date: "2025-06-01", end_date: "2025-06-30",
-         frequency: "d", adjustflag: "3"}}
-      - {method: get_data}
-      - {method: to_dict, kwargs: {orient: records}}
-    expect: {status: ok, min_rows: 1}
-    assert: true
-
   # ── 官方文档矛盾点与边界行为（assert: false 仅观察，行数判读见注释）──
   - id: bs-start-param-name-observe
     purpose: |
@@ -358,22 +350,6 @@ raw:
       - {method: to_dict, kwargs: {orient: records}}
     expect: {status: ok, min_rows: 0}
     assert: false
-  - id: bs-etf-adjust-observe
-    purpose: |
-      ETF 复权支持观察：adjustflag=2（前复权）小窗口。返回数据 → ETF 支持
-      复权（manifest adjustments 可回填 qfq/hfq）；报错/空结果 → 维持
-      [none]。决定 ETF 复权能力是否回填。
-    module: baostock
-    call:
-      - {module_func: login}
-      - {module_func: query_history_k_data_plus, kwargs: {code: "sh.510050",
-         fields: "date,code,open,high,low,close,volume,amount",
-         start_date: "2026-02-01", end_date: "2026-02-28",
-         frequency: "d", adjustflag: "2"}}
-      - {method: get_data}
-      - {method: to_dict, kwargs: {orient: records}}
-    expect: {status: ok, min_rows: 0}
-    assert: false
   - id: bs-index-adjust-observe
     purpose: |
       指数复权支持观察：官方指数示例不传 adjustflag；本 case 传
@@ -507,5 +483,9 @@ notes: >
   2026 年起才有」——上证指数 5 分钟 × 2026-01（1 月边界窗口）、上证指数
   5/60 分钟 × 2026-06、沪深 300 5 分钟 × 2026-06 全空。指数分钟族累计
   10 组合实证全空，结论稳固。
-  下轮预期调用：availability 45（ETF 分钟族声明后 +12）+ adjust_diff 4 +
-  raw 92 = 141（history_depth 已全量 skip）。
+  ETF 复权入链（2026-11-13 raw→chain 收敛）：adjust_diff targets 加 etf
+  （none vs qfq/hfq 序列常态复验），原 bs-etf-adjust-observe 单窗口观察与
+  bs-lifecycle-login-query 生命周期两条 raw 退役（后者由适配器懒登录下的
+  chain availability 隐含复验）。
+  下轮预期调用（收敛后）：availability 66 + adjust_diff 12（etf 入链 +8）
+  + raw 84 = 162（history_depth 已全量 skip）。

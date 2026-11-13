@@ -23,8 +23,10 @@ pacing:
   # weighted-index/contract@CN-CZCE 各 6）+ adjust_diff 36 case（分钟族 18
   # 条显式 SKIP：compared adjust 未声明，0 调；PT30M+/P1D 18 条 × 2 调）+
   # history_depth 30 case×~13 + limit 1 + connection 9+12（创建+首调+释放）
-  # + raw 10 case×2 调用（quote 矩阵含 BSE 闸门 + 郑商所 3/4 位 kline 对照）
-  # ≈ 624
+  # + raw 9 case×2 调用（quote 矩阵含 BSE 闸门 + 郑商所 4 位 kline 挂起
+  # 复验；原 kline-czce-3digit 已退役——3 位接受度由 chain contract@CN-CZCE
+  # 还原链路常态复验）
+  # ≈ 622
   # （深度探针全周期同轮测量：保留边界随时间前移，矩阵须同一时点）
   max_calls: 700
 
@@ -39,9 +41,10 @@ targets:
     # 郑商所合约：标准码统一 4 位年月（公开现行约定；tushare/新浪 侧
     # 2026-11-12 实证 4 位可用、3 位全空）。2026-11-12 探针实证 TianQin
     # 只认 3 位（CZCE.RM701 有数据、4 位 CZCE.RM2701 无响应挂起），
-    # 适配器做 4→3 位还原（RM2701 → RM701），chain 可用性即还原链路的
-    # 常态复验；3/4 位对照原始证据见 raw case kline-czce-4digit /
-    # kline-czce-3digit
+    # 适配器做 4→3 位还原（RM2701 → RM701），本目标 availability 即还原
+    # 链路的常态复验；4 位直传挂起的原始证据见 raw case kline-czce-4digit
+    #（原 kline-czce-3digit raw 于 2026-11-13 退役——3 位接受度由本目标
+    # availability 覆盖）
     instrument: CN-CZCE-RM2701
     window: {start: 2026-07-01, end: 2026-12-31}
     min_bars: 30
@@ -295,7 +298,8 @@ raw:
   - id: kline-czce-4digit
     purpose: 郑商所 4 位年月码上游接受度实证（get_kline_serial CZCE.RM2701，
       观察不判定；2026-11-12 已实证 4 位无响应挂起——TianQin 只认 3 位，
-      适配器据此做 4→3 位还原，本 case 常态复验该结论）
+      适配器据此做 4→3 位还原，本 case 常态复验该结论；3 位侧常态复验由
+      chain contract@CN-CZCE 承担，原 kline-czce-3digit raw 已退役）
     module: tqsdk
     client:
       attr: TqApi
@@ -309,25 +313,6 @@ raw:
         disable_print: true
     call:
       - {method: get_kline_serial, kwargs: {symbol: "CZCE.RM2701", duration_seconds: 86400, data_length: 2}}
-    close: {method: close}
-    expect: {status: ok, min_rows: 1}
-    assert: false
-  - id: kline-czce-3digit
-    purpose: 郑商所 3 位年月码上游接受度实证（get_kline_serial CZCE.RM701，
-      观察不判定，与 4 位对照）
-    module: tqsdk
-    client:
-      attr: TqApi
-      kwargs:
-        auth:
-          $ctor:
-            attr: TqAuth
-            kwargs:
-              user_name: "$TAPEHUB_TQSDK_AUTH_USER"
-              password: "$TAPEHUB_TQSDK_AUTH_PASSWORD"
-        disable_print: true
-    call:
-      - {method: get_kline_serial, kwargs: {symbol: "CZCE.RM701", duration_seconds: 86400, data_length: 2}}
     close: {method: close}
     expect: {status: ok, min_rows: 1}
     assert: false

@@ -1,5 +1,5 @@
-# tushare 数据探针：周/月线复权生效性实证、期货后缀扩展、单次上限实测、
-# 北交所与三所细分接入核实，及错误指纹采集。
+# tushare 数据探针：周/月线复权生效性、期货五所合约/主连与单次上限常态复验
+#（交易所限定 chain 目标）、北交所接入复验，及错误指纹采集。
 probe: tushare
 version: 1
 
@@ -10,11 +10,13 @@ requires:
 pacing:
   call_interval_s: 1.5
   timeout_s: 60
-  # chain 展开：availability 29（stock/contract/continuous 基准 11 +
-  # CN 交易所追加 SZSE/BSE 各 9）+ adjust_diff 36（3 目标 × 3 周期 × 2 pair
-  # × 2 调）+ history_depth（stock 三周期 + contract 全量 + continuous）+
-  # limit 1 + raw 14×2（含北交所 3 case），合计约 175，留余量
-  max_calls: 200
+  # chain 展开（2026-11-13 raw→chain 收敛后）：availability 36（stock/SZSE/BSE
+  # 基准 29 + 期货交易所限定目标 7：contract@CN-DCE/INE/CFFEX +
+  # continuous@CN-DCE/CZCE/INE/CFFEX 各 1）+ adjust_diff 36（3 目标 × 3 周期
+  # × 2 pair × 2 调）+ history_depth（stock 三周期 + contract 全量 +
+  # continuous）+ limit 2（contract 结构性 suspect 如实保留 + continuous
+  # P16Y）+ raw 2×2（目录 + 错误指纹），最坏约 160，留余量
+  max_calls: 180
 
 targets:
   stock:
@@ -36,20 +38,65 @@ targets:
     instrument: CN-BSE-920000
     # 安徽凤凰（精选层存量平移，2020-12-23 上市）：BSE→BJ 后缀 2026-11-12
     # 接入（raw 三证：目录 920 段/daily/adj_factor，报告 20261112T172921
-    # +0800），本轮 chain 级复验（availability × adjust_diff）
+    # +0800），chain 级常态复验（availability × adjust_diff）；原 daily/
+    # adj_factor 两条 raw 直测已入链退役，目录 case 保留作标的轮换证据
     window: {start: 2025-01-01, end: 2025-12-31}
     min_bars: 10
     required_fields: [open, high, low, close, volume, amount]
   # 北交所不设独立 chain 目标：探针框架 chain 为市场级粒度（capability 每
   # 市场恰取一个基准标的），BSE 是 CN 内交易所段，适配器链路与 SSE/SZSE
-  # 完全同构（仅 _STOCK_SUFFIXES 一个查表值，单测确定性覆盖）。BSE 接入
-  # 证据由 raw case 承载（目录 + daily + 复权因子，2026-11-12 三证）
+  # 完全同构（仅 _STOCK_SUFFIXES 一个查表值，单测确定性覆盖）
   contract:
     instrument: CN-SHFE-CU2401
     window: {start: 2023-09-01, end: 2023-12-29}
     min_bars: 20
+  contract@CN-DCE:
+    # 大商所合约：适配器后缀直拼（CN-DCE-M2705 → M2705.DCE）。2026-11-12
+    # 后缀 raw 直测实证（.DCE confirmed，报告 20261112T110412）并经人工确认
+    # 扩容声明后，常态复验收敛为 chain 目标（原 fut-dce-suffix raw 退役）。
+    # 合约会到期：运行前按大商所挂牌信息核对，失败如实记录，到期轮换为
+    # 当时的现活合约
+    instrument: CN-DCE-M2705
+    window: {start: 2026-09-01, end: 2026-12-31}
+    min_bars: 20
+  contract@CN-INE:
+    # 上期能源合约：后缀直拼（CN-INE-SC2705 → SC2705.INE）；品种码统一大写
+    #（2026-11-12 实证 tushare 统一大写，交易所原生小写 sc 无需保留）
+    instrument: CN-INE-SC2705
+    window: {start: 2026-09-01, end: 2026-12-31}
+    min_bars: 20
+  contract@CN-CFFEX:
+    # 中金所合约：后缀直拼（CN-CFFEX-IF2703 → IF2703.CFX）；季月合约
+    instrument: CN-CFFEX-IF2703
+    window: {start: 2026-09-01, end: 2026-12-31}
+    min_bars: 20
   continuous:
     instrument: CN-SHFE-CU
+    window: {start: 2025-01-01, end: 2025-12-31}
+    min_bars: 10
+  continuous@CN-DCE:
+    # DCE 主连：品种+L 由适配器映射（CN-DCE-M → ML.DCE；2026-11-12 五所连续
+    # 代码实证，报告 20261112T133250）——instrument 写品种码不带 L；
+    # 原 fut-dce-continuous-l raw 直测退役
+    instrument: CN-DCE-M
+    window: {start: 2025-01-01, end: 2025-12-31}
+    min_bars: 10
+  continuous@CN-CZCE:
+    # CZCE 主连：CN-CZCE-SR → SRL.ZCE（4 位年月码体系下品种+L）；
+    # 原 fut-czce-continuous-l raw 直测退役
+    instrument: CN-CZCE-SR
+    window: {start: 2025-01-01, end: 2025-12-31}
+    min_bars: 10
+  continuous@CN-INE:
+    # INE 主连：CN-INE-SC → SCL.INE；原 fut-ine-continuous-l raw 直测退役
+    instrument: CN-INE-SC
+    window: {start: 2025-01-01, end: 2025-12-31}
+    min_bars: 10
+  continuous@CN-CFFEX:
+    # CFFEX 例外：主力直拼不加 L（CN-CFFEX-IF → IF.CFX；IFL 为当月连续、
+    # IFL1-3 为次月/当季/下季，均非主连）；原 fut-cffex-main-if 与
+    # fut-shfe-main-cu（SHFE 主力/主连对照）raw 退役
+    instrument: CN-CFFEX-IF
     window: {start: 2025-01-01, end: 2025-12-31}
     min_bars: 10
 
@@ -72,139 +119,32 @@ chain:
     era_step_years: 5
     max_calls: 20
   limit_truncation:
-    targets: [contract]
+    # contract 生命周期短触不到 2000 条上限（结构性 suspect 如实保留记录）；
+    # continuous 主连 16 年窗口经链路打穿上限——原 fut-continuous-cap raw
+    # 直测（2026-11-12：恰 2000 条、保尾截头）收敛入链，顺带复验适配器
+    # partial 覆盖判定语义
+    targets: [contract, continuous]
     interval: P1D
-    max_range: P1Y
+    max_range: P16Y
     documented_max: 2000
 
 raw:
-  # 期货所后缀 raw 直测（.SHF 之外的 .DCE/.ZCE/.INE/.CFX，2026-11-12 实证并经
-  # 人工确认扩容进能力目录，连同既有 .SHF 五所齐备）：此后常态复验声明内可用性
-  - id: fut-dce-suffix
-    purpose: 探测大商所后缀（.DCE，声明外）
-    module: tushare
-    client: {attr: pro_api, kwargs: {token: "$TAPEHUB_TUSHARE_TOKEN"}}
-    call:
-      - {method: fut_daily, kwargs: {ts_code: "M2409.DCE", start_date: "20240801", end_date: "20240831"}}
-    expect: {status: ok, min_rows: 1}
-  - id: fut-czce-suffix
-    purpose: 探测郑商所后缀（.ZCE，声明外）。tushare 郑商所合约代码为 4 位年月码
-      （SR2601，同 CU1811 约定），非交易所原生 3 位码（SR601）——2026-11-12 实证：
-      3 位码一律空（含现活合约，曾误判为积分门槛），4 位码正常返回；另 fut_basic
-      的 exchange 参数用交易所代码 CZCE（与后缀 .ZCE 是两套约定）。合约随时间
-      过期，届时轮换为当时的现活合约
-    module: tushare
-    client: {attr: pro_api, kwargs: {token: "$TAPEHUB_TUSHARE_TOKEN"}}
-    call:
-      - {method: fut_daily, kwargs: {ts_code: "SR2601.ZCE", start_date: "20251101", end_date: "20251112"}}
-    expect: {status: ok, min_rows: 1}
-  - id: fut-ine-suffix
-    purpose: 探测上期能源后缀（.INE，声明外；tushare 统一大写，交易所原生
-      小写品种 sc 无需保留）
-    module: tushare
-    client: {attr: pro_api, kwargs: {token: "$TAPEHUB_TUSHARE_TOKEN"}}
-    call:
-      - {method: fut_daily, kwargs: {ts_code: "SC2409.INE", start_date: "20240801", end_date: "20240831"}}
-    expect: {status: ok, min_rows: 1}
-  - id: fut-cffex-suffix
-    purpose: 探测中金所后缀（.CFX，声明外）
-    module: tushare
-    client: {attr: pro_api, kwargs: {token: "$TAPEHUB_TUSHARE_TOKEN"}}
-    call:
-      - {method: fut_daily, kwargs: {ts_code: "IF2409.CFX", start_date: "20240801", end_date: "20240831"}}
-    expect: {status: ok, min_rows: 1}
-  # 单次上限直接实测：总览页（doc_id=134）的连续合约格式（XXL 主连）可在
-  # fut_daily 上打穿 2000 条上限——contract 生命周期短、经链路探针触及不了
-  # 上限（limit_truncation suspect 即此原因），故以 raw 直测上游
-  - id: fut-continuous-cap
-    purpose: 用主连合约 CUL.SHF 跨 16 年窗口实测单次 2000 条上限。2026-11-12
-      实测恰返回 2000 根、保留最新端（窗口内最早 20171011）：截断方向为
-      「保尾截头」，即上游按最新往回截断，请求更早历史需分段取数
-    module: tushare
-    client: {attr: pro_api, kwargs: {token: "$TAPEHUB_TUSHARE_TOKEN"}}
-    call:
-      - {method: fut_daily, kwargs: {ts_code: "CUL.SHF", start_date: "20100101", end_date: "20251231"}}
-    expect: {status: ok, min_rows: 2000}
-  # ── continuous（主力连续）接入前置核实（2026-11-12 规划）：tapehub continuous
-  # 映射 XXL 主连（决策已定），CFFEX 例外预期用主力 IF.CFX（IFL.CFX 为当月
-  # 连续非主连）；SHFE 主力 CU.SHF 作对照，佐证 XXL 深度优势。capability 无法
-  # 按交易所拆分，五所连续代码全部实证后才能声明 CN continuous——探针先行
-  - id: fut-shfe-main-cu
-    purpose: SHFE 主力合约 CU.SHF（XX 直拼）与主连 CUL.SHF 对照：确认主力与
-      主连的历史深度差异，佐证 continuous → XXL 选型
-    module: tushare
-    client: {attr: pro_api, kwargs: {token: "$TAPEHUB_TUSHARE_TOKEN"}}
-    call:
-      - {method: fut_daily, kwargs: {ts_code: "CU.SHF", start_date: "20251101", end_date: "20251112"}}
-    expect: {status: ok, min_rows: 1}
-  - id: fut-czce-continuous-l
-    purpose: CZCE 主连候选 SRL.ZCE（4 位年月码体系下品种+L）；若查空补测
-      XX 直拼 SR.ZCE
-    module: tushare
-    client: {attr: pro_api, kwargs: {token: "$TAPEHUB_TUSHARE_TOKEN"}}
-    call:
-      - {method: fut_daily, kwargs: {ts_code: "SRL.ZCE", start_date: "20251101", end_date: "20251112"}}
-    expect: {status: ok, min_rows: 1}
-  - id: fut-dce-continuous-l
-    purpose: DCE 主连候选 ML.DCE（品种+L）；若查空补测 XX 直拼 M.DCE
-    module: tushare
-    client: {attr: pro_api, kwargs: {token: "$TAPEHUB_TUSHARE_TOKEN"}}
-    call:
-      - {method: fut_daily, kwargs: {ts_code: "ML.DCE", start_date: "20251101", end_date: "20251112"}}
-    expect: {status: ok, min_rows: 1}
-  - id: fut-ine-continuous-l
-    purpose: INE 主连候选 SCL.INE（品种+L，品种按 tushare 统一大写）；若查空
-      补测 XX 直拼 SC.INE
-    module: tushare
-    client: {attr: pro_api, kwargs: {token: "$TAPEHUB_TUSHARE_TOKEN"}}
-    call:
-      - {method: fut_daily, kwargs: {ts_code: "SCL.INE", start_date: "20251101", end_date: "20251112"}}
-    expect: {status: ok, min_rows: 1}
-  - id: fut-cffex-main-if
-    purpose: CFFEX 主力 IF.CFX（主连候选——IFL.CFX 为当月连续、IFL1-3 为
-      次月/当季/下季，均非主连，故 CFFEX 预期映射主力 XX）
-    module: tushare
-    client: {attr: pro_api, kwargs: {token: "$TAPEHUB_TUSHARE_TOKEN"}}
-    call:
-      - {method: fut_daily, kwargs: {ts_code: "IF.CFX", start_date: "20251101", end_date: "20251112"}}
-    expect: {status: ok, min_rows: 1}
-  # ── 北交所（BSE/.BJ）接入前置核实（2026-11-12 规划）：总览页 doc_id=14
-  #    交易所后缀表已列明 BSE/.BJ（备注「9开头的股票」），文档核实完成。
-  #    首轮实证（报告 20261112T172236+0800）：目录 case confirmed——355 只
-  #    在市标的**全部为 920 段**（尾样本 920000 安徽凤凰 2020-12-23 /
-  #    920002 万达轴承等均为存量平移股），文档「9开头」备注与现状一致；
-  #    830799.BJ daily 返回 0 行——83 段老代码已被 920 段替换，不再有效。
-  #    直测标的按目录结果轮换为 920000.BJ。三证 confirmed（报告
-  #    20261112T172921+0800 / 20261112T175738+0800）后已扩容
-  #    request_mapper._STOCK_SUFFIXES（先例：期货四所后缀）
+  # ── 2026-11-13 raw→chain 收敛：期货五所后缀（.DCE/.ZCE/.INE/.CFX）、连续
+  #    合约五所代码（品种+L 主连、CFFEX 主力直拼）、fut_daily 2000 条上限、
+  #    BSE daily/adj_factor 直测共 12 条 raw 直测 case 退役——均已实证扩容
+  #    声明，由 chain 交易所限定目标、limit_truncation（continuous, P16Y）
+  #    与 adjust_diff 常态复验（targets 注释与 notes 记录原始证据出处）。
+  #    保留两条：目录（标的轮换证据来源）与错误指纹
   - id: bj-stock-directory-probe
     purpose: 北交所目录核实（stock_basic exchange=BSE 在市列表）：确认 .BJ 标的
       真实存在并记录代码段构成。首轮结论（20261112T172236）：全市场统一 920
-      段，83/87/43 老段已迁移替换；常态复验目录仍在市
+      段，83/87/43 老段已迁移替换；常态复验目录仍在市——目录是在市标的的
+      证据来源，后端链路由 chain stock@CN-BSE（availability × adjust_diff）
+      复验，标的退市时按本 case 结果轮换 targets
     module: tushare
     client: {attr: pro_api, kwargs: {token: "$TAPEHUB_TUSHARE_TOKEN"}}
     call:
       - {method: query, kwargs: {api_name: "stock_basic", exchange: "BSE", list_status: "L"}}
-    expect: {status: ok, min_rows: 1}
-  - id: bj-stock-daily-probe
-    purpose: 北交所个股日线直测（920000.BJ 安徽凤凰，精选层存量平移股、
-      2020-12-23 上市、代码稳定存续）：验证 daily 接口对 .BJ 后缀真实返回
-      数据。首轮 830799.BJ 为空系 83 段老代码被 920 段替换（报告
-      20261112T172236），按目录结果轮换；标的退市时同样按目录 case 轮换
-    module: tushare
-    client: {attr: pro_api, kwargs: {token: "$TAPEHUB_TUSHARE_TOKEN"}}
-    call:
-      - {method: query, kwargs: {api_name: "daily", ts_code: "920000.BJ", start_date: "20251101", end_date: "20251112"}}
-    expect: {status: ok, min_rows: 1}
-  - id: bj-stock-adj-factor-probe
-    purpose: 北交所复权因子直测（adj_factor ts_code=920000.BJ）：daily 与
-      复权因子两类上游输入齐备即证明 pro_bar 对 .BJ 的 qfq/hfq 复权管线
-      可用（复权组合为 SDK 客户端侧逻辑，与市场无关，SSE 由 chain
-      adjust_diff 常态复验）
-    module: tushare
-    client: {attr: pro_api, kwargs: {token: "$TAPEHUB_TUSHARE_TOKEN"}}
-    call:
-      - {method: query, kwargs: {api_name: "adj_factor", ts_code: "920000.BJ", start_date: "20251101", end_date: "20251112"}}
     expect: {status: ok, min_rows: 1}
   # 错误指纹仅观察：采集“接口不存在/无权限”类原始报错文本，供错误码细分参考
   - id: unknown-api-fingerprint
@@ -224,9 +164,11 @@ notes: >
   .DCE / .INE / .CFX confirmed；.ZCE 可用（4 位年月码
   SR2601.ZCE 实测返回数据；此前 3 位原生码全空系代码格式所致，
   并非积分档位门槛）。fut_daily 单次上限经主连 CUL.SHF 实测恰为 2000 条、
-  保尾截头（fut-continuous-cap）。四所后缀经人工确认后已扩容进能力目录
-  （连同既有 .SHF 五所齐备，报告 20261112T124404+0800）；探针不自动改
-  manifest，扩容由人工确认后单独提交。
+  保尾截头（原 fut-continuous-cap raw）。四所后缀经人工确认后已扩容进能力
+  目录（连同既有 .SHF 五所齐备，报告 20261112T124404+0800）；探针不自动改
+  manifest，扩容由人工确认后单独提交。CZCE 约定速记：合约 ts_code 为 4 位
+  年月码（SR2601.ZCE 直通）、fut_basic 的 exchange 参数用交易所代码 CZCE——
+  与后缀 .ZCE 是两套约定。
   连续合约五所代码实证（报告 20261112T133250+0800）后声明 CN continuous
   （品种+L 主连、CFFEX 例外主力直拼，不参与 auto 路由）；BSE 三证后扩容
   （报告 20261112T172921+0800 / 20261112T175738+0800）。
@@ -235,3 +177,11 @@ notes: >
   contract 走全量模式精确定值 2023-01-17（= CU2401 上市首日，approx=False，
   报告 20261112T135507+0800）；continuous ≈1991-01-01（二分下限触底，
   真实可能更早，同报告）。
+  raw→chain 收敛（2026-11-13）：期货五所合约后缀与主连代码、fut_daily 2000
+  条上限均已实证扩容声明，常态复验收敛为 chain——交易所限定目标
+  contract@CN-DCE/INE/CFFEX 与 continuous@CN-DCE/CZCE/INE/CFFEX（合约键
+  会到期：运行前按交易所挂牌信息核对，失败如实记录，到期轮换现活合约），
+  limit_truncation 加 continuous（P16Y 窗口经链路复验 2000 上限与保尾截头
+  partial 语义）；原后缀/主连/上限/BSE daily·adj_factor 共 12 条 raw 直测
+  case 退役（BSE daily/adj_factor 由 stock@CN-BSE availability × adjust_diff
+  覆盖；目录 case 保留作标的轮换证据）。
