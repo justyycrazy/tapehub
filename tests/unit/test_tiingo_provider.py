@@ -268,11 +268,13 @@ def test_crypto_segment_row_cap_partial(monkeypatch: pytest.MonkeyPatch) -> None
         end=datetime(2025, 12, 1, tzinfo=CN_TIMEZONE),
     )
     batch = asyncio.run(adapter.fetch_bars(query))
-    assert batch.count == 5001
+    # 判定基于上游返回行数（5001 触顶），统一分页切片（limit=500）不影响
+    assert batch.count == 500
     assert batch.partial is True  # 行数触顶 → 尾部截断
 
     preset_payload(monkeypatch, crypto_rows(dense_dates[:100]))
     batch = asyncio.run(adapter.fetch_bars(query))
+    assert batch.count == 100
     assert batch.partial is False  # 未触顶
 
 

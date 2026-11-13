@@ -307,7 +307,7 @@ class ProviderAdapter(BaseProviderAdapter):
         # 声明周期（PT2H/PT4H/P1D）段上限 5001 行远超实用窗长，均维持
         # partial=false（行数上限官方未标注，不编造截断结论）
         partial = False
-        if query.interval == _FX_ONE_MIN and window:
+        if query.asset_type is AssetType.FOREX and query.interval == _FX_ONE_MIN and window:
             partial = (query.end - max(bar.timestamp for bar in window)) > _FX_SEGMENT_TOLERANCE
         elif query.asset_type is AssetType.CRYPTO and len(bars) >= _CRYPTO_MAX_ROWS:
             # crypto 段上限按行数（返回行数触顶即截断，方向保头截尾）
