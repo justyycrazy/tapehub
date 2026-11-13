@@ -1,5 +1,5 @@
-# tushare 数据探针：周/月线复权生效性（当前最紧迫存疑点）、期货后缀扩展、
-# 单次上限实测与积分错误指纹。
+# tushare 数据探针：周/月线复权生效性实证、期货后缀扩展、单次上限实测、
+# 北交所与三所细分接入核实，及错误指纹采集。
 probe: tushare
 version: 1
 
@@ -78,7 +78,8 @@ chain:
     documented_max: 2000
 
 raw:
-  # 以下期货所后缀均未在能力目录声明（.SHF 之外未核实），探测可用性以决定是否扩容
+  # 期货所后缀 raw 直测（.SHF 之外的 .DCE/.ZCE/.INE/.CFX，2026-11-12 实证并经
+  # 人工确认扩容进能力目录，连同既有 .SHF 五所齐备）：此后常态复验声明内可用性
   - id: fut-dce-suffix
     purpose: 探测大商所后缀（.DCE，声明外）
     module: tushare
@@ -223,7 +224,14 @@ notes: >
   .DCE / .INE / .CFX confirmed；.ZCE 可用（4 位年月码
   SR2601.ZCE 实测返回数据；此前 3 位原生码全空系代码格式所致，
   并非积分档位门槛）。fut_daily 单次上限经主连 CUL.SHF 实测恰为 2000 条、
-  保尾截头（fut-continuous-cap）。四所后缀是否扩容进能力目录（manifest markets 与
-  request_mapper 代码映射）待人工确认后另行接入，探针不自动改 manifest。
-  history_depth：stock P1D/P1W/P1M ≈1999-12-08（approx ±90 天、两轮
-  复现），回填待人工确认；contract 未配 history_depth，history 保持 null。
+  保尾截头（fut-continuous-cap）。四所后缀经人工确认后已扩容进能力目录
+  （连同既有 .SHF 五所齐备，报告 20261112T124404+0800）；探针不自动改
+  manifest，扩容由人工确认后单独提交。
+  连续合约五所代码实证（报告 20261112T133250+0800）后声明 CN continuous
+  （品种+L 主连、CFFEX 例外主力直拼，不参与 auto 路由）；BSE 三证后扩容
+  （报告 20261112T172921+0800 / 20261112T175738+0800）。
+  history_depth 已全量收敛回填（均经人工确认）：stock P1D/P1W/P1M
+  ≈1999-12-08（approx ±90 天、两轮复现，报告 20261112T124404+0800）；
+  contract 走全量模式精确定值 2023-01-17（= CU2401 上市首日，approx=False，
+  报告 20261112T135507+0800）；continuous ≈1991-01-01（二分下限触底，
+  真实可能更早，同报告）。
