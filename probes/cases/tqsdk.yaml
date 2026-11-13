@@ -18,12 +18,13 @@ pacing:
   # 本身已有 11-03 盘中实证（hfq/none 差异显著）。复权 case 判定以盘中
   # 运行为准；另实测天勤不支持 BSE 前缀（BSE.920000 快速报
   # 「non-existent instrument」graphql 错误，闸门 case quote-bse-fingerprint）
-  # 可用性 60（stock/stock@CN-SZSE 各 18 + index 6 + etf 18 + contract/
-  # continuous/weighted-index 各 6 + contract@CN-CZCE 6）+ adjust_diff 36
-  # case×2 调用（stock/stock@CN-SZSE/etf × 6 周期 × 2 pair）+
-  # history_depth 30 case×~13 + limit 1
-  # + connection 9+12（创建+首调+释放）+ raw 10 case×2 调用（quote 矩阵含
-  # BSE 闸门 + 郑商所 3/4 位 kline 对照）≈ 678
+  # 可用性 66（stock/stock@CN-SZSE/etf 各 12：分钟族仅 none + PT30M/PT1H/
+  # P1D 三值——2026-11-13 复权收窄后拆块；index/contract/continuous/
+  # weighted-index/contract@CN-CZCE 各 6）+ adjust_diff 36 case（分钟族 18
+  # 条显式 SKIP：compared adjust 未声明，0 调；PT30M+/P1D 18 条 × 2 调）+
+  # history_depth 30 case×~13 + limit 1 + connection 9+12（创建+首调+释放）
+  # + raw 10 case×2 调用（quote 矩阵含 BSE 闸门 + 郑商所 3/4 位 kline 对照）
+  # ≈ 624
   # （深度探针全周期同轮测量：保留边界随时间前移，矩阵须同一时点）
   max_calls: 700
 

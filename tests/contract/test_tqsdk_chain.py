@@ -99,7 +99,9 @@ def test_capability_catalog(tqsdk_client: TestClient) -> None:  # type: ignore[n
         "index": "tqsdk",
         "etf": "tqsdk",
     }
-    assert len(entry["capabilities"]) == 7  # 期货三类拆分 + 股票/指数/ETF + quotes
+    # 期货三类拆分 + 股票分钟族/股票 PT30M+（复权收窄拆分）+ 指数 +
+    # ETF 分钟族/ETF PT30M+ + quotes
+    assert len(entry["capabilities"]) == 9
     cap = entry["capabilities"][0]
     assert cap["data_type"] == "bars"
     assert cap["asset_types"] == ["contract"]

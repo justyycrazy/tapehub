@@ -567,9 +567,11 @@ TqSdk（官方 SDK `tqsdk`：`TqApi(auth=TqAuth(...)).get_kline_serial(...)`）�
 | 资产类型 | 变体 | 上游接口 | 周期 | adjust | 标准字段 |
 | --- | --- | --- | --- | --- | --- |
 | contract / continuous / weighted-index | tqsdk（默认） | `api.get_kline_serial` | PT1M/PT5M/PT15M/PT30M/PT1H、P1D | none | 无 amount（上游无成交额列；extensions: open_oi/close_oi） |
-| stock | tqsdk | `api.get_kline_serial`（adj_type） | PT1M/PT5M/PT15M/PT30M/PT1H、P1D | none/qfq/hfq | 无 amount；volume 单位未核实，原样透出 |
+| stock | tqsdk | `api.get_kline_serial`（adj_type） | PT1M/PT5M/PT15M | none（复权 no-op：2026-11-13 探针实证 qfq/hfq 与 none 零差异，收窄声明） | 无 amount；volume 单位未核实，原样透出 |
+| stock | tqsdk | `api.get_kline_serial`（adj_type） | PT30M/PT1H、P1D | none/qfq/hfq（复权生效实证） | 无 amount；volume 单位未核实，原样透出 |
 | index | tqsdk | `api.get_kline_serial` | PT1M/PT5M/PT15M/PT30M/PT1H、P1D | none（adj_type 对指数无效） | 无 amount；无持仓量列 → extensions null |
-| etf | tqsdk（默认） | `api.get_kline_serial`（adj_type） | PT1M/PT5M/PT15M/PT30M/PT1H、P1D | none/qfq/hfq | 无 amount；volume 单位未核实，原样透出 |
+| etf | tqsdk（默认） | `api.get_kline_serial`（adj_type） | PT1M/PT5M/PT15M | none（复权 no-op，同 stock） | 无 amount；volume 单位未核实，原样透出 |
+| etf | tqsdk（默认） | `api.get_kline_serial`（adj_type） | PT30M/PT1H、P1D | none/qfq/hfq（复权生效实证） | 无 amount；volume 单位未核实，原样透出 |
 
 - 变体与 default_variant 均为 `tqsdk`（与 Provider 同名，官方 SDK 包名；背后为天勤行情平台，与东方财富无关）：缺省请求即可路由，也可显式传 `variant=tqsdk`；
 - 缺省路由（provider_routing.yaml 裁决）：期货三类与 ETF 归 tqsdk；

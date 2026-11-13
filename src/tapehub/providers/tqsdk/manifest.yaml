@@ -14,8 +14,12 @@
 #   单次上限 2026-11-03 探针实测 5000 根（PT1M/PT5M 同时恰好 5000，
 #   文档 8000/10000 口径未复现，疑受当前套餐限制）；达到上限时标记 partial=true；
 #   adj_type 仅对股票/基金有效（F=前复权、B=后复权、None=不复权），
-#   期货/指数无复权概念，始终传 None；复权实证（2026-11-03 探针）：
-#   hfq 与 none 差异显著（生效）；分钟级 qfq 与 none 相同（天勤特性，如实标注）；
+#   期货/指数无复权概念，始终传 None；复权实证（2026-11-03 探针 + 
+#   2026-11-13 盘中探针补充，报告 20261113T092656+0800）：分钟族（≤PT15M）
+#   qfq/hfq 均与 none 零差异（no-op，SSE/SZSE/ETF 三组一致），PT30M/PT1H/
+#   P1D 差异显著（生效，分界线在 PT30M）——分钟族 adjustments 经人工确认
+#   收窄为仅 none（adjust_diff suspect 18 条与 qfq/hfq 显著差异各 12 条为
+#   证据链）；
 # - 返回列 id/datetime/open/high/low/close/volume/open_oi/close_oi：
 #   datetime 为纳秒时间戳；无成交额字段，标准 amount 恒为 null；
 #   持仓量 open_oi/close_oi 进入受控 extensions：期货为真实持仓，
@@ -103,7 +107,9 @@ capabilities:
       - {code: P1D, history: {start: "2016-01-05T00:00:00+08:00", end: null}}
     adjustments: [none]
     fields: [open, high, low, close, volume]
-  # 股票：adj_type 支持 F/B（API 参考，hfq 生效已实证）；实时与历史行情需专业版权限
+  # 股票分钟族（≤PT15M）：adj_type 复权为 no-op——2026-11-13 盘中探针实证
+  # （报告 20261113T092656+0800）：qfq/hfq 与 none 零差异（identical=True，
+  # SSE/SZSE 双所一致），经人工确认收窄为仅 none；PT30M 起复权真实生效
   - data_type: bars
     markets: [CN]
     asset_types: [stock]
@@ -113,6 +119,17 @@ capabilities:
       - {code: PT1M, history: {retention_days: 35, end: null}}
       - {code: PT5M, history: {retention_days: 150, end: null}}
       - {code: PT15M, history: {retention_days: 450, end: null}}
+    adjustments: [none]
+    fields: [open, high, low, close, volume]
+  # 股票 PT30M/PT1H/P1D：adj_type 复权真实生效（2026-11-13 盘中探针实证：
+  # qfq/hfq 与 none 差异显著，PT30M 起分界），三值声明；
+  # 实时与历史行情需专业版权限
+  - data_type: bars
+    markets: [CN]
+    asset_types: [stock]
+    delivery: [rest]
+    variants: [tqsdk]
+    intervals:
       - {code: PT30M, history: {retention_days: 930, end: null}}
       - {code: PT1H, history: {retention_days: 1500, end: null}}
       # 探针二分估计（粒度 90 天）：600000 日线最早 ≈2018-01-02
@@ -136,7 +153,9 @@ capabilities:
       - {code: P1D, history: {start: "2018-01-02T00:00:00+08:00", end: null}}
     adjustments: [none]
     fields: [open, high, low, close, volume]
-  # ETF：属基金大类，adj_type 有效（F/B）；权限口径未核实，探针实证
+  # ETF 分钟族（≤PT15M）：adj_type 复权为 no-op（2026-11-13 盘中探针实证
+  # 与股票同模式：qfq/hfq 与 none 零差异），收窄为仅 none；
+  # ETF PT30M/PT1H/P1D：复权真实生效，三值声明；属基金大类，权限口径未核实
   - data_type: bars
     markets: [CN]
     asset_types: [etf]
@@ -146,6 +165,14 @@ capabilities:
       - {code: PT1M, history: {retention_days: 35, end: null}}
       - {code: PT5M, history: {retention_days: 150, end: null}}
       - {code: PT15M, history: {retention_days: 450, end: null}}
+    adjustments: [none]
+    fields: [open, high, low, close, volume]
+  - data_type: bars
+    markets: [CN]
+    asset_types: [etf]
+    delivery: [rest]
+    variants: [tqsdk]
+    intervals:
       - {code: PT30M, history: {retention_days: 930, end: null}}
       - {code: PT1H, history: {retention_days: 1500, end: null}}
       # 探针二分估计（2026-11-03 第二轮，粒度 5 天）：510050 日线最早 ≈2018-01-02
@@ -238,23 +265,11 @@ operations:
     operation: get_kline_serial
   - match: {data_type: bars, market: CN, asset_type: stock, interval: P1D, adjust: none, variant: tqsdk}
     operation: get_kline_serial
-  - match: {data_type: bars, market: CN, asset_type: stock, interval: PT1M, adjust: qfq, variant: tqsdk}
-    operation: get_kline_serial
-  - match: {data_type: bars, market: CN, asset_type: stock, interval: PT5M, adjust: qfq, variant: tqsdk}
-    operation: get_kline_serial
-  - match: {data_type: bars, market: CN, asset_type: stock, interval: PT15M, adjust: qfq, variant: tqsdk}
-    operation: get_kline_serial
   - match: {data_type: bars, market: CN, asset_type: stock, interval: PT30M, adjust: qfq, variant: tqsdk}
     operation: get_kline_serial
   - match: {data_type: bars, market: CN, asset_type: stock, interval: PT1H, adjust: qfq, variant: tqsdk}
     operation: get_kline_serial
   - match: {data_type: bars, market: CN, asset_type: stock, interval: P1D, adjust: qfq, variant: tqsdk}
-    operation: get_kline_serial
-  - match: {data_type: bars, market: CN, asset_type: stock, interval: PT1M, adjust: hfq, variant: tqsdk}
-    operation: get_kline_serial
-  - match: {data_type: bars, market: CN, asset_type: stock, interval: PT5M, adjust: hfq, variant: tqsdk}
-    operation: get_kline_serial
-  - match: {data_type: bars, market: CN, asset_type: stock, interval: PT15M, adjust: hfq, variant: tqsdk}
     operation: get_kline_serial
   - match: {data_type: bars, market: CN, asset_type: stock, interval: PT30M, adjust: hfq, variant: tqsdk}
     operation: get_kline_serial
@@ -274,23 +289,11 @@ operations:
     operation: get_kline_serial
   - match: {data_type: bars, market: CN, asset_type: etf, interval: P1D, adjust: none, variant: tqsdk}
     operation: get_kline_serial
-  - match: {data_type: bars, market: CN, asset_type: etf, interval: PT1M, adjust: qfq, variant: tqsdk}
-    operation: get_kline_serial
-  - match: {data_type: bars, market: CN, asset_type: etf, interval: PT5M, adjust: qfq, variant: tqsdk}
-    operation: get_kline_serial
-  - match: {data_type: bars, market: CN, asset_type: etf, interval: PT15M, adjust: qfq, variant: tqsdk}
-    operation: get_kline_serial
   - match: {data_type: bars, market: CN, asset_type: etf, interval: PT30M, adjust: qfq, variant: tqsdk}
     operation: get_kline_serial
   - match: {data_type: bars, market: CN, asset_type: etf, interval: PT1H, adjust: qfq, variant: tqsdk}
     operation: get_kline_serial
   - match: {data_type: bars, market: CN, asset_type: etf, interval: P1D, adjust: qfq, variant: tqsdk}
-    operation: get_kline_serial
-  - match: {data_type: bars, market: CN, asset_type: etf, interval: PT1M, adjust: hfq, variant: tqsdk}
-    operation: get_kline_serial
-  - match: {data_type: bars, market: CN, asset_type: etf, interval: PT5M, adjust: hfq, variant: tqsdk}
-    operation: get_kline_serial
-  - match: {data_type: bars, market: CN, asset_type: etf, interval: PT15M, adjust: hfq, variant: tqsdk}
     operation: get_kline_serial
   - match: {data_type: bars, market: CN, asset_type: etf, interval: PT30M, adjust: hfq, variant: tqsdk}
     operation: get_kline_serial
