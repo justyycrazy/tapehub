@@ -125,6 +125,9 @@ Provider 适配器实现 Domain Port。
   （探针框架自身测试在 `tests/unit/probes/`，全部离线）；
 - 运行：`uv run python -m probes.cli list`（零网络）／
   `run --provider <name> --dry-run` ／ `run --provider <name> --yes`（真实调用，消耗配额）；
+- 运行日志统一 logging：默认输出 case 生命周期与每次上游调用的子步骤行，
+  `-v` 开调试细节、`--log-file` 全量落盘；级别语义与格式规范见
+  `probes/README.md`「日志与输出」；
 - 探针文件规范与类型语义见 `probes/README.md`；新增 Provider 需同步新增
   `probes/cases/<name>.yaml`；框架代码保持 Provider 无关，Provider 专属事实
   只允许出现在 cases 文件里；

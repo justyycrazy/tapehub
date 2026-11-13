@@ -12,7 +12,7 @@
 probes/
   PLAN.md                # 设计决策（批准时的方案全文）
   README.md              # 本文件：文件格式、类型语义、运行方式、结果解读
-  schema.py / loader.py / runner.py / analysis.py / report.py / cli.py
+  schema.py / loader.py / runner.py / analysis.py / report.py / cli.py / logging_setup.py
   cases/                 # 探针文件：每 Provider 一个，与 BUILTIN_PROVIDERS 同名
   results/               # 运行产出（.gitignore 整目录，不入库）
 tests/unit/probes/       # 框架自身离线测试
@@ -25,11 +25,48 @@ uv run python -m probes.cli list                              # 展开 case 清�
 uv run python -m probes.cli run --provider tushare --dry-run  # 打印计划调用，不发请求
 uv run python -m probes.cli run --provider tushare --yes      # 真实运行（消耗上游配额）
 uv run python -m probes.cli run --yes                         # 全部 Provider
+uv run python -m probes.cli run --provider ths --yes -v --log-file probes/results/run.log
 ```
 
 真实运行必须显式 `--yes`；退出码：0 正常（允许 skipped/observe）、
 1 存在 failed、2 参数或前提问题。凭据经 `.env` / 环境变量（前缀 `TAPEHUB_`）
 注入，运行前确认 `requires.env` 列出的变量已配置。
+
+## 日志与输出
+
+运行输出统一走标准库 `logging`（`probes.*` 命名空间，`run` 子命令入口经
+`probes/logging_setup.py` 的 `setup_logging` 配置）；`list` 子命令与缺
+`--yes` 的用法提示是普通 print，不属于运行日志。
+
+级别语义：
+
+| 级别 | 内容 | 默认控制台 |
+| --- | --- | --- |
+| INFO | case 生命周期（`[RUN]` / 判定行）、**每次真实上游调用的子步骤行**（`[step]`）、段头/产物路径/判定统计 | 可见 |
+| DEBUG | 纯计算细节（预算耗尽中止调用等）；`-v/--verbose` 打开 | 隐藏 |
+| ERROR / WARNING | 段级异常中止、failed case 汇总、停机钩子异常 | 可见 |
+
+子步骤行（每次真实上游调用一行，与 pacing 节流天然对齐，噪声有界）：
+
+- `history_depth` 二分模式：每轮探测一行，带阶段标签与预算水位
+  （`era#1 [2021-01-01, 2025-12-31] count=0 (预算 2/24)`）；阶段
+  `era` / `bisect` / `verify`（全量模式为 `full`）同时写入 JSON 证据的
+  probes 条目，Markdown history 表汇总为「阶段」列；
+- `adjust_diff`：baseline / compared 每侧一行（adjust 值 + bar 数）；
+- `variant_consistency`：每个 variant 抓取一行（variant 名 + bar 数）；
+- `raw`：client 构造、每条 call（序号 + 方法名 + 行数或异常）、close 各一行；
+- `connection`：每实例 created/first_call 计时一行 + closed 计时一行。
+
+控制台 handler 挂 **stdout**（进度行自描述、每次 emit 自动 flush）：
+`> out.txt` 重定向后仍实时可见；卡住的 case 通过「最后一条 RUN/step 行」
+直接定位。
+
+`--log-file PATH` 追加文件 handler，**恒为 DEBUG 全量**（无视控制台级别，
+时间戳统一北京时间，追加写入）：非 verbose 运行也能留下完整时间线供事后取证。
+
+脱敏纪律：子步骤行只含序号/方法名/行数/耗时/异常类型与截断消息，绝不打印
+kwargs 值（raw 探针 kwargs 经 `$ENV` 注入凭据）；错误文本截断后与证据
+observation 同口径。
 
 ## 探针文件格式
 

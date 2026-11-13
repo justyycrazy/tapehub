@@ -10,10 +10,12 @@
 """
 
 import asyncio
+import logging
 from pathlib import Path
 from typing import ClassVar
 
 import probes.cli as cli_module
+import pytest
 from probes.cli import _run_sections
 from probes.schema import ProbeFile
 
@@ -173,3 +175,77 @@ def test_dry_run_sections_skip_shutdown(tmp_path: Path) -> None:
     assert any_failed is False
     assert alpha.loops == []  # dry-run 不执行 fetch
     assert alpha.shutdown_calls == 0
+
+
+# ---------------------------------------------------------------------------
+# 段级输出迁移 logging 后的行为
+# ---------------------------------------------------------------------------
+
+
+def test_section_logs_via_logging(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    """段头 / 产物路径 / 判定统计走 logging（INFO），可被 caplog 捕获。"""
+    probes = [_probe_for("alpha", "stock")]
+    registry, _alpha, _beta = _two_provider_registry()
+
+    with caplog.at_level(logging.INFO, logger="probes.cli"):
+        any_failed = _run(probes, registry, tmp_path)
+
+    assert any_failed is False
+    messages = [r.getMessage() for r in caplog.records]
+    assert any("=== 运行探针：alpha（真实调用）===" in m for m in messages)
+    assert any("JSON 证据：" in m for m in messages)
+    assert any("Markdown 报告：" in m for m in messages)
+    assert any("判定统计：" in m for m in messages)
+
+
+def test_section_crash_logs_error(
+    tmp_path: Path, monkeypatch, caplog: pytest.LogCaptureFixture
+) -> None:  # type: ignore[no-untyped-def]
+    """段级崩溃记录 [error] 行（ERROR 级），且不中断后续段。"""
+    probes = [_probe_for("alpha", "stock"), _probe_for("beta", "etf")]
+    registry, _alpha, _beta = _two_provider_registry()
+    real = cli_module.run_provider_probe
+
+    def fake_run_provider_probe(probe, registry, settings, *, execute=True):  # type: ignore[no-untyped-def]
+        if probe.probe == "alpha":
+            raise RuntimeError("boom")
+        return real(probe, registry, settings, execute=execute)
+
+    monkeypatch.setattr(cli_module, "run_provider_probe", fake_run_provider_probe)
+
+    with caplog.at_level(logging.INFO, logger="probes.cli"):
+        any_failed = _run(probes, registry, tmp_path)
+
+    assert any_failed is True
+    messages = [r.getMessage() for r in caplog.records]
+    assert any("[error] 探针段异常中止：RuntimeError: boom" in m for m in messages)
+    assert any("=== 运行探针：beta（真实调用）===" in m for m in messages)
+
+
+def test_run_flags_parsed() -> None:
+    """run 子命令的 -v/--log-file 解析；list 子命令不携带这两个开关。"""
+    args = cli_module._parse_args(
+        ["run", "--yes", "-v", "--log-file", "out/run.log"]
+    )
+    assert args.verbose is True
+    assert args.log_file == Path("out/run.log")
+
+    args = cli_module._parse_args(["run", "--dry-run"])
+    assert args.verbose is False
+    assert args.log_file is None
+
+
+def test_cmd_run_configures_logging(
+    monkeypatch, tmp_path: Path
+) -> None:  # type: ignore[no-untyped-def]
+    """cmd_run 在 registry 构建前调用 setup_logging（verbose/log_file 透传）。"""
+    calls: list[dict] = []
+    monkeypatch.setattr(cli_module, "setup_logging", lambda **kw: calls.append(kw))
+    monkeypatch.setattr(cli_module, "_run_sections", lambda *a, **kw: False)
+
+    log_file = tmp_path / "l.log"
+    args = cli_module._parse_args(
+        ["run", "--dry-run", "--verbose", "--log-file", str(log_file)]
+    )
+    assert cli_module.cmd_run(args) == 0
+    assert calls == [{"verbose": True, "log_file": log_file}]

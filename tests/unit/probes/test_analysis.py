@@ -175,6 +175,28 @@ def test_history_depth_bisect_stops_at_span() -> None:
     assert abs((result.earliest_estimate - DATA_START).days) <= 90
 
 
+def test_history_depth_on_step_reports_phases() -> None:
+    """on_step 回调按轮次收到探测条目：phase 标签齐全，条目与 probes 记录同源。"""
+    steps: list[dict] = []
+
+    result = asyncio.run(
+        run_history_depth(
+            _fetch_from_data_start(),
+            earliest=dt.datetime(1991, 1, 1, tzinfo=CN_TIMEZONE),
+            latest=SEARCH_END,
+            era_step_years=5,
+            max_calls=40,
+            on_step=steps.append,
+        )
+    )
+    assert result.complete
+    assert steps == result.probes  # 回调收到的就是写入证据的同一批条目
+    phases = [entry["phase"] for entry in steps]
+    assert set(phases) <= {"era", "bisect", "verify"}
+    assert phases[0] == "era" and "bisect" in phases  # 先纪元回溯，后二分
+    assert phases.index("era") < phases.index("bisect")
+
+
 def test_history_depth_full_mode_reads_exact_earliest() -> None:
     """全量模式：单次调用直接返回精确最早 bar，无粒度误差。"""
 
@@ -194,6 +216,7 @@ def test_history_depth_full_mode_reads_exact_earliest() -> None:
     assert result.approx is False
     assert result.calls_used == 1
     assert result.earliest_estimate == DATA_START  # 精确值，不是窗口估算
+    assert result.probes[0]["phase"] == "full"
 
 
 def test_history_depth_full_mode_empty_range_is_exact_answer() -> None:

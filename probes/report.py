@@ -107,6 +107,21 @@ def write_results(run: RunResult, results_dir: Path) -> tuple[Path, Path]:
     return json_path, md_path
 
 
+def _phase_summary(probes: Any) -> str:
+    """history 探测记录的阶段摘要（如 ``era×3 bisect×4 verify×1``）。
+
+    旧结果文件的 probes 条目没有 ``phase`` 键（历史证据），缺失时显示 ``-``。
+    """
+    if not isinstance(probes, list):
+        return "-"
+    counts: dict[str, int] = {}
+    for entry in probes:
+        phase = entry.get("phase") if isinstance(entry, dict) else None
+        if phase:
+            counts[phase] = counts.get(phase, 0) + 1
+    return " ".join(f"{name}×{count}" for name, count in counts.items()) or "-"
+
+
 def render_markdown(run: RunResult) -> str:
     """人读汇总：已确认 / 未通过 / suspect+observe / history 回填建议 / skipped。"""
     lines: list[str] = []
@@ -217,14 +232,16 @@ def render_markdown(run: RunResult) -> str:
     lines.append("## history.start 建议回填值（人工确认后再改 manifest）")
     lines.append("")
     if histories:
-        lines.append("| case | earliest_estimate | approx | 粒度(天) | 探测次数 | complete |")
-        lines.append("| --- | --- | --- | --- | --- | --- |")
+        lines.append(
+            "| case | earliest_estimate | approx | 粒度(天) | 探测次数 | complete | 阶段 |"
+        )
+        lines.append("| --- | --- | --- | --- | --- | --- | --- |")
         for case in histories:
             obs = case.observation
             lines.append(
                 f"| {case.case_id} | {obs.get('earliest_estimate')} | {obs.get('approx')} "
                 f"| {obs.get('granularity_days')} | {obs.get('calls_used')} "
-                f"| {obs.get('complete')} |"
+                f"| {obs.get('complete')} | {_phase_summary(obs.get('probes'))} |"
             )
     else:
         lines.append("（无）")

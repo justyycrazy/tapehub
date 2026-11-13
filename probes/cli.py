@@ -15,10 +15,12 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import logging
 import sys
 from pathlib import Path
 
 from probes.loader import expand_builtin, load_probe_files
+from probes.logging_setup import setup_logging
 from probes.report import write_results
 from probes.runner import run_provider_probe
 from tapehub.providers.registry import build_default_registry
@@ -26,6 +28,10 @@ from tapehub.settings import Settings
 
 DEFAULT_CASES_DIR = Path(__file__).resolve().parent / "cases"
 DEFAULT_RESULTS_DIR = Path(__file__).resolve().parent / "results"
+
+# 显式命名空间：`python -m probes.cli` 执行时 __name__ 是 __main__，
+# 固定为 probes.cli 保证文件日志里的 logger 名稳定
+logger = logging.getLogger("probes.cli")
 
 
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:
@@ -48,6 +54,14 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     p_run.add_argument("--dry-run", action="store_true", help="只打印计划调用，不发真实请求")
     p_run.add_argument("--yes", action="store_true", help="确认发起真实上游调用")
     p_run.add_argument("--results-dir", type=Path, default=DEFAULT_RESULTS_DIR, help="结果输出目录")
+    p_run.add_argument(
+        "-v", "--verbose", action="store_true",
+        help="控制台输出 DEBUG 级细节（预算领取等纯计算步骤）",
+    )
+    p_run.add_argument(
+        "--log-file", type=Path, default=None,
+        help="完整运行日志落盘路径（恒为 DEBUG 全量，含北京时间戳）",
+    )
     return parser.parse_args(argv)
 
 
@@ -113,29 +127,28 @@ def _run_sections(
     """
     any_failed = False
     for probe in probes:
-        print(
-            f"=== 运行探针：{probe.probe}（{'dry-run' if dry_run else '真实调用'}）===",
-            flush=True,
+        logger.info(
+            f"=== 运行探针：{probe.probe}（{'dry-run' if dry_run else '真实调用'}）==="
         )
         try:
             result = asyncio.run(
                 run_provider_probe(probe, registry, settings, execute=not dry_run)
             )
         except Exception as exc:  # noqa: BLE001 - 段级隔离：单段崩溃不拖垮后续段
-            print(f"  [error] 探针段异常中止：{type(exc).__name__}: {exc}", flush=True)
+            logger.error(f"  [error] 探针段异常中止：{type(exc).__name__}: {exc}")
             any_failed = True
             continue
         if not dry_run:
             json_path, md_path = write_results(result, results_dir)
-            print(f"  JSON 证据：{json_path}", flush=True)
-            print(f"  Markdown 报告：{md_path}", flush=True)
+            logger.info(f"  JSON 证据：{json_path}")
+            logger.info(f"  Markdown 报告：{md_path}")
         counts = result.verdict_counts()
-        print(f"  判定统计：{counts}", flush=True)
+        logger.info(f"  判定统计：{counts}")
         if result.file_skip_reason:
-            print(f"  文件级跳过：{result.file_skip_reason}", flush=True)
+            logger.info(f"  文件级跳过：{result.file_skip_reason}")
         for case in result.cases:
             if case.verdict == "failed":
-                print(f"  [failed] {case.case_id}: {case.reason}", flush=True)
+                logger.error(f"  [failed] {case.case_id}: {case.reason}")
                 any_failed = True
         if not dry_run:
             _shutdown_adapter(registry, probe.probe)
@@ -159,7 +172,7 @@ def _shutdown_adapter(registry: object, provider: str) -> None:
     try:
         shutdown()
     except Exception as exc:  # noqa: BLE001 - 停机失败不影响运行结果
-        print(f"  [warn] {provider} 停机钩子异常（忽略）：{exc}", flush=True)
+        logger.warning(f"  [warn] {provider} 停机钩子异常（忽略）：{exc}")
     # 注：本函数在段事件循环之外调用（asyncio.run 已返回）——若未来有钩子
     # 返回 awaitable，twelvedata 式钩子在无运行循环时会走其内置 asyncio.run
     # 兜底并返回 None，无需在此 await
@@ -171,6 +184,8 @@ def cmd_run(args: argparse.Namespace) -> int:
         print("探针将发起真实上游调用并消耗配额。确认请加 --yes；预演请加 --dry-run。")
         return 2
 
+    # 日志先于 registry 构建配置：适配器加载告警（tapehub.*）也从同一 handler 可见
+    setup_logging(verbose=args.verbose, log_file=args.log_file)
     settings = Settings()
     registry = build_default_registry(settings)
     any_failed = _run_sections(

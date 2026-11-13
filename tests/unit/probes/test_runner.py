@@ -1,6 +1,7 @@
 """探针执行器测试（离线：Fake Provider 与注入的假 SDK 模块）。"""
 
 import asyncio
+import logging
 import sys
 import types
 from pathlib import Path
@@ -558,3 +559,139 @@ def test_raw_runner_dotted_method_chain(monkeypatch: pytest.MonkeyPatch) -> None
     case = next(c for c in result.cases if c.case_id == "fake-dotted")
     assert case.verdict == "confirmed"
     assert case.observation["rows"] == 1
+
+
+# ---------------------------------------------------------------------------
+# 子步骤日志行（每次真实上游调用一行 INFO，列式布局与 case 进度行对齐）
+# ---------------------------------------------------------------------------
+
+
+def _step_messages(caplog: pytest.LogCaptureFixture) -> list[str]:
+    return [r.getMessage() for r in caplog.records if "[step" in r.getMessage()]
+
+
+def test_raw_step_lines_logged(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """raw case 子步骤行：client 构造 / 每 call（序号+方法+行数）/ close 逐步可见。"""
+
+    class _Client:
+        def fetch(self, **kw: object) -> list[dict[str, float]]:
+            return [{"close": 1.0}, {"close": 2.0}]
+
+        def close(self) -> None:
+            pass
+
+    fake = types.ModuleType("probe_fake_sdk_steps")
+    fake.Client = _Client  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "probe_fake_sdk_steps", fake)
+
+    probe = ProbeFile.model_validate(
+        _probe().model_dump()
+        | {
+            "pacing": {"call_interval_s": 0.01},
+            "raw": [
+                {
+                    "id": "steps-raw",
+                    "module": "probe_fake_sdk_steps",
+                    "client": {"attr": "Client", "kwargs": {}},
+                    "call": [{"method": "fetch"}],
+                    "close": {"method": "close"},
+                    "expect": {"status": "ok", "min_rows": 1},
+                }
+            ],
+        }
+    )
+    with caplog.at_level(logging.INFO, logger="probes.runner"):
+        result = asyncio.run(run_provider_probe(probe, _registry(), _settings()))
+    case = next(c for c in result.cases if c.case_id == "steps-raw")
+    assert case.verdict == "confirmed"
+    steps = _step_messages(caplog)
+    # client 构造算第 1 次调用，fetch 是 call#2；kwargs 值绝不出现在日志行
+    assert any("client Client → ok" in m for m in steps)
+    assert any("call#2 fetch → 2 rows" in m for m in steps)
+    assert any("close → ok" in m for m in steps)
+    assert not any("close=1.0" in m for m in steps)  # 脱敏：结果值不进日志
+
+
+def test_connection_step_lines_logged(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """connection case 子步骤行：每实例 created/first_call 计时 + closed 计时。"""
+
+    class _ConnClient:
+        def first(self, **kw: object) -> dict[str, int]:
+            return {"ok": 1}
+
+        def close(self) -> None:
+            pass
+
+    fake = types.ModuleType("probe_fake_sdk_conn_steps")
+    fake.Conn = _ConnClient  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "probe_fake_sdk_conn_steps", fake)
+
+    probe = ProbeFile.model_validate(
+        _probe().model_dump()
+        | {
+            "pacing": {"call_interval_s": 0.01},
+            "connection": [
+                {
+                    "id": "conn-steps",
+                    "module": "probe_fake_sdk_conn_steps",
+                    "client": {"attr": "Conn", "kwargs": {}},
+                    "first_call": {"method": "first"},
+                    "close": {"method": "close"},
+                    "rounds": 1,
+                    "concurrent": 2,
+                }
+            ],
+        }
+    )
+    with caplog.at_level(logging.INFO, logger="probes.runner"):
+        result = asyncio.run(run_provider_probe(probe, _registry(), _settings()))
+    case = next(c for c in result.cases if c.case_id == "conn-steps")
+    assert case.verdict == "confirmed"
+    steps = _step_messages(caplog)
+    assert any("round1#1 created=" in m and "first_call=" in m for m in steps)
+    assert any("round1#2 created=" in m and "first_call=" in m for m in steps)
+    assert any("round1#1 closed=" in m for m in steps)
+    assert any("round1#2 closed=" in m for m in steps)
+
+
+def test_adjust_diff_and_variant_step_lines_logged(caplog: pytest.LogCaptureFixture) -> None:
+    """adjust_diff / variant_consistency：每侧抓取一行子步骤（标签+bar 数）。"""
+    registry = _registry_for("multi_variant.yaml")
+    window = {"start": "2025-01-01", "end": "2025-03-31"}
+    probe = _multi_var_probe(
+        "multi-var",
+        {
+            "adjust_diff": {"targets": ["stock"], "window": window, "pairs": [["none", "qfq"]]},
+            "variant_consistency": {"targets": ["stock"], "window": window},
+        },
+    )
+    with caplog.at_level(logging.INFO, logger="probes.runner"):
+        result = asyncio.run(run_provider_probe(probe, registry, _settings()))
+    assert [c for c in result.cases if c.kind == "adjust_diff"]
+    steps = _step_messages(caplog)
+    assert any("baseline(none) → " in m and "bars" in m for m in steps)
+    assert any("compared(qfq) → " in m and "bars" in m for m in steps)
+    # variant_consistency 的 variants 是数据源 variant（eastmoney/sina），逐个抓取
+    assert any("variant=eastmoney → " in m and "bars" in m for m in steps)
+    assert any("variant=sina → " in m and "bars" in m for m in steps)
+
+
+def test_history_depth_phase_step_lines_logged(caplog: pytest.LogCaptureFixture) -> None:
+    """history_depth 二分模式：era/bisect 阶段子步骤行带预算水位。"""
+    registry = _registry_for("multi_variant.yaml")
+    probe = _multi_var_probe(
+        "multi-var",
+        {"history_depth": {"targets": ["stock"], "earliest": "2024-01-01", "max_calls": 6}},
+    )
+    with caplog.at_level(logging.INFO, logger="probes.runner"):
+        result = asyncio.run(run_provider_probe(probe, registry, _settings()))
+    cases = [c for c in result.cases if c.kind == "history_depth"]
+    assert cases and all(c.verdict == "observe" for c in cases)
+    steps = _step_messages(caplog)
+    phase_steps = [m for m in steps if "era#" in m or "bisect#" in m or "verify#" in m]
+    assert phase_steps, "bisect-mode history depth must emit phase step lines"
+    assert any("(预算 " in m for m in phase_steps)

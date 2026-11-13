@@ -17,6 +17,7 @@ import importlib
 import importlib.util
 import itertools
 import json
+import logging
 import os
 import re
 import time
@@ -49,6 +50,27 @@ PROBE_MAX_QUERY_LIMIT = 100_000
 STANDARD_FIELDS = ("open", "high", "low", "close", "volume", "amount")
 
 _ENV_REF = re.compile(r"^\$([A-Z][A-Z0-9_]*)$")
+
+logger = logging.getLogger(__name__)
+
+# 子步骤错误消息在日志行内的展示截断（证据文件仍按 500 截断原样保留）
+_STEP_ERROR_TEXT_LIMIT = 200
+
+
+def _log_step(kind: str, case_id: str, detail: str, *, level: int = logging.INFO) -> None:
+    """case 内子步骤日志行：每次真实上游调用一行（列式布局与进度行对齐）。
+
+    只含序号/方法名/行数/耗时/异常类型与截断消息，绝不打印 kwargs 值
+    （raw 探针 kwargs 经 ``$ENV`` 注入凭据）；异常文本与证据 observation
+    同口径（上游错误消息，非凭据）。
+    """
+    logger.log(level, f"  [step     ] {kind:<18} {case_id} {detail}")
+
+
+def _error_detail(error: dict[str, Any]) -> str:
+    """错误 observation 的单行摘要（子步骤行用）。"""
+    text = str(error.get("error_text", ""))[:_STEP_ERROR_TEXT_LIMIT]
+    return f"{error.get('error_type')} {error.get('error_code')}: {text}"
 
 
 class MissingEnvError(Exception):
@@ -140,11 +162,11 @@ def _module_available(name: str) -> bool:
 def _print_progress(phase: str, kind: str, case_id: str, detail: str = "") -> None:
     """实时进度输出：每条 case 开始/完成立即刷新（后台运行可逐条观察）。
 
-    stdout 重定向到文件时 Python 默认块缓冲，进度会滞留缓冲区直到进程
-    结束才一次性落盘——显式 flush 使判定/耗时实时可见，卡住的 case 通过
-    「最后一条 RUN 行」直接定位。"""
+    走 logging 控制台 handler（stdout），每次 emit 后自动 flush——stdout
+    重定向到文件时同样实时可见；卡住的 case 通过「最后一条 RUN 行」
+    直接定位。"""
     suffix = f" {detail}" if detail else ""
-    print(f"  [{phase:<9}] {kind:<18} {case_id}{suffix}", flush=True)
+    logger.info(f"  [{phase:<9}] {kind:<18} {case_id}{suffix}")
 
 
 def _progress_detail(result: CaseResult, budget: CallBudget) -> str:
@@ -293,6 +315,7 @@ def _make_fetcher(
 
     async def fetch(start: datetime, end: datetime) -> list[Bar]:
         if not await ctx.take_call():
+            _log_step(case.kind, case.case_id, "预算耗尽，中止后续调用", level=logging.DEBUG)
             raise BudgetExhausted()
         query = _build_query(
             ctx, case, start, end, limit=PROBE_PAGE_LIMIT, variant=variant, adjust=adjust
@@ -360,6 +383,7 @@ async def _fetch_safe(
 ) -> tuple[BarBatch | None, Any]:
     """领取预算后单次链路调用（variant 可覆盖，供一致性探针使用）。"""
     if not await ctx.take_call():
+        _log_step(case.kind, case.case_id, "预算耗尽，中止后续调用", level=logging.DEBUG)
         return None, BudgetExhausted()
     query = _build_query(ctx, case, start, end, limit=limit, variant=variant)
     return await _fetch_query(ctx, query)
@@ -459,9 +483,32 @@ async def _run_adjust_diff(ctx: RunContext, case: ChainCase, base: CaseResult) -
     assert case.compared_adjust is not None
     fetch_baseline = _make_fetcher(ctx, case, adjust=case.adjust)
     fetch_compared = _make_fetcher(ctx, case, adjust=case.compared_adjust)
+
+    async def _fetch_logged(
+        fetch: analysis.WindowFetch, label: str, adjust_value: str
+    ) -> list[Bar]:
+        """单侧抓取 + 子步骤日志（成功记 bar 数，失败记错误摘要后原样上抛）。"""
+        try:
+            bars = await fetch(case.window_start, case.window_end)
+        except BudgetExhausted:
+            _log_step(
+                case.kind, case.case_id, f"{label}({adjust_value}) → 预算耗尽",
+                level=logging.DEBUG,
+            )
+            raise
+        except TapehubError as exc:
+            _log_step(
+                case.kind, case.case_id,
+                f"{label}({adjust_value}) → {exc.code.value}: "
+                f"{exc.message[:_STEP_ERROR_TEXT_LIMIT]}",
+            )
+            raise
+        _log_step(case.kind, case.case_id, f"{label}({adjust_value}) → {len(bars)} bars")
+        return bars
+
     try:
-        baseline = await fetch_baseline(case.window_start, case.window_end)
-        compared = await fetch_compared(case.window_start, case.window_end)
+        baseline = await _fetch_logged(fetch_baseline, "baseline", case.adjust.value)
+        compared = await _fetch_logged(fetch_compared, "compared", case.compared_adjust.value)
     except TapehubError as exc:
         return _failed_from(base, {"error_code": exc.code.value, "error_text": exc.message})
     except BudgetExhausted:
@@ -504,6 +551,20 @@ async def _run_history_depth(ctx: RunContext, case: ChainCase, base: CaseResult)
                 fetch, earliest=case.window_start, latest=latest
             )
         else:
+            # 二分模式：analysis 经 on_step 回传每轮探测条目（含 phase 阶段
+            # 标签），此处转成子步骤日志行实时可见（预算水位读共享预算）
+            step_no = 0
+
+            def _on_step(entry: dict[str, Any]) -> None:
+                nonlocal step_no
+                step_no += 1
+                _log_step(
+                    case.kind, case.case_id,
+                    f"{entry['phase']}#{step_no} "
+                    f"[{entry['start']}, {entry['end']}] count={entry['count']} "
+                    f"(预算 {ctx.budget.used}/{ctx.budget.max_calls})",
+                )
+
             result = await analysis.run_history_depth(
                 fetch,
                 earliest=case.window_start,
@@ -511,6 +572,7 @@ async def _run_history_depth(ctx: RunContext, case: ChainCase, base: CaseResult)
                 era_step_years=case.era_step_years,
                 probe_span_days=case.probe_span_days,
                 max_calls=case.expected_calls,
+                on_step=_on_step,
             )
     except TapehubError as exc:
         return _failed_from(base, {"error_code": exc.code.value, "error_text": exc.message})
@@ -595,12 +657,22 @@ async def _run_variant_consistency(
             variant=variant,
         )
         if isinstance(error, BudgetExhausted):
+            _log_step(
+                case.kind, case.case_id, f"variant={variant.value} → 预算耗尽",
+                level=logging.DEBUG,
+            )
             incomplete = True
             break
         if error is not None:
+            if isinstance(error, dict):
+                _log_step(
+                    case.kind, case.case_id,
+                    f"variant={variant.value} → {_error_detail(error)}",
+                )
             return _failed_from(base, error)
         assert batch is not None
         series[variant.value] = batch.bars
+        _log_step(case.kind, case.case_id, f"variant={variant.value} → {len(batch.bars)} bars")
 
     if len(series) < 2:
         base.reason = (
@@ -812,6 +884,7 @@ async def _run_raw_case(ctx: RunContext, plan: RawPlan) -> CaseResult:
         calls_made = 0
         if spec.client is not None:
             if not await ctx.take_call():
+                _log_step("raw", spec.id, "预算耗尽，中止后续调用", level=logging.DEBUG)
                 base.reason = "call budget exhausted"
                 return base, None
             calls_made += 1
@@ -820,7 +893,13 @@ async def _run_raw_case(ctx: RunContext, plan: RawPlan) -> CaseResult:
                 target = await asyncio.wait_for(
                     asyncio.to_thread(constructor, **client_kwargs), ctx.pacing.timeout_s
                 )
+                _log_step("raw", spec.id, f"client {spec.client.attr} → ok")
             except Exception as exc:  # noqa: BLE001 - 构造失败按期望匹配处理
+                _log_step(
+                    "raw", spec.id,
+                    f"client {spec.client.attr} → {type(exc).__name__}: "
+                    f"{str(exc)[:_STEP_ERROR_TEXT_LIMIT]}",
+                )
                 error = exc
 
         owner: Any = target
@@ -828,10 +907,12 @@ async def _run_raw_case(ctx: RunContext, plan: RawPlan) -> CaseResult:
         if error is None:
             for call, kwargs in zip(spec.call, call_kwargs, strict=True):
                 if not await ctx.take_call():
+                    _log_step("raw", spec.id, "预算耗尽，中止后续调用", level=logging.DEBUG)
                     base.reason = "call budget exhausted"
                     base.observation = {"calls_made": calls_made}
                     return base, target
                 calls_made += 1
+                call_label = call.method or call.module_func or ""
                 try:
                     root = owner if call.target == "client" else result
                     # method 支持「资源.方法」点链（如 quotes.get）：
@@ -844,7 +925,15 @@ async def _run_raw_case(ctx: RunContext, plan: RawPlan) -> CaseResult:
                     result = await asyncio.wait_for(
                         asyncio.to_thread(func, **kwargs), ctx.pacing.timeout_s
                     )
+                    rows = _count_rows(result)
+                    detail = f"{rows} rows" if rows is not None else "ok"
+                    _log_step("raw", spec.id, f"call#{calls_made} {call_label} → {detail}")
                 except Exception as exc:  # noqa: BLE001 - 探针必须记录异常而不是崩溃
+                    _log_step(
+                        "raw", spec.id,
+                        f"call#{calls_made} {call_label} → "
+                        f"{type(exc).__name__}: {str(exc)[:_STEP_ERROR_TEXT_LIMIT]}",
+                    )
                     error = exc
                     break
 
@@ -878,8 +967,13 @@ async def _run_raw_case(ctx: RunContext, plan: RawPlan) -> CaseResult:
             await asyncio.wait_for(
                 asyncio.to_thread(closer, **close_kwargs), ctx.pacing.timeout_s
             )
+            _log_step("raw", spec.id, "close → ok")
             base.observation = {**base.observation, "closed": True}
         except Exception as exc:  # noqa: BLE001 - 释放失败如实记录
+            _log_step(
+                "raw", spec.id,
+                f"close → {type(exc).__name__}: {str(exc)[:_STEP_ERROR_TEXT_LIMIT]}",
+            )
             base.observation = {
                 **base.observation,
                 "closed": False,
@@ -936,19 +1030,34 @@ async def _run_connection_case(ctx: RunContext, plan: ConnectionPlan) -> CaseRes
             raise _BudgetAbort()
         t0 = time.perf_counter()
         constructor = _resolve_attr(module, spec.client.attr)
-        client = await asyncio.wait_for(
-            asyncio.to_thread(constructor, **client_kwargs), timeout
-        )
+        try:
+            client = await asyncio.wait_for(
+                asyncio.to_thread(constructor, **client_kwargs), timeout
+            )
+        except Exception as exc:  # noqa: BLE001 - 创建失败记子步骤后原样上抛
+            _log_step(
+                "connection", spec.id,
+                f"round{round_index}#{instance_index} → create {type(exc).__name__}",
+            )
+            raise
         create_ms = round((time.perf_counter() - t0) * 1000, 1)
         if not await ctx.take_call():
+            _log_step(
+                "connection", spec.id, f"round{round_index}#{instance_index} → 预算耗尽",
+                level=logging.DEBUG,
+            )
             raise _BudgetAbort()
         t1 = time.perf_counter()
         func = getattr(client, spec.first_call.method or "")
         try:
             await asyncio.wait_for(asyncio.to_thread(func, **first_kwargs), timeout)
-        except BaseException:
+        except BaseException as exc:
             # 首调失败（含超时）也要尽力释放已创建的客户端，防止连接泄漏；
             # 释放失败不掩盖原始异常
+            _log_step(
+                "connection", spec.id,
+                f"round{round_index}#{instance_index} → first_call {type(exc).__name__}",
+            )
             try:
                 closer = getattr(client, spec.close.method or "")
                 await asyncio.wait_for(
@@ -958,6 +1067,11 @@ async def _run_connection_case(ctx: RunContext, plan: ConnectionPlan) -> CaseRes
                 pass
             raise
         first_ms = round((time.perf_counter() - t1) * 1000, 1)
+        _log_step(
+            "connection", spec.id,
+            f"round{round_index}#{instance_index} "
+            f"created={create_ms}ms first_call={first_ms}ms",
+        )
         return {
             "round": round_index,
             "instance": instance_index,
@@ -996,7 +1110,15 @@ async def _run_connection_case(ctx: RunContext, plan: ConnectionPlan) -> CaseRes
                 )
                 item["close_ms"] = round((time.perf_counter() - t2) * 1000, 1)
                 closed += 1
+                _log_step(
+                    "connection", spec.id,
+                    f"round{item['round']}#{item['instance']} closed={item['close_ms']}ms",
+                )
             except Exception as exc:  # noqa: BLE001 - 释放失败如实记录
+                _log_step(
+                    "connection", spec.id,
+                    f"round{item['round']}#{item['instance']} → close {type(exc).__name__}",
+                )
                 errors.append({"type": type(exc).__name__, "text": str(exc)[:300]})
             timings.append(item)
 

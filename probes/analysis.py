@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import calendar
 import datetime as dt
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
@@ -112,6 +113,7 @@ async def run_history_depth(
     era_step_years: int = 5,
     max_calls: int = 24,
     probe_span_days: int = PROBE_SPAN_DAYS,
+    on_step: Callable[[dict[str, Any]], None] | None = None,
 ) -> HistoryDepthResult:
     """纪元回溯 + 二分搜索最早可用窗口。
 
@@ -124,17 +126,29 @@ async def run_history_depth(
     3. 报告 ``earliest_estimate = 二分收敛点 + 窗口宽度``，误差约为窗口粒度；
        二分收敛到窗口粒度即止（估算精度由窗口宽度决定，收敛到天只是浪费预算），
        收敛点已被探测验证时不再重复验证。
+
+    ``on_step`` 为可选的逐步回调（runner 侧用于实时子步骤日志）：每轮探测
+    完成后收到与 ``probes`` 记录同一条目（含 ``phase`` 阶段标签）的引用；
+    本模块不做任何输出，保持纯算法层。
     """
     probes: list[dict[str, Any]] = []
     calls = 0
 
-    async def probe(start: dt.datetime, end: dt.datetime) -> bool:
+    async def probe(start: dt.datetime, end: dt.datetime, phase: str) -> bool:
         nonlocal calls
         if calls >= max_calls:
             raise BudgetExhausted()
         calls += 1
         bars = await fetch(start, end)
-        probes.append({"start": start.isoformat(), "end": end.isoformat(), "count": len(bars)})
+        entry = {
+            "phase": phase,
+            "start": start.isoformat(),
+            "end": end.isoformat(),
+            "count": len(bars),
+        }
+        probes.append(entry)
+        if on_step is not None:
+            on_step(entry)
         return len(bars) > 0
 
     span = dt.timedelta(days=probe_span_days)
@@ -144,7 +158,7 @@ async def run_history_depth(
     anchor: tuple[dt.datetime, dt.datetime] | None = None
     try:
         for era_start, era_end in reversed(eras):
-            if await probe(era_start, min(era_end, latest)):
+            if await probe(era_start, min(era_end, latest), "era"):
                 anchor = (era_start, min(era_end, latest))  # 持续更新：最终为最旧的非空档
             else:
                 first_empty = era_start
@@ -175,12 +189,12 @@ async def run_history_depth(
     try:
         while (hi - lo) > span:
             mid = lo + (hi - lo) / 2
-            if await probe(mid, min(mid + span, latest)):
+            if await probe(mid, min(mid + span, latest), "bisect"):
                 hi = mid
                 hi_verified = True
             else:
                 lo = mid
-        if not hi_verified and not await probe(hi, min(hi + span, latest)):
+        if not hi_verified and not await probe(hi, min(hi + span, latest), "verify"):
             # 连续性假设被打破（如窗口落在长空档内）：如实报告未收敛
             return HistoryDepthResult(
                 earliest_estimate=None, approx=True, granularity_days=probe_span_days,
@@ -212,7 +226,7 @@ async def run_history_depth_full(
     「区间内无数据」的结论同样由单次全量覆盖直接证实。
     """
     probes: list[dict[str, Any]] = [
-        {"start": earliest.isoformat(), "end": latest.isoformat()}
+        {"phase": "full", "start": earliest.isoformat(), "end": latest.isoformat()}
     ]
     try:
         bars = await fetch(earliest, latest)
