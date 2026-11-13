@@ -155,7 +155,8 @@ class FakeWebSocket:
                 {
                     "service": self._service(),
                     "messageType": "A",
-                    "data": [payload or top_element(ticker)],
+                    # 真实协议：data 即单个扁平位置数组（探针实证）
+                    "data": payload or top_element(ticker),
                 }
             )
 
@@ -229,11 +230,13 @@ class FakeWebSocket:
     # ------------------------------------------------------------------
 
     def push_quote(self, ticker: str, *elements: dict[str, Any] | list[Any]) -> None:
-        """推一条 data 帧（数组元素任意；可含非订阅 ticker 测客户端过滤）。"""
+        """推一条 data 帧（真实协议 data 为单个扁平位置数组；多元素嵌套
+        形态仅为多 ticker 同帧测试便利，runtime 兼容）。"""
         if not elements:
             elements = (top_element(ticker),)
+        data = elements[0] if len(elements) == 1 else list(elements)
         self._inbound.put_nowait(
-            {"service": self._service(), "messageType": "A", "data": list(elements)}
+            {"service": self._service(), "messageType": "A", "data": data}
         )
 
     def push_heartbeat(self) -> None:

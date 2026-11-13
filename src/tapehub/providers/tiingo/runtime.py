@@ -388,8 +388,9 @@ class TiingoWsRuntime:
     def _handle_message(self, message: dict[str, Any]) -> None:
         """按 messageType 分发；data 元素按 ``ticker`` 客户端兜底过滤。
 
-        data 元素实测为**位置数组**（2026-11-13 探针实证，形状与标准化见
-        response_mapper.ws_element_to_snapshot）——经标准化为 snapshot dict
+        A 帧 data 实测为**单个扁平位置数组**（2026-11-13 探针实证：data
+        即 ``["Q", ticker, date, …]`` 本身，形状与标准化见
+        response_mapper.ws_element_to_snapshot）——标准化为 snapshot dict
         后走统一链路；对象形态透传兼容（防御）。E 帧提取 ``response.message``
         告警（错误后服务端会主动断连，由重连状态机接管）。
         """
@@ -406,11 +407,15 @@ class TiingoWsRuntime:
             )
             return
         data = message.get("data")
-        if not isinstance(data, list):
+        if not isinstance(data, list) or not data:
             return
-        for element in data:
-            if not isinstance(element, (dict, list)):
-                continue
+        # 真实协议：data 即扁平位置数组；多元素嵌套形态仅为测试便利兼容
+        elements = (
+            [item for item in data if isinstance(item, list)]
+            if isinstance(data[0], list)
+            else [data]
+        )
+        for element in elements:
             snapshot = ws_element_to_snapshot(element)
             ticker = snapshot.get("ticker")
             # 客户端兜底过滤：服务端 tickers 过滤已实证生效（探针报告
