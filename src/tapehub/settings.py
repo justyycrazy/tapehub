@@ -79,6 +79,8 @@ class Settings(BaseSettings):
     tqsdk_auth_password: str = ""
     tiingo_api_key: str = ""
     twelvedata_api_key: str = ""
+    # 同花顺金融数据 API Key（X-api-key 请求头；fuyao.aicubes.cn）
+    ths_api_key: str = ""
 
     @model_validator(mode="after")
     def _validate_limits(self) -> "Settings":

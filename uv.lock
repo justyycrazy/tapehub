@@ -1902,6 +1902,9 @@ alphafeed = [
 baostock = [
     { name = "baostock" },
 ]
+ths = [
+    { name = "httpx" },
+]
 tickflow = [
     { name = "tickflow" },
 ]
@@ -1933,6 +1936,7 @@ requires-dist = [
     { name = "alphafeed", marker = "extra == 'alphafeed'" },
     { name = "baostock", marker = "extra == 'baostock'", specifier = ">=0.9.3" },
     { name = "fastapi", specifier = ">=0.115" },
+    { name = "httpx", marker = "extra == 'ths'", specifier = ">=0.27" },
     { name = "httpx", marker = "extra == 'tiingo'", specifier = ">=0.27" },
     { name = "pydantic", specifier = ">=2.7" },
     { name = "pydantic-settings", specifier = ">=2.3" },
@@ -1946,7 +1950,7 @@ requires-dist = [
     { name = "websockets", marker = "extra == 'tiingo'", specifier = ">=14" },
     { name = "websockets", marker = "extra == 'twelvedata'", specifier = ">=14" },
 ]
-provides-extras = ["akshare", "tickflow", "alphafeed", "tushare", "baostock", "tqsdk", "twelvedata", "tiingo"]
+provides-extras = ["akshare", "tickflow", "alphafeed", "tushare", "baostock", "tqsdk", "twelvedata", "tiingo", "ths"]
 
 [package.metadata.requires-dev]
 dev = [

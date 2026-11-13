@@ -77,6 +77,8 @@ class DataVariant(StrEnum):
     TIINGO = "tiingo"
     TWELVEDATA = "twelvedata"
     BAOSTOCK = "baostock"
+    # 同花顺金融数据 API（fuyao.aicubes.cn）：数据源即上游服务自身
+    THS = "ths"
 
 
 class Adjust(StrEnum):

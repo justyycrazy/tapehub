@@ -148,14 +148,14 @@ GET /v1/market/bars?provider=akshare&asset_type=stock&instrument=CN-SSE-600000&i
 
 缺失数值以 `null` 返回，不用 `0` 冒充；Provider 特有字段只能通过 `extensions` 受控透出（如 akshare 的 `pct_change`、`turnover_rate`、`hold`、`settle`）。
 
-### 实时快照（tqsdk / twelvedata / tiingo / tickflow）
+### 实时快照（tqsdk / twelvedata / tiingo / tickflow / ths）
 
 ```http
 GET /v1/market/quotes?provider=tqsdk&asset_type=contract&instrument=CN-SHFE-AU2612
 GET /v1/market/quotes?provider=twelvedata&asset_type=forex&instrument=GLOBAL-OTC-EUR/USD
 ```
 
-参数：`provider`（默认 `auto`；当前 tqsdk 声明 CN 全资产、twelvedata 与 tiingo 声明 GLOBAL 外汇/加密货币、tickflow 声明 CN/HK/US 股票的 quotes 能力）、`asset_type`（必填）、`instrument`（必填）、`variant`（可选）。**快照是当前时点的数据：无 `interval`、无时间范围、无分页参数**（`adjust` 同样不接受——复权是历史序列概念）。auto 优先级：由缺省路由配置的完整回退链裁决（CN 股票快照归 tqsdk、tickflow 回退；HK 与 US 股票快照为 tickflow 独占，显式 `provider=tickflow` 亦可选用；GLOBAL 外汇/加密货币快照缺省 twelvedata、tiingo 回退）；凭据未配置的 Provider 自动跳过。
+参数：`provider`（默认 `auto`；当前 tqsdk 声明 CN 全资产、twelvedata 与 tiingo 声明 GLOBAL 外汇/加密货币、tickflow 声明 CN/HK/US 股票、ths 声明 CN 股票/指数/ETF/期货/期权的 quotes 能力）、`asset_type`（必填）、`instrument`（必填）、`variant`（可选）。**快照是当前时点的数据：无 `interval`、无时间范围、无分页参数**（`adjust` 同样不接受——复权是历史序列概念）。auto 优先级：由缺省路由配置的完整回退链裁决（CN 股票快照归 tqsdk、tickflow 回退、ths 末位；CN 期权快照为 ths 独占；HK 与 US 股票快照为 tickflow 独占，显式 `provider=tickflow` 亦可选用；GLOBAL 外汇/加密货币快照缺省 twelvedata、tiingo 回退）；凭据未配置的 Provider 自动跳过。
 
 四类上游的交付模型不同，语义差异如实声明：
 
@@ -363,6 +363,7 @@ GET /v1/instruments/resolve?q=AAPL&exchange=NASDAQ
 | `twelvedata` | Twelve Data（外汇/加密货币/美股数据服务） |
 | `tiingo` | Tiingo（外汇/加密货币数据服务） |
 | `baostock` | Baostock 证券宝（免费 A 股数据平台，与东方财富无关） |
+| `ths` | 同花顺金融数据 API（独立数据服务体系） |
 
 - **变体名反映真实数据源**：仅 akshare 的上游确为东方财富/新浪/腾讯；
   TqSdk、Tushare、AlphaFeed、TickFlow、Twelve Data、Tiingo、Baostock 与东方财富无关，
@@ -837,7 +838,71 @@ Baostock（证券宝，官方 SDK `baostock`：`bs.login()` → `bs.query_histor
 - 缺省路由（2026-11-08 接入拍板）：CN 个股 K 线缺省 **baostock**（回退链首位：免费无凭据、个股官方口径 1990-12-19 起深于既有各源、分钟族免费有权限）；CN 指数 K 线缺省 akshare（库底 ≈1991-01-01 深于 baostock 官方口径 2006-01-01，浅库底源置首位会在路由选择阶段截胡更早区间——回退只在路由选择阶段发生），baostock 末位补位；CN ETF 缺省 tqsdk，baostock 回退（tqsdk 凭据未配置时自动跳过）；
 - 文档矛盾点（探针实证定案，报告 20261108T002941+0800）：参数说明写 `start/end`、示例代码写 `start_date/end_date`——**SDK 函数签名只接受 `start_date/end_date`**（传 `start` 报 TypeError，适配器按示例风格实现正确）；`end` 闭/开区间两页文档矛盾——**闭区间（包含）**（stock/index 单日窗口各返回 1 行，适配器按闭区间实现正确）。
 
-八个内置 Provider（akshare、alphafeed、baostock、tickflow、tiingo、tushare、tqsdk、twelvedata）均已接入，接口签名与数据口径按各自官方文档核实（tiingo 的 WS 消息形态细节与历史深度待数据探针实证回填，已在上述章节如实标注）；未配置凭据或未安装 SDK 时数据请求返回 `PROVIDER_NOT_IMPLEMENTED`，`provider=auto` 在无可用候选时返回 `NO_PROVIDER_AVAILABLE`，也**绝不返回写死的模拟行情**。
+同花顺金融数据 API（无官方 Python SDK：REST 用 httpx 同步客户端直连
+`GET https://fuyao.aicubes.cn/...`，认证经 `X-api-key` 请求头——key 不落 URL；
+2026-11-13 接入，接口签名按官方文档核实：overview、prices、a-share-index、
+fund-market、futures-prices、options-prices 六页）：
+
+| 资产类型 | 市场 | 变体 | 上游接口 | 周期 | adjust | 标准字段 |
+| --- | --- | --- | --- | --- | --- | --- |
+| stock（bars） | CN | ths（默认） | `GET /api/a-share/prices/historical` | P1D | none/qfq/hfq | 全部 |
+| index（bars） | CN | ths（默认） | `GET /api/a-share-index/prices/historical` | P1D | none | 全部 |
+| etf（bars） | CN | ths（默认） | `GET /api/fund/market/historical` | P1D | none | 全部 |
+| contract（bars） | CN | ths（默认） | `GET /api/futures/prices/daily` | P1D | none | 全部（量额单位上游未明示，原值透出） |
+| option（bars） | CN | ths（默认） | `GET /api/options/prices/daily` | P1D | none | 全部（量额单位上游未明示，原值透出） |
+| stock/index/etf（quotes） | CN | ths | `GET /api/a-share|a-share-index|fund/market*/snapshot` | —（快照无周期） | —（快照无复权） | timestamp/last_price/volume/amount（extensions 见下） |
+| contract/option（quotes） | CN | ths | `GET /api/futures|options/prices/intraday`（分时末点） | —（快照无周期） | —（快照无复权） | timestamp/last_price（量额不透出，见下） |
+
+- **凭据与启用**：API Key 经环境变量 `TAPEHUB_THS_API_KEY` 提供并经请求头传给
+  上游，禁止写入代码/manifest/日志；未配置时不启用（能力目录仍可见，
+  `enabled=false`），显式请求返回 `PROVIDER_DISABLED`；付费凭据 API，缺省路由
+  置**回退位末位**（`provider_routing.yaml`：CN stock/index/etf/contract 的
+  bars 与 CN stock/index/etf/contract 的 quotes 均在既有链末尾追加；CN option
+  的 bars/quotes 为 ths 独占组合）；
+- **统一 ApiResponse 信封**：业务结果（含错误）HTTP 恒 200，经 `code` 字段
+  表达（0=成功）——`code=4001`（频率超限）映射 `UPSTREAM_RATE_LIMITED`；
+  其余非 0（1001-1004 参数类/2001-2003 凭据权限/3001-3004 标的类/
+  5001-5003 服务端）统一 `UPSTREAM_ERROR`（details 携带 `upstream_code`/
+  `upstream_message`）；非 2xx 与 JSON 解析失败为防御性 `UPSTREAM_ERROR`
+  （官方约定业务错误走信封，HTTP 恒 200）；时间戳统一毫秒 Unix、
+  Asia/Shanghai，适配器负责北京时间归一化；
+- 标的代码映射（只收文档实证条目，其余 exchange 明确拒绝、探针后回填）：
+  stock/index/etf `CN-SSE-600519 → 600519.SH`、`CN-SZSE-000001 → 000001.SZ`
+  （BSE→BJ 仅元信息域实证、价格端点未实证，不收）；contract
+  `CN-SHFE-CU2601 → CU2601.SHF`（仅 SHFE 后缀文档实证）；option
+  `CN-CFFEX-IO2601-C-4000 → IO2601-C-4000.CFE`（仅 CFFEX 后缀文档实证），
+  期货/期权 symbol 段原样透传（不做行权价等结构改写）；
+- **上游能力边界（端外，文档明示）**：历史 K 线仅日线 `1d`；A 股/指数窗口
+  ≤10 年、ETF ≤5 自然年（越界上游返回 `code=1003`，经信封错误映射上抛）；
+  期货/期权日 K 端外仅 `time_period=day_1`（显式传参）；同花顺板块/行业指数
+  （`88xxxx.TI`）与商品指数（`850002.TI`）属同花顺特有 TI 类指数，本期不纳入；
+  ETF 行情仅支持 ETF（LOF/场外/REITs 上游返回 `code=3004`）；
+- 复权映射（仅 A 股历史 K 线有复权语义）：`none→none`、`qfq→forward`
+  （前复权）、`hfq→backward`（后复权）；指数无复权语义（响应 `data.adjust`
+  固定 null）、ETF/期货/期权仅声明 none；`ths` 的 `forward` 缺省恰与网关
+  个股声明默认 `qfq` 对齐，适配器仍始终显式传参；
+- **单位**：A 股快照/历史 K 线 `volume`=股、`turnover`=元（官方文档明示）；
+  ETF/期货/期权 volume/turnover 单位上游未明示，原值透出（不编造换算）；
+- **期货/期权实时快照取分时末点**（端外仅当前交易日，`session=intraday`、
+  `trade_date=0` 显式传参）：`last_price`=末点 `price`、`timestamp`=末点时间
+  （防御升序排后取末点；非交易日/盘前 `item=[]` 返回 `UPSTREAM_ERROR`）；
+  **`volume`/`amount` 不透出**——分时点量额口径（逐分钟增量 vs 当日累计）
+  上游未明示，汇总或透传都可能语义错误，能力目录 fields 仅声明
+  `timestamp` + `last_price`（探针核实口径后回填）；
+- 快照字段口径（A 股/指数/ETF）：`last_price`/`volume`/`turnover→amount`
+  直映；`extensions` 白名单：`open_price/high_price/low_price/prev_price/
+  price_change/price_change_ratio_pct`（ETF 另有
+  `price_amplitude_ratio_pct`/`turnover_ratio_pct`）；快照不返回中文名
+  `name`（上游约定，经元信息域端点解析，网关不透出）；
+- **历史覆盖范围（history.start/end）全部保持 null**（文档未公布，回填需
+  探针实证 + 人工确认后单独提交）；单次返回行数上限官方未标注（`offset`
+  分页参数行为未核实、适配器未启用），`meta.partial` 恒 false（隐式截断
+  行为待探针核实后补充覆盖判定）；
+- 快照为纯 REST 单次调用语义：无首包超时/`QUOTE_NOT_READY`（与
+  alphafeed/tickflow 一致），上游无推送接口，不实现快照流（流式请求返回
+  `UNSUPPORTED_CAPABILITY`）。
+
+九个内置 Provider（akshare、alphafeed、baostock、tickflow、ths、tiingo、tushare、tqsdk、twelvedata）均已接入，接口签名与数据口径按各自官方文档核实（tiingo 的 WS 消息形态细节与历史深度、ths 的历史深度与期货/期权快照量额口径待数据探针实证回填，已在上述章节如实标注）；未配置凭据或未安装 SDK 时数据请求返回 `PROVIDER_NOT_IMPLEMENTED`，`provider=auto` 在无可用候选时返回 `NO_PROVIDER_AVAILABLE`，也**绝不返回写死的模拟行情**。
 
 ### 新增 / 接入 Provider
 

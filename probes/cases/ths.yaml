@@ -1,0 +1,145 @@
+# 同花顺金融数据 API（ths）数据探针：历史 K 线可用性、复权生效性、历史深度
+# 收敛，及快照/分时形态观察（量额口径核实）。
+#
+# 上游限频为「约定 QPS」（超限信封 code=4001），具体 QPS 未公布：pacing 2 秒
+# （≤0.5 QPS）保守起步，探针报告中观察 4001 出现情况后收紧。
+probe: ths
+version: 1
+
+requires:
+  # ths 无官方 Python SDK：raw case 反射 httpx 直连（pyproject 可选依赖组名
+  # 亦为 ths，由 uv sync --extra ths 提供 httpx）
+  extras: [httpx]
+  env: [TAPEHUB_THS_API_KEY]
+
+pacing:
+  call_interval_s: 2.0
+  timeout_s: 60
+  # 本轮构成：availability 5（bars 五资产类型 × P1D）+ adjust_diff 4
+  # （stock 1 目标 × P1D × 2 pair × 2 调）+ history_depth 3 case × 最坏 12
+  # + raw 3 case × 2 调，最坏约 51，预算 60 留余量
+  max_calls: 60
+
+targets:
+  stock:
+    instrument: CN-SSE-600519
+    window: {start: 2025-01-01, end: 2025-12-31}
+    # 仅日线声明：一年约 244 根，10 为保守下限
+    min_bars: 10
+    required_fields: [open, high, low, close, volume, amount]
+  index:
+    instrument: CN-SSE-000001
+    # 上证综指（标准交易所指数；同花顺板块/行业 TI 类指数不在本期声明）
+    window: {start: 2025-01-01, end: 2025-12-31}
+    min_bars: 10
+    required_fields: [open, high, low, close, volume, amount]
+  etf:
+    instrument: CN-SSE-510300
+    # 沪深300ETF（官方文档示例标的；仅 ETF，LOF/场外/REITs 上游返回 3004）
+    window: {start: 2025-01-01, end: 2025-12-31}
+    min_bars: 10
+    required_fields: [open, high, low, close, volume, amount]
+  contract:
+    instrument: CN-SHFE-CU2706
+    # 铜期货合约（文档示例 CU2601.SHF 已到期）：SHFE→SHF 为唯一文档实证
+    # 后缀。合约会到期：运行前按上期所挂牌信息核对，失败如实记录，到期
+    # 轮换为当时的现活合约
+    window: {start: 2026-08-01, end: 2026-11-30}
+    min_bars: 20
+    required_fields: [open, high, low, close, volume, amount]
+  option:
+    instrument: CN-CFFEX-IO2612-C-4000
+    # 沪深300期权（文档示例 IO2601-C-4000.CFE 已到期）：CFFEX→CFE 为唯一
+    # 文档实证后缀。月度合约会到期：运行前按中金所挂牌信息核对（行权价
+    # 4000 需在挂牌行权价序列内），失败如实记录，到期轮换为现活合约
+    window: {start: 2026-10-01, end: 2026-11-30}
+    min_bars: 5
+    required_fields: [open, high, low, close, volume, amount]
+
+chain:
+  include_declared: true
+  skip: []
+  # stock 为唯一多复权资产（none/qfq/hfq）：对比不复权与前复权、不复权与
+  # 后复权的收盘价序列（分红送股窗口应有差异）
+  adjust_diff:
+    targets: [stock]
+    window: {start: 2024-01-01, end: 2025-12-31}
+    pairs: [[none, qfq], [none, hfq]]
+    fields: [close]
+    intervals: [P1D]
+  # 历史覆盖全部保持 null（文档未公布）：P1D 先行二分收敛；仅对证券类
+  # 目标做 depth——期货/期权合约生命周期有限（到期归档），「最早可用」
+  # 语义随合约轮换漂移，不做回溯（待 continuous 主连纳入声明后再议）
+  history_depth:
+    targets: [stock, index, etf]
+    earliest: 2000-01-01
+    era_step_years: 5
+    max_calls: 12
+    intervals: [P1D]
+  # 无 limit_truncation：官方未标注行数上限（A 股/指数窗口 ≤10 年、ETF ≤5
+  # 自然年为窗口上限而非行数上限，越界上游拒绝而非裁剪——错误码 1003 由
+  # 信封错误映射兜底）；historical 的 offset 分页行为未核实、适配器未启用，
+  # 不做隐式截断观察
+
+raw:
+  # A 股快照形态观察（快照不返回中文名 name 的文档口径确认、data.timestamp
+  # 为「最新上游有效时间」的取值形态）；headers 携带 X-api-key（凭据只经
+  # 环境变量引用，结果文件不记录值）
+  - id: ths-snapshot-shape
+    purpose: A 股快照响应形态观察（item 字段完整性、data.timestamp 口径、
+      name 缺失确认）
+    assert: false
+    module: httpx
+    client: {attr: Client, kwargs: {}}
+    call:
+      - {method: get, kwargs: {url: "https://fuyao.aicubes.cn/api/a-share/prices/snapshot", params: {thscodes: "600519.SH"}, headers: {"X-api-key": "$TAPEHUB_THS_API_KEY"}}}
+      - {method: json, kwargs: {}, target: result}
+    expect: {status: ok, min_rows: 1}
+    close: {method: close, kwargs: {}}
+
+  # 期货分时形态观察（快照 volume/amount 回填依据）：核实分时点量额口径
+  # 是逐分钟增量还是当日累计——单日末点 volume 与全点求和对比即可判别；
+  # 结论人工确认后回填 manifest fields 声明与 response_mapper 映射
+  - id: ths-futures-intraday-quantity-semantics
+    purpose: 期货分时点量额口径核实（volume/turnover 为逐分钟增量或当日
+      累计——期货/期权快照 volume/amount 是否透出的判定依据）
+    assert: false
+    module: httpx
+    client: {attr: Client, kwargs: {}}
+    call:
+      - {method: get, kwargs: {url: "https://fuyao.aicubes.cn/api/futures/prices/intraday", params: {thscode: "CU2706.SHF", session: "intraday", trade_date: "0"}, headers: {"X-api-key": "$TAPEHUB_THS_API_KEY"}}}
+      - {method: json, kwargs: {}, target: result}
+    expect: {status: ok, min_rows: 1}
+    close: {method: close, kwargs: {}}
+
+  # 错误指纹仅观察：采集无效 API Key 的信封报文（预期 code=2001 未认证，
+  # HTTP 恒 200——信封错误走业务码），供 UPSTREAM 细分错误映射参考
+  - id: ths-invalid-key-fingerprint
+    purpose: 采集无效 API Key 的错误指纹（字面量假 Key，非真实凭据；仅观察）
+    assert: false
+    module: httpx
+    client: {attr: Client, kwargs: {}}
+    call:
+      - {method: get, kwargs: {url: "https://fuyao.aicubes.cn/api/a-share/prices/snapshot", params: {thscodes: "600519.SH"}, headers: {"X-api-key": "probe-invalid-key-not-a-credential"}}}
+      - {method: json, kwargs: {}, target: result}
+    expect: {status: ok, min_rows: 1}
+    close: {method: close, kwargs: {}}
+
+notes: >
+  2026-11-13 接入首轮 case 设计（真实跑前占位）：上游限频为「约定 QPS」
+  （超限信封 code=4001）但未公布数值，pacing 2 秒保守起步，首轮报告观察
+  4001 后收紧。
+  快照链路（quotes）框架 chain 仅覆盖 fetch_bars，快照可用性经 raw case
+  观察（ths-snapshot-shape 覆盖 A 股快照；指数/ETF 快照与 A 股同构信封，
+  差异仅在端点路径，由单测确定性覆盖）。
+  待回填项（探针报告 → 人工确认 → 单独提交）：history.start（stock/index/
+  etf 三目标 P1D 二分收敛）、期货/期权快照 volume/amount 是否透出
+  （ths-futures-intraday-quantity-semantics：末点 volume 与全点求和对比
+  判别增量/累计口径）、无效 key 错误指纹核对（ths-invalid-key-fingerprint，
+  预期信封 code=2001）、其余期货交易所后缀（ZCE/DCE/INE/GFEX 未在文档
+  示例实证，确认后扩容 _SUFFIXES）、北交所 BSE→BJ 价格端点（元信息域
+  实证、价格端点未实证）、historical 的 offset 分页行为（决定是否启用
+  显式传参与 partial 覆盖判定）、A 股/指数窗口 10 年与 ETF 5 年越界报错
+  形态（信封 code=1003 实证）。
+  合约类目标（contract/option）会到期：运行前按交易所挂牌信息核对并轮换，
+  失败如实记录（tushare 先例）。

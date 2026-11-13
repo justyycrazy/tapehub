@@ -12,7 +12,17 @@ from typing import Any
 
 SRC_DIR = Path(__file__).parents[2] / "src" / "tapehub"
 
-PROVIDER_NAMES = ("akshare", "tushare", "tickflow", "alphafeed", "baostock", "tqsdk", "twelvedata")
+PROVIDER_NAMES = (
+    "akshare",
+    "tushare",
+    "tickflow",
+    "alphafeed",
+    "baostock",
+    "tqsdk",
+    "twelvedata",
+    "tiingo",
+    "ths",
+)
 
 
 def _read(rel: str) -> str:

@@ -9,9 +9,10 @@ from tapehub.providers.routing import builtin_routing_path, load_routing_config
 from tests.conftest import make_settings
 
 # 内置路由配置必须声明的组合数（provider_routing.yaml 现状快照）：
-# bars 11 条（stock CN/US/HK + index + contract + continuous + weighted-index
-# + etf CN/US + forex + crypto）+ quotes 10 条。
-EXPECTED_BUILTIN_ENTRY_COUNT = 21
+# bars 12 条（stock CN/US/HK + index + contract + option + continuous +
+# weighted-index + etf CN/US + forex + crypto，option 为 2026-11-13 ths
+# 接入新增）+ quotes 11 条（CN 五类资产 + HK/US stock + GLOBAL forex/crypto）。
+EXPECTED_BUILTIN_ENTRY_COUNT = 23
 
 
 class TestLoadRoutingConfig:
@@ -33,29 +34,42 @@ class TestLoadRoutingConfig:
             "tickflow",
             "akshare",
         )
-        # 完整回退链示例：CN 个股六源（baostock 置于首位 2026-11-08 接入拍板）、
-        # tqsdk 缺省的期货合约；CN 指数 akshare 优先（库底更深）、baostock 补位；
-        # CN ETF tqsdk 缺省、baostock 回退、akshare 末位兜底（2026-11-08 接入）
+        # 完整回退链示例：CN 个股六源（baostock 置于首位 2026-11-08 接入拍板、
+        # ths 末位回退 2026-11-13 接入）；tqsdk 缺省的期货合约（ths 末位）；
+        # CN 指数 akshare 优先（库底更深）、baostock 补位；CN ETF tqsdk 缺省、
+        # baostock 回退、akshare 兜底（ths 最末位，2026-11-13 接入）；CN 期权
+        # 为 ths 独占（首个期权 Provider）
         assert table[(DataType.BARS, "CN", AssetType.STOCK)] == (
             "baostock",
             "alphafeed",
             "tickflow",
             "tushare",
             "akshare",
+            "ths",
         )
-        assert table[(DataType.BARS, "CN", AssetType.INDEX)] == ("akshare", "baostock")
-        assert table[(DataType.BARS, "CN", AssetType.ETF)] == ("tqsdk", "baostock", "akshare")
+        assert table[(DataType.BARS, "CN", AssetType.INDEX)] == ("akshare", "baostock", "ths")
+        assert table[(DataType.BARS, "CN", AssetType.ETF)] == (
+            "tqsdk",
+            "baostock",
+            "akshare",
+            "ths",
+        )
         assert table[(DataType.BARS, "CN", AssetType.CONTRACT)] == (
             "tqsdk",
             "akshare",
+            "ths",
         )
+        assert table[(DataType.BARS, "CN", AssetType.OPTION)] == ("ths",)
         # 个股快照缺省：CN tqsdk 缺省（alphafeed 第二候选 2026-11-07 追加）；
         # HK/US alphafeed 接管缺省（tickflow 回退）
         assert table[(DataType.QUOTE, "CN", AssetType.STOCK)] == (
             "tqsdk",
             "alphafeed",
             "tickflow",
+            "ths",
         )
+        # CN 期权快照 ths 独占（2026-11-13 接入：分时端点取末点语义）
+        assert table[(DataType.QUOTE, "CN", AssetType.OPTION)] == ("ths",)
         assert table[(DataType.QUOTE, "HK", AssetType.STOCK)] == ("alphafeed", "tickflow")
         # 全部 order 链非空且首元素是各组合的既有缺省
         assert all(order for order in table.values())
