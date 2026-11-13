@@ -49,11 +49,15 @@ chain:
     max_calls: 16
     intervals: [P1D]
   limit_truncation:
-    # 单次行数上限官方未标注（受 1GB/月带宽配额约束）：documented_max 不写，
-    # 仅观察实测上限（供适配器补充 partial 覆盖判定的依据）
-    targets: [forex, crypto]
+    # fx PT1M 分段语义回归（2026-11-13 limit 专项实证，报告
+    # limit-truncation-20261113T2130+0800）：单次请求仅返回窗口起点首个
+    # 连续段（≈6 自然日，保头截尾、静默缺失）——7 天窗应完整（≈7k 根），
+    # 截断即 suspect；适配器已按「末根距 end >7 天」补 partial 判定。
+    # crypto PT1M 已收窄不声明（自动 skip）；crypto 已声明周期（PT2H/
+    # PT4H/P1D）段上限 5001 行远超实用窗长（PT2H≈416 天），不做常态探针
+    targets: [forex]
     interval: PT1M
-    max_range: P1Y
+    max_range: P7D
 
 raw:
   # 错误指纹仅观察：采集无效 API Token 的原始报错，供 UPSTREAM 细分错误码
@@ -178,3 +182,26 @@ notes: >
   窗口右端零点，approx 标注于 README/notes）；③PT2H/PT4H 扩容（forex
   全量声明、crypto 保留）；④crypto 日内分钟族（PT1M~PT1H）收窄不声明
   （密度实证裁决）。history_depth 探针转常态回归复验（预期值见其注释）。
+  2026-11-13 WS 行为探针 + limit 专项（目录外脚本，报告
+  ws-behavior-20261113T2130+0800 / limit-truncation-20261113T2130+0800）：
+  **WS**：有效阈值 fx=5（文档/AsyncAPI 的 7 被拒「thresholdLevel not
+  valid」并断连）、crypto=2；data 元素为**位置数组**（文档表格对象形态
+  错误）——fx Q 8 元素 [Q,ticker,date,bidSize,bidPrice,midPrice,askSize,
+  askPrice]、crypto Q 9 元素（+exchange）/ T 6 元素 [T,ticker,date,
+  exchange,lastSize,lastPrice]，mid 自洽验证；tickers 服务端过滤生效
+  （fx 147/147、crypto 206/206）；subscriptionId 经 I 帧
+  data.subscriptionId（整数）下发；心跳订阅即回 1 帧 + 实测 ~80s（非
+  文档 30s，看门狗 90s→180s）；E 帧 {response:{code,message}} 且错误后
+  服务端断连；fx 退订空订阅后服务端断连、crypto 退订后存活（多订阅
+  退订语义待二次探针）；bid/ask 单档在 WS 存在（fx 无 exchange、crypto
+  有）。**适配器三处必修已落地**（runtime 数组解析/fx 阈值 5/看门狗
+  180s+E 帧记录）。
+  **limit**：fx PT1M 单次请求仅返回窗口起点首个连续段（≈6 自然日，
+  保头截尾、静默缺失；段行数随窗口起点漂移 5671/6136/7028/7051，不可
+  硬编码 cap）；段后分段查询可行（E7 新段 7051）；fx PT5M/PT1H 一月窗
+  完整（分段仅 PT1M）；crypto 段上限 ≈5001 行（对已声明周期实用窗长
+  无影响）；**纠正密度误判**：crypto 1min 实际密集 ≈1440 根/天（首轮
+  「单日 1 根稀疏」系分段行为误读）。适配器 fx PT1M partial 判定
+  （末根距 end >7 天）已落地；limit_truncation 改 max_range P7D 常态
+  回归。WS 剩余待探针项：subscriptionId 增删订阅、多订阅退订语义、
+  fx thresholdLevel=5 精确语义（与文档「5=仅成交」矛盾）。

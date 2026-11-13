@@ -39,7 +39,7 @@ from tapehub.providers.tiingo.request_mapper import (
     WS_FX_ENDPOINT,
     WS_FX_THRESHOLD_LEVEL,
 )
-from tapehub.providers.tiingo.response_mapper import ws_price_to_quote
+from tapehub.providers.tiingo.response_mapper import ws_element_to_snapshot, ws_price_to_quote
 from tests.conftest import make_settings
 from tests.fixtures.providers import fake_tiingo_ws as fake_ws
 from tests.fixtures.providers.fake_tiingo_ws import FakeWebSocket, install
@@ -578,15 +578,44 @@ def test_adapter_capacity_gate_per_endpoint(monkeypatch: pytest.MonkeyPatch) -> 
 
 
 # ---------------------------------------------------------------------------
-# ws_price_to_quote 映射
+# ws_element_to_snapshot 标准化 + ws_price_to_quote 映射
 # ---------------------------------------------------------------------------
+
+
+def test_ws_element_to_snapshot_shapes() -> None:
+    """data 元素位置解析（2026-11-13 WS 探针实证的三种形状）：fx Q 8 元素
+    （无 exchange）、crypto Q 9 元素 / T 6 元素（带 exchange）；未知形状
+    返回空 dict（runtime 按 ticker 缺失丢弃）；对象形态透传。"""
+    fx = ws_element_to_snapshot(
+        fake_ws.top_element("eurusd", bid=1.085, ask=1.086)
+    )
+    assert fx["ticker"] == "eurusd"
+    assert fx["bidPrice"] == 1.085 and fx["askPrice"] == 1.086
+    assert fx["midPrice"] == 1.0855  # mid=(bid+ask)/2
+    assert fx["bidSize"] == 1.0 and fx["askSize"] == 1.0
+    assert "exchange" not in fx  # fx 无 exchange（8 元素）
+
+    crypto_q = ws_element_to_snapshot(
+        fake_ws.top_element("btcusd", bid=69207.0, ask=69207.01, exchange="gdax")
+    )
+    assert crypto_q["exchange"] == "gdax"  # crypto 9 元素带 exchange
+    assert crypto_q["midPrice"] == 69207.005
+
+    trade = ws_element_to_snapshot(
+        fake_ws.trade_element("btcusd", 69207.19, exchange="bitstamp")
+    )
+    assert trade["lastPrice"] == 69207.19 and trade["lastSize"] == 0.5
+    assert trade["exchange"] == "bitstamp"
+
+    assert ws_element_to_snapshot(["Q", "eurusd"]) == {}  # 形状不足
+    assert ws_element_to_snapshot({"ticker": "eurusd"}) == {"ticker": "eurusd"}  # 对象透传
 
 
 def test_ws_price_to_quote_top_mid_fallback() -> None:
     """TOP 元素：无 lastPrice 时 last_price 回退 midPrice；bid/ask 防御映射。"""
-    payload = fake_ws.top_element("eurusd", bid=1.085, ask=1.086, exchange=None)
+    snapshot = ws_element_to_snapshot(fake_ws.top_element("eurusd", bid=1.085, ask=1.086))
     quote = ws_price_to_quote(
-        payload, provider="tiingo", received_at=datetime.now(CN_TIMEZONE)
+        snapshot, provider="tiingo", received_at=datetime.now(CN_TIMEZONE)
     )
     assert quote.last_price == 1.0855  # mid=(bid+ask)/2
     assert quote.bid_price1 == 1.085
@@ -598,9 +627,11 @@ def test_ws_price_to_quote_top_mid_fallback() -> None:
 
 
 def test_ws_price_to_quote_trade_last_price() -> None:
-    payload = fake_ws.trade_element("btcusd", 43120.75, exchange="binance")
+    snapshot = ws_element_to_snapshot(
+        fake_ws.trade_element("btcusd", 43120.75, exchange="binance")
+    )
     quote = ws_price_to_quote(
-        payload, provider="tiingo", received_at=datetime.now(CN_TIMEZONE)
+        snapshot, provider="tiingo", received_at=datetime.now(CN_TIMEZONE)
     )
     assert quote.last_price == 43120.75
     assert quote.extensions == {"exchange": "binance"}
@@ -610,23 +641,12 @@ def test_ws_price_to_quote_contract_violations() -> None:
     now = datetime.now(CN_TIMEZONE)
     with pytest.raises(UpstreamError):  # 非 JSON 对象
         ws_price_to_quote(["unexpected"], provider="tiingo", received_at=now)
-    payload = fake_ws.trade_element("eurusd", 1.1)
-    payload.pop("date")
-    with pytest.raises(UpstreamError):  # 缺时间：不伪造
-        ws_price_to_quote(payload, provider="tiingo", received_at=now)
-    payload = fake_ws.top_element("eurusd")
-    payload["lastPrice"] = None
-    payload["midPrice"] = None
+    snapshot = ws_element_to_snapshot(fake_ws.trade_element("eurusd", 1.1))
+    snapshot.pop("date")
+    with pytest.raises(UpstreamError) as excinfo:  # 缺时间：不伪造
+        ws_price_to_quote(snapshot, provider="tiingo", received_at=now)
+    assert excinfo.value.details["field"] == "date"
     with pytest.raises(UpstreamError):  # lastPrice/midPrice 均缺失：不伪造
-        ws_price_to_quote(payload, provider="tiingo", received_at=now)
-
-
-def test_ws_price_to_quote_mid_only_top() -> None:
-    """文档口径：bid/ask 任一缺失时 midPrice 为 null 的 TOP 帧不得伪造价格，
-    lastPrice 缺失即契约违背（即便 bid/ask 存在也不自行计算）。"""
-    payload = fake_ws.top_element("eurusd")
-    payload.pop("midPrice")
-    payload.pop("bidPrice")
-    payload.pop("askPrice")
-    with pytest.raises(UpstreamError):
-        ws_price_to_quote(payload, provider="tiingo", received_at=datetime.now(CN_TIMEZONE))
+        ws_price_to_quote(
+            {"date": fake_ws.INITIAL_DATE}, provider="tiingo", received_at=now
+        )

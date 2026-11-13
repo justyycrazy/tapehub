@@ -7,17 +7,19 @@ websockets/crypto|forex 页实现，**消息形态细节待数据探针实证**�
   top-of-book+成交）与 ``wss://api.tiingo.com/fx``（thresholdLevel=7，
   top-of-book）——同一适配器持两个懒启动实例，各自单连接互不干扰；
 - 订阅帧（token 随帧传递，绝不写日志）：``{"eventName": "subscribe",
-  "authorization": <token>, "eventData": {"thresholdLevel": <2|7>,
+  "authorization": <token>, "eventData": {"thresholdLevel": <2|5>,
   "tickers": [<ticker>]}}``；退订同构 ``eventName: "unsubscribe"``。
-  **待探针实证**：tickers 服务端过滤是否生效（Runtime 已按 data 元素的
-  ``ticker`` 字段客户端兜底过滤，未订阅 symbol 的报文直接忽略）、
-  subscriptionId 增删订阅机制（首版按逐 symbol 独立订阅帧处理）、
-  上游退订生效性（linger 延迟退订语义保留，上游忽略时仅本地释放）；
+  2026-11-13 WS 行为探针实证（报告 ws-behavior-20261113T2130+0800）：
+  tickers 服务端过滤**生效**（客户端兜底过滤保留防御）；subscriptionId
+  经订阅 ack（I 帧）``data.subscriptionId``（整数）下发——增删订阅机制
+  未采用（逐 symbol 订阅帧已工作）；fx 退订空订阅后服务端断连（重连
+  状态机自动恢复），crypto 退订后连接存活；
 - 下行 ``{service, messageType: A|U|D|I|E|H, data}``：``H`` 为服务端
-  ~30s 心跳（客户端不发送应用层心跳，静默看门狗放宽到 90s）；
-  ``E`` 为错误帧（形态未实证，仅告警不断连）；``data`` 为数组，元素
-  按文档字段表解析（TOP：bidSize/bidPrice/askSize/askPrice/midPrice；
-  Trade：lastSize/lastPrice），映射见 response_mapper.ws_price_to_quote；
+  心跳（订阅后立即回 1 帧，此后实测 ~60-90s；客户端不发送应用层心跳，
+  静默看门狗 180s）；``E`` 为错误帧（``response.code/message``，错误后
+  服务端主动断连，重连状态机接管）；``data`` 为数组，元素按位置解析
+  （fx Q 8 元素 / crypto Q 9 元素、T 6 元素），标准化见
+  response_mapper.ws_element_to_snapshot，映射见 ws_price_to_quote；
 - 订阅确认语义：symbol 处于等首包态时收到首条匹配 data 元素即视为
   ``subscribed``（twelvedata「首包到达」口径一致）。
 
@@ -43,6 +45,7 @@ from typing import Any
 
 from tapehub.domain.errors import ProviderNotImplementedError
 from tapehub.providers.tiingo.request_mapper import ws_route
+from tapehub.providers.tiingo.response_mapper import ws_element_to_snapshot
 
 logger = logging.getLogger(__name__)
 
@@ -54,9 +57,10 @@ StreamListener = Callable[[str, str, "dict[str, Any] | None"], None]
 _RECONNECT_BACKOFF_SECONDS = 2.0
 # 引用归零后的真退订延迟（秒）：M2 轮询 / 流快速重连免重订
 _SNAPSHOT_LINGER_SECONDS = 60.0
-# 静默看门狗（秒）：服务端每 ~30s 推 H 心跳帧，该窗口内无任何报文即判定
-# 连接僵死重连（客户端不发送应用层心跳，三倍心跳周期留余量）
-_SILENCE_WATCHDOG_SECONDS = 90.0
+# 静默看门狗（秒）：服务端心跳实测 ~60-90s（2026-11-13 WS 探针，报告
+# ws-behavior-20261113T2130+0800；客户端不发送应用层心跳），该窗口内无
+# 任何报文即判定连接僵死重连（约两倍心跳周期留余量）
+_SILENCE_WATCHDOG_SECONDS = 180.0
 # WS 建连超时（秒）
 _OPEN_TIMEOUT_SECONDS = 20.0
 
@@ -382,31 +386,38 @@ class TiingoWsRuntime:
                 self._handle_message(message)
 
     def _handle_message(self, message: dict[str, Any]) -> None:
-        """按 messageType 分发；data 元素按 ``ticker`` 客户端兜底过滤。"""
+        """按 messageType 分发；data 元素按 ``ticker`` 客户端兜底过滤。
+
+        data 元素实测为**位置数组**（2026-11-13 探针实证，形状与标准化见
+        response_mapper.ws_element_to_snapshot）——经标准化为 snapshot dict
+        后走统一链路；对象形态透传兼容（防御）。E 帧提取 ``response.message``
+        告警（错误后服务端会主动断连，由重连状态机接管）。
+        """
         message_type = message.get("messageType")
         if message_type == "H":
-            return  # 服务端心跳（~30s）：静默看门狗口径覆盖活性
+            return  # 服务端心跳（实测 ~60-90s）：静默看门狗口径覆盖活性
         if message_type == "E":
-            # 错误帧形态未实证：仅告警不断连（订阅被上游整体拒绝时，
-            # 等 first-packet 的 symbol 由适配器首包超时兜底）
+            response = message.get("response")
+            detail = response.get("message") if isinstance(response, dict) else None
             logger.warning(
-                "tiingo ws (%s) upstream error frame: %r",
+                "tiingo ws (%s) upstream error frame: %s",
                 self._asset_type,
-                _scrub(str(message), self._api_key),
+                _scrub(str(detail or message), self._api_key),
             )
             return
         data = message.get("data")
         if not isinstance(data, list):
             return
         for element in data:
-            if not isinstance(element, dict):
+            if not isinstance(element, (dict, list)):
                 continue
-            ticker = element.get("ticker")
-            # 客户端兜底过滤：服务端 tickers 过滤未实证，非本 Runtime
+            snapshot = ws_element_to_snapshot(element)
+            ticker = snapshot.get("ticker")
+            # 客户端兜底过滤：服务端 tickers 过滤已实证生效（探针报告
+            # ws-behavior-20261113T2130+0800），防御保留——非本 Runtime
             # 订阅集的报文直接忽略（订阅集=活跃引用）
             if not isinstance(ticker, str) or ticker not in self._refs:
                 continue
-            snapshot = dict(element)
             self._snapshots[ticker] = snapshot
             self._resolve_waiters(ticker, snapshot)
             if ticker in self._pending:

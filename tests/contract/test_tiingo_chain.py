@@ -223,7 +223,8 @@ def test_quote_chain_forex(tiingo_client: TestClient) -> None:
 
     ws = fake_ws.FakeWebSocket.instances[-1]
     frames = ws.subscribe_frames("eurusd")
-    assert frames and frames[0]["eventData"]["thresholdLevel"] == 7  # forex 端点
+    # forex 阈值探针实证为 5（文档口径 7 被上游拒绝，报告 ws-behavior-20261113T2130+0800）
+    assert frames and frames[0]["eventData"]["thresholdLevel"] == 5
     assert frames[0]["authorization"] == "test-key"  # token 随帧传递
 
     data = body["data"]

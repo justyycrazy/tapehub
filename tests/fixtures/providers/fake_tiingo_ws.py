@@ -1,19 +1,24 @@
 """测试用 websockets 假模块（Tiingo WS 协议语义，零网络零凭据）。
 
-模拟 ``websockets.connect`` 与 WS 收发（官方文档 websockets/crypto|forex
-页的协议行为；消息形态细节未经探针实证，本假件按文档字段表造帧）：
+帧形状按 2026-11-13 WS 行为探针实证镜像（报告
+ws-behavior-20261113T2130+0800，官方文档字段表的对象形态错误）：
 
 - ``connect(endpoint, open_timeout=...)``：返回单例式 ``FakeWebSocket``
   （前 ``connect_failures`` 次抛连接异常，测重连退避）；
-- ``send``：``eventName=subscribe`` → 对 ``eventData.tickers`` 中未被
-  ``reject_symbols`` 拒绝的 ticker 立即推首条 data 元素（可配
-  ``first_price_delay``；被拒 ticker 不推数据——等 first-packet 超时
-  兜底，上游拒收帧形态未实证）；``eventName=unsubscribe`` 仅记录出站；
+- ``send``（``eventName=subscribe``）→ 先回 ack 帧
+  ``{"response": {"code": 200, "message": "Success"},
+  "data": {"subscriptionId": <int>}, "messageType": "I"}``，再回心跳帧
+  ``{…"messageType": "H"}``，随后对未被 ``reject_symbols`` 拒绝的 ticker
+  推首条 data 元素（可配 ``first_price_delay``）；被拒 ticker 不推数据
+  （等 first-packet 超时兜底）；``eventName=unsubscribe`` 仅记录出站；
+- ``data`` 元素为**位置数组**（与真实上游一致）：fx Q 8 元素（无
+  exchange）、crypto Q 9 元素 / T 6 元素（带 exchange），标准化见
+  response_mapper.ws_element_to_snapshot；
 - ``recv``：从入站队列取下一条报文（JSON 字符串，同真实库）；连接
   被丢弃/关闭后抛 ``ConnectionError``；
-- 测试手柄：``push_quote(ticker, element)`` 推 data 帧（``data`` 数组
-  可含多元素）、``push_heartbeat()`` 推服务端 H 帧、
-  ``drop_connection()`` 注入断连、``sent`` 全量出站记录。
+- 测试手柄：``push_quote(ticker, *elements)`` 推 data 帧（数组可含多
+  元素、含非订阅 ticker 测客户端过滤）、``push_heartbeat()`` 推服务端
+  H 帧、``drop_connection()`` 注入断连、``sent`` 全量出站记录。
 
 模块级旋钮（``install`` 重置）：
 
@@ -32,8 +37,8 @@ import sys
 import types
 from typing import Any
 
-# 快照样本（top-of-book 形态）：date 为 ISO UTC（北京 +8）
-INITIAL_DATE = "2026-01-05T00:00:00.000Z"
+# 快照样本（top-of-book 数组形态）：date 为 ISO UTC（北京 +8）
+INITIAL_DATE = "2026-01-05T00:00:00+00:00"
 
 
 def top_element(
@@ -44,21 +49,23 @@ def top_element(
     mid: float | None = None,
     date: str = INITIAL_DATE,
     exchange: str | None = None,
-) -> dict[str, Any]:
-    """构造 top-of-book data 元素（文档字段表：bidSize/bidPrice/askSize/
-    askPrice/midPrice）。"""
-    element: dict[str, Any] = {
-        "ticker": ticker,
-        "date": date,
-        "bidSize": 1.0,
-        "bidPrice": bid,
-        "askSize": 1.0,
-        "askPrice": ask,
-        # 文档公式 mid=(bid+ask)/2；取整消除浮点求和噪声（真实上游为显式字段）
-        "midPrice": round((bid + ask) / 2, 10) if mid is None else mid,
-    }
+) -> list[Any]:
+    """构造 top-of-book data 数组（探针实证位置语义）：
+    [“Q”, ticker, date, (exchange,) bidSize, bidPrice, midPrice,
+    askSize, askPrice]；exchange 为 None 时为 fx 8 元素形态。"""
+    mid_value = round((bid + ask) / 2, 10) if mid is None else mid
+    element: list[Any] = [
+        "Q",
+        ticker,
+        date,
+        1.0,  # bidSize
+        bid,
+        mid_value,
+        1.0,  # askSize
+        ask,
+    ]
     if exchange is not None:
-        element["exchange"] = exchange
+        element.insert(3, exchange)  # crypto 9 元素形态
     return element
 
 
@@ -69,16 +76,12 @@ def trade_element(
     size: float = 0.5,
     date: str = INITIAL_DATE,
     exchange: str | None = None,
-) -> dict[str, Any]:
-    """构造 Trade data 元素（文档字段表：lastSize/lastPrice）。"""
-    element: dict[str, Any] = {
-        "ticker": ticker,
-        "date": date,
-        "lastSize": size,
-        "lastPrice": price,
-    }
+) -> list[Any]:
+    """构造 Trade data 数组：["T", ticker, date, (exchange,) lastSize,
+    lastPrice]；exchange 为 None 时为 5 元素防御形态（未观测）。"""
+    element: list[Any] = ["T", ticker, date, size, price]
     if exchange is not None:
-        element["exchange"] = exchange
+        element.insert(3, exchange)  # crypto 6 元素形态
     return element
 
 
@@ -91,6 +94,7 @@ class FakeWebSocket:
     initial_elements: dict[str, dict[str, Any]] | None = None
     # 送达 N 条报文后注入一次断连（单次触发；需配合 auto_price 保证后续流量）
     drop_after_messages: int | None = None
+    _next_subscription_id = 57608187
 
     def __init__(self, endpoint: str) -> None:
         self.endpoint = endpoint
@@ -115,6 +119,18 @@ class FakeWebSocket:
         event_data = message.get("eventData") or {}
         tickers = [t for t in event_data.get("tickers") or [] if isinstance(t, str)]
         if event == "subscribe":
+            # 探针实证 ack 帧：I（含整数 subscriptionId）+ H
+            FakeWebSocket._next_subscription_id += 1
+            self._inbound.put_nowait(
+                {
+                    "response": {"code": 200, "message": "Success"},
+                    "data": {"subscriptionId": FakeWebSocket._next_subscription_id},
+                    "messageType": "I",
+                }
+            )
+            self._inbound.put_nowait(
+                {"response": {"code": 200, "message": "HeartBeat"}, "messageType": "H"}
+            )
             for ticker in tickers:
                 if ticker in self._reject():
                     continue  # 拒收：不推数据（首包超时兜底）
@@ -127,13 +143,20 @@ class FakeWebSocket:
     def _reject(self) -> set[str]:
         return FakeWebSocket.reject_symbols
 
+    def _service(self) -> str:
+        return "crypto_data" if self.endpoint.endswith("/crypto") else "fx"
+
     def _schedule_first_element(self, ticker: str) -> None:
         """首条 data 元素：默认立即入队；配置 first_price_delay 时延迟。"""
 
         def _emit() -> None:
             payload = (FakeWebSocket.initial_elements or {}).get(ticker)
             self._inbound.put_nowait(
-                {"service": "fx_data", "messageType": "A", "data": [payload or top_element(ticker)]}
+                {
+                    "service": self._service(),
+                    "messageType": "A",
+                    "data": [payload or top_element(ticker)],
+                }
             )
 
         delay = FakeWebSocket.first_price_delay
@@ -205,17 +228,19 @@ class FakeWebSocket:
     # 测试手柄
     # ------------------------------------------------------------------
 
-    def push_quote(self, ticker: str, *elements: dict[str, Any]) -> None:
+    def push_quote(self, ticker: str, *elements: dict[str, Any] | list[Any]) -> None:
         """推一条 data 帧（数组元素任意；可含非订阅 ticker 测客户端过滤）。"""
         if not elements:
             elements = (top_element(ticker),)
         self._inbound.put_nowait(
-            {"service": "fx_data", "messageType": "A", "data": list(elements)}
+            {"service": self._service(), "messageType": "A", "data": list(elements)}
         )
 
     def push_heartbeat(self) -> None:
-        """推一条服务端 H 心跳帧（~30s 周期，静默看门狗活性口径）。"""
-        self._inbound.put_nowait({"service": "fx_data", "messageType": "H"})
+        """推一条服务端 H 心跳帧（实测 ~60-90s 周期，静默看门狗活性口径）。"""
+        self._inbound.put_nowait(
+            {"response": {"code": 200, "message": "HeartBeat"}, "messageType": "H"}
+        )
 
     def drop_connection(self) -> None:
         """注入断连：唤醒阻塞中的 recv 并让其抛 ConnectionError。"""
@@ -262,4 +287,5 @@ def install(monkeypatch: Any) -> types.ModuleType:
     FakeWebSocket.first_price_delay = 0.0
     FakeWebSocket.initial_elements = None
     FakeWebSocket.drop_after_messages = None
+    FakeWebSocket._next_subscription_id = 57608187
     return module

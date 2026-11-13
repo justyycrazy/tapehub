@@ -32,10 +32,21 @@
 #   ≈2020-02-15 与边界相符）；crypto 全周期 = depth 二分收敛 ≈2011-08-25
 #   （窗口右端零点，90 天粒度 approx、真值可能更早，三轮一致，报告
 #   20261113T163754/173648/183740/194428+0800）；
-# - **日内数据密度（2026-11-13 受控调用实证）**：fx 1min 单日 2811 根
-#   （密度充足）；crypto 1min 单日仅 1 根、年窗 5001 根（≈14 根/天，极
-#   稀疏）——据此裁决 crypto 日内分钟族（PT1M~PT1H）不声明（2026-11-13
-#   人工确认），PT2H/PT4H 粗日内经探针实证保留声明；
+# - **日内数据密度与分段（2026-11-13 受控调用 + limit 专项实证，纠正
+#   首轮「crypto 1min 稀疏 ≈14 根/天」误判——年窗 5001 根系分段截断，
+#   实际密集 ≈1440 根/天）**：fx 1min 单日 2811 根（充足）且单次请求
+#   仅返回窗口起点首个连续段 ≈6 自然日（保头截尾，segment 后分段查询
+#   可行）；crypto 1min 密集但段上限 ≈5001 行（≈3.5 天/段）。crypto 日内
+#   分钟族（PT1M~PT1H）不声明系基于误判前提的裁决（2026-11-13 人工
+#   确认）——前提已纠正，是否恢复声明待重新裁决；PT2H/PT4H 粗日内经
+#   探针实证保留声明；
+# - **fx PT1M 单次请求分段（limit 专项实证）**：长窗口仅返回窗口起点
+#   首个连续段（≈6 自然日，保头截尾），适配器按「末根距请求 end >7 天
+#   （段长 + 周末/假日余量）」标记 partial 提示尾部截断；更长窗口由
+#   客户端分段查询（段后分段可行，E7 实证）；网关侧不做多段聚合
+#   （fx PT1M 一年 ≈61 段请求会打满小时配额）；其余周期不受影响
+#   （fx PT5M/PT1H 一月窗完整实证；crypto 已声明周期段容量远超实用
+#   窗长）；
 # - 单次返回行数上限：官方文档未标注（受 1GB/月带宽配额约束），
 #   partial 恒 false，上限与隐式截断行为待探针核实；
 # - interval/时间边界口径（2026-11-13 探针实证）：两端点均为 UTC
@@ -49,15 +60,20 @@
 #   provider=tiingo 或 twelvedata 缺席/不可解析时启用）；
 # - 实时快照与快照流（WS wss://api.tiingo.com/crypto 与 wss://api.tiingo.com/
 #   fx，websockets 库直连）：subscribe 帧 {"eventName": "subscribe",
-#   "authorization": <token>, "eventData": {"thresholdLevel": <2|7>,
-#   "tickers": [<ticker>]}}，crypto thresholdLevel=2（top-of-book+成交）、
-#   forex thresholdLevel=7（top-of-book）；下行 {service, messageType:
-#   A|U|D|I|E|H, data}，H 为服务端 ~30s 心跳；**待探针实证项（WS 行为
-#   走目录外脚本，见 probes/cases/tiingo.yaml notes）**：tickers 服务端
-#   过滤是否生效（适配器已按 data.ticker 客户端兜底过滤）、
-#   subscriptionId 增删订阅机制、data 元素对象形态（首版按文档表格字段名
-#   解析，探针实测后修正）、上游退订（eventName=unsubscribe）生效性
-#   （linger 延迟退订语义保留，上游忽略时仅本地释放）；
+#   "authorization": <token>, "eventData": {"thresholdLevel": <2|5>,
+#   "tickers": [<ticker>]}}——阈值按 2026-11-13 WS 行为探针实证（报告
+#   ws-behavior-20261113T2130+0800）：fx=5（文档/AsyncAPI 口径 7 被上游
+#   拒绝「thresholdLevel not valid」并断连）、crypto=2（top-of-book+
+#   成交，与文档一致）；下行 {service, messageType: A|U|D|I|E|H, data}：
+#   I = 订阅 ack（data.subscriptionId 整数下发）、H = 心跳（订阅后立即
+#   回 1 帧，此后实测 ~60-90s，看门狗 180s）、E = 错误帧（错误后服务端
+#   主动断连，重连状态机接管）；**data 元素为位置数组**（文档字段表的
+#   对象形态错误，标准化见 response_mapper.ws_element_to_snapshot）——
+#   fx Q 8 元素 [Q,ticker,date,bidSize,bidPrice,midPrice,askSize,askPrice]、
+#   crypto Q 9 元素（+exchange）/ T 6 元素 [T,ticker,date,exchange,
+#   lastSize,lastPrice]；tickers 服务端过滤实测生效（客户端兜底过滤保留
+#   防御）；退订实测：fx 退订空订阅后服务端断连（重连状态机恢复，linger
+#   语义保留）、crypto 退订后连接存活（多订阅退订语义待二次探针）；
 # - 并发订阅软上限：TAPEHUB_TIINGO_SUBSCRIPTION_LIMIT（默认 8，防失控；
 #   上游未公布并发上限，硬约束为月度 500 唯一品种，网关不做计数），
 #   达限急切返回 UPSTREAM_SUBSCRIPTION_LIMIT（429）；

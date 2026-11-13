@@ -34,10 +34,12 @@ REST_BASE = "https://api.tiingo.com"
 WS_CRYPTO_ENDPOINT = "wss://api.tiingo.com/crypto"
 WS_FX_ENDPOINT = "wss://api.tiingo.com/fx"
 
-# WS 订阅级别（官方文档 websockets 页）：crypto 2 = 逐交易所 top-of-book +
-# 成交更新；forex 7 = top-of-book 更新（bid/ask 或 size 变动）
+# WS 订阅级别（2026-11-13 WS 行为探针实证，报告 ws-behavior-20261113T2130
+# +0800：文档/AsyncAPI 口径不可信——fx=7 被上游拒绝「thresholdLevel not
+# valid」并断连，fx=5 实测持续推送 top-of-book；crypto=2 = top-of-book +
+# 成交，与文档一致）
 WS_CRYPTO_THRESHOLD_LEVEL = 2
-WS_FX_THRESHOLD_LEVEL = 7
+WS_FX_THRESHOLD_LEVEL = 5
 
 # 时间边界统一解释为 UTC 墙钟（2026-11-13 探针实证：crypto date 带 +00:00、
 # forex date 带 Z，两端点均为 UTC 口径）

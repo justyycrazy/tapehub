@@ -364,6 +364,66 @@ def test_fx_window_entirely_before_archive_empty(monkeypatch: pytest.MonkeyPatch
     assert StubClient.instances == []  # 早退路径不构造 HTTP 客户端
 
 
+def test_fx_one_min_segment_partial(monkeypatch: pytest.MonkeyPatch) -> None:
+    """fx PT1M 分段语义（2026-11-13 limit 专项实证）：长窗口只返回窗口
+    起点的第一个连续段（≈6 自然日，保头截尾）——末根距 end 超 7 天
+    （段长 + 周末/假日余量）标记 partial=true 提示尾部截断。"""
+    install(monkeypatch)
+    preset_payload(
+        monkeypatch,
+        forex_rows([f"2026-01-{day:02d}T00:00:00.000Z" for day in range(1, 7)]),
+    )
+    adapter = _adapter()
+    query = _query(
+        interval=Interval.parse("PT1M"),
+        start=datetime(2026, 1, 1, tzinfo=CN_TIMEZONE),
+        end=datetime(2026, 3, 1, tzinfo=CN_TIMEZONE),
+    )
+    batch = asyncio.run(adapter.fetch_bars(query))
+
+    assert batch.count == 6  # 段 [01-01, 01-06]（UTC）
+    assert batch.partial is True  # 末根距 end ≈54 天 > 7 天容差
+
+
+def test_fx_one_min_short_window_not_partial(monkeypatch: pytest.MonkeyPatch) -> None:
+    """fx PT1M 短窗（≤7 天）：段长覆盖整窗，周末/假日尾部间隙在容差内
+    不误报 partial。"""
+    install(monkeypatch)
+    preset_payload(
+        monkeypatch,
+        forex_rows(["2026-01-01T00:00:00.000Z", "2026-01-05T00:00:00.000Z"]),
+    )
+    adapter = _adapter()
+    query = _query(
+        interval=Interval.parse("PT1M"),
+        start=datetime(2026, 1, 1, tzinfo=CN_TIMEZONE),
+        end=datetime(2026, 1, 7, tzinfo=CN_TIMEZONE),
+    )
+    batch = asyncio.run(adapter.fetch_bars(query))
+
+    assert batch.count == 2
+    assert batch.partial is False  # 末根距 end ≈1.7 天 < 7 天容差
+
+
+def test_fx_other_intervals_no_segment_partial(monkeypatch: pytest.MonkeyPatch) -> None:
+    """分段限制仅 fx PT1M：PT5M 一月窗完整实证（E10），partial 恒 false。"""
+    install(monkeypatch)
+    preset_payload(
+        monkeypatch,
+        forex_rows(["2025-06-01T21:00:00.000Z", "2025-07-01T23:00:00.000Z"]),
+    )
+    adapter = _adapter()
+    query = _query(
+        interval=Interval.parse("PT5M"),
+        start=datetime(2025, 6, 1, tzinfo=CN_TIMEZONE),
+        end=datetime(2025, 7, 2, 8, tzinfo=CN_TIMEZONE),
+    )
+    batch = asyncio.run(adapter.fetch_bars(query))
+
+    assert batch.count == 2
+    assert batch.partial is False  # 非 PT1M 不适用分段判定
+
+
 def test_other_bad_request_still_raises(monkeypatch: pytest.MonkeyPatch) -> None:
     """指纹外的其余 400（如无效参数）不属于边界结论：照常上抛，由应用层
     包装为 UPSTREAM_ERROR。"""

@@ -112,6 +112,68 @@ def to_standard_bars(rows: list[dict[str, Any]], asset_type: AssetType) -> list[
     return bars
 
 
+def ws_element_to_snapshot(element: Any) -> dict[str, Any]:
+    """WS data 元素 → 标准化快照 dict（runtime 缓存/监听/映射统一消费）。
+
+    2026-11-13 WS 行为探针实证（报告 ws-behavior-20261113T2130+0800，
+    官方文档字段表的对象形态**错误**）——data 元素为位置数组：
+
+    - fx Q（8 元素）：``["Q", ticker, date, bidSize, bidPrice, midPrice,
+      askSize, askPrice]``（无 exchange；mid=(bid+ask)/2 探针自洽验证）；
+    - crypto Q（9 元素）：同上，第 4 位多 ``exchange``；
+    - crypto T（6 元素）：``["T", ticker, date, exchange, lastSize,
+      lastPrice]``；
+    - 对象形态透传（防御：上游若回归文档形态按字段名读取）；
+    - 形状不足/未知类型返回空 dict（runtime 按 ticker 缺失丢弃）。
+    """
+    if isinstance(element, dict):
+        return element
+    if not isinstance(element, list) or len(element) < 3:
+        return {}
+    kind, ticker, date = element[0], element[1], element[2]
+    if kind == "Q" and len(element) >= 9:
+        exchange, bid_size, bid_price, mid_price, ask_size, ask_price = element[3:9]
+        return {
+            "ticker": ticker,
+            "date": date,
+            "exchange": exchange,
+            "bidSize": bid_size,
+            "bidPrice": bid_price,
+            "midPrice": mid_price,
+            "askSize": ask_size,
+            "askPrice": ask_price,
+        }
+    if kind == "Q" and len(element) >= 8:
+        bid_size, bid_price, mid_price, ask_size, ask_price = element[3:8]
+        return {
+            "ticker": ticker,
+            "date": date,
+            "bidSize": bid_size,
+            "bidPrice": bid_price,
+            "midPrice": mid_price,
+            "askSize": ask_size,
+            "askPrice": ask_price,
+        }
+    if kind == "T" and len(element) >= 6:
+        exchange, last_size, last_price = element[3:6]
+        return {
+            "ticker": ticker,
+            "date": date,
+            "exchange": exchange,
+            "lastSize": last_size,
+            "lastPrice": last_price,
+        }
+    if kind == "T" and len(element) >= 5:
+        last_size, last_price = element[3:5]
+        return {
+            "ticker": ticker,
+            "date": date,
+            "lastSize": last_size,
+            "lastPrice": last_price,
+        }
+    return {}
+
+
 def ws_price_to_quote(
     payload: Any, *, provider: str, received_at: datetime
 ) -> Quote:

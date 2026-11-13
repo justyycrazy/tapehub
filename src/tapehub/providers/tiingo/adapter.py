@@ -11,12 +11,19 @@
   1000 请求/天，由 README 限额说明与探针 pacing 兜底）；其余非 2xx 与
   JSON 解析失败以 UPSTREAM_ERROR（携带 status_code）上抛——应用层
   TapehubError 直接透传；
-- 单次返回行数上限：官方文档未标注（受 1GB/月带宽配额约束），partial
-  恒 false（上限与隐式截断行为待探针核实后补充覆盖判定）；
+- 单次返回行数上限：官方文档未标注（受 1GB/月带宽配额约束）。
+  **fx PT1M 分段语义**（2026-11-13 limit 专项实证，报告
+  limit-truncation-20261113T2130+0800）：单次请求仅返回窗口起点首个
+  连续段（≈6 自然日，保头截尾、静默缺失）——末根距请求 end 超 7 天
+  标记 partial=true；其余周期维持 partial=false（段容量远超实用窗长）；
 - 实时快照（M2）与快照流（M3）共用按资产类型分流的 WS 共享运行时
   （crypto/fx 各自端点单连接，``websockets`` 为可选依赖延迟导入）。
-  **WS 消息形态细节（tickers 服务端过滤、subscriptionId、退订生效性）
-  未经探针实证**，Runtime 已做客户端兜底过滤与 linger 本地释放；
+  WS 协议细节已按 2026-11-13 行为探针实证（报告
+  ws-behavior-20261113T2130+0800）：data 元素为**位置数组**（标准化见
+  response_mapper.ws_element_to_snapshot）、tickers 服务端过滤生效
+  （客户端兜底保留）、subscriptionId 经 I 帧下发（未采用，逐 symbol
+  订阅帧已工作）、心跳实测 ~60-90s（看门狗 180s）、fx 退订空订阅后
+  服务端断连（重连状态机恢复）；
 - API Key 通过 ``TAPEHUB_TIINGO_API_KEY`` 环境变量注入（pydantic-settings）；
 - 容量闸门：并发订阅 symbol 数达 ``tiingo_subscription_limit``（默认 8，
   软上限防失控；上游硬约束为月度 500 唯一品种，网关不做计数）时急切返回
@@ -36,7 +43,7 @@
 
 import asyncio
 from collections.abc import AsyncIterator
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 from tapehub.domain.errors import (
@@ -46,6 +53,7 @@ from tapehub.domain.errors import (
     UpstreamRateLimitedError,
     UpstreamSubscriptionLimitError,
 )
+from tapehub.domain.intervals import Interval
 from tapehub.domain.models import (
     CN_TIMEZONE,
     BarBatch,
@@ -73,6 +81,11 @@ if TYPE_CHECKING:
 # httpx 客户端超时（秒）：应用层 upstream_timeout_seconds（默认 30s）为
 # 整体兜底，客户端自身超时取更小的保守值，避免长挂线程占用 worker
 _HTTP_TIMEOUT_SECONDS = 20.0
+
+# fx PT1M 分段判据常量（见 _fetch_sync 注释）：仅 fx 一分钟周期适用
+_FX_ONE_MIN = Interval.parse("PT1M")
+# 尾部缺失容差：段长 ≈6 自然日 + 周末/假日 1 天余量（窗口 ≤7 天不误报）
+_FX_SEGMENT_TOLERANCE = timedelta(days=7)
 
 # 声明 quotes 能力的资产类型（WS 端点分流；与 manifest 声明一致）
 _QUOTE_ASSET_TYPES = ("forex", "crypto")
@@ -281,8 +294,16 @@ class ProviderAdapter(BaseProviderAdapter):
         bars = to_standard_bars(rows, query.asset_type)
         # 上游按日期范围过滤，这里按闭区间 [start, end] 精确复核统一时间语义
         window = [bar for bar in bars if query.start <= bar.timestamp <= query.end]
-        # 单次行数上限官方未标注（带宽配额约束），覆盖判定待探针后补充，
-        # 诚实起见 partial 恒 false（不编造截断结论）
+        # fx PT1M 分段语义（2026-11-13 limit 专项实证，报告
+        # limit-truncation-20261113T2130+0800）：单次请求仅返回窗口起点的
+        # 第一个连续数据段（≈6 自然日，保头截尾、静默缺失，段后分段查询
+        # 可行）——末根距请求 end 超 7 天（段长 + 周末/假日余量）即判定
+        # 尾部截断。其余周期不适用：fx PT5M+ 一月窗完整实证、crypto 已
+        # 声明周期（PT2H/PT4H/P1D）段上限 5001 行远超实用窗长，均维持
+        # partial=false（行数上限官方未标注，不编造截断结论）
+        partial = False
+        if query.interval == _FX_ONE_MIN and window:
+            partial = (query.end - max(bar.timestamp for bar in window)) > _FX_SEGMENT_TOLERANCE
         page = paginate_bars(window, query.offset, query.limit)
         return BarBatch(
             instrument=query.instrument,
@@ -292,7 +313,7 @@ class ProviderAdapter(BaseProviderAdapter):
             received_at=datetime.now(CN_TIMEZONE),
             offset=query.offset,
             limit=query.limit,
-            partial=False,
+            partial=partial,
         )
 
     def _fetch_rows(self, api_key: str, operation: str, query: BarQuery) -> list[dict[str, Any]]:

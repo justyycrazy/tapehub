@@ -800,6 +800,18 @@ websockets/forex 五页）：
   墙钟 `YYYY-MM-DDTHH:MM:SS`——两端点均为 UTC（crypto `date` 带 `+00:00`、
   forex `date` 带 Z，日内分布吻合）；bar 时间戳解析 ISO 8601 后统一北京
   时间归一化；
+- **fx PT1M 单次请求分段（2026-11-13 limit 专项实证，报告
+  limit-truncation-20261113T2130+0800）**：单次请求仅返回窗口起点首个
+  连续段 ≈6 自然日（保头截尾、静默缺失；段行数随窗口起点漂移
+  5671/6136/7028/7051，不可硬编码 cap）；段后分段查询可行（E7 实证新
+  段 7051 根）；适配器按「末根距请求 end >7 天（段长 + 周末/假日余量）」
+  标记 `meta.partial=true` 提示尾部截断；其余周期不受影响（fx PT5M/
+  PT1H 一月窗完整实证 6333/531 根；crypto 已声明周期段上限 5001 行
+  ≈PT2H 416 天，实用窗长内无影响）；网关侧不做多段聚合（fx PT1M 一年
+  ≈61 段请求会打满小时配额），长窗调用方自行分段；
+- **纠正密度误判**：crypto 1min 实际密集 ≈1440 根/天（年窗 5001 根系
+  分段截断而非稀疏）；crypto 日内分钟族不声明的裁决基于误判前提，
+  是否恢复声明待重新裁决（fx 1min 密度充足 ≈2811 根/日）；
 - 区间无数据行为：crypto 端点对历史外窗口返回 200 `[]`（正常空批）；
   fx 端点的档案边界 400 按指纹 `"End date must be >="` 归一化为空结果
   （上游权威边界结论，twelvedata 空窗指纹同款先例）；
@@ -808,22 +820,28 @@ websockets/forex 五页）：
 - 实时快照与快照流（WS 端点 `wss://api.tiingo.com/crypto` 与
   `wss://api.tiingo.com/fx`，按资产类型分流两个懒启动 Runtime）：订阅帧
   `{"eventName": "subscribe", "authorization": <token>, "eventData":
-  {"thresholdLevel": <2|7>, "tickers": [<ticker>]}}`——crypto thresholdLevel=2
-  （top-of-book + 成交）、forex thresholdLevel=7（top-of-book）；下行
-  `{service, messageType: A|U|D|I|E|H, data}`，`H` 为服务端 ~30s 心跳
-  （客户端不发送应用层心跳，静默看门狗 90s）；
-- **WS 行为待探针实证项（首版按官方文档实现 + 防御性解析，诚实标注）**：
-  tickers 服务端过滤是否生效（Runtime 已按 data 元素 `ticker` 字段客户端
-  兜底过滤，非订阅 symbol 的报文直接忽略）、subscriptionId 增删订阅机制
-  （首版按逐 symbol 独立订阅帧处理）、data 元素对象形态（首版按文档表格
-  字段名解析）、上游退订（`eventName=unsubscribe`）生效性；
+  {"thresholdLevel": <2|5>, "tickers": [<ticker>]}}`——阈值按 2026-11-13
+  WS 行为探针实证（报告 ws-behavior-20261113T2130+0800）：forex=**5**
+  （文档/AsyncAPI 口径 7 被上游拒绝「thresholdLevel not valid」并断连）、
+  crypto=2（top-of-book + 成交）；下行 `{service, messageType:
+  A|U|D|I|E|H, data}`：I = 订阅 ack（`data.subscriptionId` 整数下发）、
+  H = 心跳（订阅后立即回 1 帧，此后实测 ~60-90s——看门狗 180s）、
+  E = 错误帧（错误后服务端主动断连，重连状态机接管）；
+- **data 元素为位置数组（WS 探针实证，官方文档字段表的对象形态错误，
+  标准化见 response_mapper.ws_element_to_snapshot）**：fx Q 8 元素
+  `["Q", ticker, date, bidSize, bidPrice, midPrice, askSize, askPrice]`
+  （mid 自洽验证）、crypto Q 9 元素（+exchange）/ T 6 元素
+  `[type, ticker, date, exchange, lastSize, lastPrice]`；**tickers 服务端
+  过滤实测生效**（fx 147/147、crypto 206/206——客户端兜底过滤保留
+  防御）；退订实测：fx 退订空订阅后服务端断连（重连状态机恢复，linger
+  语义保留）、crypto 退订后连接存活（多订阅退订语义待二次探针）；
 - 快照字段口径：`last_price` 取 `lastPrice`、缺失回退 `midPrice`（文档：
   bid/ask 均非空时 mid=(bid+ask)/2；两者均缺失属上游契约违背返回
-  `UPSTREAM_ERROR`）；`bid_price1/ask_price1/bid_volume1/ask_volume1` 防御
-  映射（文档核实字段，缺失 → null）；标准 `volume`/`amount` 恒 null
-  （`lastSize` 为单笔成交量的口径未实证，不冒充累计成交量）——能力目录
-  fields 首版仅声明 `timestamp` + `last_price`（twelvedata 收窄先例），
-  WS 探针实证后扩容；`extensions` 白名单：`exchange`（缺失不透出）；
+  `UPSTREAM_ERROR`）；`bid_price1/ask_price1/bid_volume1/ask_volume1`
+  防御映射（WS 探针实证单档 bid/ask 存在，缺失 → null）；标准
+  `volume`/`amount` 恒 null（`lastSize` 为单笔成交量的口径未实证，不
+  冒充累计成交量）——能力目录 fields 声明见上表（WS 实证后扩容）；
+  `extensions` 白名单：`exchange`（缺失不透出）；
 - Runtime 形态：asyncio 原生共享连接（crypto/fx 各一单连接，同端点多实例
   启动告警），per-symbol 引用计数；引用归零延迟 60s（linger）向上游发
   退订并本地释放缓存；断连广播 `upstream_disconnected` 后退避重连自动重订；
