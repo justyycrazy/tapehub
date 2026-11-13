@@ -243,7 +243,7 @@ class TestUnsupportedCapability:
 
 
 class TestRoutingErrors:
-    """默认应用：五个 Provider 全部接入，但凭据/SDK 均未配置。"""
+    """默认应用：内置 Provider 全部接入，但凭据/SDK 均未配置。"""
 
     PARAMS = {**BAR_PARAMS, "instrument": "CN-SSE-600000"}
 
@@ -264,7 +264,8 @@ class TestRoutingErrors:
         reason="akshare SDK 已安装，501/SDK 缺失路径不适用（真实调用由探针覆盖）",
     )
     def test_auto_selects_first_candidate_but_sdk_missing(self, default_client) -> None:  # type: ignore[no-untyped-def]
-        """auto 选中 akshare（注册顺序第一）后，SDK 未安装必须返回明确错误。"""
+        """auto 选中链首恒启用候选（CN stock 链首 baostock，凭据无关）后，
+        SDK 未安装必须在执行期返回明确错误（不伪造数据、不切换 Provider）。"""
         response = default_client.get("/v1/market/bars", params=self.PARAMS)
         assert response.status_code == 501
         assert response.json()["error"]["code"] == "PROVIDER_NOT_IMPLEMENTED"
@@ -286,22 +287,22 @@ class TestRoutingErrors:
         assert "TAPEHUB_TQSDK_AUTH_USER" in error["details"]["disabled_reason"]
         assert "TAPEHUB_TQSDK_AUTH_PASSWORD" in error["details"]["disabled_reason"]
 
-    @pytest.mark.skipif(
-        _AKSHARE_SDK_INSTALLED,
-        reason="akshare SDK 已安装时会真实调用上游，凭据缺失场景仅覆盖 SDK 缺失环境",
-    )
-    def test_contract_auto_falls_back_when_default_lacks_credentials(
+    def test_auto_no_candidates_when_chain_fully_credential_gated(
         self, default_client
     ) -> None:  # type: ignore[no-untyped-def]
-        """contract 缺省源 tqsdk 凭据未配置 → 不启用 → auto 回退链逐个跳过。
+        """整链凭据门控的组合（CN 加权指数：tqsdk 独占）凭据缺失 → 无候选。
 
-        akshare/tushare 等候选均因 SDK 缺失或凭据未配置不可用：无候选时返回
-        NO_PROVIDER_AVAILABLE，绝不静默落到无凭据的上游。
+        路由选择阶段逐个跳过未启用条目（tqsdk 凭据未配置），无候选时返回
+        NO_PROVIDER_AVAILABLE（409），绝不静默落到无凭据的上游。断言发生在
+        路由阶段、不触达适配器执行——与是否安装任何 SDK 无关，全环境确定性
+        通过（contract 组合不适用：akshare 恒启用参与候选，裸环境 auto 选中
+        后在执行期因 SDK 缺失返回 501，见 test_auto_selects_first_candidate_
+        but_sdk_missing）。
         """
         params = {
             **self.PARAMS,
-            "asset_type": "contract",
-            "instrument": "CN-SHFE-CU2607",
+            "asset_type": "weighted-index",
+            "instrument": "CN-SHFE-BU",
         }
         response = default_client.get("/v1/market/bars", params=params)
         assert response.status_code == 409
