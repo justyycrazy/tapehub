@@ -38,6 +38,7 @@ BUILTIN_PROVIDERS: tuple[str, ...] = (
     "alphafeed",
     "baostock",
     "tickflow",
+    "tiingo",
     "tushare",
     "tqsdk",
     "twelvedata",
@@ -49,6 +50,7 @@ BUILTIN_PROVIDERS: tuple[str, ...] = (
 _REQUIRED_CREDENTIALS: dict[str, tuple[str, ...]] = {
     "alphafeed": ("alphafeed_api_key",),
     "tickflow": ("tickflow_api_key",),
+    "tiingo": ("tiingo_api_key",),
     "tushare": ("tushare_token",),
     "tqsdk": ("tqsdk_auth_user", "tqsdk_auth_password"),
     "twelvedata": ("twelvedata_api_key",),

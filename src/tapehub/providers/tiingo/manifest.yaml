@@ -1,0 +1,134 @@
+# Tiingo 适配器：能力声明与内部操作映射。
+# 接口签名已按官方文档核实（2026-11-13 接入）：
+#   https://www.tiingo.com/documentation/general/connecting
+#   https://www.tiingo.com/documentation/crypto
+#   https://www.tiingo.com/documentation/forex
+#   https://www.tiingo.com/documentation/websockets/crypto
+#   https://www.tiingo.com/documentation/websockets/forex
+#
+# 说明：
+# - Tiingo 无官方 Python SDK：REST 历史K线用 httpx（同步客户端，可选依赖）
+#   直连 https://api.tiingo.com，认证经 Authorization: Token <key> 请求头
+#   （token 不落 URL，降低日志泄漏面）；
+# - 标的代码约定（本网关标准格式 → 上游 ticker 小写去斜杠）：
+#   外汇 GLOBAL-OTC-EUR/USD → "eurusd"；加密货币 GLOBAL-CRYPTO-BTC/USD →
+#   "btcusd"（官方示例均小写连写）；
+# - 历史 K 线端点：加密 GET /tiingo/crypto/prices?tickers=&startDate=&
+#   endDate=&resampleFreq=；外汇 GET /tiingo/fx/<ticker>/prices?startDate=&
+#   endDate=&resampleFreq=（每 ticker 独立端点）；resampleFreq 合法格式
+#   <n>min|hour|day、最小 1min，**无周/月线**——本期仅声明文档示例核实过的
+#   1min/5min/15min/30min/1hour/1day 六周期，10min/2hour/4hour/6hour/12hour/
+#   24hour 等格式合法值待数据探针实证后扩容声明；
+# - 历史覆盖范围（history.start）未经数据探针实证，全部保持 null
+#   （不编造能力；探针报告人工确认后单独提交回填）；
+# - 单次返回行数上限：官方文档未标注（受 1GB/月带宽配额约束），
+#   partial 恒 false，上限与隐式截断行为待探针核实；
+# - interval/时间边界口径：加密货币 date 字段为 UTC（ISO 带 Z 后缀，官方
+#   文档口径）；外汇墙钟口径未核实（ISO 时间按 UTC 解释，待探针实证后
+#   修正）；适配器负责北京时间 ↔ UTC 的转换；
+# - 加密货币 volume 有值（base 币计）、外汇仅 OHLC（volume 恒 null）；
+#   两者均无成交额字段（amount 恒 null）；无复权概念，adjust 仅声明 none；
+# - 免费档限额（账户页与官方文档口径）：50 请求/小时、1000 请求/天、
+#   500 个唯一品种/月、1GB 带宽/月——REST 调用计请求数，WS 不计请求数
+#   只计带宽；因配额紧于 twelvedata，缺省路由置回退位（仅显式
+#   provider=tiingo 或 twelvedata 缺席/不可解析时启用）；
+# - 实时快照与快照流（WS wss://api.tiingo.com/crypto 与 wss://api.tiingo.com/
+#   fx，websockets 库直连）：subscribe 帧 {"eventName": "subscribe",
+#   "authorization": <token>, "eventData": {"thresholdLevel": <2|7>,
+#   "tickers": [<ticker>]}}，crypto thresholdLevel=2（top-of-book+成交）、
+#   forex thresholdLevel=7（top-of-book）；下行 {service, messageType:
+#   A|U|D|I|E|H, data}，H 为服务端 ~30s 心跳；**待探针实证项**：tickers
+#   服务端过滤是否生效（适配器已按 data.ticker 客户端兜底过滤）、
+#   subscriptionId 增删订阅机制、data 元素对象形态（首版按文档表格字段名
+#   解析，探针实测后修正）、上游退订（eventName=unsubscribe）生效性
+#   （linger 延迟退订语义保留，上游忽略时仅本地释放）；
+# - 并发订阅软上限：TAPEHUB_TIINGO_SUBSCRIPTION_LIMIT（默认 8，防失控；
+#   上游未公布并发上限，硬约束为月度 500 唯一品种，网关不做计数），
+#   达限急切返回 UPSTREAM_SUBSCRIPTION_LIMIT（429）；
+# - 单接口 Provider：变体与 default_variant 均为 tiingo（数据源即上游服务
+#   自身）；缺省请求经 provider_routing.yaml 回退链裁决（tiingo 为
+#   GLOBAL forex/crypto 第二顺位），也可显式传 variant=tiingo。
+provider: tiingo
+default_variant: tiingo
+
+capabilities:
+  # 外汇（聚合 top-of-book 报价）：仅 OHLC，无 volume/成交额
+  - data_type: bars
+    markets: [GLOBAL]
+    asset_types: [forex]
+    delivery: [rest]
+    variants: [tiingo]
+    intervals:
+      - {code: PT1M, history: {start: null, end: null}}
+      - {code: PT5M, history: {start: null, end: null}}
+      - {code: PT15M, history: {start: null, end: null}}
+      - {code: PT30M, history: {start: null, end: null}}
+      - {code: PT1H, history: {start: null, end: null}}
+      - {code: P1D, history: {start: null, end: null}}
+    adjustments: [none]
+    fields: [open, high, low, close]
+
+  # 加密货币（聚合对）：volume 有值（base 币计）
+  - data_type: bars
+    markets: [GLOBAL]
+    asset_types: [crypto]
+    delivery: [rest]
+    variants: [tiingo]
+    intervals:
+      - {code: PT1M, history: {start: null, end: null}}
+      - {code: PT5M, history: {start: null, end: null}}
+      - {code: PT15M, history: {start: null, end: null}}
+      - {code: PT30M, history: {start: null, end: null}}
+      - {code: PT1H, history: {start: null, end: null}}
+      - {code: P1D, history: {start: null, end: null}}
+    adjustments: [none]
+    fields: [open, high, low, close, volume]
+
+  # 实时快照与快照流（WS 订阅推送，M2 缓存读取 + M3 SSE 同源）：无周期/
+  # 复权维度（两维度声明为空，路由与能力匹配跳过）；文档核实 crypto TOP
+  # 与 forex top 均含 bid/ask，但 WS 消息形态未经探针实证——fields 首版
+  # 仅声明 timestamp + last_price（twelvedata 收窄先例），bid/ask 由
+  # response_mapper 防御映射（缺失 → null），探针实证后扩容声明
+  - data_type: quotes
+    markets: [GLOBAL]
+    asset_types: [forex, crypto]
+    delivery: [rest]
+    variants: [tiingo]
+    intervals: []
+    adjustments: []
+    fields: [timestamp, last_price]
+
+operations:
+  # 外汇历史K线：显式枚举全部声明组合 → 同一上游端点
+  # GET /tiingo/fx/<ticker>/prices
+  - match: {data_type: bars, market: GLOBAL, asset_type: forex, interval: PT1M, adjust: none, variant: tiingo}
+    operation: fx_prices
+  - match: {data_type: bars, market: GLOBAL, asset_type: forex, interval: PT5M, adjust: none, variant: tiingo}
+    operation: fx_prices
+  - match: {data_type: bars, market: GLOBAL, asset_type: forex, interval: PT15M, adjust: none, variant: tiingo}
+    operation: fx_prices
+  - match: {data_type: bars, market: GLOBAL, asset_type: forex, interval: PT30M, adjust: none, variant: tiingo}
+    operation: fx_prices
+  - match: {data_type: bars, market: GLOBAL, asset_type: forex, interval: PT1H, adjust: none, variant: tiingo}
+    operation: fx_prices
+  - match: {data_type: bars, market: GLOBAL, asset_type: forex, interval: P1D, adjust: none, variant: tiingo}
+    operation: fx_prices
+  # 加密货币历史K线：GET /tiingo/crypto/prices
+  - match: {data_type: bars, market: GLOBAL, asset_type: crypto, interval: PT1M, adjust: none, variant: tiingo}
+    operation: crypto_prices
+  - match: {data_type: bars, market: GLOBAL, asset_type: crypto, interval: PT5M, adjust: none, variant: tiingo}
+    operation: crypto_prices
+  - match: {data_type: bars, market: GLOBAL, asset_type: crypto, interval: PT15M, adjust: none, variant: tiingo}
+    operation: crypto_prices
+  - match: {data_type: bars, market: GLOBAL, asset_type: crypto, interval: PT30M, adjust: none, variant: tiingo}
+    operation: crypto_prices
+  - match: {data_type: bars, market: GLOBAL, asset_type: crypto, interval: PT1H, adjust: none, variant: tiingo}
+    operation: crypto_prices
+  - match: {data_type: bars, market: GLOBAL, asset_type: crypto, interval: P1D, adjust: none, variant: tiingo}
+    operation: crypto_prices
+  # 实时快照：外汇/加密货币走各自 WS 端点（runtime 分流）；
+  # 周期/复权对快照无意义，显式声明 null（只与无该维度的 quote 查询匹配）
+  - match: {data_type: quotes, market: GLOBAL, asset_type: forex, interval: null, adjust: null, variant: tiingo}
+    operation: quote
+  - match: {data_type: quotes, market: GLOBAL, asset_type: crypto, interval: null, adjust: null, variant: tiingo}
+    operation: quote

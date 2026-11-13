@@ -40,6 +40,13 @@ class Settings(BaseSettings):
     # Twelve Data 实时快照冷订阅首包等待超时（秒）：超时返回 QUOTE_NOT_READY
     # （HTTP 408）；已活跃订阅直接读缓存即时返回
     twelvedata_first_snapshot_timeout: float = Field(default=5.0, gt=0)
+    # Tiingo WS 并发订阅 symbol 软上限（超出 UPSTREAM_SUBSCRIPTION_LIMIT 429）。
+    # 上游未公布并发订阅数上限（硬约束为月度 500 个唯一品种，网关不做计数，
+    # 由 README 限额说明与上游超限报错兜底）；默认 8 与 twelvedata 对齐防失控
+    tiingo_subscription_limit: int = Field(default=8, ge=1)
+    # Tiingo 实时快照冷订阅首包等待超时（秒）：超时返回 QUOTE_NOT_READY
+    # （HTTP 408）；已活跃订阅直接读缓存即时返回
+    tiingo_first_snapshot_timeout: float = Field(default=5.0, gt=0)
     # —— 实时快照流（SSE，M3）——
     # 并发流客户端上限（超出 STREAM_LIMIT_REACHED 429）
     stream_max_clients: int = Field(default=8, ge=1)
@@ -70,6 +77,7 @@ class Settings(BaseSettings):
     # TqSdk 快期账户（TqAuth）：用户名/邮箱与密码
     tqsdk_auth_user: str = ""
     tqsdk_auth_password: str = ""
+    tiingo_api_key: str = ""
     twelvedata_api_key: str = ""
 
     @model_validator(mode="after")

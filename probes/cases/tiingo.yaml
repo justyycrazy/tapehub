@@ -1,0 +1,119 @@
+# Tiingo 数据探针：外汇/加密货币历史K线可用性、历史深度、单次上限观察、
+# 墙钟口径与扩容周期探测，及错误指纹采集。
+#
+# 免费档限额（官方口径）：50 请求/小时、1000 请求/天、500 个唯一品种/月、
+# 1GB 带宽/月。pacing 90 秒（任意 60 分钟窗口 ≤40 次 < 50 次，留 ~20% 余量）；
+# 预算 80 覆盖单轮全量（约 2 小时，框架对截断如实记录、次日续跑）。
+probe: tiingo
+version: 1
+
+requires:
+  # extras 按「可导入模块名」判定（框架 _module_available）：tiingo 无官方
+  # SDK，raw case 反射 httpx 直连（pyproject 可选依赖组名亦为 tiingo，
+  # 由 uv sync --extra tiingo 提供 httpx）
+  extras: [httpx]
+  env: [TAPEHUB_TIINGO_API_KEY]
+
+pacing:
+  call_interval_s: 90.0
+  timeout_s: 60
+  # 本轮构成：availability 12（forex/crypto × 6 周期）+ history_depth
+  # 2 case × 16 最坏 + limit 2 + raw 4 case × 2 调用 ≈ 40 典型、56 最坏，
+  # 预算 80 留余量
+  max_calls: 80
+
+targets:
+  forex:
+    instrument: GLOBAL-OTC-EUR/USD
+    window: {start: 2024-01-01, end: 2025-12-31}
+    # min_bars 按资产类型统一生效、覆盖全部声明周期：窗口取两年、下限取 20，
+    # 以最稀的月线为标定——tiingo 无周/月线，两年日线约 520 根，20 为保守下限
+    min_bars: 20
+  crypto:
+    instrument: GLOBAL-CRYPTO-BTC/USD
+    window: {start: 2024-01-01, end: 2025-12-31}
+    min_bars: 20
+
+chain:
+  include_declared: true
+  skip: []
+  # 无 adjust_diff：外汇/加密货币无复权概念（能力目录仅声明 none，
+  # 无多复权可对比）
+  history_depth:
+    # history.start 全部保持 null（文档未公布）：日线先行二分收敛，
+    # 日内周期（1min 起 2020 年前后为行业常态）视首轮结论再扩探
+    targets: [forex, crypto]
+    earliest: 2000-01-01
+    era_step_years: 5
+    max_calls: 16
+    intervals: [P1D]
+  limit_truncation:
+    # 单次行数上限官方未标注（受 1GB/月带宽配额约束）：documented_max 不写，
+    # 仅观察实测上限（供适配器补充 partial 覆盖判定的依据）
+    targets: [forex, crypto]
+    interval: PT1M
+    max_range: P1Y
+
+raw:
+  # 错误指纹仅观察：采集无效 API Token 的原始报错，供 UPSTREAM 细分错误码
+  # 参考（httpx 反射直连；token 走 query 参数为官方支持方式，与适配器的
+  # Authorization 头等价，仅探针观察用）
+  - id: tg-invalid-key-fingerprint
+    purpose: 采集无效 API Token 的错误指纹（字面量假 Key，非真实凭据；仅观察）
+    assert: false
+    module: httpx
+    client: {attr: Client, kwargs: {}}
+    call:
+      - {method: get, kwargs: {url: "https://api.tiingo.com/tiingo/fx/eurusd/prices", params: {token: "probe-invalid-key-not-a-credential", startDate: "2025-01-01", endDate: "2025-01-02", resampleFreq: "1day"}}}
+      - {method: json, kwargs: {}, target: result}
+    expect: {status: error, error_contains: ""}
+    close: {method: close, kwargs: {}}
+
+  # 外汇墙钟口径观察（适配器首版按 UTC 解释）：核对 date 字段是否带 Z 后缀
+  # 及日内 bar 的时间分布（非 UTC 口径时需修 response_mapper/边界转换）
+  - id: tg-fx-date-shape
+    purpose: 外汇 fx prices 的 date 字段形态观察（ISO 是否带时区后缀、
+      日内 bar 墙钟口径——待实证后修正 request_mapper.BOUNDARY_ZONE 语义）
+    assert: false
+    module: httpx
+    client: {attr: Client, kwargs: {}}
+    call:
+      - {method: get, kwargs: {url: "https://api.tiingo.com/tiingo/fx/eurusd/prices", params: {token: "$TAPEHUB_TIINGO_API_KEY", startDate: "2025-06-02T00:00:00", endDate: "2025-06-03T00:00:00", resampleFreq: "5min"}}}
+      - {method: json, kwargs: {}, target: result}
+    expect: {status: ok, min_rows: 1}
+    close: {method: close, kwargs: {}}
+
+  # 扩容周期探测（resampleFreq 格式合法值，文档示例仅核实 1min/5min/1day）：
+  # confirmed 则探针报告人工确认后扩容 manifest 声明（2hour/4hour）
+  - id: tg-resample-2hour
+    purpose: 探测 resampleFreq=2hour 是否被上游接受（格式 <n>hour，声明外）
+    module: httpx
+    client: {attr: Client, kwargs: {}}
+    call:
+      - {method: get, kwargs: {url: "https://api.tiingo.com/tiingo/crypto/prices", params: {token: "$TAPEHUB_TIINGO_API_KEY", tickers: "btcusd", startDate: "2025-06-01", endDate: "2025-06-02", resampleFreq: "2hour"}}}
+      - {method: json, kwargs: {}, target: result}
+    expect: {status: ok, min_rows: 1}
+    close: {method: close, kwargs: {}}
+  - id: tg-resample-4hour
+    purpose: 探测 resampleFreq=4hour 是否被上游接受（声明外，与 2hour 同轮）
+    module: httpx
+    client: {attr: Client, kwargs: {}}
+    call:
+      - {method: get, kwargs: {url: "https://api.tiingo.com/tiingo/crypto/prices", params: {token: "$TAPEHUB_TIINGO_API_KEY", tickers: "btcusd", startDate: "2025-06-01", endDate: "2025-06-02", resampleFreq: "4hour"}}}
+      - {method: json, kwargs: {}, target: result}
+    expect: {status: ok, min_rows: 1}
+    close: {method: close, kwargs: {}}
+
+notes: >
+  2026-11-13 接入首轮 case 设计（真实跑前占位）：免费档限额 50 请求/时、
+  1000 请求/天、500 个唯一品种/月、1GB 带宽/月——WS 不计请求数只计带宽，
+  故快照/快照流走 WS 共享订阅以保 REST 配额；本 case 仅覆盖 REST 历史
+  K 线与形态观察。
+  WS 行为探针（tickers 服务端过滤、subscriptionId 增删订阅、data 元素
+  形态、退订生效性、H 心跳周期）沿用 twelvedata 先例：框架无 WS 反射
+  支持，走目录外脚本实证（结果记 probes/results/tiingo/，不入库），人工
+  确认后修正 runtime/response_mapper 与 manifest 注释。
+  待回填项（探针报告 → 人工确认 → 单独提交）：history.start（本轮仅
+  P1D 二分收敛，日内周期视结论扩探）、单次行数上限与 partial 覆盖判定、
+  forex 墙钟口径（tg-fx-date-shape）、扩容周期声明（tg-resample-2hour/
+  4hour）、quotes fields 扩容（bid/ask 五档与 volume 经 WS 探针实证后）。

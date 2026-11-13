@@ -85,11 +85,14 @@ defaults:
   - match: {data_type: bars, market: US, asset_type: etf}
     order: [twelvedata]
 
-  # GLOBAL 外汇 / 加密货币：twelvedata 独占
+  # GLOBAL 外汇 / 加密货币：twelvedata 优先，tiingo 回退（2026-11-13 接入：
+  # 免费档配额紧——50 请求/时、1000 请求/天、500 唯一品种/月、1GB 带宽/月，
+  # 且仅声明 twelvedata 全周期矩阵的子集，置回退位不改变缺省行为；
+  # 周期子集的回退在路由选择阶段按六维逐个解析）
   - match: {data_type: bars, market: GLOBAL, asset_type: forex}
-    order: [twelvedata]
+    order: [twelvedata, tiingo]
   - match: {data_type: bars, market: GLOBAL, asset_type: crypto}
-    order: [twelvedata]
+    order: [twelvedata, tiingo]
 
   # —— quotes · 实时快照 ——
 
@@ -115,8 +118,9 @@ defaults:
   - match: {data_type: quotes, market: US, asset_type: stock}
     order: [alphafeed, tickflow]
 
-  # GLOBAL 外汇 / 加密货币快照：twelvedata 独占
+  # GLOBAL 外汇 / 加密货币快照：twelvedata 优先，tiingo 回退（2026-11-13 接入，
+  # 快照/快照流走 WS 共享订阅——不占 tiingo REST 请求配额）
   - match: {data_type: quotes, market: GLOBAL, asset_type: forex}
-    order: [twelvedata]
+    order: [twelvedata, tiingo]
   - match: {data_type: quotes, market: GLOBAL, asset_type: crypto}
-    order: [twelvedata]
+    order: [twelvedata, tiingo]

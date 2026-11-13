@@ -74,6 +74,7 @@ class DataVariant(StrEnum):
     TUSHARE = "tushare"
     ALPHAFEED = "alphafeed"
     TICKFLOW = "tickflow"
+    TIINGO = "tiingo"
     TWELVEDATA = "twelvedata"
     BAOSTOCK = "baostock"
 

@@ -1,6 +1,6 @@
 # tapehub
 
-通用行情数据网关：对外提供统一的 HTTP RESTful API，内部通过适配器接入多个行情数据源（akshare、tushare、tickflow、alphafeed、tqsdk）。
+通用行情数据网关：对外提供统一的 HTTP RESTful API，内部通过适配器接入多个行情数据源（akshare、tushare、tickflow、alphafeed、tqsdk、tiingo、twelvedata）。
 
 **当前版本实现「历史 K 线查询」与「tqsdk 实时行情（快照 + SSE 流式，限 `single` 单进程单用户模式）」两条业务链路，不建设行情数据存储平台。**
 
@@ -25,11 +25,13 @@
 - `GET /v1/providers/{provider}/capabilities`：单个 Provider 能力；
 - `GET /v1/market/bars`：统一历史 K 线查询；
 - `GET /v1/market/quotes`：实时快照（限 `single` 模式）：tqsdk
-  （订阅-推送 Runtime）、twelvedata（WS 订阅缓存，GLOBAL 外汇/加密货币）与
+  （订阅-推送 Runtime）、twelvedata（WS 订阅缓存，GLOBAL 外汇/加密货币）、
+  tiingo（WS 订阅缓存，GLOBAL 外汇/加密货币）与
   tickflow（无状态 REST 快照，CN/HK/US 股票）；
 - `GET /v1/market/quotes/stream`：实时快照 SSE 流（单标的订阅推送、
-  心跳与空闲退订、容量闸门，限 `single` 模式）：tqsdk（仅 `shared` 连接模式）
-  与 twelvedata（WS 长连接，退订即释放上游订阅额度）；
+  心跳与空闲退订、容量闸门，限 `single` 模式）：tqsdk（仅 `shared` 连接模式）、
+  twelvedata（WS 长连接，退订即释放上游订阅额度）与
+  tiingo（WS 长连接，crypto/fx 双端点共享订阅）；
 - `GET /v1/instruments/resolve`：标的模糊解析（宽松输入 → 标准代码候选，
   纯本地规则、零上游调用，见「标的解析」章节）；
 - Provider 注册、能力匹配与公共路由；Provider 内部二级操作路由的扩展机制；
@@ -40,6 +42,7 @@
 - **Tushare Provider 已接入**（官方 Python SDK `pro_bar`/`fut_daily`，Token 从 `.env` 读取）；
 - **TqSdk Provider 已接入**（官方 Python SDK `get_kline_serial`，快期账户凭据从 `.env` 读取）；
 - **Twelve Data Provider 已接入**（外汇、加密货币与美股 stock/etf 历史 K 线，官方 Python 库 `twelvedata`，API Key 从 `.env` 读取）；
+- **Tiingo Provider 已接入**（外汇与加密货币历史 K 线 httpx 直连 + 实时快照/快照流 WS 直连——无官方 Python SDK，API Key 从 `.env` 读取；免费档配额紧，缺省路由置 twelvedata 之后回退位）；
 - 基于 Fake Provider 与 Mock SDK 的完整链路验证与单元/契约测试。
 
 明确不实现（当前版本）：
@@ -69,6 +72,7 @@ uv sync --dev --extra alphafeed  # 安装 AlphaFeed 官方 SDK（可选依赖）
 uv sync --dev --extra tushare    # 安装 Tushare 官方 SDK（可选依赖）
 uv sync --dev --extra tqsdk      # 安装 TqSdk 官方 SDK（可选依赖）
 uv sync --dev --extra twelvedata # 安装 Twelve Data 官方库（可选依赖）
+uv sync --dev --extra tiingo     # 安装 Tiingo 直连依赖（httpx + websockets，可选）
 
 uv run pytest          # 运行测试（不依赖任何真实 SDK 与网络）
 uv run ruff check .    # 静态检查
@@ -146,22 +150,23 @@ GET /v1/market/bars?provider=akshare&asset_type=stock&instrument=CN-SSE-600000&i
 
 缺失数值以 `null` 返回，不用 `0` 冒充；Provider 特有字段只能通过 `extensions` 受控透出（如 akshare 的 `pct_change`、`turnover_rate`、`hold`、`settle`）。
 
-### 实时快照（tqsdk / twelvedata / tickflow）
+### 实时快照（tqsdk / twelvedata / tiingo / tickflow）
 
 ```http
 GET /v1/market/quotes?provider=tqsdk&asset_type=contract&instrument=CN-SHFE-AU2612
 GET /v1/market/quotes?provider=twelvedata&asset_type=forex&instrument=GLOBAL-OTC-EUR/USD
 ```
 
-参数：`provider`（默认 `auto`；当前 tqsdk 声明 CN 全资产、twelvedata 声明 GLOBAL 外汇/加密货币、tickflow 声明 CN/HK/US 股票的 quotes 能力）、`asset_type`（必填）、`instrument`（必填）、`variant`（可选）。**快照是当前时点的数据：无 `interval`、无时间范围、无分页参数**（`adjust` 同样不接受——复权是历史序列概念）。auto 优先级：由缺省路由配置的完整回退链裁决（CN 股票快照归 tqsdk、tickflow 回退；HK 与 US 股票快照为 tickflow 独占，显式 `provider=tickflow` 亦可选用）；凭据未配置的 Provider 自动跳过。
+参数：`provider`（默认 `auto`；当前 tqsdk 声明 CN 全资产、twelvedata 与 tiingo 声明 GLOBAL 外汇/加密货币、tickflow 声明 CN/HK/US 股票的 quotes 能力）、`asset_type`（必填）、`instrument`（必填）、`variant`（可选）。**快照是当前时点的数据：无 `interval`、无时间范围、无分页参数**（`adjust` 同样不接受——复权是历史序列概念）。auto 优先级：由缺省路由配置的完整回退链裁决（CN 股票快照归 tqsdk、tickflow 回退；HK 与 US 股票快照为 tickflow 独占，显式 `provider=tickflow` 亦可选用；GLOBAL 外汇/加密货币快照缺省 twelvedata、tiingo 回退）；凭据未配置的 Provider 自动跳过。
 
-三类上游的交付模型不同，语义差异如实声明：
+四类上游的交付模型不同，语义差异如实声明：
 
 - **tqsdk（订阅-推送）**：REST 快照从共享 Runtime 的订阅缓存即时读取（首包超时 `QUOTE_NOT_READY` 408，行为要点见下与 TqSdk 映射表）；
 - **twelvedata（WS 订阅缓存）**：快照与流同源，均来自 WS 共享订阅的实时 price 事件（2026-11-05 探针实证），冷订阅等待首包（超时同为 `QUOTE_NOT_READY` 408）、活跃订阅即时读缓存；上游 WS credit 按**并发活跃订阅 symbol** 计数（免费版 8），并发订阅达 `TAPEHUB_TWELVEDATA_SUBSCRIPTION_LIMIT` 返回 `UPSTREAM_SUBSCRIPTION_LIMIT`（429），映射表见 Twelve Data 章节；
-- **tickflow（无状态 REST）**：快照为单标的单次 `tf.quotes.get` 调用，无订阅/缓存语义（不产生 `QUOTE_NOT_READY`——要么返回快照，要么返回上游错误）；限频/无权限等 SDK 异常统一包装为 `UPSTREAM_ERROR`；不支持 SSE 流（M3 流式仍为 tqsdk/twelvedata），映射表见 TickFlow 章节。
+- **tiingo（WS 订阅缓存）**：快照与流同源（crypto/fx 双端点共享订阅，WS 不计 REST 请求配额），冷订阅等待首包（超时同为 `QUOTE_NOT_READY` 408）、活跃订阅即时读缓存；并发订阅达 `TAPEHUB_TIINGO_SUBSCRIPTION_LIMIT` 返回 `UPSTREAM_SUBSCRIPTION_LIMIT`（429），映射表见 Tiingo 章节；
+- **tickflow（无状态 REST）**：快照为单标的单次 `tf.quotes.get` 调用，无订阅/缓存语义（不产生 `QUOTE_NOT_READY`——要么返回快照，要么返回上游错误）；限频/无权限等 SDK 异常统一包装为 `UPSTREAM_ERROR`；不支持 SSE 流（M3 流式仍为 tqsdk/twelvedata/tiingo），映射表见 TickFlow 章节。
 
-以下请求/响应示例与行为要点为 **tqsdk 链路**；twelvedata 链路的字段口径见其映射表。
+以下请求/响应示例与行为要点为 **tqsdk 链路**；twelvedata 与 tiingo 链路的字段口径见各自映射表。
 
 tqsdk 成功响应（节选，字段白名单以 P5 探针实证为准，见 TqSdk 映射表）：
 
@@ -201,7 +206,7 @@ tqsdk 行为要点：
   累计到 `TAPEHUB_TQSDK_SUBSCRIPTION_LIMIT` 触发新一代重建清理；
 - 指数类标的无盘口：`bid/ask` 价格为 `null`（不用 0 冒充）、量为 `0`，如实透出。
 
-### 实时行情流（SSE，tqsdk / twelvedata）
+### 实时行情流（SSE，tqsdk / twelvedata / tiingo）
 
 ```http
 GET /v1/market/quotes/stream?provider=tqsdk&asset_type=contract&instrument=CN-SHFE-AU2612
@@ -213,14 +218,14 @@ Accept: text/event-stream
 `text/event-stream`（HTTP/1.1 chunked 流，零新依赖）。**行情推送是纯单向流，
 选 SSE 而非 WebSocket**（D8 决策）：复用 HTTP 鉴权/中间件/request_id，
 客户端 `curl -N` 即可消费。仅实现 `stream_quote` 的 Provider 可用
-（当前 tqsdk 与 twelvedata）；其余 Provider 在受理阶段即返回
+（当前 tqsdk、twelvedata 与 tiingo）；其余 Provider 在受理阶段即返回
 `UNSUPPORTED_CAPABILITY`（422）。
 
 三类事件帧（`event:` + `data:` JSON，帧间空行分隔）：
 
 | event | data 结构 | 语义 |
 | --- | --- | --- |
-| `status` | `{status, instrument, asset_type, provider}` | 流生命周期：`subscribed`（订阅确认，**首事件**，含已缓存快照场景）/ `upstream_disconnected`（上游连接异常或服务停机；twelvedata 上游拒订同以此收尾）/ `recycling`（tqsdk 专属：Runtime 新一代重建——北京时间 04:00 跨交易日回收 / watchdog / 休眠订阅回收，活跃订阅自动重订，重订完成再发 `subscribed`；twelvedata 无代际回收，不产生此状态）/ `idle_unsubscribed`（流空闲超时，服务端本地退订并结束流） |
+| `status` | `{status, instrument, asset_type, provider}` | 流生命周期：`subscribed`（订阅确认，**首事件**，含已缓存快照场景）/ `upstream_disconnected`（上游连接异常或服务停机；twelvedata 上游拒订同以此收尾）/ `recycling`（tqsdk 专属：Runtime 新一代重建——北京时间 04:00 跨交易日回收 / watchdog / 休眠订阅回收，活跃订阅自动重订，重订完成再发 `subscribed`；twelvedata/tiingo 无代际回收，不产生此状态）/ `idle_unsubscribed`（流空闲超时，服务端本地退订并结束流） |
 | `quote` | `{instrument, asset_type, quote, provider, variant, received_at}` | 与快照响应同构（字段白名单同 P5 实证口径），`quote` 内为标准快照 |
 | `heartbeat` | `{type, request_id, ts}` | 空闲保活帧（默认 15s，仅出现在首事件之后），代理/负载均衡不至掐断空闲连接 |
 
@@ -239,16 +244,19 @@ Accept: text/event-stream
   触发新一代重建清理）；**twelvedata 支持逐 symbol 真退订**，引用归零延迟
   60s（linger，兼顾轮询与快速重连免重订）后向上游发退订并即时释放 WS credit
   （探针实证：credit = 并发活跃订阅 symbol 数，退订/断连即释放、重订重连免费）；
+  **tiingo 走同款 linger 语义**（上游退订生效性待探针实证：若上游忽略退订，
+  linger 到期仍完成本地释放，带宽残留由上游侧兜底）；
 - **容量闸门**：并发流数达 `TAPEHUB_STREAM_MAX_CLIENTS`（默认 8）返回
   `STREAM_LIMIT_REACHED`（HTTP 429）；受理阶段（响应头发出前）的错误统一
   JSON 错误结构，流中错误一律事件化收尾；
 - **仅 `shared` 连接模式支持**（tqsdk：流依赖长连接订阅；`per_request` 回滚
   模式返回 `UNSUPPORTED_CAPABILITY` 422；twelvedata 恒为单共享 WS 连接，
   无模式概念）；
-- **上游订阅容量闸门（twelvedata）**：并发订阅 symbol 数达
-  `TAPEHUB_TWELVEDATA_SUBSCRIPTION_LIMIT`（默认 8，免费版 WS credit 口径）
-  时，新 symbol 的流/快照请求在受理阶段返回 `UPSTREAM_SUBSCRIPTION_LIMIT`
-  （HTTP 429）；升档后调大该配置即可；
+- **上游订阅容量闸门（twelvedata / tiingo）**：并发订阅 symbol 数达
+  `TAPEHUB_TWELVEDATA_SUBSCRIPTION_LIMIT`（默认 8，免费版 WS credit 口径）或
+  `TAPEHUB_TIINGO_SUBSCRIPTION_LIMIT`（默认 8，软上限防失控；tiingo 按端点
+  crypto/fx 各自计数）时，新 symbol 的流/快照请求在受理阶段返回
+  `UPSTREAM_SUBSCRIPTION_LIMIT`（HTTP 429）；升档后调大该配置即可；
 - **访问日志口径**：SSE 请求的「耗时」= 连接时长（长连接期间不产生新日志行）；
 - 心跳与空闲退订由服务端管理：`TAPEHUB_STREAM_IDLE_TIMEOUT_SECONDS`
   （默认 300s）内无行情事件（心跳不算）即 `idle_unsubscribed` 收尾，
@@ -355,10 +363,11 @@ GET /v1/instruments/resolve?q=AAPL&exchange=NASDAQ
 | `alphafeed` | AlphaFeed（独立数据服务体系） |
 | `tickflow` | TickFlow（独立数据服务体系） |
 | `twelvedata` | Twelve Data（外汇/加密货币/美股数据服务） |
+| `tiingo` | Tiingo（外汇/加密货币数据服务） |
 | `baostock` | Baostock 证券宝（免费 A 股数据平台，与东方财富无关） |
 
 - **变体名反映真实数据源**：仅 akshare 的上游确为东方财富/新浪/腾讯；
-  TqSdk、Tushare、AlphaFeed、TickFlow、Twelve Data、Baostock 与东方财富无关，
+  TqSdk、Tushare、AlphaFeed、TickFlow、Twelve Data、Tiingo、Baostock 与东方财富无关，
   变体与其 Provider 同名（即各自的上游服务/包名）；
 - **`variant` 可选，无全局默认值**。未传递时表示不表达数据源偏好：
   该维度不参与能力过滤，由每个 Provider 在 manifest 中**必填声明**的
@@ -480,7 +489,7 @@ API 层 → Application 层 → Domain 层
   Provider）；注册表构建期强制校验**凡能力覆盖的组合必须恰有条目**、order 引用的
   Provider 必须已注册且实际声明该组合能力（缺失/重复/未知引用都拒绝启动）；
   代码内注册顺序不承载路由语义；
-- **凭据驱动的注册**：内置 Provider 中需要凭据的（alphafeed/tickflow/tushare/
+- **凭据驱动的注册**：内置 Provider 中需要凭据的（alphafeed/tickflow/tiingo/tushare/
   tqsdk/twelvedata），`.env` 相应变量全部非空（strip 后）才启用；凭据缺失的
   Provider **能力目录仍可见但 `enabled=false`**，auto 路由跳过，显式请求返回
   `PROVIDER_DISABLED`（details 携带缺失的变量名）。akshare/baostock 无凭据
@@ -739,6 +748,73 @@ M3 流同源；REST `td.quote` 按需路径已于 2026-11-05 退役）：
   调大即可；冷订阅首包超时 `TAPEHUB_TWELVEDATA_FIRST_SNAPSHOT_TIMEOUT`
   （默认 5s）返回 `QUOTE_NOT_READY`（408），活跃订阅即时读缓存。
 
+Tiingo（无官方 Python SDK：REST 历史 K 线 httpx 同步客户端直连
+`GET https://api.tiingo.com/...`，认证经 `Authorization: Token <key>` 请求头——
+token 不落 URL；实时快照/快照流 websockets 库直连 WS，2026-11-13 接入，
+接口签名按官方文档核实：general/connecting、crypto、forex、websockets/crypto、
+websockets/forex 五页）：
+
+| 资产类型 | 市场 | 变体 | 上游接口 | 周期 | adjust | 标准字段 |
+| --- | --- | --- | --- | --- | --- | --- |
+| forex（bars） | GLOBAL | tiingo（默认） | `GET /tiingo/fx/<ticker>/prices` | PT1M/PT5M/PT15M/PT30M/PT1H、P1D | none | 无 volume/amount（外汇文档仅 OHLC） |
+| crypto（bars） | GLOBAL | tiingo（默认） | `GET /tiingo/crypto/prices` | PT1M/PT5M/PT15M/PT30M/PT1H、P1D | none | volume 有值（base 币计）；无 amount |
+| forex/crypto（quotes） | GLOBAL | tiingo | WS crypto/fx 端点（thresholdLevel 2/7） | —（快照无周期） | —（快照无复权） | timestamp/last_price（bid/ask 防御映射，见下） |
+
+- **免费档限额（账户页与官方文档口径，2026-11-13 接入依据）**：50 请求/小时、
+  1000 请求/天、500 个唯一品种/月、1GB 带宽/月——REST 调用计请求数，WS 不计
+  请求数只计带宽（快照/快照流统一走 WS 共享订阅以保 REST 配额）。因配额紧于
+  twelvedata，缺省路由置**回退位**（`provider_routing.yaml`：GLOBAL forex/
+  crypto 的 bars 与 quotes 均为 `[twelvedata, tiingo]`——不改变既有缺省行为，
+  显式 `provider=tiingo` 或 twelvedata 缺席/不可解析该请求维度时启用）；
+- API Key 通过环境变量 `TAPEHUB_TIINGO_API_KEY` 提供并经请求头传给上游，
+  禁止写入代码/manifest/日志；未配置时不启用（能力目录仍可见，`enabled=false`），
+  显式请求返回 `PROVIDER_DISABLED`；
+- 标的代码映射：外汇 `GLOBAL-OTC-EUR/USD → eurusd`、加密货币
+  `GLOBAL-CRYPTO-BTC/USD → btcusd`（官方 ticker 均为小写连写，适配器去斜杠
+  统一小写；exchange 段白名单 forex=`OTC`、crypto=`CRYPTO`）；
+- 周期映射（`resampleFreq` 合法格式 `<n>min|hour|day`、最小 `1min`，上游
+  **无周/月线**）：`PT1M→1min`、`PT5M→5min`、`PT15M→15min`、`PT30M→30min`、
+  `PT1H→1hour`、`P1D→1day`——首版仅声明官方示例核实过的六周期，
+  `10min/2hour/4hour/6hour/12hour/24hour` 等格式合法值待数据探针实证后扩容；
+  `startDate`/`endDate`/`resampleFreq` 显式传参（不依赖上游默认值：上游缺省
+  返回原始频度而非声明周期口径）；
+- **历史覆盖范围（history.start）未经探针实证，全部保持 null**（不编造能力）；
+  单次返回行数上限官方未标注（受 1GB/月带宽配额约束），`meta.partial` 恒
+  false（上限与隐式截断行为待探针核实后补充覆盖判定）；
+- 时间边界口径：`startDate`/`endDate` 统一传 UTC 墙钟 `YYYY-MM-DDTHH:MM:SS`——
+  加密货币 `date` 字段官方口径为 UTC；**外汇墙钟口径未核实**，首版同按 UTC
+  解释（待探针实证后修正）；bar 时间戳解析 ISO 8601 后统一北京时间归一化；
+- 上游 429（限频）映射 `UPSTREAM_RATE_LIMITED`；其余非 2xx 与 JSON 解析失败
+  统一 `UPSTREAM_ERROR`（details 携带 status_code）；
+- 实时快照与快照流（WS 端点 `wss://api.tiingo.com/crypto` 与
+  `wss://api.tiingo.com/fx`，按资产类型分流两个懒启动 Runtime）：订阅帧
+  `{"eventName": "subscribe", "authorization": <token>, "eventData":
+  {"thresholdLevel": <2|7>, "tickers": [<ticker>]}}`——crypto thresholdLevel=2
+  （top-of-book + 成交）、forex thresholdLevel=7（top-of-book）；下行
+  `{service, messageType: A|U|D|I|E|H, data}`，`H` 为服务端 ~30s 心跳
+  （客户端不发送应用层心跳，静默看门狗 90s）；
+- **WS 行为待探针实证项（首版按官方文档实现 + 防御性解析，诚实标注）**：
+  tickers 服务端过滤是否生效（Runtime 已按 data 元素 `ticker` 字段客户端
+  兜底过滤，非订阅 symbol 的报文直接忽略）、subscriptionId 增删订阅机制
+  （首版按逐 symbol 独立订阅帧处理）、data 元素对象形态（首版按文档表格
+  字段名解析）、上游退订（`eventName=unsubscribe`）生效性；
+- 快照字段口径：`last_price` 取 `lastPrice`、缺失回退 `midPrice`（文档：
+  bid/ask 均非空时 mid=(bid+ask)/2；两者均缺失属上游契约违背返回
+  `UPSTREAM_ERROR`）；`bid_price1/ask_price1/bid_volume1/ask_volume1` 防御
+  映射（文档核实字段，缺失 → null）；标准 `volume`/`amount` 恒 null
+  （`lastSize` 为单笔成交量的口径未实证，不冒充累计成交量）——能力目录
+  fields 首版仅声明 `timestamp` + `last_price`（twelvedata 收窄先例），
+  WS 探针实证后扩容；`extensions` 白名单：`exchange`（缺失不透出）；
+- Runtime 形态：asyncio 原生共享连接（crypto/fx 各一单连接，同端点多实例
+  启动告警），per-symbol 引用计数；引用归零延迟 60s（linger）向上游发
+  退订并本地释放缓存；断连广播 `upstream_disconnected` 后退避重连自动重订；
+  **无代际回收（不产生 `recycling` 事件）**；冷订阅首包超时
+  `TAPEHUB_TIINGO_FIRST_SNAPSHOT_TIMEOUT`（默认 5s）返回 `QUOTE_NOT_READY`
+  （408），活跃订阅即时读缓存；并发订阅软上限
+  `TAPEHUB_TIINGO_SUBSCRIPTION_LIMIT`（默认 8，按端点各自计数；上游未公布
+  并发上限，硬约束为月度 500 个唯一品种——网关不做计数，由限额说明与
+  上游超限报错兜底），达限返回 `UPSTREAM_SUBSCRIPTION_LIMIT`（429）。
+
 Baostock（证券宝，官方 SDK `baostock`：`bs.login()` → `bs.query_history_k_data_plus()` → `bs.logout()`）：
 
 | 资产类型 | 市场 | 变体 | 上游接口 | 周期 | adjust | 标准字段 |
@@ -763,7 +839,7 @@ Baostock（证券宝，官方 SDK `baostock`：`bs.login()` → `bs.query_histor
 - 缺省路由（2026-11-08 接入拍板）：CN 个股 K 线缺省 **baostock**（回退链首位：免费无凭据、个股官方口径 1990-12-19 起深于既有各源、分钟族免费有权限）；CN 指数 K 线缺省 akshare（库底 ≈1991-01-01 深于 baostock 官方口径 2006-01-01，浅库底源置首位会在路由选择阶段截胡更早区间——回退只在路由选择阶段发生），baostock 末位补位；CN ETF 缺省 tqsdk，baostock 回退（tqsdk 凭据未配置时自动跳过）；
 - 文档矛盾点（探针实证定案，报告 20261108T002941+0800）：参数说明写 `start/end`、示例代码写 `start_date/end_date`——**SDK 函数签名只接受 `start_date/end_date`**（传 `start` 报 TypeError，适配器按示例风格实现正确）；`end` 闭/开区间两页文档矛盾——**闭区间（包含）**（stock/index 单日窗口各返回 1 行，适配器按闭区间实现正确）。
 
-七个内置 Provider（akshare、alphafeed、baostock、tickflow、tushare、tqsdk、twelvedata）均已接入，接口签名与数据口径按各自官方文档核实；未配置凭据或未安装 SDK 时数据请求返回 `PROVIDER_NOT_IMPLEMENTED`，`provider=auto` 在无可用候选时返回 `NO_PROVIDER_AVAILABLE`，也**绝不返回写死的模拟行情**。
+八个内置 Provider（akshare、alphafeed、baostock、tickflow、tiingo、tushare、tqsdk、twelvedata）均已接入，接口签名与数据口径按各自官方文档核实（tiingo 的 WS 消息形态细节与历史深度待数据探针实证回填，已在上述章节如实标注）；未配置凭据或未安装 SDK 时数据请求返回 `PROVIDER_NOT_IMPLEMENTED`，`provider=auto` 在无可用候选时返回 `NO_PROVIDER_AVAILABLE`，也**绝不返回写死的模拟行情**。
 
 ### 新增 / 接入 Provider
 

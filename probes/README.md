@@ -171,6 +171,6 @@ notes: 本探针要回答的问题与已知存疑点。
 
 ## 新增 Provider 时
 
-1. `cases/<name>.yaml` 按 Provider 要核实的问题编写（参考现有六份文件）；
+1. `cases/<name>.yaml` 按 Provider 要核实的问题编写（参考现有八份文件）；
 2. 新增分析探针时先在 `tests/unit/probes/` 补离线测试（合成 fetch 闭包）；
 3. 框架代码保持 Provider 无关：Provider 专属事实只允许出现在 `cases/*.yaml`。
