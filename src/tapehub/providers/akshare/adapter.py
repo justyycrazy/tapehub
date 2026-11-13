@@ -28,7 +28,7 @@ class ProviderAdapter(BaseProviderAdapter):
 
     async def fetch_bars(self, query: BarQuery) -> BarBatch:
         operation = self.resolve_operation(query)
-        return await call_in_thread(self._fetch_sync, operation, query)
+        return await call_in_thread(self._fetch_sync, operation, query, abandon_on_cancel=True)
 
     def _fetch_sync(self, operation: str, query: BarQuery) -> BarBatch:
         frame = self._call_upstream(operation, query)

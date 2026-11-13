@@ -74,8 +74,12 @@ def create_app(
     app.state.capability_service = CapabilityService(registry)
     app.state.instrument_resolve_service = InstrumentResolveService()
     router = ProviderRouter(registry)
-    app.state.bar_query_service = BarQueryService(router)
-    app.state.quote_query_service = QuoteQueryService(router)
+    app.state.bar_query_service = BarQueryService(
+        router, upstream_timeout_seconds=settings.upstream_timeout_seconds
+    )
+    app.state.quote_query_service = QuoteQueryService(
+        router, upstream_timeout_seconds=settings.upstream_timeout_seconds
+    )
     app.state.quote_stream_service = QuoteStreamService(
         router,
         max_clients=settings.stream_max_clients,

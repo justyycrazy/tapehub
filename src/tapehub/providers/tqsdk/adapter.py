@@ -86,7 +86,9 @@ class ProviderAdapter(BaseProviderAdapter):
         if self._conn_mode() == "shared":
             rows = await self._shared_rows(auth, kwargs)
         else:
-            rows = await call_in_thread(self._fetch_rows_per_request, auth, kwargs)
+            rows = await call_in_thread(
+                self._fetch_rows_per_request, auth, kwargs, abandon_on_cancel=True
+            )
         bars = to_standard_bars(rows)
         # 上游按“最新 N 根”返回，这里按闭区间 [start, end] 精确复核统一时间语义
         window = [bar for bar in bars if query.start <= bar.timestamp <= query.end]
@@ -127,7 +129,9 @@ class ProviderAdapter(BaseProviderAdapter):
             finally:
                 runtime.unsubscribe(symbol)
         else:
-            snapshot = await call_in_thread(self._fetch_quote_per_request, auth, symbol)
+            snapshot = await call_in_thread(
+                self._fetch_quote_per_request, auth, symbol, abandon_on_cancel=True
+            )
         return to_standard_quote(
             snapshot, provider=self.name, received_at=datetime.now(CN_TIMEZONE)
         )

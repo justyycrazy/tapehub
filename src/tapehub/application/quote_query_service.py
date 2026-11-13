@@ -35,8 +35,15 @@ class QuoteQueryResult:
 class QuoteQueryService:
     """实时快照查询应用服务。"""
 
-    def __init__(self, router: ProviderRouter) -> None:
+    def __init__(self, router: ProviderRouter, upstream_timeout_seconds: float = 0.0) -> None:
+        """``upstream_timeout_seconds``：上游调用整体超时（秒）；0 = 不限时。
+
+        与 BarQueryService 同语义：超时经 ``asyncio.wait_for`` 实现，
+        ``TimeoutError`` 转为 ``UPSTREAM_TIMEOUT``（HTTP 504）；线程型适配器
+        需配合 ``call_in_thread(abandon_on_cancel=True)`` 才能即时取消。
+        """
         self._router = router
+        self._upstream_timeout_seconds = upstream_timeout_seconds
 
     async def query(self, query: QuoteQuery) -> QuoteQueryResult:
         selection = self._router.select_quote(query)
@@ -51,7 +58,7 @@ class QuoteQueryService:
             else query.model_copy(update={"variant": selection.variant})
         )
         try:
-            quote = await adapter.fetch_quote(final_query)  # type: ignore[attr-defined]
+            quote = await self._fetch_with_timeout(adapter, final_query)
         except TapehubError:
             raise
         except asyncio.CancelledError:
@@ -65,3 +72,12 @@ class QuoteQueryService:
             )
             raise UpstreamError(details={"provider": record.name}) from exc
         return QuoteQueryResult(quote=quote, query=final_query)
+
+    async def _fetch_with_timeout(self, adapter: object, query: QuoteQuery) -> Quote:
+        """带整体超时的取数；``upstream_timeout_seconds`` 为 0 时不包裹。"""
+        if self._upstream_timeout_seconds <= 0:
+            return await adapter.fetch_quote(query)  # type: ignore[attr-defined]
+        return await asyncio.wait_for(
+            adapter.fetch_quote(query),  # type: ignore[attr-defined]
+            self._upstream_timeout_seconds,
+        )

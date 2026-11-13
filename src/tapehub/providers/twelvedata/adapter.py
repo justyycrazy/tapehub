@@ -92,7 +92,9 @@ class ProviderAdapter(BaseProviderAdapter):
     async def fetch_bars(self, query: BarQuery) -> BarBatch:
         operation = self.resolve_operation(query)
         api_key = self._ensure_ready()
-        return await call_in_thread(self._fetch_sync, api_key, operation, query)
+        return await call_in_thread(
+            self._fetch_sync, api_key, operation, query, abandon_on_cancel=True
+        )
 
     async def fetch_quote(self, query: QuoteQuery) -> Quote:
         """实时快照：WS 订阅缓存（tqsdk 同构）。

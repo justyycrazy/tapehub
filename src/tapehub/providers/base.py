@@ -112,10 +112,29 @@ class BaseProviderAdapter:
         )
 
 
-async def call_in_thread(func: Callable[..., Any], /, *args: Any, **kwargs: Any) -> Any:
-    """把同步阻塞型 SDK 调用隔离到线程池，避免阻塞事件循环。"""
+async def call_in_thread(
+    func: Callable[..., Any],
+    /,
+    *args: Any,
+    abandon_on_cancel: bool = False,
+    **kwargs: Any,
+) -> Any:
+    """把同步阻塞型 SDK 调用隔离到线程池，避免阻塞事件循环。
+
+    ``abandon_on_cancel=False``（默认，shield）：调用方取消延迟到线程内调用
+    完成后才送达——适用于必须完整执行的启动类操作（如 tqsdk runtime 启动，
+    取消残留由调用方在 except 路径收编）。
+    ``abandon_on_cancel=True``（可放弃）：取消立即送达调用方（线程在后台
+    跑完当前上游调用、结果丢弃）——适用于数据取数：请求级超时（应用层
+    wait_for → 504）与客户端断开即时生效，不等 SDK 自然结束。线程不被
+    强杀，SDK 调用按自身节奏完成（baostock/akshare 等上游 socket 无超时
+    属 SDK 限制，最坏占用一个 worker 线程至调用自然结束）。
+    """
     import functools
 
     import anyio.to_thread
 
-    return await anyio.to_thread.run_sync(functools.partial(func, *args, **kwargs))
+    return await anyio.to_thread.run_sync(
+        functools.partial(func, *args, **kwargs),
+        abandon_on_cancel=abandon_on_cancel,
+    )

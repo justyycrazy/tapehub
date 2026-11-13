@@ -49,6 +49,12 @@ class Settings(BaseSettings):
     stream_heartbeat_seconds: float = Field(default=15.0, gt=0)
     # 流空闲超时（秒）：该窗口内无行情事件（心跳不算）则本地退订并结束流
     stream_idle_timeout_seconds: float = Field(default=300.0, gt=0)
+    # 上游调用整体超时（秒）：bars/quotes 单次请求从发起到返回的上限，
+    # 超时返回 UPSTREAM_TIMEOUT（HTTP 504）。SSE 流为长驻设计不适用此值。
+    # 注意：tqsdk shared 模式经事件循环等待（取消即时生效）；线程型调用
+    # （其余 Provider 与 tqsdk per_request）经 call_in_thread 的可放弃语义
+    # 取消即时返回，工作线程在后台跑完当前上游调用后自行退出
+    upstream_timeout_seconds: float = Field(default=30.0, gt=0)
     version: str = "0.1.0"
     api_version: str = "v1"
     catalog_version: str = "1"

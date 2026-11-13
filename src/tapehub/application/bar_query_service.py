@@ -37,8 +37,16 @@ class BarQueryResult:
 class BarQueryService:
     """历史 K 线查询应用服务。"""
 
-    def __init__(self, router: ProviderRouter) -> None:
+    def __init__(self, router: ProviderRouter, upstream_timeout_seconds: float = 0.0) -> None:
+        """``upstream_timeout_seconds``：上游调用整体超时（秒）；0 = 不限时。
+
+        超时经 ``asyncio.wait_for`` 实现，``TimeoutError`` 由下方既有映射
+        转为 ``UPSTREAM_TIMEOUT``（HTTP 504）。线程型适配器调用需配合
+        ``call_in_thread(abandon_on_cancel=True)`` 才能即时取消（否则 shield
+        会把超时推迟到线程自然结束，等于失效）。
+        """
         self._router = router
+        self._upstream_timeout_seconds = upstream_timeout_seconds
 
     async def query(self, query: BarQuery) -> BarQueryResult:
         selection = self._router.select(query)
@@ -53,7 +61,7 @@ class BarQueryService:
             else query.model_copy(update={"variant": selection.variant})
         )
         try:
-            batch = await adapter.fetch_bars(final_query)
+            batch = await self._fetch_with_timeout(adapter, final_query)
         except TapehubError:
             raise
         except asyncio.CancelledError:
@@ -67,3 +75,12 @@ class BarQueryService:
             )
             raise UpstreamError(details={"provider": record.name}) from exc
         return BarQueryResult(batch=batch, query=final_query)
+
+    async def _fetch_with_timeout(self, adapter: object, query: BarQuery) -> BarBatch:
+        """带整体超时的取数；``upstream_timeout_seconds`` 为 0 时不包裹。"""
+        if self._upstream_timeout_seconds <= 0:
+            return await adapter.fetch_bars(query)  # type: ignore[attr-defined]
+        return await asyncio.wait_for(
+            adapter.fetch_bars(query),  # type: ignore[attr-defined]
+            self._upstream_timeout_seconds,
+        )

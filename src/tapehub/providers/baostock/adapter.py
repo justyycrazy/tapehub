@@ -118,7 +118,7 @@ class ProviderAdapter(BaseProviderAdapter):
 
     async def fetch_bars(self, query: BarQuery) -> BarBatch:
         operation = self.resolve_operation(query)
-        return await call_in_thread(self._fetch_sync, operation, query)
+        return await call_in_thread(self._fetch_sync, operation, query, abandon_on_cancel=True)
 
     def _fetch_sync(self, operation: str, query: BarQuery) -> BarBatch:
         # 先完成参数映射（能力/标的映射错误优先于 SDK 检查，与 akshare 一致）

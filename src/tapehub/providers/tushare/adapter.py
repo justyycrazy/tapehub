@@ -44,7 +44,7 @@ class ProviderAdapter(BaseProviderAdapter):
     async def fetch_bars(self, query: BarQuery) -> BarBatch:
         operation = self.resolve_operation(query)
         self._ensure_ready()
-        return await call_in_thread(self._fetch_sync, operation, query)
+        return await call_in_thread(self._fetch_sync, operation, query, abandon_on_cancel=True)
 
     def _ensure_ready(self) -> str:
         """校验运行前提：Token 配置。"""
