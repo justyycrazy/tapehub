@@ -20,7 +20,8 @@
 #   1min/5min/15min/30min/1hour/2hour/4hour/1day（fx 全量；crypto 日内
 #   分钟族经密度实证裁决不声明，见 capabilities 注释；2hour/4hour 经
 #   2026-11-13 两轮探针实证可用、报告 20261113T163754/173648+0800 后经
-#   人工确认扩容；10min/6hour/12hour/24hour 等其余格式合法值仍待实证）；
+#   人工确认扩容；10min/6hour/12hour/24hour 等其余格式人工裁决不声明
+#   （2026-11-14 拍板，非待实证项））；
 # - **响应形状（2026-11-13 探针实证，官方文档未如实反映）**：crypto 端点
 #   返回按 ticker 分组的嵌套结构 {"ticker", "baseCurrency", "quoteCurrency",
 #   "priceData": [...]}（bar 行在 priceData 内，字段 date/open/high/low/

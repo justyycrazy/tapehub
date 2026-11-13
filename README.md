@@ -775,7 +775,8 @@ websockets/forex 五页）：
   **无周/月线**）：`PT1M→1min`、`PT5M→5min`、`PT15M→15min`、`PT30M→30min`、
   `PT1H→1hour`、`PT2H→2hour`、`PT4H→4hour`、`P1D→1day`——`2hour`/`4hour`
   经 2026-11-13 两轮探针实证后人工确认扩容（`10min/6hour/12hour/24hour`
-  等其余格式合法值仍待实证）；`startDate`/`endDate`/`resampleFreq` 显式
+  等其余格式人工裁决不声明——2026-11-14 拍板，非待实证项）；
+  `startDate`/`endDate`/`resampleFreq` 显式
   传参（不依赖上游默认值：上游缺省返回原始频度而非声明周期口径）；
 - **crypto 日内分钟族恢复声明（2026-11-13 裁决变更）**：原「不声明」
   裁决基于「1min 稀疏 ≈14 根/天」误判（见下「纠正密度误判」），前提
