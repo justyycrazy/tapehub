@@ -87,6 +87,9 @@ class TwelvedataWsRuntime:
         self._waiters: dict[str, list[asyncio.Future[dict[str, Any]]]] = {}
         self._listeners: dict[str, set[StreamListener]] = {}
         self._linger_tasks: dict[str, asyncio.Task[None]] = {}
+        # 短生命周期内部任务（发送/心跳）持有引用：CPython 对挂起中任务仅
+        # 弱引用，裸 create_task 会被 GC 概率性销毁（Task was destroyed 噪音）
+        self._tasks: set[asyncio.Task[None]] = set()
         self._fatal_error: BaseException | None = None  # 致命错误（如库缺失）
 
     # ------------------------------------------------------------------
@@ -268,6 +271,8 @@ class TwelvedataWsRuntime:
                 continue
             self._ws = ws
             heartbeat = asyncio.create_task(self._heartbeat_loop(ws))
+            self._tasks.add(heartbeat)
+            heartbeat.add_done_callback(self._tasks.discard)
             try:
                 await self._resubscribe_all()
                 await self._recv_loop(ws)
@@ -390,9 +395,11 @@ class TwelvedataWsRuntime:
                 logger.debug("twelvedata ws send failed: %r", payload.get("action"))
 
         try:
-            asyncio.get_running_loop().create_task(_do())
+            task = asyncio.get_running_loop().create_task(_do())
         except RuntimeError:
-            pass
+            return
+        self._tasks.add(task)
+        task.add_done_callback(self._tasks.discard)
 
     async def _send_await(self, payload: dict[str, Any]) -> None:
         """建连路径上的顺序发送（失败抛出，由外层走重连）。"""

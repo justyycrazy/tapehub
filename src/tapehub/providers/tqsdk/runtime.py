@@ -416,6 +416,10 @@ class TqSdkRuntime:
                 self._fail_inflight("tqsdk runtime stopped")
                 self._close_api(api)
                 asyncio.set_event_loop(None)
+                if not gen_loop.is_closed():
+                    # 旧代 loop 显式关闭：残留任务/asyncgen 不依赖 GC 兜底
+                    # （tqsdk close 只收自己创建的 loop，显式传入的 loop 不关）
+                    gen_loop.close()
                 return
             except _GenerationReset as exc:
                 reset_reason = exc.reason
@@ -428,6 +432,9 @@ class TqSdkRuntime:
             # 新一代重建：失败在飞 → close（失败不阻断重建）→ 退避后重建
             self._fail_inflight(f"tqsdk runtime recycling: {reset_reason}")
             self._close_api(api)
+            if not gen_loop.is_closed():
+                gen_loop.close()  # 旧代 loop 显式关闭（新代自建新 loop）
+            asyncio.set_event_loop(None)
             backoff = _REBUILD_BACKOFF_SECONDS
 
     def _close_api(self, api: Any) -> None:
@@ -619,10 +626,13 @@ class TqSdkRuntime:
         task done callback（循环下一拍才触发），调用方可能在闸门计数未释放
         的窗口内提交下一请求，造成偶发误拒（实测并发闸门 flake 的根因）。
         """
+        # 计数回收（无论请求是否已被取消都要执行，防止并发闸门泄漏）
+        with self._lock:
+            self._inflight = max(0, self._inflight - 1)
+            self._pending.discard(cf)
+        if cf.cancelled():
+            return  # 调用方已取消（wrap_future 反向传播）：不再消耗 SDK 协程
         try:
-            with self._lock:
-                self._inflight = max(0, self._inflight - 1)
-                self._pending.discard(cf)
             frame = await api.get_kline_serial(**kwargs)
             cf.set_result(list(frame.to_dict("records")))
         except Exception as exc:  # noqa: BLE001 - 单请求失败不伤实例

@@ -4,6 +4,7 @@ API 层只做参数校验与响应组装；
 Provider 选择、内部 operation 路由、订阅与首包等待都在下层完成。
 """
 
+import contextlib
 from collections.abc import AsyncIterator
 from typing import Annotated
 
@@ -49,8 +50,11 @@ async def stream_market_quote(
     stream = service.open(query)  # 急切受理：闸门/路由错误在此抛出
 
     async def sse_frames() -> AsyncIterator[str]:
-        async for event in stream.events:
-            yield quote_stream_frame(event, stream, request_id)
+        # aclosing 保证「受理后响应体未消费即被丢弃」时仍走 aclose 释放
+        # 配额（迭代器内部另有 cancel-await 与 GC 双兜底）
+        async with contextlib.aclosing(stream.events):
+            async for event in stream.events:
+                yield quote_stream_frame(event, stream, request_id)
 
     return StreamingResponse(
         sse_frames(),

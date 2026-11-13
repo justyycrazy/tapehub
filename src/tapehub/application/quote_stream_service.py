@@ -66,24 +66,46 @@ class _StreamIterator:
     直接返回 ``_drive`` 生成器有一个配额泄漏死角：生成器**从未启动**时
     ``aclose()`` 是 no-op（``finally`` 不执行）。本包装在 ``aclose`` 中
     显式释放（幂等），生成器自身的 ``finally`` 同样调用同一释放函数，
-    两条路径互为兜底。
+    两条路径互为兜底；``__del__`` 再兜「受理后从未被消费即被丢弃」的
+    最后一层（断连抢在首次 ``__anext__`` 之前的窗口）。
     """
 
     def __init__(self, gen: AsyncIterator[QuoteStreamEvent], release: Callable[[], None]):
         self._gen = gen
         self._release = release
+        self._inflight: asyncio.Task[QuoteStreamEvent] | None = None
 
     def __aiter__(self) -> "_StreamIterator":
         return self
 
     async def __anext__(self) -> QuoteStreamEvent:
-        return await self._gen.__anext__()
+        self._inflight = asyncio.current_task()
+        try:
+            return await self._gen.__anext__()
+        finally:
+            self._inflight = None
 
     async def aclose(self) -> None:
         try:
+            # 在飞 __anext__（另一任务挂在生成器上）先取消并等传播完成再
+            # aclose——否则「generator is already executing」（与 _drive
+            # finally 的 cancel-await-aclose 先例同款）
+            task = self._inflight
+            if task is not None and task is not asyncio.current_task():
+                task.cancel()
+                with contextlib.suppress(asyncio.CancelledError, RuntimeError):
+                    await task
             await self._gen.aclose()  # 生成器未启动时为 no-op，不抛错
         finally:
             self._release()
+
+    def __del__(self) -> None:
+        # GC 兜底（幂等）：正常路径由 aclose/finally 覆盖，本路径只收
+        # 「从未消费即被丢弃」的窗口
+        try:
+            self._release()
+        except Exception:  # noqa: BLE001 - 析构路径绝不抛错
+            pass
 
 
 class QuoteStreamService:
