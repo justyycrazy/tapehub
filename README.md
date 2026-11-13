@@ -65,14 +65,12 @@
 # pipx install uv
 # powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
 
-uv sync --dev                    # 同步依赖（自动准备 Python 3.12）
-uv sync --dev --extra akshare    # 安装 akshare SDK（可选依赖）
-uv sync --dev --extra tickflow   # 安装 TickFlow 官方 SDK（可选依赖）
-uv sync --dev --extra alphafeed  # 安装 AlphaFeed 官方 SDK（可选依赖）
-uv sync --dev --extra tushare    # 安装 Tushare 官方 SDK（可选依赖）
-uv sync --dev --extra tqsdk      # 安装 TqSdk 官方 SDK（可选依赖）
-uv sync --dev --extra twelvedata # 安装 Twelve Data 官方库（可选依赖）
-uv sync --dev --extra tiingo     # 安装 Tiingo 直连依赖（httpx + websockets，可选）
+uv sync --dev --all-extras       # 同步依赖 + 全部 Provider SDK（推荐日常使用）
+                                 # 注意：uv 默认「精确同步」——venv 中不在当前选中
+                                 # 集合里的包会被移除。uv sync 只选部分 extra 时，
+                                 # 其余 Provider SDK 会被卸载；Provider SDK 之间
+                                 # 解析无冲突，务必用 --all-extras 共存
+uv sync --dev --extra akshare    # 仅装单个 SDK 的写法（会移除其它 Provider SDK）
 
 uv run pytest          # 运行测试（不依赖任何真实 SDK 与网络）
 uv run ruff check .    # 静态检查

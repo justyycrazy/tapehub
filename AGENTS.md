@@ -15,9 +15,10 @@ Docker、前端（上游内部长连接不受此限，如 twelvedata WS）。
 ## 常用命令
 
 ```bash
-uv sync --dev                       # 同步依赖（Python 3.12，uv 管理）
-uv sync --dev --extra akshare       # Provider SDK 为可选依赖：
-                                    # akshare/tickflow/alphafeed/tushare/tqsdk/twelvedata
+uv sync --dev --all-extras          # 同步依赖 + 全部 Provider SDK（Python 3.12，uv 管理）
+                                    # 注意：uv 默认「精确同步」，只 --extra 部分 SDK
+                                    # 会移除其余 Provider SDK；SDK 间解析无冲突，
+                                    # Provider SDK 为可选依赖，务必用 --all-extras 共存
 uv run pytest                       # 全部测试（Mock 桩注入，不联网、不落盘、无需真实凭据）
 uv run ruff check .                 # lint（line-length 100，规则 E/F/I 含 import 排序）
 uv run uvicorn tapehub.api.app:app --reload   # 本地启动 127.0.0.1:8000
