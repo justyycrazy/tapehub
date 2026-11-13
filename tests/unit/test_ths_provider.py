@@ -533,14 +533,14 @@ def test_futures_quote_from_intraday_last_point(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """期货快照经分时端点取末点：防御升序排后取末点 price/timestamp；
-    量额口径上游未明示，volume/amount 恒 null。"""
+    volume/amount=全点求和（当日累计，逐分钟增量口径探针实证）。"""
     install(monkeypatch)
-    # 官方 item[].timestamp 标明可空：无时间戳的点不参与排序
     points = intraday_points(
         [1767232800000, 1767225600000, 1767229200000],  # 乱序入参
         prices=[11.0, 9.0, 10.0],
+        volumes=[5.0, 26.0, 31.0],
+        turnovers=[100.5, 200.25, 300.75],
     )
-    points.append({"timestamp": None, "price": 99.0, "volume": 0, "turnover": 0})
     preset_payload(monkeypatch, envelope(intraday_data(1767232800000, points)))
     adapter = _adapter()
     query = _quote_query(
@@ -561,9 +561,74 @@ def test_futures_quote_from_intraday_last_point(
     # 末点 = 10:00（北京）价格 11.0
     assert quote.timestamp == datetime(2026, 1, 1, 10, tzinfo=CN_TIMEZONE)
     assert quote.last_price == 11.0
-    assert quote.volume is None  # 量额口径未核实，不冒充
-    assert quote.amount is None
+    assert quote.volume == 62.0  # 全点求和（当日累计）
+    assert quote.amount == 601.5
     assert quote.extensions is None
+
+
+def test_intraday_null_timestamp_point_disables_volume(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """官方 item[].timestamp 标明可空：无时间戳的点不参与排序，其量额
+    亦不可见——求和序列不完整，累计口径不成立（恒 null 不冒充）。"""
+    install(monkeypatch)
+    points = intraday_points(
+        [1767232800000, 1767225600000, 1767229200000],
+        prices=[11.0, 9.0, 10.0],
+        volumes=[5.0, 26.0, 31.0],
+        turnovers=[100.5, 200.25, 300.75],
+    )
+    points.append({"timestamp": None, "price": 99.0, "volume": 0, "turnover": 0})
+    preset_payload(monkeypatch, envelope(intraday_data(1767232800000, points)))
+    adapter = _adapter()
+    query = _quote_query(
+        asset_type=AssetType.CONTRACT,
+        instrument=Instrument.parse("CN-SHFE-CU2601"),
+    )
+    quote = asyncio.run(adapter.fetch_quote(query))
+
+    assert quote.last_price == 11.0
+    assert quote.volume is None
+    assert quote.amount is None
+
+
+def test_intraday_missing_volume_point_disables_volume_only(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """量额两字段独立计算：任一点 volume 缺失则 volume 恒 null（部分和
+    不冒充累计），turnover 序列完整则 amount 照常求和；镜像缺失同理。"""
+    install(monkeypatch)
+    points = intraday_points(
+        [1767225600000, 1767229200000],
+        prices=[9.0, 10.0],
+        volumes=[26.0, 31.0],
+        turnovers=[200.25, 300.75],
+    )
+    points[1]["volume"] = None  # 中段点 volume 缺失（turnover 仍齐备）
+    preset_payload(monkeypatch, envelope(intraday_data(1767225600000, points)))
+    adapter = _adapter()
+    query = _quote_query(
+        asset_type=AssetType.CONTRACT,
+        instrument=Instrument.parse("CN-SHFE-CU2601"),
+    )
+    quote = asyncio.run(adapter.fetch_quote(query))
+
+    assert quote.volume is None
+    assert quote.amount == 501.0
+
+    # 镜像：首点 turnover 缺失（volume 仍齐备）——重建干净序列避免前段污染
+    points = intraday_points(
+        [1767225600000, 1767229200000],
+        prices=[9.0, 10.0],
+        volumes=[26.0, 31.0],
+        turnovers=[200.25, 300.75],
+    )
+    points[0]["turnover"] = None
+    preset_payload(monkeypatch, envelope(intraday_data(1767225600000, points)))
+    quote = asyncio.run(adapter.fetch_quote(query))
+
+    assert quote.volume == 57.0
+    assert quote.amount is None
 
 
 def test_options_quote_from_intraday(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -583,7 +648,8 @@ def test_options_quote_from_intraday(monkeypatch: pytest.MonkeyPatch) -> None:
     assert call["url"] == f"{REST_BASE}/api/options/prices/intraday"
     assert call["params"]["thscode"] == "IO2601-C-4000.CFE"
     assert quote.last_price == 35.2
-    assert quote.volume is None
+    assert quote.volume == 12.0  # 单点序列求和 = 该点值（逐分钟增量）
+    assert quote.amount == 4692000.0
 
 
 def test_intraday_empty_item_raises(monkeypatch: pytest.MonkeyPatch) -> None:

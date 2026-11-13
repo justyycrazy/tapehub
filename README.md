@@ -936,8 +936,9 @@ fund-market、futures-prices、options-prices 六页）：
   （防御升序排后取末点；非交易日/盘前 `item=[]` 返回 `UPSTREAM_ERROR`）；
   `volume`/`amount`=**分时全点求和（当日累计）**——分时点量额为逐分钟增量
   （2026-11-13 探针实证：各点 `turnover/volume` 恰等于该点 `price`×合约
-  乘数、夜盘开盘三点 volume 5→26→31 非累计序列）；任一点量额缺失或存在
-  无时间戳点即不计算（恒 null，部分和不冒充累计）；
+  乘数、夜盘开盘三点 volume 5→26→31 非累计序列）；两字段独立计算（任一点
+  volume 缺失则 volume 恒 null、任一点 turnover 缺失则 amount 恒 null，
+  部分和不冒充累计）；存在无时间戳点时求和序列不完整，两字段均不计算；
 - **快照 timestamp 口径（探针实证）**：`data.timestamp` 为上游**响应组装
   时刻**（盘后随墙钟推进、间隔 10s 两次调用精确 +10s），非成交时点；上游
   快照无独立行情时间字段，按文档「最新上游有效时间」口径透出，盘后请求

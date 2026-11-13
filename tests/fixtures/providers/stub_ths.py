@@ -166,9 +166,24 @@ def intraday_data(timestamp_ms: int, points: list[dict[str, Any]]) -> dict[str, 
     }
 
 
-def intraday_points(timestamps_ms: list[int], *, prices: list[float]) -> list[dict[str, Any]]:
-    """分时点列表（timestamp/price/volume/turnover；量额口径上游未明示）。"""
+def intraday_points(
+    timestamps_ms: list[int],
+    *,
+    prices: list[float],
+    volumes: list[float] | None = None,
+    turnovers: list[float] | None = None,
+) -> list[dict[str, Any]]:
+    """分时点列表（timestamp/price/volume/turnover）。
+
+    ``volumes``/``turnovers`` 缺省时逐点恒值（12 / 4692000.0）；分时点
+    量额为逐分钟增量口径（2026-11-13 探针实证），当日累计 = 全点求和。
+    """
     return [
-        {"timestamp": ts, "price": price, "volume": 12, "turnover": 4692000.0}
-        for ts, price in zip(timestamps_ms, prices, strict=True)
+        {
+            "timestamp": ts,
+            "price": price,
+            "volume": volumes[index] if volumes is not None else 12,
+            "turnover": turnovers[index] if turnovers is not None else 4692000.0,
+        }
+        for index, (ts, price) in enumerate(zip(timestamps_ms, prices, strict=True))
     ]

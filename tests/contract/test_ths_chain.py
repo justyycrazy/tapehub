@@ -124,18 +124,29 @@ def test_capability_catalog(ths_client: TestClient) -> None:
     for cap in bars_caps:
         assert cap["variants"] == ["ths"]
         assert cap["markets"] == ["CN"]
-        # 历史覆盖未经探针实证：全部保持 null（不编造能力）
         assert [i["code"] for i in cap["intervals"]] == ["P1D"]
-        assert all(i["history"]["start"] is None for i in cap["intervals"])
-        assert all(i["history"]["end"] is None for i in cap["intervals"])
         assert cap["fields"] == ["open", "high", "low", "close", "volume", "amount"]
+
+    # 历史覆盖（2026-11-13 探针实证回填）：stock 固定起点 ≈2005-02-14
+    #（二分 90 天粒度 approx，真实最早可能更早）；index/etf 为滚动窗口
+    # 语义（retention_days，指数端点实测 'recent five years only'）
+    hist_by_asset = {
+        tuple(cap["asset_types"])[0]: cap["intervals"][0]["history"] for cap in bars_caps
+    }
+    assert hist_by_asset["stock"]["start"] == "2005-02-14T00:00:00+08:00"
+    assert hist_by_asset["stock"]["end"] is None
+    assert hist_by_asset["stock"]["retention_days"] is None
+    for asset in ("index", "etf"):
+        assert hist_by_asset[asset]["start"] is None
+        assert hist_by_asset[asset]["retention_days"] == 1825
 
     adjustments = {tuple(cap["asset_types"])[0]: cap["adjustments"] for cap in bars_caps}
     assert adjustments["stock"] == ["none", "qfq", "hfq"]  # 唯一有复权语义的资产
     for asset in ("index", "etf", "contract", "option"):
         assert adjustments[asset] == ["none"]
 
-    # 实时快照：无周期/复权维度（显式空）；期货/期权量额口径未核实，fields 收窄
+    # 实时快照：无周期/复权维度（显式空）；期货/期权量额=分时全点求和
+    # （逐分钟增量口径探针实证回填）
     quote_caps = [c for c in entry["capabilities"] if c["data_type"] == "quotes"]
     assert {tuple(cap["asset_types"])[0] for cap in quote_caps} == {
         "stock",
@@ -148,10 +159,8 @@ def test_capability_catalog(ths_client: TestClient) -> None:
         assert cap["intervals"] == []
         assert cap["adjustments"] == []
     fields_by_asset = {tuple(cap["asset_types"])[0]: cap["fields"] for cap in quote_caps}
-    for asset in ("stock", "index", "etf"):
+    for asset in ("stock", "index", "etf", "contract", "option"):
         assert fields_by_asset[asset] == ["timestamp", "last_price", "volume", "amount"]
-    for asset in ("contract", "option"):
-        assert fields_by_asset[asset] == ["timestamp", "last_price"]
 
 
 def test_unsupported_interval_p1w_422(ths_client: TestClient) -> None:
@@ -246,8 +255,8 @@ def test_option_quote_auto_chain(
 
     quote = response.json()["data"]["quote"]
     assert quote["last_price"] == 35.2
-    assert quote["volume"] is None  # 量额口径未核实，不冒充
-    assert quote["amount"] is None
+    assert quote["volume"] == 12.0  # 单点序列求和 = 该点值（逐分钟增量口径）
+    assert quote["amount"] == 4692000.0
     assert quote["extensions"] is None
     assert quote["timestamp"] == "2026-01-01T08:00:00+08:00"
     assert response.json()["meta"]["provider"] == "ths"

@@ -13,16 +13,27 @@
 # - 统一 ApiResponse 信封：业务结果（含错误）HTTP 恒 200，经 code 字段表达
 #   （0 成功；4001 频率超限 → UPSTREAM_RATE_LIMITED，其余非 0 → UPSTREAM_ERROR
 #   携 upstream_code/upstream_message）；时间戳统一毫秒 Unix、Asia/Shanghai；
-# - 上游能力边界（端外，文档明示）：历史 K 线仅日线 1d；A 股/指数窗口 ≤10 年、
-#   ETF ≤5 自然年；期货/期权日 K 端外仅 time_period=day_1（显式传参）；同花顺
-#   板块/行业指数（88xxxx.TI）与商品指数（850002.TI）属同花顺特有 TI 类指数，
-#   本期不纳入（用户拍板 2026-11-13）；
+# - 上游能力边界（端外，文档明示 + 2026-11-13 三轮探针实证，报告
+#   20261113T212034/213321/214147+0800）：历史 K 线仅日线 1d；**窗口口径
+#   实测与文档不符**——指数文档写「≤10 年」实测仅支持**最近约 5 年滚动
+#   窗口**（越界 1003 'recent five years only' 拒绝）、A 股个股实测无滚动
+#   上限（越界软返空）、ETF ≤5 自然年吻合（越界返空不报错）；期货/期权
+#   日 K 端外仅 time_period=day_1（显式传参）；已知上游缺陷：期权日 K
+#   start=2026-10-01（单一日期）触发 5003 'daily quote unavailable'
+#   （邻近起点均正常，窗口避开即可，适配器照常上抛 UPSTREAM_ERROR 不
+#   归一化——单点缺陷而非稳定边界，与 tiingo fx 硬边界先例性质不同）；
+#   同花顺板块/行业指数（88xxxx.TI）与商品指数（850002.TI）属同花顺特有
+#   TI 类指数，本期不纳入（用户拍板 2026-11-13）；
 # - **期货/期权实时快照取分时末点**（/api/futures|options/prices/intraday，
 #   session=intraday、trade_date=0 显式传参）：last_price=末点 price、
 #   timestamp=末点时间（端外仅当前交易日；非交易日/盘前 item=[] 报
-#   UPSTREAM_ERROR）。**volume/amount 不透出**——分时点量额口径（逐分钟增量
-#   vs 当日累计）上游未明示，汇总或透传都可能语义错误，fields 仅声明
-#   timestamp + last_price（探针核实口径后回填，见 probes/cases/ths.yaml）；
+#   UPSTREAM_ERROR）；**volume/amount=全点求和（当日累计）**——分时点量额
+#   逐分钟增量口径经探针实证（各点 turnover/volume 恰等于该点
+#   price×合约乘数、开盘三点 volume 5→26→31 非累计），任一点缺失即不
+#   计算（恒 null 不冒充）；
+# - 快照 timestamp 口径（探针实证）：data.timestamp 为上游响应组装时刻
+#   （盘后随墙钟推进、间隔 10s 两次调用精确 +10s），非成交时点；上游
+#   快照无独立行情时间字段，按文档「最新上游有效时间」口径透出；
 # - 单位：A 股快照/历史 K 线 volume=股、turnover=元（官方文档明示）；
 #   ETF/期货/期权 volume/turnover 单位上游未明示，原值透出（不编造换算）；
 # - 标的代码映射（只收文档实证条目，其余 exchange 明确拒绝，探针后回填）：
@@ -33,11 +44,13 @@
 # - adjust 映射（仅 A 股历史 K 线有复权语义）：none→none、qfq→forward
 #   （前复权）、hfq→backward（后复权）；指数/ETF/期货/期权无复权，仅声明 none
 #   （指数响应 data.adjust 固定 null）；
-# - 单次返回行数上限：官方文档未标注（A 股/指数窗口 ≤10 年、ETF ≤5 年为窗口
-#   上限而非行数上限；historical 有 offset 分页参数但行为未核实，不启用），
-#   partial 恒 false，隐式截断行为待探针核实；
-# - 历史覆盖（history.start/end）全部保持 null（文档未公布，回填需探针实证
-#   + 人工确认后单独提交）；
+# - 单次返回行数上限：官方文档未标注（historical 的 offset 分页参数行为
+#   未核实，不启用），partial 恒 false，隐式截断行为待探针核实；
+# - 历史覆盖（2026-11-13 探针实证回填，人工确认，报告见上）：个股日线
+#   start ≈2005-02-14（二分 90 天粒度 approx，真实最早可能更早）；指数/ETF
+#   为滚动窗口语义，按 retention_days=1825 声明（指数错误消息自述
+#   'recent five years only'、ETF 文档 5 自然年；可达性实证 2022-01-01
+#   起 969 行完整，边界粗粒度）；
 # - 单体系 Provider：变体与 default_variant 均为 ths（数据源即上游服务自身）；
 #   缺省请求经 provider_routing.yaml 回退链裁决（ths 为付费凭据 API，置于
 #   各组合回退位末位），也可显式传 variant=ths。
@@ -46,36 +59,40 @@ default_variant: ths
 
 capabilities:
   # —— 历史 K 线（日线）——
-  # A 股个股：唯一有复权语义的资产类型（none/forward/backward 直映）
+  # A 股个股：唯一有复权语义的资产类型（none/forward/backward 直映）；
+  # start ≈2005-02-14（探针二分 90 天粒度 approx，真实最早可能更早）
   - data_type: bars
     markets: [CN]
     asset_types: [stock]
     delivery: [rest]
     variants: [ths]
     intervals:
-      - {code: P1D, history: {start: null, end: null}}
+      - {code: P1D, history: {start: 2005-02-14T00:00:00+08:00, end: null}}
     adjustments: [none, qfq, hfq]
     fields: [open, high, low, close, volume, amount]
 
-  # 指数（沪深交易所标准指数）：无复权语义（响应 data.adjust 固定 null）
+  # 指数（沪深交易所标准指数）：无复权语义（响应 data.adjust 固定 null）；
+  # 滚动窗口语义（文档「≤10 年」实测 'recent five years only' 拒绝），
+  # 按 retention_days=1825 声明（粗粒度，2022-01-01 起可达性实证）
   - data_type: bars
     markets: [CN]
     asset_types: [index]
     delivery: [rest]
     variants: [ths]
     intervals:
-      - {code: P1D, history: {start: null, end: null}}
+      - {code: P1D, history: {retention_days: 1825}}
     adjustments: [none]
     fields: [open, high, low, close, volume, amount]
 
-  # 场内基金（仅 ETF；LOF/场外/REITs 返回 code=3004）：无复权语义
+  # 场内基金（仅 ETF；LOF/场外/REITs 返回 code=3004）：无复权语义；
+  # 滚动窗口语义（文档 5 自然年实测吻合，越界返空不报错）
   - data_type: bars
     markets: [CN]
     asset_types: [etf]
     delivery: [rest]
     variants: [ths]
     intervals:
-      - {code: P1D, history: {start: null, end: null}}
+      - {code: P1D, history: {retention_days: 1825}}
     adjustments: [none]
     fields: [open, high, low, close, volume, amount]
 
@@ -133,7 +150,7 @@ capabilities:
     fields: [timestamp, last_price, volume, amount]
 
   # 期货/期权快照：分时端点取末点作 last_price（口径见头注释）；
-  # 量额口径未核实，fields 收窄至 timestamp + last_price
+  # volume/amount=全点求和为当日累计（逐分钟增量口径探针实证回填）
   - data_type: quotes
     markets: [CN]
     asset_types: [contract]
@@ -141,7 +158,7 @@ capabilities:
     variants: [ths]
     intervals: []
     adjustments: []
-    fields: [timestamp, last_price]
+    fields: [timestamp, last_price, volume, amount]
   - data_type: quotes
     markets: [CN]
     asset_types: [option]
@@ -149,7 +166,7 @@ capabilities:
     variants: [ths]
     intervals: []
     adjustments: []
-    fields: [timestamp, last_price]
+    fields: [timestamp, last_price, volume, amount]
 
 operations:
   # —— 历史 K 线：显式枚举全部声明组合 ——

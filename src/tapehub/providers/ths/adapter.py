@@ -17,8 +17,9 @@
 - 快照为纯 REST 单次调用语义：无首包超时/QUOTE_NOT_READY（与
   alphafeed/tickflow 一致），上游无推送接口，不实现 stream_quote
   （流式请求返回 UNSUPPORTED_CAPABILITY）；
-- 期货/期权快照经分时端点取末点（量额口径未核实不透出），映射口径见
-  response_mapper 模块 docstring；
+- 期货/期权快照经分时端点取末点（last_price=末点价格、量额=全点求和为
+  当日累计——分时点逐分钟增量口径经 2026-11-13 探针实证，映射口径见
+  response_mapper 模块 docstring）；
 - 单次返回行数上限：官方文档未标注（historical 的 offset 分页参数行为
   未核实，不启用），partial 恒 false（隐式截断行为待探针核实后补充
   覆盖判定）；
@@ -27,7 +28,7 @@
 """
 
 from datetime import datetime
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from tapehub.domain.errors import (
     ProviderNotImplementedError,
@@ -39,9 +40,6 @@ from tapehub.providers.base import BaseProviderAdapter, call_in_thread
 from tapehub.providers.pagination import paginate_bars
 from tapehub.providers.ths.request_mapper import build_quote_request, build_request
 from tapehub.providers.ths.response_mapper import to_standard_bars, to_standard_quote
-
-if TYPE_CHECKING:
-    pass
 
 # httpx 客户端超时（秒）：应用层 upstream_timeout_seconds（默认 30s）为
 # 整体兜底，客户端自身超时取更小的保守值，避免长挂线程占用 worker

@@ -13,11 +13,16 @@ requires:
   env: [TAPEHUB_THS_API_KEY]
 
 pacing:
+  # 2 秒（2026-11-13 第二轮实验后回收）：5 秒间隔无法规避 option 日 K 失败
+  # ——根因已定位为 start=2026-10-01 单一日期触发上游 5003（邻近起点
+  # 09-27/10-02/10-09/11-01 全部正常，与调用频率无关），见 notes 第二轮；
+  # 4001 限频两轮 + 目录外诊断均未复现
   call_interval_s: 2.0
   timeout_s: 60
-  # 本轮构成：availability 5（bars 五资产类型 × P1D）+ adjust_diff 4
-  # （stock 1 目标 × P1D × 2 pair × 2 调）+ history_depth 3 case × 最坏 12
-  # + raw 3 case × 2 调，最坏约 51，预算 60 留余量
+  # 本轮构成：availability 7（stock 三复权 + index + etf + contract +
+  # option 各 P1D）+ adjust_diff 4（stock 1 目标 × 2 pair × 2 调）+
+  # history_depth 3 case × 最坏 12 + raw 3 case × 2 调，最坏约 53，
+  # 预算 60 留余量
   max_calls: 60
 
 targets:
@@ -51,8 +56,10 @@ targets:
     instrument: CN-CFFEX-IO2612-C-4000
     # 沪深300期权（文档示例 IO2601-C-4000.CFE 已到期）：CFFEX→CFE 为唯一
     # 文档实证后缀。月度合约会到期：运行前按中金所挂牌信息核对（行权价
-    # 4000 需在挂牌行权价序列内），失败如实记录，到期轮换为现活合约
-    window: {start: 2026-10-01, end: 2026-11-30}
+    # 4000 需在挂牌行权价序列内），失败如实记录，到期轮换为现活合约。
+    # 窗口起点避开 2026-10-01（2026-11-13 第二轮实证：该单一日期触发
+    # 上游 5003 'daily quote unavailable'，邻近起点均正常，见 notes）
+    window: {start: 2026-11-01, end: 2026-11-30}
     min_bars: 5
     required_fields: [open, high, low, close, volume, amount]
 
@@ -69,10 +76,15 @@ chain:
     intervals: [P1D]
   # 历史覆盖全部保持 null（文档未公布）：P1D 先行二分收敛；仅对证券类
   # 目标做 depth——期货/期权合约生命周期有限（到期归档），「最早可用」
-  # 语义随合约轮换漂移，不做回溯（待 continuous 主连纳入声明后再议）
+  # 语义随合约轮换漂移，不做回溯（待 continuous 主连纳入声明后再议）。
+  # earliest 折中取 2022-01-01（2026-11-13 首轮实证：指数端点越界窗口
+  # 1003 拒绝且实测口径为「recent five years only」滚动 5 年、ETF 同为
+  # 约 5 年滚动但越界整体返空——earliest=2000 会使指数/ETF 深度 case
+  # 全程撞界；stock 首轮已独立收敛 ≈2005-02-14 见 notes，本轮三目标
+  # 统一浅边界复验）
   history_depth:
     targets: [stock, index, etf]
-    earliest: 2000-01-01
+    earliest: 2022-01-01
     era_step_years: 5
     max_calls: 12
     intervals: [P1D]
@@ -143,3 +155,67 @@ notes: >
   形态（信封 code=1003 实证）。
   合约类目标（contract/option）会到期：运行前按交易所挂牌信息核对并轮换，
   失败如实记录（tushare 先例）。
+  2026-11-13 首轮（报告 20261113T212034+0800，confirmed 7 / failed 3 /
+  observe 5，预算 33/60；诊断目录外受控调用 ~9 次）：
+  - **confirmed 7**：证券类 availability（stock 三复权 + index + etf）与
+    adjust_diff 双 pair（none vs qfq/hfq 收盘价全差异——复权管线真实生效）；
+  - **failed 3 均为瞬态/方法论问题，非适配器缺陷**：contract/option
+    availability 失败系夜盘开局时段上游日 K 数据源瞬时不可用（期权实测
+    code=5003 message='daily quote unavailable'，约 40 分钟后重试
+    code=0 返回 13 行；期货 CU2706.SHF 同窗口诊断 code=0 返回 69 行
+    ——SHFE→SHF / CFFEX→CFE 后缀与合约有效性双实证）；history-depth-index
+    失败系探针 earliest=2000 超出上游实测窗口（见下条），非数据问题；
+  - **文档与实测不符（重要）**：指数历史 K 线文档明示「窗口 ≤10 年」，
+    实测 1003 message='Parameter value out of range: start (recent five
+    years only)'——仅支持**最近约 5 年滚动窗口**（2020-01-01 起点亦被拒）；
+    ETF 文档「5 自然年」实测吻合（[2020,2025] 整体返空、[2022,2026] 969
+    行——越界**返空不报错**，与指数的**拒绝**行为不同）；A 股个股无滚动
+    上限（[2000,2005] 软返空）；回填 manifest 注记与 README 窗口口径需
+    人工确认后单独提交；
+  - **分时量额口径已实证（快照 volume/amount 回填依据）**：逐分钟增量——
+    各点 turnover/volume 恰等于该点 price×5（cu 5 吨/手乘数，分钟 VWAP
+    微差），且 21:00/21:01/21:02 三点 volume 5→26→31 非累计序列；若回填
+    快照 volume/amount 需全点求和（口径变更涉及 fields 扩容，人工裁决）；
+  - **股票深度已收敛**：earliest ≈2005-02-14（approx ±90 天粒度，600519，
+    11 调 complete；[2005,2010] era 1153 行完整日 K）——显著深于 dump
+    模块「10 年」口径，回填候选待人工确认；
+  - **无效 key 指纹实测**：code=2003 message='Invalid or revoked API key'
+    （文档写 2001=未认证——实测无效 key 走 2003，信封错误映射已兜底，
+    文档矛盾点记录）；
+  - **快照 data.timestamp 口径存疑（待复核）**：周五 21:18 盘后请求返回
+    timestamp=21:21（响应组装时刻），非收盘行情时点（15:00）——适配器
+    现按文档「最新上游有效时间」用作 Quote.timestamp，盘后语义需人工
+    复核（快照 item 无独立行情时间字段可用）；
+  - 下一轮：availability 复验（预期 contract/option 转 confirmed）、
+    depth 按折中 earliest=2022-01-01 重收敛 index/etf、夜盘时段日 K
+    5003 复现观察（确认时段性规律后可在 README 注明重试窗口）。
+  2026-11-13 第二轮（报告 20261113T213321+0800，confirmed 8 / failed 1 /
+  observe 6，预算 23/60，pacing 5 秒）：
+  - **contract availability 转正**（confirmed）；**option 仍 failed——5 秒
+    间隔无法规避**。目录外受控判别（7 调）定位根因：**start=2026-10-01
+    单一日期触发 5003 'daily quote unavailable'**（三轮探针 + 三次诊断
+    一致复现；邻近起点 2026-09-27/10-02/10-09/11-01 全部 code=0 正常，
+    27/26/30/10 行各异但与交易日数吻合）——上游该日期桶的单点缺陷，
+    与调用频率、夜盘时段均无关（09-27 周日起点、期货 08-01 周六起点
+    亦正常）。期权目标窗口已改 [2026-11-01, 2026-11-30]（实测 10 行）；
+    pacing 回收 2 秒（放宽无收益已实证）；
+  - **depth 三目标全部收敛**：earliest_estimate=2022-01-01（=探针折中
+    边界，bounded-below）、[2022,2025] 窗口各 969 行（≈四年全量日 K，
+    三资产各自独立合理）——index/etf 在滚动 5 年窗口内数据完整，
+    stock 深界 ≈2005-02-14 已于首轮 banked；
+  - 累计待人工确认回填项（不变）：期货/期权快照 fields 扩容（分时逐分钟
+    增量口径 → 求和为当日累计）、指数窗口 5 年滚动实测 vs 文档 10 年、
+    history.start 回填、快照 data.timestamp 组装时刻口径复核、无效 key
+    实测 2003 vs 文档 2001、start=2026-10-01 日期桶缺陷（是否归一化为
+    空批待设计裁决——tiingo fx 边界钳制先例）。
+  2026-11-13 第三轮（报告 20261113T214147+0800，**confirmed 9 / observe 6 /
+  failed 0——全绿**，预算 23/60，pacing 2 秒）：option 目标窗口避开
+  2026-10-01 缺陷日期后 availability 转正（confirmed，样本 3 根日 K，
+  首根 2026-11-02，OHLC/volume/amount 齐备）——**「10-01 日期桶缺陷」
+  定性收口：窗口规避有效，适配器映射（CFFEX→CFE、symbol 透传）与
+  两端点全链路（bars 五资产 + quotes 五资产经 raw 观察）实证无缺陷**；
+  depth 三目标复验一致（[2022,2025] 各 969 行）。两轮三报告存档：
+  20261113T212034 / 213321 / 214147+0800。
+
+
+

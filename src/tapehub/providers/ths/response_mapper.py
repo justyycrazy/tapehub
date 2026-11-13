@@ -27,13 +27,18 @@ quote（``data`` 容器，按 operation 显式分派——形态分派会把畸�
   不透出）；
 - 分时（futures_snapshot/options_snapshot，item[] 含 ``price``）：防御按
   点时间升序排后取末点——``last_price``=末点 ``price``、``timestamp``=
-  末点 ``timestamp``（行情时间）；**volume/amount 恒 null**（分时点量额
-  口径逐分钟增量 vs 当日累计上游未明示，汇总或透传都可能语义错误，
-  fields 声明仅 timestamp + last_price，探针核实后回填）；
-  ``item[].timestamp`` 官方标明可空（盘前等场景），无时间戳的点不参与
-  排序，全部无时间戳或 item 空属无有效行情，抛 UPSTREAM_ERROR；
+  末点 ``timestamp``（行情时间）；**volume/amount=全点求和（当日累计）**
+  （2026-11-13 探针实证分时点量额为逐分钟增量：各点 turnover/volume
+  恰等于该点 price×合约乘数、开盘三点 volume 5→26→31 非累计序列，报告
+  20261113T212034+0800——累计口径需全点求和，volume/amount 两字段独立
+  计算（任一点 volume 缺失则 volume 恒 null、任一点 turnover 缺失则
+  amount 恒 null，部分和不冒充累计））；``item[].timestamp``
+  官方标明可空（盘前等场景），无时间戳的点不参与排序，全部无时间戳
+  或 item 空属无有效行情，抛 UPSTREAM_ERROR；
 - 时间戳统一毫秒 Unix → 北京时间 aware datetime（经 timeutil 纪元算术，
-  Windows 安全）。
+  Windows 安全）；快照 ``data.timestamp`` 实测为上游响应组装时刻
+  （盘后随墙钟推进、间隔 10s 两次调用精确 +10s，非成交时点）——上游
+  快照无独立行情时间字段，按文档「最新上游有效时间」口径透出。
 """
 
 import math
@@ -199,11 +204,19 @@ def _intraday_to_quote(
     provider: str,
     received_at: datetime,
 ) -> Quote:
-    """分时形（期货/期权）：升序排后取末点作 last_price（口径见模块 docstring）。"""
+    """分时形（期货/期权）：升序排后取末点作 last_price（口径见模块 docstring）。
+
+    volume/amount 为全点求和（当日累计，探针实证分时点为逐分钟增量），
+    两字段独立计算：任一点 volume 缺失则 volume 恒 null、任一点 turnover
+    缺失则 amount 恒 null（部分和不冒充累计）；null 时间戳点被跳过导致
+    序列不完整时两字段均不计算。
+    """
     points: list[tuple[datetime, dict[str, Any]]] = []
+    skipped_no_timestamp = 0
     for item in items:
         raw_ts = item.get("timestamp")
         if raw_ts is None:  # 官方标明可空（盘前等场景），不参与排序
+            skipped_no_timestamp += 1
             continue
         points.append((_ms_to_datetime(raw_ts, "timestamp"), item))
     if not points:
@@ -219,13 +232,26 @@ def _intraday_to_quote(
             "ths intraday last point has no valid price.",
             details={"provider": provider, "field": "price"},
         )
+    # 有跳点时求和序列不完整（跳过点的量额不可见），累计口径不成立
+    volume: float | None = None
+    amount: float | None = None
+    if not skipped_no_timestamp:
+        volume = _sum_series([_to_float(p.get("volume")) for _, p in points])
+        amount = _sum_series([_to_float(p.get("turnover")) for _, p in points])
     return Quote(
         timestamp=last_time,
         last_price=last_price,
-        # 量额口径（逐分钟增量 vs 当日累计）上游未明示，不透出（不冒充）
-        volume=None,
-        amount=None,
+        volume=volume,
+        amount=amount,
         provider=provider,
         received_at=received_at,
         extensions=None,
     )
+
+
+def _sum_series(values: list[float | None]) -> float | None:
+    """分时点单字段序列求和（当日累计）；任一点缺失（null）即返回 null——
+    部分和不冒充累计。volume/amount 两字段独立调用，互不牵连。"""
+    if not values or any(value is None for value in values):
+        return None
+    return float(sum(values))
