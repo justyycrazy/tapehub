@@ -122,10 +122,11 @@ capabilities:
     fields: [open, high, low, close, volume]
 
   # 实时快照与快照流（WS 订阅推送，M2 缓存读取 + M3 SSE 同源）：无周期/
-  # 复权维度（两维度声明为空，路由与能力匹配跳过）；文档核实 crypto TOP
-  # 与 forex top 均含 bid/ask，但 WS 消息形态未经探针实证——fields 首版
-  # 仅声明 timestamp + last_price（twelvedata 收窄先例），bid/ask 由
-  # response_mapper 防御映射（缺失 → null），探针实证后扩容声明
+  # 复权维度（两维度声明为空，路由与能力匹配跳过）；fields 按 2026-11-13
+  # WS 行为探针实证扩容（报告 ws-behavior-20261113T2130+0800）：fx Q 数组
+  # 含 bidSize/bidPrice/midPrice/askSize/askPrice、crypto Q 同（+exchange）
+  # ——单档 bid/ask 声明（五档其余恒 null）；标准 volume/amount 恒 null
+  # （lastSize 为单笔成交量口径未实证，不冒充累计成交量）
   - data_type: quotes
     markets: [GLOBAL]
     asset_types: [forex, crypto]
@@ -133,7 +134,7 @@ capabilities:
     variants: [tiingo]
     intervals: []
     adjustments: []
-    fields: [timestamp, last_price]
+    fields: [timestamp, last_price, bid_price1, ask_price1, bid_volume1, ask_volume1]
 
 operations:
   # 外汇历史K线：显式枚举全部声明组合 → 同一上游端点

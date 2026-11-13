@@ -757,7 +757,7 @@ websockets/forex 五页）：
 | --- | --- | --- | --- | --- | --- | --- |
 | forex（bars） | GLOBAL | tiingo（默认） | `GET /tiingo/fx/<ticker>/prices` | PT1M/PT5M/PT15M/PT30M/PT1H/PT2H/PT4H、P1D | none | 无 volume/amount（外汇文档仅 OHLC） |
 | crypto（bars） | GLOBAL | tiingo（默认） | `GET /tiingo/crypto/prices` | PT2H/PT4H、P1D（日内分钟族不声明，见下） | none | volume 有值（base 币计）；无 amount |
-| forex/crypto（quotes） | GLOBAL | tiingo | WS crypto/fx 端点（thresholdLevel 2/7） | —（快照无周期） | —（快照无复权） | timestamp/last_price（bid/ask 防御映射，见下） |
+| forex/crypto（quotes） | GLOBAL | tiingo | WS crypto/fx 端点（thresholdLevel 2/5） | —（快照无周期） | —（快照无复权） | timestamp/last_price + 单档 bid/ask（WS 探针实证后声明，见下） |
 
 - **免费档限额（账户页与官方文档口径，2026-11-13 接入依据）**：50 请求/小时、
   1000 请求/天、500 个唯一品种/月、1GB 带宽/月——REST 调用计请求数，WS 不计
@@ -837,11 +837,12 @@ websockets/forex 五页）：
   语义保留）、crypto 退订后连接存活（多订阅退订语义待二次探针）；
 - 快照字段口径：`last_price` 取 `lastPrice`、缺失回退 `midPrice`（文档：
   bid/ask 均非空时 mid=(bid+ask)/2；两者均缺失属上游契约违背返回
-  `UPSTREAM_ERROR`）；`bid_price1/ask_price1/bid_volume1/ask_volume1`
-  防御映射（WS 探针实证单档 bid/ask 存在，缺失 → null）；标准
-  `volume`/`amount` 恒 null（`lastSize` 为单笔成交量的口径未实证，不
-  冒充累计成交量）——能力目录 fields 声明见上表（WS 实证后扩容）；
-  `extensions` 白名单：`exchange`（缺失不透出）；
+  `UPSTREAM_ERROR`）；**fields 已按 WS 探针实证扩容**：单档
+  `bid_price1/ask_price1/bid_volume1/ask_volume1` 声明（fx Q 数组含
+  bidSize/bidPrice/midPrice/askSize/askPrice；crypto 同 + exchange），
+  五档其余恒 null；标准 `volume`/`amount` 恒 null（`lastSize` 为单笔
+  成交量的口径未实证，不冒充累计成交量）；`extensions` 白名单：
+  `exchange`（fx 无、crypto 有，缺失不透出）；
 - Runtime 形态：asyncio 原生共享连接（crypto/fx 各一单连接，同端点多实例
   启动告警），per-symbol 引用计数；引用归零延迟 60s（linger）向上游发
   退订并本地释放缓存；断连广播 `upstream_disconnected` 后退避重连自动重订；

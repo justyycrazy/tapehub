@@ -142,7 +142,11 @@ def test_capability_catalog(tiingo_client: TestClient) -> None:
     assert quote_cap["delivery"] == ["rest"]
     assert quote_cap["intervals"] == []
     assert quote_cap["adjustments"] == []
-    assert quote_cap["fields"] == ["timestamp", "last_price"]
+    # fields 按 2026-11-13 WS 探针实证扩容：单档 bid/ask（fx Q 数组含
+    # bidSize/bidPrice/midPrice/askSize/askPrice；crypto 同 + exchange）
+    assert quote_cap["fields"] == [
+        "timestamp", "last_price", "bid_price1", "ask_price1", "bid_volume1", "ask_volume1",
+    ]
 
 
 def test_unsupported_interval_p1w_422(tiingo_client: TestClient) -> None:
