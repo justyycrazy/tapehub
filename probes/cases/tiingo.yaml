@@ -211,3 +211,20 @@ notes: >
   恢复声明，history.start 保持 null（depth 仅探 P1D，日内 depth 待扩
   探——分段行为下日窗粒度探针噪声大）；适配器 partial 判定泛化
   （crypto 段上限按行数 ≈5001，返回行数触顶即标 partial）。
+  2026-11-13 WS 二次探针（ws_behavior_probe2，附录见
+  ws-behavior-20261113T2130+0800.md 第七节）：**阈值全值矩阵**——fx 有效
+  {2, 5, 省略} 均持续推 TOP Q 8 元素（6/1/3/4 被拒或无推送）、crypto
+  有效 {2 = Q+T 混合, 5 = 仅成交 T, 省略 = 默认仅 T}（1/3/4/6/7 被拒或
+  无推送）；**退订定案**：逐 symbol 退订生效且不断连（双订阅退 1 后
+  90s 连接存活、另一 symbol 持续推送、被退 symbol 仅 2 条在途竞态帧），
+  退订最后一个 symbol（空订阅）服务端关连接——linger 语义成立；**S2/S5
+  两轮独立实证 subscriptionId 增订帧触发服务端断连 → 增删订阅不可用
+  定案**（维持逐 symbol 独立订阅帧方案）。runtime 现行配置（fx=5/
+  crypto=2）均在有效集内且实测持续推送，无需调整。
+  2026-11-13 第五轮（报告 20261113T221331+0800，confirmed 18 / observe 5 /
+  **failed 0**）：恢复声明后的完整能力矩阵验证——fx 8 周期 + crypto 8
+  周期（含恢复的 PT1M~PT1H）availability 全 confirmed；depth 回归与
+  四轮一致（fx ≈2020-02-15 / crypto ≈2011-08-25，complete=True）；
+  limit P7D 回归：7 天窗完整 5626 根 partial=false（分段边界回归口径
+  生效）。tiingo 探针至此收敛：REST 四轮 + WS 两轮 + limit 专项 +
+  恢复验证轮，全部结论已回填 manifest/README 并经人工确认。

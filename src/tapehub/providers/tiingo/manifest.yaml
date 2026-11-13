@@ -70,8 +70,12 @@
 #   fx Q 8 元素 [Q,ticker,date,bidSize,bidPrice,midPrice,askSize,askPrice]、
 #   crypto Q 9 元素（+exchange）/ T 6 元素 [T,ticker,date,exchange,
 #   lastSize,lastPrice]；tickers 服务端过滤实测生效（客户端兜底过滤保留
-#   防御）；退订实测：fx 退订空订阅后服务端断连（重连状态机恢复，linger
-#   语义保留）、crypto 退订后连接存活（多订阅退订语义待二次探针）；
+#   防御）；阈值全值矩阵（二次探针附录）：fx 有效 {2,5,省略} 均推 TOP、
+#   crypto 有效 {2=Q+T 混合, 5=仅成交 T, 省略=默认仅 T}；退订定案：逐
+#   symbol 退订生效且不断连（被退 symbol 经短暂在途竞态后停止）、退订
+#   最后一个 symbol（空订阅）服务端关闭连接（重连状态机恢复，linger
+#   语义成立）；subscriptionId 增删订阅**不可用**（增订帧两次实证触发
+#   服务端断连）——维持逐 symbol 独立订阅帧方案；
 # - 并发订阅软上限：TAPEHUB_TIINGO_SUBSCRIPTION_LIMIT（默认 8，防失控；
 #   上游未公布并发上限，硬约束为月度 500 唯一品种，网关不做计数），
 #   达限急切返回 UPSTREAM_SUBSCRIPTION_LIMIT（429）；

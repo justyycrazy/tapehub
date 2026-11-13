@@ -837,8 +837,13 @@ websockets/forex 五页）：
   （mid 自洽验证）、crypto Q 9 元素（+exchange）/ T 6 元素
   `[type, ticker, date, exchange, lastSize, lastPrice]`；**tickers 服务端
   过滤实测生效**（fx 147/147、crypto 206/206——客户端兜底过滤保留
-  防御）；退订实测：fx 退订空订阅后服务端断连（重连状态机恢复，linger
-  语义保留）、crypto 退订后连接存活（多订阅退订语义待二次探针）；
+  防御）；**阈值全值矩阵（二次探针附录）**：fx 有效 {2, 5, 省略} 均持续
+  推 TOP、crypto 有效 {2 = Q+T 混合，5 = 仅成交 T，省略 = 默认仅 T}；
+  **退订定案**：逐 symbol 退订生效且不断连（被退 symbol 经短暂在途
+  竞态后停止，与 twelvedata 同款）、退订最后一个 symbol（空订阅）服务
+  端关闭连接（重连状态机恢复，linger 语义成立）；**subscriptionId 增删
+  订阅不可用**（增订帧两次独立实证触发服务端断连）——维持逐 symbol
+  独立订阅帧方案；
 - 快照字段口径：`last_price` 取 `lastPrice`、缺失回退 `midPrice`（文档：
   bid/ask 均非空时 mid=(bid+ask)/2；两者均缺失属上游契约违背返回
   `UPSTREAM_ERROR`）；**fields 已按 WS 探针实证扩容**：单档
