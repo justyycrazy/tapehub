@@ -161,24 +161,26 @@ class ProviderAdapter(BaseProviderAdapter):
             snapshot, provider=self.name, received_at=datetime.now(CN_TIMEZONE)
         )
 
-    def shutdown_runtime(self) -> None:
+    def shutdown_runtime(self) -> object | None:
         """停机钩子（由应用 lifespan 调用）：关闭 WS Runtime（若已启动）。
 
-        lifespan 在事件循环内同步调用本方法——将异步停机调度为任务，
-        由存活的事件循环完成收尾（取消连接任务、通知监听器断流）。
+        lifespan 在事件循环内同步调用本方法——返回异步停机任务由 lifespan
+        await 到完成（裸 create_task 无人 await 会在 uvicorn 退出时被取消
+        半途、TestClient portal 下直接销毁，ws.close 永不落）；无运行循环的
+        兜底路径直接同步跑完并返回 None（正常不触发）。
         """
         runtime = self._runtime
         if runtime is None:
-            return
+            return None
         self._runtime = None
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
             loop = None
         if loop is not None:
-            loop.create_task(runtime.shutdown(), name="twelvedata-ws-shutdown")
-        else:  # 无运行循环的兜底（正常不触发）
-            asyncio.run(runtime.shutdown())
+            return loop.create_task(runtime.shutdown(), name="twelvedata-ws-shutdown")
+        asyncio.run(runtime.shutdown())  # 无运行循环的兜底（正常不触发）
+        return None
 
     def _ensure_ready(self) -> str:
         """校验运行前提：API Key 配置。"""

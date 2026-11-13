@@ -126,8 +126,10 @@ def test_runtime_status_per_request_stays_unknown() -> None:
         tqsdk_auth_user="u@example.com",
         tqsdk_auth_password="secret",
     )
-    client = TestClient(create_app(settings=settings, registry=build_default_registry(settings)))
-    body = client.get("/v1/capabilities").json()
+    with TestClient(
+        create_app(settings=settings, registry=build_default_registry(settings))
+    ) as client:
+        body = client.get("/v1/capabilities").json()
     statuses = {entry["provider"]: entry["runtime_status"] for entry in body["data"]}
     assert statuses["tqsdk"] == "unknown"  # 无长连接：不伪造状态
     assert statuses["akshare"] == "unknown"  # 无 runtime_status 属性的适配器同样回退

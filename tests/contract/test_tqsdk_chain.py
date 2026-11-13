@@ -44,7 +44,10 @@ def tqsdk_client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
         tqsdk_auth_user="user@qq.com",
         tqsdk_auth_password="secret",
     )
-    return TestClient(create_app(settings=settings, registry=build_default_registry(settings)))
+    with TestClient(
+        create_app(settings=settings, registry=build_default_registry(settings))
+    ) as client:
+        yield client
 
 
 def test_full_chain_continuous(

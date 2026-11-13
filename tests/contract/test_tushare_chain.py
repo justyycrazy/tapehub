@@ -30,8 +30,10 @@ def preset_rows(module: Any, rows: list[dict[str, Any]]) -> None:
 def tushare_client(monkeypatch: pytest.MonkeyPatch) -> tuple[TestClient, Any]:
     stub = install(monkeypatch)
     settings = make_settings(max_limit=1000, tushare_token="test-token")
-    client = TestClient(create_app(settings=settings, registry=build_default_registry(settings)))
-    return client, stub
+    with TestClient(
+        create_app(settings=settings, registry=build_default_registry(settings))
+    ) as client:
+        yield client, stub
 
 
 def test_full_chain_default_adjust_is_qfq(

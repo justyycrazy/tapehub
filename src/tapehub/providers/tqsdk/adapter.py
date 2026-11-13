@@ -107,14 +107,25 @@ class ProviderAdapter(BaseProviderAdapter):
         )
 
     async def fetch_quote(self, query: QuoteQuery) -> Quote:
-        """实时快照：读 Runtime 最新缓存；未订阅则订阅并等待首包。"""
+        """实时快照：按请求租约订阅（读 Runtime 最新缓存或等首包）。
+
+        租约语义：请求结束（成功/首包超时/客户端断开）即退订——引用归零后
+        Quote 转入休眠账本、缓存丢弃，``TAPEHUB_TQSDK_SUBSCRIPTION_LIMIT``
+        的休眠回收阀门保持可达（否则纯 M2 流量下 refs 永不归零、回收永不
+        触发）。重复请求经休眠唤醒即时返回新鲜快照：unsubscribe 归零即丢弃
+        缓存（``latest`` 此后返回 None），唤醒时 ``_handle_subscribe`` 发布
+        Quote 当前值（上游持续推送，唤醒即新鲜），无陈旧快照问题。
+        """
         self.resolve_quote_operation(query)
         auth = self._ensure_ready()
         symbol = quote_symbol(query)
         if self._conn_mode() == "shared":
             runtime = await self._ensure_runtime(auth)
             runtime.subscribe(symbol)
-            snapshot = await self._await_snapshot(runtime, symbol)
+            try:
+                snapshot = await self._await_snapshot(runtime, symbol)
+            finally:
+                runtime.unsubscribe(symbol)
         else:
             snapshot = await call_in_thread(self._fetch_quote_per_request, auth, symbol)
         return to_standard_quote(
@@ -122,7 +133,12 @@ class ProviderAdapter(BaseProviderAdapter):
         )
 
     def shutdown_runtime(self) -> None:
-        """停机钩子（由应用 lifespan 调用）：关闭共享运行时（若已启动）。"""
+        """停机钩子（由应用 lifespan 调用）：关闭共享运行时（若已启动）。
+
+        同步完成（内部 join 上限 10s）：tqsdk 停机必须等待线程 close 完整
+        TqApi，停机期短暂阻塞事件循环属可接受代价；返回 None（无待 await
+        的停机任务，与 twelvedata 的异步钩子协议兼容）。
+        """
         if self._runtime is not None:
             self._runtime.shutdown()
 
@@ -228,7 +244,15 @@ class ProviderAdapter(BaseProviderAdapter):
                     subscription_limit=self._subscription_limit(),
                 )
                 # start 阻塞至构造完成（实测 ~1s），放到线程里避免冻结事件循环
-                await call_in_thread(runtime.start)
+                try:
+                    await call_in_thread(runtime.start)
+                except BaseException:
+                    # 取消（客户端断开/请求超时）或构造失败：anyio shield 下
+                    # 线程已完成 start——TqApi 连接与 runtime 线程可能已带起
+                    # 但引用永不落账成孤儿。非阻塞收编：停止标志入队（join(0)
+                    # 立即返回），tick 线程随后自行干净退出
+                    runtime.shutdown(timeout=0)
+                    raise
                 self._runtime = runtime
         return self._runtime
 

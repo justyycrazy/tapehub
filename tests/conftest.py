@@ -100,7 +100,9 @@ def fake_registry() -> ProviderRegistry:
 
 @pytest.fixture()
 def fake_client(fake_registry: ProviderRegistry, test_settings: Settings) -> TestClient:
-    return TestClient(create_app(settings=test_settings, registry=fake_registry))
+    with TestClient(create_app(settings=test_settings, registry=fake_registry)) as client:
+        # with 形态确保 lifespan 执行（停机钩子/资源收尾在测试中真实生效）
+        yield client
 
 
 @pytest.fixture()
@@ -110,7 +112,8 @@ def default_client() -> TestClient:
     凭据视为未配置：需要凭据的内置 Provider 不启用（能力目录可见但
     enabled=False，auto 路由跳过），akshare（无凭据概念）仍注册。
     """
-    return TestClient(create_app(settings=make_settings()))
+    with TestClient(create_app(settings=make_settings())) as client:
+        yield client
 
 
 @pytest.fixture()
@@ -126,6 +129,7 @@ def counting_client(
     counting_registry: tuple[ProviderRegistry, CountingProvider], test_settings: Settings
 ) -> TestClient:
     registry, _ = counting_registry
-    return TestClient(create_app(settings=test_settings, registry=registry))
+    with TestClient(create_app(settings=test_settings, registry=registry)) as client:
+        yield client
 
 

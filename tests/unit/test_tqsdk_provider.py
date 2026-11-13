@@ -3,13 +3,25 @@
 import asyncio
 import sys
 from datetime import datetime
-from typing import Any
+from typing import Any, ClassVar
 
 import pytest
 
-from tapehub.domain.errors import ProviderNotImplementedError, UnsupportedCapabilityError
+from tapehub.domain.errors import (
+    ProviderNotImplementedError,
+    QuoteNotReadyError,
+    UnsupportedCapabilityError,
+)
 from tapehub.domain.intervals import Interval
-from tapehub.domain.models import CN_TIMEZONE, Adjust, AssetType, BarQuery, DataVariant, Instrument
+from tapehub.domain.models import (
+    CN_TIMEZONE,
+    Adjust,
+    AssetType,
+    BarQuery,
+    DataVariant,
+    Instrument,
+    QuoteQuery,
+)
 from tapehub.providers.manifest import load_builtin_manifest
 from tapehub.providers.registry import build_provider_record
 from tapehub.settings import Settings
@@ -307,3 +319,178 @@ def test_futures_adj_type_always_none(monkeypatch: pytest.MonkeyPatch) -> None:
     from tests.fixtures.providers.stub_tqsdk import StubTqApi
 
     assert StubTqApi.instances[-1].calls[0]["adj_type"] is None
+
+
+# ---------------------------------------------------------------------------
+# shared 模式资源生命周期（H1 启动收编 / H2 M2 租约订阅）
+# ---------------------------------------------------------------------------
+
+
+class _StubRuntime:
+    """shared Runtime 桩：记录 start/shutdown/订阅账本调用，不发真实上游。"""
+
+    instances: ClassVar[list["_StubRuntime"]] = []
+
+    def __init__(self, **kwargs: Any) -> None:
+        self.kwargs = kwargs
+        self.started = False
+        self.shutdown_timeouts: list[float] = []
+        self.subscribed: list[str] = []
+        self.unsubscribed: list[str] = []
+        self.snapshots: dict[str, dict[str, Any]] = {}
+        _StubRuntime.instances.append(self)
+
+    def start(self) -> None:
+        self.started = True
+
+    def shutdown(self, timeout: float = 10.0) -> None:
+        self.shutdown_timeouts.append(timeout)
+
+    def fetch(self, kwargs: dict[str, Any]) -> Any:  # pragma: no cover - 本组测试不取数
+        raise AssertionError("fetch not expected in lifecycle tests")
+
+    def subscribe(self, symbol: str) -> None:
+        self.subscribed.append(symbol)
+
+    def unsubscribe(self, symbol: str) -> None:
+        self.unsubscribed.append(symbol)
+
+    def latest(self, symbol: str) -> dict[str, Any] | None:
+        return self.snapshots.get(symbol)
+
+
+def _shared_adapter() -> Any:
+    return _adapter(
+        make_settings(
+            tqsdk_conn_mode="shared",
+            tqsdk_auth_user="user@qq.com",
+            tqsdk_auth_password="secret",
+        )
+    )
+
+
+def _quote(**overrides: Any) -> Any:
+    base: dict[str, Any] = {
+        "asset_type": AssetType.CONTRACT,
+        "instrument": Instrument.parse("CN-SHFE-AU2612"),
+        "variant": DataVariant.TQSDK,
+    }
+    base.update(overrides)
+    return QuoteQuery(**base)
+
+
+def _install_shared_stubs(monkeypatch: pytest.MonkeyPatch) -> type[_StubRuntime]:
+    import tapehub.providers.tqsdk.adapter as adapter_module
+
+    _StubRuntime.instances.clear()
+    monkeypatch.setattr(adapter_module, "TqSdkRuntime", _StubRuntime)
+    monkeypatch.setattr(adapter_module, "call_in_thread", _startup_with_checkpoint)
+    return _StubRuntime
+
+
+async def _startup_with_checkpoint(func: Any, *args: Any, **kwargs: Any) -> None:
+    """启动完成后留取消检查点：模拟 anyio shield 下「取消在赋值前送达」。"""
+    func()  # runtime.start（stub 同步完成）
+    await asyncio.sleep(0.05)
+
+
+def test_ensure_runtime_cancel_collects_orphan(monkeypatch: pytest.MonkeyPatch) -> None:
+    """启动完成但引用未落账时被取消：非阻塞收编孤儿，重试起全新 Runtime。"""
+    stubs = _install_shared_stubs(monkeypatch)
+    adapter = _shared_adapter()
+
+    async def scenario() -> None:
+        task = asyncio.ensure_future(adapter._ensure_runtime(("u", "p")))
+        await asyncio.sleep(0.01)  # 已进入检查点（已启动、未赋值）
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    asyncio.run(scenario())
+
+    orphan = stubs.instances[-1]
+    assert orphan.started
+    assert orphan.shutdown_timeouts == [0]  # 非阻塞收编（join(0) 立即返回）
+    assert adapter._runtime is None
+
+    # 重试：起全新 Runtime 并正常落账
+    runtime = asyncio.run(adapter._ensure_runtime(("u", "p")))
+    assert runtime is stubs.instances[-1] and runtime is not orphan
+    assert runtime.shutdown_timeouts == []
+    assert adapter._runtime is runtime
+
+
+def test_quote_lease_released_on_success(monkeypatch: pytest.MonkeyPatch) -> None:
+    """M2 租约（成功路径）：请求结束即退订，refs 归零使回收阀门可达。"""
+    _install_shared_stubs(monkeypatch)
+    adapter = _shared_adapter()
+    runtime = asyncio.run(adapter._ensure_runtime(("u", "p")))
+    # 快照桩需带合法 datetime（响应 mapper 要求，空值显式抛错）
+    runtime.snapshots["SHFE.au2612"] = {
+        "datetime": "2026-11-13 10:00:00.000000",
+        "last_price": 100.0,
+    }
+
+    asyncio.run(adapter.fetch_quote(_quote()))
+
+    assert runtime.subscribed == ["SHFE.au2612"]
+    assert runtime.unsubscribed == ["SHFE.au2612"]  # finally 退订
+
+
+def test_quote_lease_released_on_first_packet_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """M2 租约（408 路径）：首包超时仍退订——这是回收阀门可达的关键路径。"""
+    _install_shared_stubs(monkeypatch)
+    adapter = _shared_adapter()  # 默认 5s 首包超时；stub 永不发布快照
+
+    with pytest.raises(QuoteNotReadyError):
+        asyncio.run(adapter.fetch_quote(_quote()))
+
+    runtime = _StubRuntime.instances[-1]
+    assert runtime.subscribed == ["SHFE.au2612"]
+    assert runtime.unsubscribed == ["SHFE.au2612"]
+
+
+def test_quote_lease_released_on_client_cancel(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """M2 租约（客户端断开路径）：请求被取消仍退订（finally 保证）。"""
+    _install_shared_stubs(monkeypatch)
+    adapter = _shared_adapter()
+
+    async def scenario() -> None:
+        runtime = await adapter._ensure_runtime(("u", "p"))  # 预热：跳过启动检查点
+        task = asyncio.ensure_future(adapter.fetch_quote(_quote()))
+        await asyncio.sleep(0.02)  # 已进入 _await_snapshot 轮询
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert runtime.unsubscribed == ["SHFE.au2612"]
+
+    asyncio.run(scenario())
+
+    runtime = _StubRuntime.instances[-1]
+    assert runtime.subscribed == ["SHFE.au2612"]
+    assert runtime.unsubscribed == ["SHFE.au2612"]
+
+
+def test_quote_lease_concurrent_same_symbol(monkeypatch: pytest.MonkeyPatch) -> None:
+    """并发同 symbol 快照请求：引用计数成对增减，互不干扰。"""
+    _install_shared_stubs(monkeypatch)
+    adapter = _shared_adapter()
+    runtime = asyncio.run(adapter._ensure_runtime(("u", "p")))
+    # 快照桩需带合法 datetime（响应 mapper 要求，空值显式抛错）
+    runtime.snapshots["SHFE.au2612"] = {
+        "datetime": "2026-11-13 10:00:00.000000",
+        "last_price": 100.0,
+    }
+
+    async def scenario() -> None:
+        await asyncio.gather(
+            adapter.fetch_quote(_quote()), adapter.fetch_quote(_quote())
+        )
+
+    asyncio.run(scenario())
+
+    assert len(runtime.subscribed) == 2 and len(runtime.unsubscribed) == 2

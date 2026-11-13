@@ -160,6 +160,9 @@ def _shutdown_adapter(registry: object, provider: str) -> None:
         shutdown()
     except Exception as exc:  # noqa: BLE001 - 停机失败不影响运行结果
         print(f"  [warn] {provider} 停机钩子异常（忽略）：{exc}", flush=True)
+    # 注：本函数在段事件循环之外调用（asyncio.run 已返回）——若未来有钩子
+    # 返回 awaitable，twelvedata 式钩子在无运行循环时会走其内置 asyncio.run
+    # 兜底并返回 None，无需在此 await
 
 
 def cmd_run(args: argparse.Namespace) -> int:

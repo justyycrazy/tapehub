@@ -36,7 +36,10 @@
 #   股票/ETF/指数订阅均成功；指数与加权指数无盘口（bid/ask 价格 NaN →
 #   null 如实透出，量侧为 0）；股票/ETF 实时五档需专业版账户（运行期事实，
 #   不作为能力缺口声明）。快照无周期/复权维度，intervals/adjustments 为空、
-#   operations match 对无意义维度显式 null；
+#   operations match 对无意义维度显式 null。**M2 为按请求租约订阅**：
+#   请求结束即退订本地维护（Quote 转休眠账本，重复请求经唤醒即时返回
+#   新鲜快照），休眠回收阀门（TAPEHUB_TQSDK_SUBSCRIPTION_LIMIT）因此
+#   对纯 M2 流量同样可达；
 # - 上游返回“从最新一根往回”的序列：当返回数量达到上限且最早一根仍晚于
 #   请求 start 时，无法覆盖请求窗口，标记 partial=true；
 # - 历史覆盖范围（history，2026-11-03 探针：日线二分估计，次轮粒度 5 天）：

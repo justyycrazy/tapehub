@@ -47,7 +47,10 @@ def baostock_stub(monkeypatch: pytest.MonkeyPatch) -> StubBaostock:
 @pytest.fixture()
 def baostock_client(baostock_stub: StubBaostock) -> TestClient:
     settings = make_settings(max_limit=1000, catalog_version="test")
-    return TestClient(create_app(settings=settings, registry=build_default_registry(settings)))
+    with TestClient(
+        create_app(settings=settings, registry=build_default_registry(settings))
+    ) as client:
+        yield client
 
 
 def _first_query_kwargs(stub: StubBaostock) -> dict[str, Any]:

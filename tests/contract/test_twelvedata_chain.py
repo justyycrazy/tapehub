@@ -38,7 +38,10 @@ def twelvedata_client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     install(monkeypatch)  # REST 桩（bars）
     fake_ws.install(monkeypatch)  # WS 假件（quotes：M2 快照走订阅缓存）
     settings = make_settings(max_limit=1000, twelvedata_api_key="test-key")
-    return TestClient(create_app(settings=settings, registry=build_default_registry(settings)))
+    with TestClient(
+        create_app(settings=settings, registry=build_default_registry(settings))
+    ) as client:
+        yield client
 
 
 def test_forex_chain(twelvedata_client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:

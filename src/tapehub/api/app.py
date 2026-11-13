@@ -1,5 +1,7 @@
 """FastAPI 应用工厂与组合根。"""
 
+import asyncio
+import inspect
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -17,6 +19,8 @@ from tapehub.application.quote_query_service import QuoteQueryService
 from tapehub.application.quote_stream_service import QuoteStreamService
 from tapehub.providers.registry import ProviderRegistry, build_default_registry
 from tapehub.settings import Settings
+
+logger = logging.getLogger(__name__)
 
 
 def create_app(
@@ -40,10 +44,24 @@ def create_app(
         # 停机顺序：先终结行情流（释放订阅引用，客户端收到明确事件），
         # 再关闭持有长连接的适配器运行时（鸭子类型，不感知具体 Provider）
         await app.state.quote_stream_service.shutdown()
+        pending = []
         for record in app.state.registry.list_records():
             shutdown = getattr(record.adapter, "shutdown_runtime", None)
-            if shutdown is not None:
-                shutdown()
+            if shutdown is None:
+                continue
+            result = shutdown()
+            if inspect.isawaitable(result):
+                # 钩子返回的停机任务必须 await 到完成：裸 create_task 无人
+                # await 会在 uvicorn 退出时被取消半途（ws.close 不落）、
+                # TestClient portal 下直接销毁
+                pending.append(result)
+        if pending:
+            results = await asyncio.gather(*pending, return_exceptions=True)
+            for result in results:
+                if isinstance(result, BaseException):
+                    logger.warning(
+                        "adapter shutdown hook failed: %r", result, exc_info=result
+                    )
 
     app = FastAPI(
         title="tapehub",

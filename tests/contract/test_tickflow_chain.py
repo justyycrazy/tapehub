@@ -46,7 +46,10 @@ def preset_payload(monkeypatch: pytest.MonkeyPatch, payload: Any) -> None:
 def tickflow_client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     install(monkeypatch)
     settings = make_settings(max_limit=1000, tickflow_api_key="test-key")
-    return TestClient(create_app(settings=settings, registry=build_default_registry(settings)))
+    with TestClient(
+        create_app(settings=settings, registry=build_default_registry(settings))
+    ) as client:
+        yield client
 
 
 def test_full_chain_default_adjust_is_qfq(

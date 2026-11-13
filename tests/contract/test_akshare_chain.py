@@ -35,7 +35,10 @@ def akshare_stub(monkeypatch: pytest.MonkeyPatch) -> StubAkshare:
 @pytest.fixture()
 def akshare_client(akshare_stub: StubAkshare) -> TestClient:
     settings = make_settings(max_limit=1000, catalog_version="test")
-    return TestClient(create_app(settings=settings, registry=build_default_registry(settings)))
+    with TestClient(
+        create_app(settings=settings, registry=build_default_registry(settings))
+    ) as client:
+        yield client
 
 
 BASE_PARAMS = {
