@@ -22,6 +22,7 @@ PROVIDER_NAMES = (
     "twelvedata",
     "tiingo",
     "ths",
+    "futunn",
 )
 
 

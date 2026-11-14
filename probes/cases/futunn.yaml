@@ -1,0 +1,116 @@
+# 富途 OpenAPI（futunn）数据探针：三市场全声明维度可用性、复权生效性、
+# 无签名错误指纹采集。
+#
+# 限频与额度（官方口径 2026-11-14）：IP 入口层行情类 100 次/分钟；业务限流
+# 走 HTTP 200 + ret_code=-11。**历史 K 线独立额度池：每标的首次成功返回
+# 非空即占用一个额度（默认 7×24 小时后释放，重复读取不延期）**——targets
+# 固定 5 个基准标的（同标的多周期 availability 共享一次额度占用），额度池
+# 容量数值未公布、保守不启用 history_depth（深度探测留待额度核实后单独立项）。
+# pacing 2 秒（任意 60 秒窗口 ≤30 次 < 100 次，留 3 倍余量）；预算 120
+# 覆盖单轮全量（约 3.5 分钟）。
+probe: futunn
+version: 1
+
+requires:
+  # extras 按「可导入模块名」判定（框架 _module_available）：futunn 无官方
+  # SDK，adapter 经 httpx 直连 + cryptography 本地签名（pyproject 可选依赖
+  # 组名亦为 futunn，由 uv sync --extra futunn 提供）
+  extras: [httpx, cryptography]
+  env: [TAPEHUB_FUTUNN_APP_KEY, TAPEHUB_FUTUNN_PRIVATE_KEY_PATH]
+
+pacing:
+  # IP 入口层行情类 100 次/分钟：2 秒间隔 ≈ 30 次/分钟，留 3 倍余量；
+  # 历史额度池按标的计量（同标的重复读取不延期），分页续读用 page_token
+  # 免计「首请求」（next_time 分页仍计入——适配器已按 page_token 实现）
+  call_interval_s: 2.0
+  timeout_s: 60
+  # 本轮构成：availability 93（bars 88：CN stock/index/etf + HK/US stock ×
+  # 8 周期 × 各自复权面全枚举；quotes 5：CN stock/index/etf + HK/US stock）
+  # + adjust_diff 12（stock@CN/@HK/@US × P1D × 2 pair × 2 调）+ raw 1 ≈
+  # 106，预算 120 留余量
+  max_calls: 120
+
+# 跨三市场（CN/HK/US）声明能力：用市场限定目标（stock@MARKET）为每个市场
+# 提供独立基准标的；case id 以限定键为前缀（如 stock@HK-P1D-...）。
+# 基准沿用 alphafeed/tickflow 探针定稿的早上市标的（老八股/中电控股/GE），
+# 历史深度收敛点是真实库底而非标的上市日伪影。
+targets:
+  stock@CN:
+    instrument: CN-SSE-600602
+    # 云赛智联（原真空电子），1990-12-19 上交所开业首批「老八股」且现存续
+    window: {start: 2025-01-01, end: 2025-12-31}
+    # 跨周期下限（分钟族数千 / 日 ≈243 / 周 ≈52 / 月 ≈12 根），以最稀的
+    # 月线标定，只用于拦截空结果
+    min_bars: 10
+    # amount 不预设必填：turnover 口径与币种待本轮观察（各市场原币原值
+    # 透出，volume_precision 还原后的 volume 一并观察）
+    required_fields: [open, high, low, close, volume]
+  index@CN:
+    instrument: CN-SSE-000001
+    # 上证指数（1991-07-15 发布）：指数无复权语义，volume 口径一并观察
+    window: {start: 2025-01-01, end: 2025-12-31}
+    min_bars: 10
+    required_fields: [open, high, low, close, volume]
+  etf@CN:
+    instrument: CN-SSE-510300
+    # 华泰柏瑞沪深300ETF（2012-05-28 上市）：autype 对 ETF 生效性未实证
+    #（能力目录仅声明 none），复权生效性观察留待 raw/后续轮
+    window: {start: 2025-01-01, end: 2025-12-31}
+    min_bars: 10
+    required_fields: [open, high, low, close, volume]
+  stock@HK:
+    instrument: HK-HKEX-00002
+    # 中电控股，港股最古老上市标的之一（alphafeed 探针同款基准）
+    window: {start: 2025-01-01, end: 2025-12-31}
+    min_bars: 10
+    required_fields: [open, high, low, close, volume]
+  stock@US:
+    instrument: US-NYSE-GE
+    # GE，1892 年 NYSE 上市且现存续（alphafeed/tickflow 探针同款基准）
+    window: {start: 2025-01-01, end: 2025-12-31}
+    min_bars: 10
+    required_fields: [open, high, low, close, volume]
+
+chain:
+  include_declared: true
+  skip: []
+  adjust_diff:
+    # 三市场个股复权生效性（qfq/hfq 是否生效、基准为何）：日线足以判定，
+    # 收敛 interval 控制预算（参照 alphafeed/tickflow 先例）；分红除权
+    # 高发窗口放大前复权差异。ETF 仅声明 none、复权生效性不在此对比
+    targets: [stock@CN, stock@HK, stock@US]
+    window: {start: 2024-06-01, end: 2024-08-31}
+    intervals: [P1D]
+    pairs: [[none, qfq], [none, hfq]]
+    fields: [close]
+  # history_depth 不启用：历史额度池按标的计量（7×24h/标的）且容量数值
+  # 未公布——availability 已固定 5 个基准标的占 5 个额度；深度二分探测
+  # 留待额度池核实后单独立项（notes 流水记录）
+
+raw:
+  # 错误指纹仅观察：采集无签名请求的 401 报文形态（ret_code/code 封装、
+  # 错误码 -12006 等），供鉴权失败路径的防御分支核实（字面量假 Key，
+  # 非真实凭据）
+  - id: futunn-no-signature-fingerprint
+    purpose: 采集无签名/无效 AppKey 请求的错误指纹（HTTP 401 形态；仅观察）
+    assert: false
+    module: httpx
+    client: {attr: Client, kwargs: {}}
+    call:
+      - {method: get, kwargs: {url: "https://webapi.futunn.com/api/v1.0/quote/HK.00700/history-kline?start=2025-01-01&end=2025-01-02&ktype=2&autype=0&num=10", headers: {"X-Api-Key": "probe-invalid-key-not-a-credential"}}}
+      - {method: json, kwargs: {}, target: result}
+    expect: {status: error, error_contains: ""}
+    close: {method: close, kwargs: {}}
+
+notes: >
+  2026-11-14 接入首轮 case 设计（真实跑前占位）：接入范围用户拍板 CN
+  stock（SSE/SZSE/BSE）/index/etf（SSE/SZSE）+ HK stock + US stock ×
+  bars/quotes；8 核心周期（PT1M~P1H/P1D/P1W/P1M）全量声明、history 全
+  null（历史覆盖未核实）；stock 三复权声明（autype 文档明示）、index/etf
+  仅 none。待回填项（探针报告 → 人工确认 → manifest/README 单独提交）：
+  ①各周期 history.start（额度池核实后 depth 专项）；②adjust_diff 复权
+  生效性（qfq/hfq 差异基准；若与 none 一致判 suspect 并收窄声明）；
+  ③ETF autype 生效性（声明外观察，生效则扩声明）；④turnover/volume
+  口径与币种、volume_precision 非零品类分布；⑤日/周/月 K 线 time_key
+  墙钟口径（北京零点还是市场零点，影响闭区间复核与 README 时间口径段）；
+  ⑥quotes data_time 口径与盘前盘后段是否透出 extensions。

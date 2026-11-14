@@ -79,6 +79,8 @@ class DataVariant(StrEnum):
     BAOSTOCK = "baostock"
     # 同花顺金融数据 API（fuyao.aicubes.cn）：数据源即上游服务自身
     THS = "ths"
+    # 富途 OpenAPI HTTP 直连（webapi.futunn.com）：数据源即上游服务自身
+    FUTUNN = "futunn"
 
 
 class Adjust(StrEnum):

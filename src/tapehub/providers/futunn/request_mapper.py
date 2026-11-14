@@ -1,0 +1,268 @@
+"""富途（futunn）请求映射（RequestMapper）：标准请求 → REST 端点参数。
+
+接口签名已按官方文档核实（2026-11-14，URL 见 manifest.yaml 头注释）：
+
+- 认证经 AppKey 签名请求头（adapter 层经 signing 模块注入，AppKey ID/
+  私钥不落 URL、不写日志）；
+- bars：``GET /api/v1.0/quote/{code}/history-kline``——``start``/``end``
+  为标的市场时区日期（``yyyy-MM-dd``，CN=Asia/Shanghai、HK=Asia/Hong_Kong、
+  US=America/New_York；域层 ``BarQuery`` 已保证边界归一北京时间，此处再转
+  标的市场墙钟取日历日期）、``ktype``（周期数字枚举，见下）、``autype``
+  （复权 0/1/2，显式传参不依赖上游默认值——上游缺省 1=前复权）、``num``
+  （单次行数上限，默认与最大 370，显式传满）、``page_token``（续页令牌，
+  有值时置于末位）；**分钟 K 线 ``end`` 以该日 00:00 为截止、不含当日**，
+  查闭区间需 end 日期 +1 天（日/周/月 K 线 end 含当日，不补偿）；
+- quotes：``POST /api/v1.0/quote/stock-quote``——body
+  ``{"code_list": [code]}``（单次最多 400，本网关快照为单标的语义传 1 个）；
+- 周期映射（ktype 文档明示取值）：PT1M→1、PT5M→6、PT15M→7、PT30M→8、
+  PT1H→9（上游 60 分）、P1D→2、P1W→3、P1M→4；PT3M/PT2H/PT4H 等不声明；
+- 复权映射：none→0（不复权）、qfq→1（前复权）、hfq→2（后复权）；
+- symbol：标准代码三段中 exchange 段查前缀表（只收文档实证条目：
+  SSE→SH、SZSE→SZ、BSE→BJ、HKEX→HK、NASDAQ/NYSE/AMEX→US——上游美股
+  前缀不区分交易所；OTC 不支持，不在白名单即拒绝），symbol 段数字代码
+  原样透传（CN 6 位证券代码）、港股短码零填充 5 位（``700``→``00700``，
+  与 akshare 惯例一致）、美股 ticker 已由域层大写归一；
+- 查询串经 request_mapper 统一生成（固定键序 start/end/ktype/autype/num/
+  page_token），与签名原文、URL 拼接共用同一字符串（签名一致性由
+  UpstreamRequest 单点保证）。
+"""
+
+import json
+from dataclasses import dataclass
+from datetime import date, datetime, timedelta
+from urllib.parse import urlencode
+from zoneinfo import ZoneInfo
+
+from tapehub.domain.errors import UnsupportedCapabilityError
+from tapehub.domain.intervals import Interval
+from tapehub.domain.models import Adjust, BarQuery, QuoteQuery
+
+# REST 基址（认证经签名请求头）
+REST_BASE = "https://webapi.futunn.com"
+
+# 单次返回行数上限（官方文档：num 默认 370，最大 370）
+PAGE_SIZE = 370
+
+# bars：历史 K 线端点（code 为上游前缀写法，如 HK.00700）
+_HISTORY_PATH_TEMPLATE = "/api/v1.0/quote/{code}/history-kline"
+# quotes：实时快照端点（POST，code_list 单次最多 400）
+_QUOTE_PATH = "/api/v1.0/quote/stock-quote"
+
+# 历史 K 线周期映射（ktype 数字枚举，官方文档核实）
+_INTERVAL_KTYPES: dict[Interval, int] = {
+    Interval.parse("PT1M"): 1,
+    Interval.parse("PT5M"): 6,
+    Interval.parse("PT15M"): 7,
+    Interval.parse("PT30M"): 8,
+    Interval.parse("PT1H"): 9,  # 上游 60 分
+    Interval.parse("P1D"): 2,
+    Interval.parse("P1W"): 3,
+    Interval.parse("P1M"): 4,
+}
+
+# 分钟周期集合：上游 end 以该日 00:00 为截止、不含当日（end 日期 +1 天补偿）
+_MINUTE_INTERVALS: frozenset[Interval] = frozenset(
+    {Interval.parse(code) for code in ("PT1M", "PT5M", "PT15M", "PT30M", "PT1H")}
+)
+
+# 复权方式映射（autype 0/1/2，官方文档核实）
+_ADJUST_AUTYPES: dict[Adjust, int] = {
+    Adjust.NONE: 0,
+    Adjust.QFQ: 1,
+    Adjust.HFQ: 2,
+}
+
+# 标准 exchange 段 → 上游市场前缀（按资产类型查表，只收文档实证条目：
+# 上游品类表 SH/SZ/BJ 支持正股/指数、ETF 仅 SH/SZ；美股前缀不区分交易所，
+# NASDAQ/NYSE/AMEX 统一 US；OTC 上游不支持获取，不在白名单即拒绝）
+_EXCHANGE_PREFIXES: dict[str, dict[str, str]] = {
+    "stock": {
+        "SSE": "SH",
+        "SZSE": "SZ",
+        "BSE": "BJ",
+        "HKEX": "HK",
+        "NASDAQ": "US",
+        "NYSE": "US",
+        "AMEX": "US",
+    },
+    "index": {"SSE": "SH", "SZSE": "SZ", "BSE": "BJ"},
+    "etf": {"SSE": "SH", "SZSE": "SZ"},
+}
+
+# 标的市场时区（请求边界日期换算口径；上游时间戳为绝对时刻，归一化由领域层完成）
+_MARKET_ZONES: dict[str, ZoneInfo] = {
+    "CN": ZoneInfo("Asia/Shanghai"),
+    "HK": ZoneInfo("Asia/Hong_Kong"),
+    "US": ZoneInfo("America/New_York"),
+}
+
+
+@dataclass(frozen=True)
+class UpstreamRequest:
+    """经签名直连的上游请求描述。
+
+    ``query_string`` 与 ``url`` 拼接、签名原文共用同一字符串（签名一致性
+    单点保证）；``body`` 为原始请求体字节（POST JSON），GET 为 None。
+    """
+
+    method: str
+    request_path: str
+    query_string: str
+    body: bytes | None
+
+    @property
+    def url(self) -> str:
+        if self.query_string:
+            return f"{REST_BASE}{self.request_path}?{self.query_string}"
+        return f"{REST_BASE}{self.request_path}"
+
+
+def futu_code(query: BarQuery | QuoteQuery) -> str:
+    """标准标的 → 上游前缀代码（如 HK-HKEX-00700 → "HK.00700"、
+    CN-SSE-600000 → "SH.600000"、US-NASDAQ-AAPL → "US.AAPL"）。
+
+    exchange 段按资产类型查前缀表（白名单外明确拒绝，不透传上游猜错更
+    隐蔽）；数字代码原样透传、港股短码零填充 5 位（上游写法 00700）、
+    美股 ticker 原样（域层已大写归一）。
+    """
+    asset_type = query.asset_type.value
+    prefixes = _EXCHANGE_PREFIXES.get(asset_type)
+    if prefixes is None:
+        raise UnsupportedCapabilityError(
+            f"futunn does not support asset type {asset_type}.",
+            details={
+                "provider": "futunn",
+                "instrument": query.instrument.code,
+                "asset_type": asset_type,
+            },
+        )
+    prefix = prefixes.get(query.instrument.exchange)
+    if prefix is None:
+        expected = "/".join(sorted(prefixes))
+        raise UnsupportedCapabilityError(
+            f"futunn expects exchange segment to be one of [{expected}] "
+            f"for asset type {asset_type}, got {query.instrument.exchange!r}.",
+            details={
+                "provider": "futunn",
+                "instrument": query.instrument.code,
+            },
+        )
+    symbol = query.instrument.symbol
+    if prefix in ("SH", "SZ", "BJ", "HK"):
+        if not symbol.isdigit():
+            raise UnsupportedCapabilityError(
+                f"futunn expects digit-only symbol for market prefix {prefix}, "
+                f"got {symbol!r}.",
+                details={
+                    "provider": "futunn",
+                    "instrument": query.instrument.code,
+                },
+            )
+        if prefix == "HK":
+            return f"HK.{symbol.zfill(5)}"  # 上游港股 5 位数字代码
+        return f"{prefix}.{symbol}"
+    return f"US.{symbol}"  # 美股 ticker 原样透传（上游不区分交易所）
+
+
+def interval_code(interval: Interval) -> int:
+    code = _INTERVAL_KTYPES.get(interval)
+    if code is None:
+        raise UnsupportedCapabilityError(
+            f"futunn does not support interval {interval.code}.",
+            details={"interval": interval.code},
+        )
+    return code
+
+
+def adjust_code(adjust: Adjust) -> int:
+    code = _ADJUST_AUTYPES.get(adjust)
+    if code is None:
+        raise UnsupportedCapabilityError(
+            f"futunn does not support adjust {adjust.value}.",
+            details={"adjust": adjust.value},
+        )
+    return code
+
+
+def _local_date(value: datetime, zone: ZoneInfo) -> date:
+    """北京时间边界（域层保证 aware）→ 标的市场时区日历日期。"""
+    return value.astimezone(zone).date()
+
+
+def build_request(
+    operation: str, query: BarQuery, *, page_token: str | None = None
+) -> UpstreamRequest:
+    """构造历史 K 线请求；所有相关参数显式传递（不依赖上游默认值）。
+
+    - ``ktype``/``autype``/``num`` 显式传参（上游 autype 缺省 1=前复权、
+      num 缺省 370，均不依赖）；
+    - 边界日期按标的市场时区换算；分钟 K 线 end 日期 +1 天（上游 end 以
+      该日 00:00 截止不含当日，闭区间复核在适配器完成）；
+    - ``page_token`` 有值时置于查询串末位（续页参数不变原则：start/ktype/
+      autype/num 逐字节一致，15 分钟有效）。
+    """
+    if operation != "history_kline":
+        raise UnsupportedCapabilityError(
+            f"futunn has no REST endpoint for operation {operation!r}.",
+            details={"provider": "futunn", "operation": operation},
+        )
+    code = futu_code(query)
+    request_path = _HISTORY_PATH_TEMPLATE.format(code=code)
+    zone = _MARKET_ZONES.get(query.instrument.market)
+    if zone is None:
+        raise UnsupportedCapabilityError(
+            f"futunn does not support market {query.instrument.market!r}.",
+            details={
+                "provider": "futunn",
+                "instrument": query.instrument.code,
+            },
+        )
+    start_date = _local_date(query.start, zone)
+    end_date = _local_date(query.end, zone)
+    if query.interval in _MINUTE_INTERVALS:
+        end_date += timedelta(days=1)  # 上游分钟线 end 不含当日（00:00 截止）
+    params: list[tuple[str, str]] = [
+        ("start", start_date.isoformat()),
+        ("end", end_date.isoformat()),
+        ("ktype", str(interval_code(query.interval))),
+        ("autype", str(adjust_code(query.adjust))),
+        ("num", str(PAGE_SIZE)),
+    ]
+    if page_token:
+        params.append(("page_token", page_token))
+    return UpstreamRequest(
+        method="GET",
+        request_path=request_path,
+        query_string=urlencode(params),
+        body=None,
+    )
+
+
+def build_quote_request(operation: str, query: QuoteQuery) -> UpstreamRequest:
+    """构造实时快照请求（POST JSON body，code_list 单标的传 1 个）。
+
+    body 序列化采用紧凑分隔符与官方示例形态一致；同一字节串同时用于
+    签名（body_part=SHA256 hex）与发送，保证签名一致性。
+    """
+    if operation != "stock_quote":
+        raise UnsupportedCapabilityError(
+            f"futunn has no REST endpoint for operation {operation!r}.",
+            details={"provider": "futunn", "operation": operation},
+        )
+    code = futu_code(query)
+    body = json.dumps({"code_list": [code]}, ensure_ascii=False, separators=(",", ":")).encode(
+        "utf-8"
+    )
+    return UpstreamRequest(method="POST", request_path=_QUOTE_PATH, query_string="", body=body)
+
+
+__all__ = [
+    "PAGE_SIZE",
+    "REST_BASE",
+    "UpstreamRequest",
+    "adjust_code",
+    "build_quote_request",
+    "build_request",
+    "futu_code",
+    "interval_code",
+]

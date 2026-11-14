@@ -43,6 +43,7 @@
 - **TqSdk Provider 已接入**（官方 Python SDK `get_kline_serial`，快期账户凭据从 `.env` 读取）；
 - **Twelve Data Provider 已接入**（外汇、加密货币与美股 stock/etf 历史 K 线，官方 Python 库 `twelvedata`，API Key 从 `.env` 读取）；
 - **Tiingo Provider 已接入**（外汇与加密货币历史 K 线 httpx 直连 + 实时快照/快照流 WS 直连——无官方 Python SDK，API Key 从 `.env` 读取；免费档配额紧，缺省路由置 twelvedata 之后回退位）；
+- **Futunn Provider 已接入**（CN stock/index/etf 与 HK/US stock 的 bars + quotes，富途 OpenAPI HTTP 直连——无官方 Python SDK，「方式二：传统 API Key」AppKey 签名认证，凭据从 `.env` 读取；缺省路由置各组合回退链最末位，第一版不做流式）；
 - 基于 Fake Provider 与 Mock SDK 的完整链路验证与单元/契约测试。
 
 明确不实现（当前版本）：
@@ -148,21 +149,22 @@ GET /v1/market/bars?provider=akshare&asset_type=stock&instrument=CN-SSE-600000&i
 
 缺失数值以 `null` 返回，不用 `0` 冒充；Provider 特有字段只能通过 `extensions` 受控透出（如 akshare 的 `pct_change`、`turnover_rate`、`hold`、`settle`）。
 
-### 实时快照（tqsdk / twelvedata / tiingo / tickflow / ths）
+### 实时快照（tqsdk / twelvedata / tiingo / tickflow / ths / futunn）
 
 ```http
 GET /v1/market/quotes?provider=tqsdk&asset_type=contract&instrument=CN-SHFE-AU2612
 GET /v1/market/quotes?provider=twelvedata&asset_type=forex&instrument=GLOBAL-OTC-EUR/USD
 ```
 
-参数：`provider`（默认 `auto`；当前 tqsdk 声明 CN 全资产、twelvedata 与 tiingo 声明 GLOBAL 外汇/加密货币、tickflow 声明 CN/HK/US 股票、ths 声明 CN 股票/指数/ETF/期货/期权的 quotes 能力）、`asset_type`（必填）、`instrument`（必填）、`variant`（可选）。**快照是当前时点的数据：无 `interval`、无时间范围、无分页参数**（`adjust` 同样不接受——复权是历史序列概念）。auto 优先级：由缺省路由配置的完整回退链裁决（CN 股票快照归 tqsdk、tickflow 回退、ths 末位；CN 期权快照为 ths 独占；HK 与 US 股票快照为 tickflow 独占，显式 `provider=tickflow` 亦可选用；GLOBAL 外汇/加密货币快照缺省 twelvedata、tiingo 回退）；凭据未配置的 Provider 自动跳过。
+参数：`provider`（默认 `auto`；当前 tqsdk 声明 CN 全资产、twelvedata 与 tiingo 声明 GLOBAL 外汇/加密货币、tickflow 声明 CN/HK/US 股票、ths 声明 CN 股票/指数/ETF/期货/期权的 quotes 能力、futunn 声明 CN stock/index/etf 与 HK/US stock 的 quotes 能力）、`asset_type`（必填）、`instrument`（必填）、`variant`（可选）。**快照是当前时点的数据：无 `interval`、无时间范围、无分页参数**（`adjust` 同样不接受——复权是历史序列概念）。auto 优先级：由缺省路由配置的完整回退链裁决（CN 股票快照归 tqsdk、tickflow 回退、ths 末位；CN 期权快照为 ths 独占；HK 与 US 股票快照为 tickflow 独占，显式 `provider=tickflow` 亦可选用；GLOBAL 外汇/加密货币快照缺省 twelvedata、tiingo 回退；futunn 置上述各组合回退链最末位）；凭据未配置的 Provider 自动跳过。
 
 四类上游的交付模型不同，语义差异如实声明：
 
 - **tqsdk（订阅-推送）**：REST 快照从共享 Runtime 的订阅缓存即时读取（首包超时 `QUOTE_NOT_READY` 408，行为要点见下与 TqSdk 映射表）；
 - **twelvedata（WS 订阅缓存）**：快照与流同源，均来自 WS 共享订阅的实时 price 事件（2026-11-05 探针实证），冷订阅等待首包（超时同为 `QUOTE_NOT_READY` 408）、活跃订阅即时读缓存；上游 WS credit 按**并发活跃订阅 symbol** 计数（免费版 8），并发订阅达 `TAPEHUB_TWELVEDATA_SUBSCRIPTION_LIMIT` 返回 `UPSTREAM_SUBSCRIPTION_LIMIT`（429），映射表见 Twelve Data 章节；
 - **tiingo（WS 订阅缓存）**：快照与流同源（crypto/fx 双端点共享订阅，WS 不计 REST 请求配额），冷订阅等待首包（超时同为 `QUOTE_NOT_READY` 408）、活跃订阅即时读缓存；并发订阅达 `TAPEHUB_TIINGO_SUBSCRIPTION_LIMIT` 返回 `UPSTREAM_SUBSCRIPTION_LIMIT`（429），映射表见 Tiingo 章节；
-- **tickflow（无状态 REST）**：快照为单标的单次 `tf.quotes.get` 调用，无订阅/缓存语义（不产生 `QUOTE_NOT_READY`——要么返回快照，要么返回上游错误）；限频/无权限等 SDK 异常统一包装为 `UPSTREAM_ERROR`；不支持 SSE 流（M3 流式仍为 tqsdk/twelvedata/tiingo），映射表见 TickFlow 章节。
+- **tickflow（无状态 REST）**：快照为单标的单次 `tf.quotes.get` 调用，无订阅/缓存语义（不产生 `QUOTE_NOT_READY`——要么返回快照，要么返回上游错误）；限频/无权限等 SDK 异常统一包装为 `UPSTREAM_ERROR`；不支持 SSE 流（M3 流式仍为 tqsdk/twelvedata/tiingo），映射表见 TickFlow 章节；
+- **futunn（无状态 REST）**：快照为单标的单次 `POST /api/v1.0/quote/stock-quote` 调用（与 tickflow/ths 同语义，AppKey 签名认证），无盘口五档（bid/ask 恒 null）；不支持 SSE 流（第一版不做流式——WS 行情推送专区未接入，用户拍板 2026-11-14），映射表见富途章节。
 
 以下请求/响应示例与行为要点为 **tqsdk 链路**；twelvedata 与 tiingo 链路的字段口径见各自映射表。
 
@@ -364,6 +366,7 @@ GET /v1/instruments/resolve?q=AAPL&exchange=NASDAQ
 | `tiingo` | Tiingo（外汇/加密货币数据服务） |
 | `baostock` | Baostock 证券宝（免费 A 股数据平台，与东方财富无关） |
 | `ths` | 同花顺金融数据 API（独立数据服务体系） |
+| `futunn` | 富途 OpenAPI（独立数据服务体系） |
 
 - **变体名反映真实数据源**：仅 akshare 的上游确为东方财富/新浪/腾讯；
   TqSdk、Tushare、AlphaFeed、TickFlow、Twelve Data、Tiingo、Baostock 与东方财富无关，
@@ -488,8 +491,8 @@ API 层 → Application 层 → Domain 层
   Provider）；注册表构建期强制校验**凡能力覆盖的组合必须恰有条目**、order 引用的
   Provider 必须已注册且实际声明该组合能力（缺失/重复/未知引用都拒绝启动）；
   代码内注册顺序不承载路由语义；
-- **凭据驱动的注册**：内置 Provider 中需要凭据的（alphafeed/tickflow/tiingo/tushare/
-  tqsdk/twelvedata），`.env` 相应变量全部非空（strip 后）才启用；凭据缺失的
+- **凭据驱动的注册**：内置 Provider 中需要凭据的（alphafeed/tickflow/ths/tiingo/
+  tushare/tqsdk/twelvedata/futunn），`.env` 相应变量全部非空（strip 后）才启用；凭据缺失的
   Provider **能力目录仍可见但 `enabled=false`**，auto 路由跳过，显式请求返回
   `PROVIDER_DISABLED`（details 携带缺失的变量名）。akshare/baostock 无凭据
   概念恒启用。
@@ -971,7 +974,88 @@ fund-market、futures-prices、options-prices 六页）：
   alphafeed/tickflow 一致），上游无推送接口，不实现快照流（流式请求返回
   `UNSUPPORTED_CAPABILITY`）。
 
-九个内置 Provider（akshare、alphafeed、baostock、tickflow、ths、tiingo、tushare、tqsdk、twelvedata）均已接入，接口签名与数据口径按各自官方文档核实（tiingo 的 WS 消息形态细节与历史深度待数据探针实证回填，已在上述章节如实标注）；未配置凭据或未安装 SDK 时数据请求返回 `PROVIDER_NOT_IMPLEMENTED`，`provider=auto` 在无可用候选时返回 `NO_PROVIDER_AVAILABLE`，也**绝不返回写死的模拟行情**。
+富途 OpenAPI（无官方 Python SDK：REST 用 httpx 同步客户端直连
+`https://webapi.futunn.com`，认证采用「方式二：传统 API Key」——AppKey +
+本地私钥签名（Ed25519/RSA-SHA256 自动检测），AppKey ID 与私钥路径从 `.env` 读取；
+2026-11-14 接入，接口签名按官方文档核实：getting-started、api-authority、
+rate-limit、stock-quote、history-kline 五页）：
+
+| 资产类型 | 市场 | 变体 | 上游接口 | 周期 | adjust | 标准字段 |
+| --- | --- | --- | --- | --- | --- | --- |
+| stock（bars） | CN | futunn（默认） | `GET /api/v1.0/quote/{code}/history-kline` | PT1M~PT1H/P1D/P1W/P1M | none/qfq/hfq | 全部 |
+| index（bars） | CN | futunn（默认） | 同上 | 同上 | none（指数无复权语义） | 全部 |
+| etf（bars） | CN | futunn（默认） | 同上 | 同上 | none（autype 对 ETF 生效性未实证） | 全部 |
+| stock（bars） | HK | futunn（默认） | 同上 | 同上 | none/qfq/hfq | 全部 |
+| stock（bars） | US | futunn（默认） | 同上 | 同上 | none/qfq/hfq | 全部 |
+| stock/index/etf（quotes） | CN/HK/US | futunn | `POST /api/v1.0/quote/stock-quote` | —（快照无周期） | —（快照无复权） | timestamp/last_price/volume/amount（extensions 见下） |
+
+- **凭据与启用（方式二：传统 API Key）**：`TAPEHUB_FUTUNN_APP_KEY`（AppKey ID，
+  open.futunn.com/dashboard 控制台「AppKey 管理」创建并上传公钥）与
+  `TAPEHUB_FUTUNN_PRIVATE_KEY_PATH`（与其公钥 Ed25519/RSA-SHA256 配对的本地
+  私钥 PEM 文件路径）**两者全部非空才启用**（凭据驱动的注册语义同上）；签名
+  每请求本地计算（原文 `timestamp_ms\nMETHOD\nrequest_path\nquery_string\nbody_sha256`
+  以 `\n` 连接，签名 Base64 后经 `X-Api-Key`/`Authorization`（无 Bearer 前缀）/
+  `X-Timestamp`/`X-Nonce` 四头注入），算法按私钥 PEM 类型自动检测；
+  X-Timestamp 与服务端偏差超过默认 5 秒报 -12006（HTTP 401）——第一版不做
+  自动校时，依赖宿主机时钟（校时端点 `GET /api/v1.0/server-time` 待探针实证
+  后按需补充）；AppKey/私钥不落 URL、日志、manifest 或异常响应；缺省路由置
+  各组合回退链最末位（2026-11-14 接入拍板：AppKey 凭据 API、历史覆盖未探针
+  实证），显式 `provider/variant=futunn` 亦可选用；
+- 行情权限（api-authority 页）：A 股境内认证客户免费 LV1（国际客户暂不支持）、
+  港股股票境内认证客户免费 LV2、美股股票推广期免费 LV3——未开通对应市场权限
+  时上游报 invalid_symbol/quota 类错误，适配器原样上抛 `UPSTREAM_ERROR`；
+- 限频与历史额度（rate-limit 页）：IP 入口层行情类 100 次/分钟；业务限流走
+  HTTP 200 + `ret_code=-11`（新旧两种封装并存，`ret_code/ret_msg` 与
+  `code/message`）→ `UPSTREAM_RATE_LIMITED`（429，携上游码与 Retry-After 如有）；
+  其余非 0（-3 invalid_parameter/-7 invalid_symbol/-8 unsupported/
+  -12 history_quota_exceeded/-13 quota_unavailable）→ `UPSTREAM_ERROR` 携
+  `upstream_code/upstream_message`；**历史 K 线独立额度池：每标的首次成功
+  返回非空即占用一个额度（默认 7×24 小时后释放，重复读取不延期）**——分页
+  续读必须用 `page_token`（免计「首请求」；`next_time` 分页仍计入，适配器
+  未使用）；
+- 标的代码映射（只收文档实证条目，越界明确拒绝）：`CN-SSE-600000 → SH.600000`、
+  `CN-SZSE-000001 → SZ.000001`、`CN-BSE-430047 → BJ.430047`（上游品类表
+  SH/SZ/BJ 支持正股/指数）、`HK-HKEX-00700 → HK.00700`（短码零填充 5 位）、
+  `US-NASDAQ-AAPL → US.AAPL`（上游美股前缀不区分交易所，NASDAQ/NYSE/AMEX
+  统一 US；**OTC 上游不支持获取**，exchange 白名单拒绝）；上游品类表 BJ 无
+  ETF（仅正股/指数），ETF×BSE 组合在映射层拒绝；
+- 周期映射（ktype 数字枚举）：`PT1M→1`、`PT5M→6`、`PT15M→7`、`PT30M→8`、
+  `PT1H→9`（上游 60 分）、`P1D→2`、`P1W→3`、`P1M→4`；上游另有 3/10/120/180/240
+  分与季/年线（文档明示），对应 ISO 周期不在声明面（PT3M/PT2H/PT4H 与季/年线
+  待探针实证后回填；年/季线不进能力目录——周期上界月线）；
+- 复权映射（autype）：`none→0`、`qfq→1`、`hfq→2`（上游缺省 1=前复权，适配器
+  始终显式传参）；stock 三值声明；指数无复权语义仅 none（与 ths 惯例一致）；
+  ETF autype 是否生效**未实证**（先声明 none，探针复权生效性观察后回填）；
+- 边界与分页：`start`/`end` 为标的市场时区日期（CN=Asia/Shanghai、
+  HK=Asia/Hong_Kong、US=America/New_York；北京时间边界先转标的市场墙钟取
+  日历日期）；**分钟 K 线 `end` 以该日 00:00 为截止、不含当日**——适配器对
+  分钟周期 end 日期 +1 天补偿，闭区间 `[start, end]` 精确复核在适配器完成
+  （日/周/月 K 线 end 含当日，不补偿）；单次 `num` 默认与最大 **370**（显式
+  传满），`page_token` 续页（15 分钟有效，续页参数不变原则），页数上限防御
+  15 页（=5550 根）——触上限且最早一根晚于 start 时 `meta.partial=true`
+  （从最新往回取型的隐式截断，与 twelvedata 同语义）；
+- 单位与时间戳：`volume`=股（按信封 `data.volume_precision` 还原——上游已放大
+  10^n 倍，股票一般 n=0）、`turnover→amount`=成交额（各市场原币，官方未标注
+  币种折算不编造换算）；行 `time_key` 为毫秒 Unix 时间戳（绝对时刻）→ 统一
+  北京时间归一化（行内 `time_zone` 为显示用本地时区偏移，相对 UTC 分钟数，
+  不参与标准化）；日/周/月 K 线 `time_key` 墙钟口径（市场零点还是北京零点）
+  待探针核实；
+- 快照（`POST /api/v1.0/quote/stock-quote`，`code_list` 单次最多 400、本网关
+  单标的传 1 个）：`data_time`（毫秒 Unix）→ 行情时间、`last_price`/OHLC/
+  `prev_close_price`/`volume`/`turnover→amount` 直映，**无盘口五档**（bid/ask
+  恒 null，如实透出）；`extensions` 白名单：`open_price/high_price/low_price/
+  prev_close_price/turnover_rate/amplitude`（% 数值原样透出，缺失不透出）+
+  `suspension`（布尔，停牌标记）；中文名 `name` 不透出；上游对 `code_list`
+  中非法 code 静默丢弃（ret_code 仍 0），匹配行缺失属无有效行情
+  （`UPSTREAM_ERROR`）；快照为纯 REST 单次调用语义：无首包超时/
+  `QUOTE_NOT_READY`（与 ths/alphafeed/tickflow 一致）；WS 行情推送专区
+  （`wss://webapi-quote.futunn.com/ws`）本期不接入——**第一版不做流式**
+  （用户拍板 2026-11-14），流式请求返回 `UNSUPPORTED_CAPABILITY`；
+- **历史覆盖范围：全部周期 history 保持 null（未核实）**——官方文档未标注
+  最早可取时间，且历史额度池（每标的 7×24h 占用、容量未公布）使 depth 探针
+  成本高，回填待额度核实后单独立项（探针流水见 probes/cases/futunn.yaml）。
+
+十个内置 Provider（akshare、alphafeed、baostock、tickflow、ths、tiingo、tushare、tqsdk、twelvedata、futunn）均已接入，接口签名与数据口径按各自官方文档核实（tiingo 的 WS 消息形态细节、futunn 的各周期历史覆盖与 K 线时间口径待数据探针实证回填，已在上述章节如实标注）；未配置凭据或未安装 SDK 时数据请求返回 `PROVIDER_NOT_IMPLEMENTED`，`provider=auto` 在无可用候选时返回 `NO_PROVIDER_AVAILABLE`，也**绝不返回写死的模拟行情**。
 
 ### 新增 / 接入 Provider
 
@@ -996,7 +1080,7 @@ Application/API 层与其它 Provider 不需要任何改动。
 
 ### 配置
 
-环境变量前缀 `TAPEHUB_`（见 [.env.example](.env.example)）：`TAPEHUB_VERSION`、`TAPEHUB_API_VERSION`、`TAPEHUB_CATALOG_VERSION`、`TAPEHUB_MAX_LIMIT`、`TAPEHUB_PROVIDER_ENABLED_OVERRIDES`（JSON，如 `{"akshare": false}` 可整体停用 akshare）、`TAPEHUB_TICKFLOW_API_KEY`、`TAPEHUB_ALPHAFEED_API_KEY`、`TAPEHUB_TUSHARE_TOKEN`、`TAPEHUB_TQSDK_AUTH_USER`、`TAPEHUB_TQSDK_AUTH_PASSWORD`、`TAPEHUB_TQSDK_CONN_MODE`（`shared` 默认/`per_request` 回滚）、`TAPEHUB_TQSDK_MAX_INFLIGHT_FETCH`、`TAPEHUB_TQSDK_FIRST_SNAPSHOT_TIMEOUT`（快照首包等待，默认 5 秒）、`TAPEHUB_TQSDK_SUBSCRIPTION_LIMIT`（休眠订阅回收阈值，默认 64）、`TAPEHUB_STREAM_MAX_CLIENTS`（SSE 并发流上限，默认 8）、`TAPEHUB_STREAM_QUEUE_SIZE`（每流 quote 帧缓冲，默认 64）、`TAPEHUB_STREAM_HEARTBEAT_SECONDS`（SSE 心跳间隔，默认 15 秒）、`TAPEHUB_STREAM_IDLE_TIMEOUT_SECONDS`（流空闲退订超时，默认 300 秒）、`TAPEHUB_UPSTREAM_TIMEOUT_SECONDS`（bars/quotes 上游调用整体超时，默认 30 秒，超时返回 504；SSE 流不适用）、`TAPEHUB_TWELVEDATA_API_KEY`（Provider 凭据，只在内存中传给 SDK 客户端）。`.env` 不提交版本库。
+环境变量前缀 `TAPEHUB_`（见 [.env.example](.env.example)）：`TAPEHUB_VERSION`、`TAPEHUB_API_VERSION`、`TAPEHUB_CATALOG_VERSION`、`TAPEHUB_MAX_LIMIT`、`TAPEHUB_PROVIDER_ENABLED_OVERRIDES`（JSON，如 `{"akshare": false}` 可整体停用 akshare）、`TAPEHUB_TICKFLOW_API_KEY`、`TAPEHUB_ALPHAFEED_API_KEY`、`TAPEHUB_TUSHARE_TOKEN`、`TAPEHUB_TQSDK_AUTH_USER`、`TAPEHUB_TQSDK_AUTH_PASSWORD`、`TAPEHUB_TQSDK_CONN_MODE`（`shared` 默认/`per_request` 回滚）、`TAPEHUB_TQSDK_MAX_INFLIGHT_FETCH`、`TAPEHUB_TQSDK_FIRST_SNAPSHOT_TIMEOUT`（快照首包等待，默认 5 秒）、`TAPEHUB_TQSDK_SUBSCRIPTION_LIMIT`（休眠订阅回收阈值，默认 64）、`TAPEHUB_STREAM_MAX_CLIENTS`（SSE 并发流上限，默认 8）、`TAPEHUB_STREAM_QUEUE_SIZE`（每流 quote 帧缓冲，默认 64）、`TAPEHUB_STREAM_HEARTBEAT_SECONDS`（SSE 心跳间隔，默认 15 秒）、`TAPEHUB_STREAM_IDLE_TIMEOUT_SECONDS`（流空闲退订超时，默认 300 秒）、`TAPEHUB_UPSTREAM_TIMEOUT_SECONDS`（bars/quotes 上游调用整体超时，默认 30 秒，超时返回 504；SSE 流不适用）、`TAPEHUB_TWELVEDATA_API_KEY`（Provider 凭据，只在内存中传给 SDK 客户端）、`TAPEHUB_FUTUNN_APP_KEY` 与 `TAPEHUB_FUTUNN_PRIVATE_KEY_PATH`（富途「方式二：传统 API Key」凭据——AppKey ID 与本地私钥 PEM 路径，两者全部非空才启用）。`.env` 不提交版本库。
 
 ### 未来扩展边界（现在不实现）
 

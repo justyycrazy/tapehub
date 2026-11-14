@@ -35,26 +35,30 @@ defaults:
   # 定降为末位（2026-11-07 调整）；tqsdk 不参与本组合的 auto 路由（能力保留、
   # 仅显式 provider=tqsdk 可用），链上不写即明确不参与——校验只要求组合有
   # 条目与 order 引用合法，不要求穷举；ths 末位回退（2026-11-13 接入：
-  # 付费凭据 API、历史覆盖未探针实证，仅日线）
+  # 付费凭据 API、历史覆盖未探针实证，仅日线）；futunn 最末位回退
+  # （2026-11-14 接入：AppKey 凭据 API、8 周期面、历史覆盖未探针实证）
   - match: {data_type: bars, market: CN, asset_type: stock}
-    order: [baostock, alphafeed, tickflow, tushare, akshare, ths]
+    order: [baostock, alphafeed, tickflow, tushare, akshare, ths, futunn]
 
   # CN 指数：akshare 优先（库底 ≈1991-01-01 深于 baostock 官方口径 2006-01-01，
   # baostock 置末位补位，避免浅库底源在路由选择阶段截胡更早区间——回退只在
   # 路由选择阶段发生，执行失败不切换）；tqsdk 虽声明指数日线，不参与本组合的
   # auto 路由，仅显式 provider=tqsdk 可用；ths 末位回退（2026-11-13 接入，
-  # 仅日线、历史覆盖未探针实证）
+  # 仅日线、历史覆盖未探针实证）；futunn 最末位回退（2026-11-14 接入：
+  # AppKey 凭据 API、8 周期面、历史覆盖未探针实证）
   - match: {data_type: bars, market: CN, asset_type: index}
-    order: [akshare, baostock, ths]
+    order: [akshare, baostock, ths, futunn]
 
   # CN ETF：tqsdk 缺省；baostock 回退（2026-11-08 接入，数据 2026-01-05 起，
   # tqsdk 凭据未配置时自动跳过 → baostock 生效）；akshare 末位兜底（2026-11-08
   # 接入东财 ETF 日/周/月，history.start 未核实，与 CN 个股链中 akshare 置末位
   # 风格一致）；twelvedata 的 etf 仅 US 市场；ths 最末位回退（2026-11-13
   # 接入：付费凭据 API、仅日线、窗口上限 5 自然年；仅 qfq——上游固定前复权
-  # 口径，2026-11-14 探针实证裁决，etf 默认 none 的 auto 请求不落 ths）
+  # 口径，2026-11-14 探针实证裁决，etf 默认 none 的 auto 请求不落 ths）；
+  # futunn 最末位回退（2026-11-14 接入：AppKey 凭据 API、8 周期面、复权
+  # 生效性未实证仅声明 none、历史覆盖未探针实证）
   - match: {data_type: bars, market: CN, asset_type: etf}
-    order: [tqsdk, baostock, akshare, ths]
+    order: [tqsdk, baostock, akshare, ths, futunn]
 
   # CN 期货合约：tqsdk 缺省；回退 akshare（新浪源）。tushare 已声明期货
   # 单一合约（五所后缀探针实证，仅日线无复权），仍不参与本组合的 auto
@@ -81,15 +85,19 @@ defaults:
   # US 个股：twelvedata 优先（2026-11-07 拍板维持既有回退结果）；
   # alphafeed 第二候选（官方文档核实美股日线 1d/1w/1M，探针实证后可再议
   # 升缺省）；tickflow 第三候选；akshare 末位免凭据兜底（2026-11-08 接入
-  # 东财美股，history.start 与成交量单位未核实，仅 NYSE/NASDAQ）
+  # 东财美股，history.start 与成交量单位未核实，仅 NYSE/NASDAQ）；
+  # futunn 最末位回退（2026-11-14 接入：AppKey 凭据 API、8 周期面、
+  # 历史覆盖未探针实证；OTC 不支持由适配器 exchange 白名单拒绝）
   - match: {data_type: bars, market: US, asset_type: stock}
-    order: [twelvedata, alphafeed, tickflow, akshare]
+    order: [twelvedata, alphafeed, tickflow, akshare, futunn]
 
   # HK 个股：alphafeed 缺省（2026-11-07 拍板接管，官方文档核实港股日线
   # 1d/1w/1M），tickflow 回退（其港股日线探针实证更深，库底存疑时可显式
-  # 指定）；akshare 末位免凭据兜底（2026-11-08 接入东财港股，未核实项待探针）
+  # 指定）；akshare 末位免凭据兜底（2026-11-08 接入东财港股，未核实项待
+  # 探针）；futunn 最末位回退（2026-11-14 接入：AppKey 凭据 API、8 周期
+  # 面、历史覆盖未探针实证）
   - match: {data_type: bars, market: HK, asset_type: stock}
-    order: [alphafeed, tickflow, akshare]
+    order: [alphafeed, tickflow, akshare, futunn]
 
   # US ETF：twelvedata 独占
   - match: {data_type: bars, market: US, asset_type: etf}
@@ -111,13 +119,14 @@ defaults:
   # 追加，官方文档核实 A 股快照）、tickflow 第三；ths 末位回退（2026-11-13
   # 接入：付费凭据 API、纯 REST 单次调用语义——个股/指数/ETF 快照直出，
   # 期货/期权快照经分时端点取末点、量额口径未核实不透出）；期权快照 ths
-  # 独占（首个期权 Provider）
+  # 独占（首个期权 Provider）；futunn 最末位回退（2026-11-14 接入：AppKey
+  # 凭据 API、纯 REST 单次调用语义、无盘口五档）
   - match: {data_type: quotes, market: CN, asset_type: stock}
-    order: [tqsdk, alphafeed, tickflow, ths]
+    order: [tqsdk, alphafeed, tickflow, ths, futunn]
   - match: {data_type: quotes, market: CN, asset_type: index}
-    order: [tqsdk, ths]
+    order: [tqsdk, ths, futunn]
   - match: {data_type: quotes, market: CN, asset_type: etf}
-    order: [tqsdk, ths]
+    order: [tqsdk, ths, futunn]
   - match: {data_type: quotes, market: CN, asset_type: contract}
     order: [tqsdk, ths]
   - match: {data_type: quotes, market: CN, asset_type: continuous}
@@ -128,11 +137,12 @@ defaults:
     order: [ths]
 
   # HK / US 个股快照：alphafeed 缺省（2026-11-07 拍板接管，官方文档核实
-  # 三市场快照），tickflow 回退
+  # 三市场快照），tickflow 回退；futunn 最末位回退（2026-11-14 接入：
+  # AppKey 凭据 API、纯 REST 单次调用语义、无盘口五档）
   - match: {data_type: quotes, market: HK, asset_type: stock}
-    order: [alphafeed, tickflow]
+    order: [alphafeed, tickflow, futunn]
   - match: {data_type: quotes, market: US, asset_type: stock}
-    order: [alphafeed, tickflow]
+    order: [alphafeed, tickflow, futunn]
 
   # GLOBAL 外汇 / 加密货币快照：twelvedata 优先，tiingo 回退（2026-11-13 接入，
   # 快照/快照流走 WS 共享订阅——不占 tiingo REST 请求配额）

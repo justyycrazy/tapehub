@@ -43,6 +43,7 @@ BUILTIN_PROVIDERS: tuple[str, ...] = (
     "tushare",
     "tqsdk",
     "twelvedata",
+    "futunn",
 )
 
 # 凭据驱动的注册判定：Provider → 必须全部非空的 Settings 凭据字段。
@@ -56,6 +57,7 @@ _REQUIRED_CREDENTIALS: dict[str, tuple[str, ...]] = {
     "tushare": ("tushare_token",),
     "tqsdk": ("tqsdk_auth_user", "tqsdk_auth_password"),
     "twelvedata": ("twelvedata_api_key",),
+    "futunn": ("futunn_app_key", "futunn_private_key_path"),
 }
 
 

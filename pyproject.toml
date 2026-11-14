@@ -34,6 +34,10 @@ tiingo = ["httpx>=0.27", "websockets>=14"]
 # 同花顺金融数据 API（ths）无官方 Python SDK：REST 用 httpx 同步客户端直连
 # （call_in_thread 隔离），X-api-key 请求头认证
 ths = ["httpx>=0.27"]
+# 富途 OpenAPI HTTP 直连（futunn）无官方 Python SDK：REST 用 httpx 同步客户端
+# 直连（call_in_thread 隔离），AppKey 签名认证经 cryptography 做本地私钥
+# 签名（Ed25519 / RSA-SHA256 PKCS#1 v1.5，两种算法都由该库提供）
+futunn = ["httpx>=0.27", "cryptography>=42"]
 
 [dependency-groups]
 dev = [

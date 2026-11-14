@@ -81,6 +81,11 @@ class Settings(BaseSettings):
     twelvedata_api_key: str = ""
     # 同花顺金融数据 API Key（X-api-key 请求头；fuyao.aicubes.cn）
     ths_api_key: str = ""
+    # 富途 OpenAPI（webapi.futunn.com）「方式二：传统 API Key」凭据：控制台
+    # AppKey 管理创建的 AppKey ID，及与其公钥（Ed25519/RSA-SHA256）配对的
+    # 本地私钥 PEM 文件路径；两者必须同时配置（任一缺失即不启用）
+    futunn_app_key: str = ""
+    futunn_private_key_path: str = ""
 
     @model_validator(mode="after")
     def _validate_limits(self) -> "Settings":
