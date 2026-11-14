@@ -38,7 +38,8 @@ from tapehub.providers.tqsdk.runtime import RuntimeStatus, TqSdkRuntime
 if TYPE_CHECKING:
     from tapehub.settings import Settings
 
-_DEFAULT_CONN_MODE = "per_request"
+# 与 Settings.tqsdk_conn_mode 默认值保持一致（settings 为 None 的回退路径）
+_DEFAULT_CONN_MODE = "shared"
 # 快照首包等待的轮询间隔（秒）：M2 快照链路为轮询语义，SSE（M3）改为推送
 _SNAPSHOT_POLL_INTERVAL = 0.05
 
