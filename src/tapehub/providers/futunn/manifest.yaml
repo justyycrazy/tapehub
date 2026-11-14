@@ -41,11 +41,17 @@
 # - 复权面（autype 0/1/2 文档明示）：stock [none, qfq, hfq] 直映；
 #   index [none]（指数无复权语义，与 ths 惯例一致）；etf [none]——autype
 #   对 ETF 是否生效未实证，探针后回填；
-# - 分页与边界：单次 num 默认与最大 370（显式传参）；page_token 15 分钟
-#   有效；分钟 K 线 end 以该日 00:00 为截止、不含当日（查闭区间需 end
-#   日期 +1 天，request_mapper 处理），日/周/月 K 线 end 含当日；请求
-#   start/end 为标的市场时区日期（CN=Asia/Shanghai、HK=Asia/Hong_Kong、
-#   US=America/New_York），闭区间 [start, end] 复核在适配器完成；
+# - 分页与边界：请求 start/end 为标的市场时区日期（CN=Asia/Shanghai、
+#   HK=Asia/Hong_Kong、US=America/New_York），分钟 K 线 end 以该日 00:00
+#   为截止、不含当日（查闭区间需 end 日期 +1 天，request_mapper 处理），
+#   日/周/月 K 线 end 含当日；闭区间 [start, end] 复核在适配器完成；
+# - 单查询行数上限（2026-11-14 探针实证，报告 20261114T111229+0800，
+#   文档失真）：请求 num=370 被上游忽略、实测单查询恒返回窗口起点起
+#   ≈1000 行、pagination.has_more 恒 False 且无 next_page_token——
+#   page_token 分页实际不可用（适配器分页循环与 _MAX_PAGES=15 保留为
+#   防御）；分钟族窗口 >≈1000 根时静默截断、partial 无法可靠判定
+#   （恒 false，人工裁决 2026-11-14：README 如实说明 + partial 维持，
+#   ths 先例），分钟族建议窄窗口使用；
 # - 返回行 time_key 为毫秒 Unix 时间戳（绝对时刻），volume 已按
 #   volume_precision 放大 10^n 倍需自行还原（response_mapper 处理，
 #   股票一般 n=0）；排序方向文档未明示，统一由分页组件升序归一；

@@ -1031,10 +1031,17 @@ rate-limit、stock-quote、history-kline 五页）：
   HK=Asia/Hong_Kong、US=America/New_York；北京时间边界先转标的市场墙钟取
   日历日期）；**分钟 K 线 `end` 以该日 00:00 为截止、不含当日**——适配器对
   分钟周期 end 日期 +1 天补偿，闭区间 `[start, end]` 精确复核在适配器完成
-  （日/周/月 K 线 end 含当日，不补偿）；单次 `num` 默认与最大 **370**（显式
-  传满），`page_token` 续页（15 分钟有效，续页参数不变原则），页数上限防御
-  15 页（=5550 根）——触上限且最早一根晚于 start 时 `meta.partial=true`
-  （从最新往回取型的隐式截断，与 twelvedata 同语义）；
+  （日/周/月 K 线 end 含当日，不补偿）；
+- **单查询行数上限与隐式截断（2026-11-14 探针实证，文档失真）**：请求
+  `num=370` 被上游忽略，实测单查询恒返回**窗口起点起 ≈1000 行**（CN 精确
+  1000、US 全年窗实测 911/983/995/998/999），`pagination.has_more` 恒
+  False 且无 `next_page_token`——`page_token` 分页实际不可用（适配器分页
+  循环与页数上限保留为防御，上游若恢复签发 token 即生效）；**窗口行数
+  超过 ≈1000 时静默截断且上游无截断信号**，`meta.partial` 无法可靠判定
+  （恒 false；人工裁决 2026-11-14：与 ths「partial 恒 false 待核实」同构，
+  README 如实说明）——分钟族（PT1M~PT30M）仅建议窄窗口使用（CN PT1M
+  单查询 ≈4 个交易日），日/周/月线与 CN PT1H 在常规窗口内完整（实测
+  P1D 243/246/249、P1W 52、P1M 12、CN PT1H 全年 968 根完整）；
 - 单位与时间戳：`volume`=股（按信封 `data.volume_precision` 还原——上游已放大
   10^n 倍，股票一般 n=0）、`turnover→amount`=成交额（各市场原币，官方未标注
   币种折算不编造换算）；行 `time_key` 为毫秒 Unix 时间戳（绝对时刻）→ 统一

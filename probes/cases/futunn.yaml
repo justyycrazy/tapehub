@@ -114,3 +114,32 @@ notes: >
   口径与币种、volume_precision 非零品类分布；⑤日/周/月 K 线 time_key
   墙钟口径（北京零点还是市场零点，影响闭区间复核与 README 时间口径段）；
   ⑥quotes data_time 口径与盘前盘后段是否透出 extensions。
+  2026-11-14 首轮（报告 20261114T111229+0800，confirmed 94 / observe 1 /
+  **failed 0**，预算 103/120）：三市场 × 8 周期 availability 全 confirmed、
+  adjust_diff 6/6 confirmed（三市场 stock qfq/hfq 均生效，复权声明面
+  维持）、raw 401 指纹 observe（{'code': -12006, 'trace_id': ...}——新封装
+  code 键，与适配器防御读 code 键一致）。日/周/月线全窗口完整（P1D
+  243/246/249、P1W 52、P1M 12，与交易日历吻合）。目录外实证（同日）：
+  quotes 5 组合全 OK——data_time 口径 CN 收盘 15:00 整、HK 最后成交时刻、
+  US 美东收盘 16:00 毫秒精度，extensions 白名单 7 键齐备。**实证定案**：
+  ①time_key 墙钟口径——CN/HK 日/周/月线北京零点（00:00+08）、US 为美东
+  零点（13:00+08）、分钟线盘中时刻（北京时间），绝对时刻口径与
+  response_mapper 现实现一致，无需改动；②time_zone 字段实测为小时口径
+  （8）非文档的分钟偏移（480）——不参与标准化，仅记录（文档失真第 1 处）；
+  ③**num 参数被上游忽略**：请求传 370 实测单页返回 1000 行、
+  pagination.has_more 恒 False 且无 next_page_token——page_token 分页
+  实际不可用（文档失真第 2 处），单查询上限 ≈1000 行、从窗口起点升序
+  截断（适配器分页循环与 UPSTREAM_MAX_BARS=5550 现状不触发、保留为防御）；
+  ④**分钟族隐式截断 + partial 缺口（待人工裁决）**：PT1M 全年窗实测
+  count=1000/911（CN/US）、单月窗 1000/1000、末根远早于窗口 end 且
+  meta.partial=False——窗口 >1000 根时静默截断无信号；候选方案：行数
+  触顶+末根<end 判 partial / README 隐式截断说明（th「partial 恒 false
+  待核实」先例）/ 收窄分钟族声明，三选一待定；额度占用：5 个基准标的各
+  1 个历史额度（7×24h 释放），预检/取证复用同标的未新增。待回填项新增：
+  ⑦partial 语义裁决；history.start 仍 null（depth 待额度池容量核实后
+  单独立项）。
+  2026-11-14 partial 裁决落地（人工拍板）：分钟族隐式截断按「README 如实
+  说明 + partial 维持 false」处理（ths「partial 恒 false 待核实」同构
+  先例）——上游无截断信号（has_more 恒 False、行数上限 ≈1000 且 US 个案
+  低于 1000 使行数阈值判定漏判），适配器分页循环与触顶防御判定保留；
+  README/manifest/adapter docstring 三处注释同步，不动能力声明面。

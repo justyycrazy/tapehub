@@ -16,10 +16,14 @@
   upstream_code/upstream_message（ret_code 缺失时防御读 code 键——新旧
   两种封装并存）；HTTP >=400 与 JSON 解析失败为防御性 UPSTREAM_ERROR
   （携 status_code）——应用层对 TapehubError 直接透传，SDK 异常不穿透 API；
-- bars 分页：单次 num=370（文档最大值），page_token 续页——**必须用
-  page_token**（免计历史「首请求」额度；next_time 分页仍计入，不使用）；
-  页数上限防御 _MAX_PAGES=15（=5550 根），触上限且最早一根晚于 start 判
-  partial=True（从最新往回取型的隐式截断语义，与 twelvedata 一致）；
+- bars 分页：官方文档 num 最大 370、page_token 续页；**2026-11-14 探针
+  实证（报告 20261114T111229+0800）：num 参数被上游忽略、单查询恒返回
+  窗口起点起 ≈1000 行、pagination.has_more 恒 False 且无 next_page_token
+  ——page_token 分页实际不可用**；适配器分页循环与 _MAX_PAGES=15 保留为
+  防御（上游若恢复签发 token 即生效）；触页数上限且最早一根晚于 start
+  判 partial=True 的防御判定保留，但**分钟族窗口 >≈1000 根时上游静默
+  截断、partial 无法可靠判定（恒 false）**——人工裁决 2026-11-14：README
+  如实说明、partial 维持（ths 先例），分钟族建议窄窗口使用；
 - 分钟 K 线 end 语义：上游 end 以该日 00:00 截止不含当日，request_mapper
   对分钟周期 end 日期 +1 天补偿，闭区间 [start, end] 精确复核在适配器
   完成（日/周/月 K 线 end 含当日，不补偿）；
