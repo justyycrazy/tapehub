@@ -896,7 +896,7 @@ fund-market、futures-prices、options-prices 六页）：
 | --- | --- | --- | --- | --- | --- | --- |
 | stock（bars） | CN | ths（默认） | `GET /api/a-share/prices/historical` | P1D | none/qfq/hfq | 全部 |
 | index（bars） | CN | ths（默认） | `GET /api/a-share-index/prices/historical` | P1D | none | 全部 |
-| etf（bars） | CN | ths（默认） | `GET /api/fund/market/historical` | P1D | none | 全部 |
+| etf（bars） | CN | ths（默认） | `GET /api/fund/market/historical` | P1D | qfq（上游固定前复权，不可选） | 全部 |
 | contract（bars） | CN | ths（默认） | `GET /api/futures/prices/daily` | P1D | none | 全部（量额单位上游未明示，原值透出） |
 | option（bars） | CN | ths（默认） | `GET /api/options/prices/daily` | P1D | none | 全部（量额单位上游未明示，原值透出） |
 | stock/index/etf（quotes） | CN | ths | `GET /api/a-share|a-share-index|fund/market*/snapshot` | —（快照无周期） | —（快照无复权） | timestamp/last_price/volume/amount（extensions 见下） |
@@ -931,9 +931,14 @@ fund-market、futures-prices、options-prices 六页）：
   上抛 `UPSTREAM_ERROR` 不归一化：单点缺陷而非稳定边界）；同花顺板块/行业
   指数（`88xxxx.TI`）与商品指数（`850002.TI`）属同花顺特有 TI 类指数，本期
   不纳入；ETF 行情仅支持 ETF（LOF/场外/REITs 上游返回 `code=3004`）；
-- 复权映射（仅 A 股历史 K 线有复权语义）：`none→none`、`qfq→forward`
+- 复权映射（A 股历史 K 线三值语义）：`none→none`、`qfq→forward`
   （前复权）、`hfq→backward`（后复权）；指数无复权语义（响应 `data.adjust`
-  固定 null）、ETF/期货/期权仅声明 none；`ths` 的 `forward` 缺省恰与网关
+  固定 null）、期货/期权仅声明 none；**ETF 上游无 adjust 参数、数据固定
+  前复权口径**——受控对比实证（2026-11-14，报告 20261114T080423+0800：
+  510880 调整生效段 vs baostock none 偏差中位 9.01% / vs qfq 0.34%，除息日
+  2023-01-16/2024-01-23/2025-01-21）后人工裁决声明 `[qfq]`，`adjust=none`
+  的 auto ETF 请求不落 ths（回退链末位，前序 Provider 全失败时诚实返回
+  `NO_PROVIDER_AVAILABLE`）；`ths` 的 `forward` 缺省恰与网关
   个股声明默认 `qfq` 对齐，适配器仍始终显式传参；
 - **单位**：A 股快照/历史 K 线 `volume`=股、`turnover`=元（官方文档明示）；
   ETF/期货/期权 volume/turnover 单位上游未明示，原值透出（不编造换算）；

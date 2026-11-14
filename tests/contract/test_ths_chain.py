@@ -141,8 +141,11 @@ def test_capability_catalog(ths_client: TestClient) -> None:
         assert hist_by_asset[asset]["retention_days"] == 1825
 
     adjustments = {tuple(cap["asset_types"])[0]: cap["adjustments"] for cap in bars_caps}
-    assert adjustments["stock"] == ["none", "qfq", "hfq"]  # 唯一有复权语义的资产
-    for asset in ("index", "etf", "contract", "option"):
+    assert adjustments["stock"] == ["none", "qfq", "hfq"]  # 唯一三值复权资产
+    # ETF 上游固定前复权（2026-11-14 受控对比实证裁决：无 adjust 参数、
+    # 数据固定 qfq 口径，报告 20261114T080423）
+    assert adjustments["etf"] == ["qfq"]
+    for asset in ("index", "contract", "option"):
         assert adjustments[asset] == ["none"]
 
     # 实时快照：无周期/复权维度（显式空）；期货/期权量额=分时全点求和

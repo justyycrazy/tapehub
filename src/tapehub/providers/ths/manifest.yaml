@@ -41,9 +41,12 @@
 #   实证，不收）；contract {SHFE→SHF}（CU2601.SHF 示例）；option {CFFEX→CFE}
 #   （IO2601-C-4000.CFE 示例）；contract/option symbol 段原样透传
 #   （CN-CFFEX-IO2601-C-4000 → IO2601-C-4000.CFE）；
-# - adjust 映射（仅 A 股历史 K 线有复权语义）：none→none、qfq→forward
-#   （前复权）、hfq→backward（后复权）；指数/ETF/期货/期权无复权，仅声明 none
-#   （指数响应 data.adjust 固定 null）；
+# - adjust 映射（A 股历史 K 线三值语义）：none→none、qfq→forward
+#   （前复权）、hfq→backward（后复权）；ETF 无 adjust 参数、数据固定前复权
+#   口径——探针受控对比实证（报告 20261114T080423+0800：510880 调整生效段
+#   vs baostock none 偏差中位 9.01% / vs qfq 0.34%）后声明 [qfq]（2026-11-14
+#   人工裁决）；指数无复权语义（响应 data.adjust 固定 null）、期货/期权仅
+#   声明 none；
 # - 单次返回行数上限：官方文档未标注（historical 的 offset 分页参数行为
 #   未核实，不启用），partial 恒 false，隐式截断行为待探针核实；
 # - 历史覆盖（2026-11-13 探针实证回填，人工确认，报告见上）：个股日线
@@ -84,8 +87,10 @@ capabilities:
     adjustments: [none]
     fields: [open, high, low, close, volume, amount]
 
-  # 场内基金（仅 ETF；LOF/场外/REITs 返回 code=3004）：无复权语义；
-  # 滚动窗口语义（文档 5 自然年实测吻合，越界返空不报错）
+  # 场内基金（仅 ETF；LOF/场外/REITs 返回 code=3004）：上游无 adjust 参数、
+  #   数据固定前复权口径（受控对比实证报告 20261114T080423+0800，人工确认
+  #   2026-11-14 声明 [qfq]）；滚动窗口语义（文档 5 自然年实测吻合，越界
+  #   返空不报错）
   - data_type: bars
     markets: [CN]
     asset_types: [etf]
@@ -93,7 +98,7 @@ capabilities:
     variants: [ths]
     intervals:
       - {code: P1D, history: {retention_days: 1825}}
-    adjustments: [none]
+    adjustments: [qfq]
     fields: [open, high, low, close, volume, amount]
 
   # 期货合约（端外仅日 K、time_period=day_1；仅 SHFE 后缀文档实证）
@@ -180,8 +185,8 @@ operations:
   # 指数历史 K 线（GET /api/a-share-index/prices/historical）
   - match: {data_type: bars, market: CN, asset_type: index, interval: P1D, adjust: none, variant: ths}
     operation: index_historical
-  # ETF 历史日线（GET /api/fund/market/historical）
-  - match: {data_type: bars, market: CN, asset_type: etf, interval: P1D, adjust: none, variant: ths}
+  # ETF 历史日线（GET /api/fund/market/historical；上游固定前复权，仅 qfq）
+  - match: {data_type: bars, market: CN, asset_type: etf, interval: P1D, adjust: qfq, variant: ths}
     operation: fund_historical
   # 期货日 K（GET /api/futures/prices/daily）
   - match: {data_type: bars, market: CN, asset_type: contract, interval: P1D, adjust: none, variant: ths}

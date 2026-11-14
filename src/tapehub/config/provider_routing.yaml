@@ -51,7 +51,8 @@ defaults:
   # tqsdk 凭据未配置时自动跳过 → baostock 生效）；akshare 末位兜底（2026-11-08
   # 接入东财 ETF 日/周/月，history.start 未核实，与 CN 个股链中 akshare 置末位
   # 风格一致）；twelvedata 的 etf 仅 US 市场；ths 最末位回退（2026-11-13
-  # 接入：付费凭据 API、仅日线、窗口上限 5 自然年）
+  # 接入：付费凭据 API、仅日线、窗口上限 5 自然年；仅 qfq——上游固定前复权
+  # 口径，2026-11-14 探针实证裁决，etf 默认 none 的 auto 请求不落 ths）
   - match: {data_type: bars, market: CN, asset_type: etf}
     order: [tqsdk, baostock, akshare, ths]
 

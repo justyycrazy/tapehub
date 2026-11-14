@@ -168,14 +168,14 @@ def test_index_bars_uses_index_endpoint(monkeypatch: pytest.MonkeyPatch) -> None
 
 
 def test_etf_bars_uses_fund_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
-    """ETF 走基金行情端点（仅日线、窗口 ≤5 自然年）。"""
+    """ETF 走基金行情端点（仅日线、窗口 ≤5 自然年、上游固定前复权仅 qfq）。"""
     install(monkeypatch)
     preset_payload(monkeypatch, envelope({"item": bar_rows("date_ms", [START_MS])}))
     adapter = _adapter()
     query = _query(
         asset_type=AssetType.ETF,
         instrument=Instrument.parse("CN-SSE-510300"),
-        adjust=Adjust.NONE,
+        adjust=Adjust.QFQ,
     )
     asyncio.run(adapter.fetch_bars(query))
 
