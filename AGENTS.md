@@ -24,6 +24,29 @@ uv run ruff check .                 # lint（line-length 100，规则 E/F/I 含 
 uv run uvicorn tapehub.api.app:app --reload   # 本地启动 127.0.0.1:8000
 ```
 
+### 全量测试结果获取预案（Windows / Git Bash 环境）
+
+全量 `uv run pytest` 超过默认 120s 超时；且**经管道会丢失 pytest 末尾汇总
+行，`| tail` 等管道还会掩盖 pytest 真实退出码**（管道退出码是末段命令的）。
+判定依据 = **退出码 + 完整日志**，汇总行与 FAILED/ERROR 清单三路互证：
+
+1. **直接以后台方式启动**，不要先试前台等超时被转后台；完整日志重定向
+   落盘，不经管道（无管道 → 任务完成通知里的退出码就是 pytest 自身的）。
+   **命令行不要再加 `-q`**——pyproject 的 `addopts = "-q"` 已带一个，叠加
+   成 `-qq` 会把末尾汇总行整个压掉（此前「汇总行消失」的根因）：
+   ```bash
+   uv run pytest > pytest_out.log 2>&1
+   ```
+2. **综合判定**（退出码为主，汇总行与报错清单互证）：
+   ```bash
+   echo $?                                    # 0 = 全部通过；1 = 有 failed；2 = 参数/收集问题
+   tail -1 pytest_out.log                     # 汇总行：N passed, M skipped in Xs
+   grep -nE "^FAILED|^ERROR" pytest_out.log   # 失败/错误清单（无输出 = 无失败）
+   ```
+   三路信号应一致：退出码 0 ⇔ 汇总行无 failed/error 字样 ⇔ grep 无输出；
+   退出码非 0 时按日志内 traceback（完整留存）定位。
+3. 判定完删除 `pytest_out.log`（不入库）。
+
 测试与本地环境解耦：测试代码一律用 `tests.conftest.make_settings` 构造 Settings
 （不读 `.env`），autouse fixture 会清空进程环境中的 `TAPEHUB_*` 变量；本地
 `.env` 里的真实凭据不影响 `uv run pytest`。服务运行路径不受影响（仍读 `.env`）。
