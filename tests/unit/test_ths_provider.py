@@ -270,10 +270,47 @@ def test_unsupported_intervals_rejected_by_operation_routing(
         adapter.resolve_operation(_query(interval=Interval.parse(interval)))
 
 
+@pytest.mark.parametrize(
+    ("instrument", "expected_thscode"),
+    [
+        ("CN-SHFE-CU2706", "CU2706.SHF"),
+        ("CN-CZCE-MA2701", "MA701.CZC"),  # 年月码 4→3 还原（去年份十位）
+        ("CN-DCE-EG2701", "EG2701.DCE"),
+        ("CN-INE-BC2612", "BC2612.INE"),
+        ("CN-GFEX-LC2701", "LC2701.GFE"),
+    ],
+)
+def test_contract_suffix_mapping(
+    instrument: str,
+    expected_thscode: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """期货五所后缀 2026-11-14 探针实证收编（用户指正形态后复探全绿）；
+    CZCE 年月码 4→3 还原与 tqsdk 同构。"""
+    install(monkeypatch)
+    preset_payload(
+        monkeypatch,
+        envelope({"item": bar_rows("date_ms", [START_MS])}),
+    )
+    adapter = _adapter(make_settings(ths_api_key="test-key"))
+    batch = asyncio.run(
+        adapter.fetch_bars(
+            _query(
+                asset_type=AssetType.CONTRACT,
+                instrument=Instrument.parse(instrument),
+                adjust=Adjust.NONE,
+            )
+        )
+    )
+    assert _last_call()["params"]["thscode"] == expected_thscode
+    assert batch.provider == "ths"
+    assert batch.count == 1
+
+
 def test_unverified_exchange_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
-    """还原表只收实证条目：DCE 期货后缀探针未通过（3001 标的不在 ths 目录，
-    2026-11-14），明确拒绝而非透传上游（写错比透传更隐蔽）；BJ（北交所）
-    价格端点 2026-11-14 探针实证后已收编（见正向断言）。"""
+    """还原表只收实证条目：CFFEX 后缀仅适用于 option，contract 请求明确
+    拒绝而非透传上游（写错比透传更隐蔽）；BSE/DCE/CZCE/INE/GFEX 已探针
+    实证收编（见正向断言）。"""
     install(monkeypatch)
     adapter = _adapter()
     with pytest.raises(UnsupportedCapabilityError):
@@ -281,7 +318,7 @@ def test_unverified_exchange_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
             adapter.fetch_bars(
                 _query(
                     asset_type=AssetType.CONTRACT,
-                    instrument=Instrument.parse("CN-DCE-M2601"),
+                    instrument=Instrument.parse("CN-CFFEX-CU2706"),
                 )
             )
         )

@@ -23,12 +23,12 @@ pacing:
   # 4001 限频两轮 + 目录外诊断均未复现
   call_interval_s: 2.0
   timeout_s: 60
-  # 本轮构成（2026-11-14 第三轮立项 + BSE 收编后）：availability 14
-  # （bars 9：stock 三复权 + index + etf + contract + option + BSE 逐所
-  # stock/index）+ adjust_diff 4（stock 1 目标 × 2 pair × 2 调）+
-  # history_depth 3 case × 最坏 12 + limit_truncation ≈2 + raw 15 case
-  # 各 3 调（client + get + json），最坏约 102，预算 130 留余量（约 6
-  # 分钟）
+  # 本轮构成（2026-11-14 第三轮立项 + BSE/期货五所收编后）：availability
+  # 13（bars 13：stock 三复权 + index + etf + contract + option + BSE 逐所
+  # stock/index + 期货逐所 CZCE/DCE/INE/GFEX）+ adjust_diff 4（stock 1
+  # 目标 × 2 pair × 2 调）+ history_depth 3 case × 最坏 12 +
+  # limit_truncation ≈2 + raw 15 case 各 3 调（client + get + json），
+  # 最坏约 76，预算 130 留余量（约 6 分钟）
   max_calls: 130
 
 targets:
@@ -66,10 +66,37 @@ targets:
     required_fields: [open, high, low, close, volume, amount]
   contract:
     instrument: CN-SHFE-CU2706
-    # 铜期货合约（文档示例 CU2601.SHF 已到期）：SHFE→SHF 为唯一文档实证
-    # 后缀。合约会到期：运行前按上期所挂牌信息核对，失败如实记录，到期
-    # 轮换为当时的现活合约
+    # 铜期货合约（文档示例 CU2601.SHF 已到期）：SHFE→SHF。合约会到期：
+    # 运行前按上期所挂牌信息核对，失败如实记录，到期轮换为当时的现活合约
     window: {start: 2026-08-01, end: 2026-11-30}
+    min_bars: 20
+    required_fields: [open, high, low, close, volume, amount]
+  contract@CN-CZCE:
+    instrument: CN-CZCE-MA701
+    # 甲醇 2701（2027-01 交割）：CZCE→CZC + 年月码 4→3 还原（2026-11-14
+    # 用户指正形态后探针实证，报告 20261114T135118+0800 追记）。合约会
+    # 到期：运行前按郑商所挂牌信息核对并轮换
+    window: {start: 2026-08-03, end: 2026-11-13}
+    min_bars: 20
+    required_fields: [open, high, low, close, volume, amount]
+  contract@CN-DCE:
+    instrument: CN-DCE-EG2701
+    # 乙二醇 2701（文档示例形态）：DCE→DCE（首轮 M2601 误用已摘牌合约
+    # 3001 的根因修正）。合约会到期：同上轮换
+    window: {start: 2026-08-03, end: 2026-11-13}
+    min_bars: 20
+    required_fields: [open, high, low, close, volume, amount]
+  contract@CN-INE:
+    instrument: CN-INE-BC2612
+    # 国际铜 2612（文档示例形态）：INE→INE（同上根因修正）。合约会到期：
+    # 同上轮换
+    window: {start: 2026-08-03, end: 2026-11-13}
+    min_bars: 20
+    required_fields: [open, high, low, close, volume, amount]
+  contract@CN-GFEX:
+    instrument: CN-GFEX-LC2701
+    # 碳酸锂 2701（后缀实为 GFE 非 GFEX）。合约会到期：同上轮换
+    window: {start: 2026-08-03, end: 2026-11-13}
     min_bars: 20
     required_fields: [open, high, low, close, volume, amount]
   option:
@@ -230,65 +257,63 @@ raw:
     expect: {status: ok, min_fields: [code, message, data]}
     close: {method: close, kwargs: {}}
 
-  # 期货交易所后缀实证（待回填项：ZCE/DCE/INE/GFEX 未在文档示例实证，
-  # 确认后扩容 _SUFFIXES）：适配器 _SUFFIXES 未收录交易所在本地即拒
-  # （上游指纹空白），raw 绕过适配器直调上游——窗口取 2025-11~12 存续期、
-  # time_period=day_1 显式传参，成功形态（code=0 与行数）或错误指纹均落袋。
-  # ZCE 郑商所年月码形态即探测点（三位 SR601 vs 四位 SR2601 双形态并探，
-  # 定案适配器还原规则）；GFEX 品种代码大小写形态一并记录（LC2606，
-  # 上游原生小写 lc 待证）
+  # 期货交易所后缀实证（2026-11-14 用户指正形态后复探全绿，_SUFFIXES 五所
+  # 收编随本轮提交）：窗口取 2026-08~11 存续期、time_period=day_1 显式
+  # 传参。zce-4digit 为 4→3 还原对照 case（MA2701.CZC 3001 实证四位码
+  # 不识别）；MA701 首探 5003 系瞬时（复验 code=0）；SR612.CZC 3001 系
+  # 白糖近月不在 ths 目录（形态无关）
   - id: ths-futures-suffix-dce
-    purpose: 大商所后缀 DCE 实证（M2601 豆粕，4 位年月码）
+    purpose: 大商所后缀 DCE 实证（EG2701 乙二醇，文档示例形态）
     assert: false
     module: httpx
     client: {attr: Client, kwargs: {}}
     call:
-      - {method: get, kwargs: {url: "https://fuyao.aicubes.cn/api/futures/prices/daily", params: {thscode: "M2601.DCE", start: 1761926400000, end: 1767196799000, time_period: "day_1"}, headers: {"X-api-key": "$TAPEHUB_THS_API_KEY"}}}
+      - {method: get, kwargs: {url: "https://fuyao.aicubes.cn/api/futures/prices/daily", params: {thscode: "EG2701.DCE", start: 1785715200000, end: 1794614399000, time_period: "day_1"}, headers: {"X-api-key": "$TAPEHUB_THS_API_KEY"}}}
       - {method: json, kwargs: {}, target: result}
     expect: {status: ok, min_fields: [code, message, data]}
     close: {method: close, kwargs: {}}
 
   - id: ths-futures-suffix-zce-3digit
-    purpose: 郑商所后缀 ZCE 三位年月码形态实证（SR601 白糖）
+    purpose: 郑商所后缀 CZC 三位年月码实证（MA612 甲醇近月）
     assert: false
     module: httpx
     client: {attr: Client, kwargs: {}}
     call:
-      - {method: get, kwargs: {url: "https://fuyao.aicubes.cn/api/futures/prices/daily", params: {thscode: "SR601.ZCE", start: 1761926400000, end: 1767196799000, time_period: "day_1"}, headers: {"X-api-key": "$TAPEHUB_THS_API_KEY"}}}
+      - {method: get, kwargs: {url: "https://fuyao.aicubes.cn/api/futures/prices/daily", params: {thscode: "MA612.CZC", start: 1785715200000, end: 1794614399000, time_period: "day_1"}, headers: {"X-api-key": "$TAPEHUB_THS_API_KEY"}}}
       - {method: json, kwargs: {}, target: result}
     expect: {status: ok, min_fields: [code, message, data]}
     close: {method: close, kwargs: {}}
 
   - id: ths-futures-suffix-zce-4digit
-    purpose: 郑商所后缀 ZCE 四位年月码形态实证（SR2601 白糖，与三位形态
-      对照定案适配器还原规则）
+    purpose: 郑商所四位年月码对照实证（MA2701.CZC 3001——4→3 还原依据
+      常态留存，非后缀探测）
     assert: false
     module: httpx
     client: {attr: Client, kwargs: {}}
     call:
-      - {method: get, kwargs: {url: "https://fuyao.aicubes.cn/api/futures/prices/daily", params: {thscode: "SR2601.ZCE", start: 1761926400000, end: 1767196799000, time_period: "day_1"}, headers: {"X-api-key": "$TAPEHUB_THS_API_KEY"}}}
+      - {method: get, kwargs: {url: "https://fuyao.aicubes.cn/api/futures/prices/daily", params: {thscode: "MA2701.CZC", start: 1785715200000, end: 1794614399000, time_period: "day_1"}, headers: {"X-api-key": "$TAPEHUB_THS_API_KEY"}}}
       - {method: json, kwargs: {}, target: result}
     expect: {status: ok, min_fields: [code, message, data]}
     close: {method: close, kwargs: {}}
 
   - id: ths-futures-suffix-ine
-    purpose: 上期能源后缀 INE 实证（SC2606 原油，4 位年月码）
+    purpose: 上期能源后缀 INE 实证（BC2612 国际铜，文档示例形态）
     assert: false
     module: httpx
     client: {attr: Client, kwargs: {}}
     call:
-      - {method: get, kwargs: {url: "https://fuyao.aicubes.cn/api/futures/prices/daily", params: {thscode: "SC2606.INE", start: 1761926400000, end: 1767196799000, time_period: "day_1"}, headers: {"X-api-key": "$TAPEHUB_THS_API_KEY"}}}
+      - {method: get, kwargs: {url: "https://fuyao.aicubes.cn/api/futures/prices/daily", params: {thscode: "BC2612.INE", start: 1785715200000, end: 1794614399000, time_period: "day_1"}, headers: {"X-api-key": "$TAPEHUB_THS_API_KEY"}}}
       - {method: json, kwargs: {}, target: result}
     expect: {status: ok, min_fields: [code, message, data]}
     close: {method: close, kwargs: {}}
 
   - id: ths-futures-suffix-gfex
-    purpose: 广期所后缀 GFEX 实证（LC2606 碳酸锂，大小写形态一并记录）
+    purpose: 广期所后缀 GFE 实证（LC2701 碳酸锂——后缀实为 GFE 非 GFEX）
     assert: false
     module: httpx
     client: {attr: Client, kwargs: {}}
     call:
-      - {method: get, kwargs: {url: "https://fuyao.aicubes.cn/api/futures/prices/daily", params: {thscode: "LC2606.GFEX", start: 1761926400000, end: 1767196799000, time_period: "day_1"}, headers: {"X-api-key": "$TAPEHUB_THS_API_KEY"}}}
+      - {method: get, kwargs: {url: "https://fuyao.aicubes.cn/api/futures/prices/daily", params: {thscode: "LC2701.GFE", start: 1785715200000, end: 1794614399000, time_period: "day_1"}, headers: {"X-api-key": "$TAPEHUB_THS_API_KEY"}}}
       - {method: json, kwargs: {}, target: result}
     expect: {status: ok, min_fields: [code, message, data]}
     close: {method: close, kwargs: {}}
@@ -513,6 +538,17 @@ notes: >
   ≤10 年 / 行数上限未观测（≥2417，partial 恒 false 维持）/ 已摘牌仅现活
   可查（contract/option history.start 保持 null 定案，tushare 已摘牌全量
   锚定先例不适用）四处定案记入 manifest 头注释与 README。
+  2026-11-14 期货四所结论修正（用户指正形态后复探定案）：首轮「四所 3001
+  = 标的不在 ths 目录」**根因修正**——ZCE/GFEX 系探针后缀形态错（ZCE 实为
+  CZC 且三位年月码、GFEX 实为 GFE），DCE/INE 系探针误用已摘牌合约
+  （M2601/SR601/SC2606/LC2606 均已到期 → 3001，与 CU2601.SHF 已摘牌对照
+  一致）；正确形态复探全绿：MA612.CZC / MA701.CZC / EG2701.DCE /
+  BC2612.INE / LC2701.GFE 均 code=0 且 68~69 行（MA701 首探 5003 系瞬时，
+  复验 code=0；MA612 近月 68 行排除「远月无数据」疑虑）；MA2701.CZC 3001
+  → **CZCE 年月码 4→3 还原实证**（规则与 tqsdk 同构：去年份十位）；
+  SR612.CZC 3001（白糖近月不在 ths 目录，形态无关）。raw suffix 5 case
+  更正形态常态留存、targets 增期货逐所 4 键常态复验；_SUFFIXES 扩五所 +
+  CZCE 还原回填（人工确认随本轮提交）。
 
 
 

@@ -924,11 +924,15 @@ fund-market、futures-prices、options-prices 六页）：
   `CN-SZSE-000001 → 000001.SZ`、`CN-BSE-920000 → 920000.BJ`（BSE→BJ
   2026-11-14 探针价格端点实证后收编：920000.BJ a-share historical 与
   899050.BJ a-share-index historical 各 243 行完整，报告
-  20261114T135118+0800；北交所无 ETF）；contract `CN-SHFE-CU2706 →
-  CU2706.SHF`（仅 SHFE 后缀实证；ZCE/DCE/INE/GFEX 四所 2026-11-14 探针
-  3001 未通过——负对照 ZZ9999.SHF 同指纹定案「标的不在 ths 目录」，不收）；
+  20261114T135118+0800；北交所无 ETF）；contract **五所全实证**（2026-11-14
+  用户指正形态后复探全绿）：`CN-SHFE-CU2706 → CU2706.SHF`、
+  `CN-CZCE-MA2701 → MA701.CZC`（**年月码 4→3 还原**：去年份十位，与 tqsdk
+  同构——MA2701.CZC 3001 四位码不识别实证）、`CN-DCE-EG2701 → EG2701.DCE`、
+  `CN-INE-BC2612 → BC2612.INE`、`CN-GFEX-LC2701 → LC2701.GFE`（后缀实为
+  GFE；首轮四所 3001 根因 = ZCE/GFEX 探针后缀形态错 + DCE/INE 误用已摘牌
+  合约 M2601/SC2606/LC2606）；
   option `CN-CFFEX-IO2612-C-4000 → IO2612-C-4000.CFE`（仅 CFFEX 后缀实证），
-  期货/期权 symbol 段原样透传（不做行权价等结构改写）；
+  期货/期权 symbol 段除 CZCE 还原外原样透传（不做行权价等结构改写）；
 - **上游能力边界（端外，文档明示 + 2026-11-13 三轮探针实证）**：历史 K 线仅
   日线 `1d`；**窗口口径实测与文档不符**——指数文档写「≤10 年」实测仅支持
   **最近约 5 年滚动窗口**（越界 `code=1003 'recent five years only'` 拒绝）、

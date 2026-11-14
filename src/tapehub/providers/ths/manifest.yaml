@@ -41,11 +41,17 @@
 #   2026-11-14 探针第三轮价格端点实证后收编：920000.BJ a-share historical
 #   与 899050.BJ a-share-index historical 各 243 行完整，报告
 #   20261114T135118+0800）；etf {SSE→SH, SZSE→SZ}（北交所无 ETF）；
-#   contract {SHFE→SHF}（CU2706.SHF 文档示例 + chain 常态复验；ZCE/DCE/
-#   INE/GFEX 四所 2026-11-14 探针 3001 未通过——负对照 ZZ9999.SHF 同指纹
-#   定案「标的不在 ths 目录」，不收）；option {CFFEX→CFE}（IO2612-C-4000
-#   chain 复验）；contract/option symbol 段原样透传
-#   （CN-CFFEX-IO2601-C-4000 → IO2601-C-4000.CFE）；
+#   **contract 五所全实证**（2026-11-14 用户指正形态后复探定案）：
+#   {SHFE→SHF, CZCE→CZC, DCE→DCE, INE→INE, GFEX→GFE}——MA612.CZC /
+#   MA701.CZC / EG2701.DCE / BC2612.INE / LC2701.GFE 均 code=0 且
+#   68~69 行；**首轮四所 3001 根因修正**：ZCE/GFEX 系探针后缀形态错
+#   （ZCE 实为 CZC、GFEX 实为 GFE），DCE/INE 系探针误用已摘牌合约
+#   （M2601/SC2606/LC2606 均已到期 → 3001）；**CZCE 年月码 4→3 还原**
+#   （CN-CZCE-MA2701 → MA701.CZC，MA2701.CZC 3001 / MA701.CZC 实证，
+#   规则与 tqsdk 同构：去年份十位）；SR612.CZC 3001（白糖近月不在 ths
+#   目录，形态无关）；option {CFFEX→CFE}（IO2612-C-4000 chain 复验）；
+#   contract/option symbol 段除 CZCE 还原外原样透传
+#   （CN-CFFEX-IO2612-C-4000 → IO2612-C-4000.CFE）；
 # - adjust 映射（A 股历史 K 线三值语义）：none→none、qfq→forward
 #   （前复权）、hfq→backward（后复权）；ETF 无 adjust 参数、数据固定前复权
 #   口径——探针受控对比实证（报告 20261114T080423+0800：510880 调整生效段

@@ -11,10 +11,11 @@
 - 复权：仅 A 股历史 K 线有复权语义，``none/forward/backward`` 直映
   ``none/qfq/hfq``；指数/ETF/期货/期权不传 adjust（指数响应 data.adjust
   固定 null）；
-- symbol：标准代码三段中 exchange 段按资产类型查后缀表（只收文档实证条目，
-  见 manifest 头注释），symbol 段原样透传（contract/option 亦原样，
-  ``CN-CFFEX-IO2601-C-4000`` → ``IO2601-C-4000.CFE``）；查表无果属命名空间
-  外请求，明确拒绝（不透传上游猜错更隐蔽）；
+- symbol：标准代码三段中 exchange 段按资产类型查后缀表（只收实证条目，
+  见 manifest 头注释），symbol 段除 CZCE 合约 4→3 年月码还原外原样透传
+  （contract/option 亦原样，``CN-CFFEX-IO2612-C-4000`` →
+  ``IO2612-C-4000.CFE``）；查表无果属命名空间外请求，明确拒绝（不透传
+  上游猜错更隐蔽）；
 - 快照：A 股/指数走 ``thscodes``（本网关快照为单标的语义，传单个）、
   ETF 走 ``thscode``（单值）；期货/期权快照走分时端点（``session=intraday``、
   ``trade_date=0`` 显式传参，端外仅当前交易日）；
@@ -22,6 +23,7 @@
   期望完整返回，隐式截断待探针）。
 """
 
+import re
 from datetime import datetime
 from typing import Any
 
@@ -49,15 +51,44 @@ _ADJUST_CODES: dict[Adjust, str] = {
 # 端点实证；见 manifest 头注释的诚实边界说明）：
 # - 2026-11-14 探针第三轮实证 BSE→BJ 价格端点（920000.BJ a-share
 #   historical / 899050.BJ a-share-index historical 各 243 行完整，报告
-#   20261114T135118+0800）后收编；期货 ZCE/DCE/INE/GFEX 四所 3001 未通过
-#   （负对照 ZZ9999.SHF 同指纹——标的不在 ths 目录），维持不收
+#   20261114T135118+0800）后收编；
+# - 期货五所后缀 2026-11-14 探针实证（用户指正形态后复探，EG2701.DCE /
+#   BC2612.INE / LC2701.GFE / MA612.CZC 均 code=0 且 68~69 行）——首轮
+#   四所 3001 的根因修正：ZCE/GFEX 系探针后缀形态错（ZCE 实为 CZC、
+#   GFEX 实为 GFE），DCE/INE 系探针误用已摘牌合约（M2601/SC2606/LC2606
+#   均已到期 → 3001，与 CU2601.SHF 已摘牌对照一致）；
+# - CZCE 合约年月码 4→3 还原（MA2701 → MA701，MA2701.CZC 3001 /
+#   MA701.CZC 5003→复验 code=0 实证，规则与 tqsdk 同构）
 _SUFFIXES: dict[str, dict[str, str]] = {
     "stock": {"SSE": "SH", "SZSE": "SZ", "BSE": "BJ"},
     "index": {"SSE": "SH", "SZSE": "SZ", "BSE": "BJ"},
     "etf": {"SSE": "SH", "SZSE": "SZ"},
-    "contract": {"SHFE": "SHF"},
+    "contract": {
+        "SHFE": "SHF",
+        "CZCE": "CZC",
+        "DCE": "DCE",
+        "INE": "INE",
+        "GFEX": "GFE",
+    },
     "option": {"CFFEX": "CFE"},
 }
+
+# CZCE 合约「品种+2 位年+2 位月」形态（与 tqsdk 同构的 4→3 还原规则）；
+# 主连/加权品种码（无年月段）与不规则代码不匹配、原样透传
+_CZCE_MONTH_CODE_RE = re.compile(r"^([A-Z]{1,2})(\d{2})(\d{2})$")
+
+
+def _rewrite_czce_symbol(symbol: str) -> str:
+    """CZCE 合约 4 位年月码 → 3 位原生码（MA2701 → MA701）。
+
+    去掉年份十位（MA2701 → MA7 + 01）；非「品种+2 位年+2 位月」形态
+    （主连/加权品种码、3 位旧写法、不规则代码）原样透传。
+    """
+    match = _CZCE_MONTH_CODE_RE.match(symbol)
+    if match is None:
+        return symbol
+    product, year, month = match.groups()
+    return f"{product}{year[1]}{month}"
 
 # bars：operation → 端点路径（上游历史 K 线/日 K）
 _BAR_PATHS: dict[str, str] = {
@@ -81,8 +112,9 @@ _QUOTE_PATHS: dict[str, str] = {
 def ths_symbol(query: BarQuery | QuoteQuery) -> str:
     """标准标的 → 完整 thscode（如 CN-SSE-600519 → "600519.SH"）。
 
-    exchange 段按资产类型查后缀表；symbol 段原样透传（期货合约/期权合约
-    的行权价等结构不做改写）。查表无果属命名空间外请求，明确拒绝。
+    exchange 段按资产类型查后缀表；symbol 段除 CZCE 合约 4→3 年月码还原
+    （``CN-CZCE-MA2701`` → ``MA701.CZC``）外原样透传（期权行权价等结构
+    不做改写）。查表无果属命名空间外请求，明确拒绝。
     """
     asset_type = query.asset_type.value
     suffixes = _SUFFIXES.get(asset_type)
@@ -106,7 +138,10 @@ def ths_symbol(query: BarQuery | QuoteQuery) -> str:
                 "instrument": query.instrument.code,
             },
         )
-    return f"{query.instrument.symbol}.{suffix}"
+    symbol = query.instrument.symbol
+    if query.instrument.exchange == "CZCE" and asset_type == "contract":
+        symbol = _rewrite_czce_symbol(symbol)
+    return f"{symbol}.{suffix}"
 
 
 def interval_code(interval: Interval) -> str:
