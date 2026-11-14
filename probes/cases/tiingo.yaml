@@ -241,3 +241,18 @@ notes: >
   partial 判定保留为防御（适配器 PT1M 门控，声明重新扩容时生效）；
   预算 80→120（约 2.5~3 小时）。待回填项：fx/crypto PT1H/PT4H 的
   history.start（本轮 depth 结果 → 人工确认 → 单独提交）。
+  2026-11-14 逐周期探测轮（报告 20261114T093403+0800，confirmed 8 /
+  observe 8 / failed 0，预算 88/120；周期面收窄后的完整矩阵验证——
+  availability 6 周期全 confirmed、raw tg-resample-2hour/4hour 复验仍
+  confirmed 即上游格式可用性证据随收窄保留在案）：**fx PT1H/PT4H/P1D
+  三周期 depth 各自独立收敛一致 ≈2020-02-15T12:00+08:00**（complete=True、
+  各 8 调、90 天粒度 approx——与硬边界 2020-01-01 相符，fx 日内库与日线
+  同深，机制边界推断被逐周期证据独立证实）；**crypto PT1H/PT4H 独立收敛
+  ≈2017-12-28T02:15+08:00（两周期一致、各 8 调 complete）——比日线
+  （≈2011-08-25）浅 6.4 年，P1D 继承值已证过度声明**；crypto P1D 回归
+  复验一致 ≈2011-08-25（10 调）。
+  2026-11-14 回填落地（人工确认）：fx PT1H/PT4H = 2020-01-01T08:00:00
+  +08:00（与 P1D 同值——三周期 depth 独立收敛一致且同为硬边界锚定）；
+  crypto PT1H/PT4H = 2018-01-01T00:00:00+08:00（独立收敛 ≈2017-12-28
+  保守取整季初，approx ±90 天）。tiingo 探针再次收敛：周期面收窄 + 逐
+  周期 depth 全绿，结论已回填 manifest/README。
