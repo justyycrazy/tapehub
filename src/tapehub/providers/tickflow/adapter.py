@@ -1,19 +1,8 @@
 """TickFlow 适配器（已实现）。
 
-约定：
-
-- 官方 Python SDK ``tickflow`` 是可选依赖：SDK 只在 ``_fetch_sync`` 内部
-  延迟导入，未安装时返回 PROVIDER_NOT_IMPLEMENTED，不影响服务启动；
-- API Key 通过 ``TAPEHUB_TICKFLOW_API_KEY`` 环境变量注入（pydantic-settings），
-  只经内存传给 SDK 客户端，禁止写入代码、manifest、日志或异常响应；
-- 同步 SDK 调用通过 ``call_in_thread`` 隔离到线程池，不阻塞事件循环；
-- 上游单次上限 10000 根 K 线：达到上限时批次标记 ``partial=true``，
-  API 层据此在 warnings 中提示可能截断；
-- 统一分页由共享 ``paginate_bars`` 完成，闭区间 [start, end] 在标准化后复核；
-- 实时快照（quotes）为无状态 REST 单次调用：单标的单次调用
-  ``tf.quotes.get(symbols=[...])``，无订阅/缓存语义（与 tqsdk/twelvedata
-  的订阅模型不同）；SDK 异常（含限频 429 / 无权限 403）由应用层统一
-  包装为 ``UPSTREAM_ERROR``，不穿透 API。
+映射规则与上游行为定案见 docs/providers/tickflow.md（唯一出处，本文不复述）。
+探针运行记录见 probes/results/PROBE_LOG.md（本地文件，不入库）。
+官方文档：https://docs.tickflow.org/zh-hans/。
 """
 
 from datetime import datetime

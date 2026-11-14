@@ -124,9 +124,9 @@ class StreamLimitReachedError(TapehubError):
 class UpstreamSubscriptionLimitError(TapehubError):
     """上游订阅上限：并发订阅 symbol 数已达上游计划上限。
 
-    2026-11-05 Twelve Data WS 探针实证：WS credit = 当前活跃订阅 symbol 数
-    （免费版 8 个），退订/断连即时释放。可重试限流：空闲退订释放额度后
-    重试，或提升上游计划档位并调大对应网关配置。
+    可重试限流：空闲退订释放额度后重试，或提升上游计划档位并调大对应
+    网关配置。上游订阅上限口径见 docs/providers/twelvedata.md 与
+    docs/providers/tiingo.md。
     """
 
     code = ErrorCode.UPSTREAM_SUBSCRIPTION_LIMIT

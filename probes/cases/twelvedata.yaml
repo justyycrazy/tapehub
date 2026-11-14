@@ -14,13 +14,12 @@ pacing:
   # 9 case×16 最坏（典型 ~8/case）+ limit 2 + raw 6 case×3 = 约 212 最坏、
   # 典型 ~165。免费档 800/天为硬上限：预算 780 保留（单日可完整跑全量 +
   # 截断续跑余量，框架对截断如实记录）。td-etf-adjust-none/all 两条直测
-  # raw 已退役（2026-11-13）：etf 复权扩容声明并 adjust_diff 入链后由
-  # 链路常态复验。
+  # raw 已退役：etf 复权扩容声明并 adjust_diff 入链后由链路常态复验。
   max_calls: 780
 
 targets:
   # min_bars 按资产类型统一生效、覆盖全部声明周期：窗口取两年、下限取 20，
-  # 以最稀的月线为标定（约 24 根），避免周/月线被日线口径误伤（同 2ce00f5 的假阳性）
+  # 以最稀的月线为标定（约 24 根），避免周/月线被日线口径误伤
   forex:
     instrument: GLOBAL-OTC-EUR/USD
     window: {start: 2024-01-01, end: 2025-12-31}
@@ -29,7 +28,7 @@ targets:
     instrument: GLOBAL-CRYPTO-BTC/USD
     window: {start: 2024-01-01, end: 2025-12-31}
     min_bars: 20
-  # 美股（2026-11-05 目录探针实证免费档 Basic 全量可用）：AAPL/NASDAQ 与
+  # 美股（目录探针实证免费档 Basic 全量可用）：AAPL/NASDAQ 与
   # SPY/NYSE 分别覆盖白名单两大交易所；stock 因声明 [none, qfq] 会生成
   # 24 条 availability case（12 周期 × 2 复权）
   stock:
@@ -45,9 +44,8 @@ chain:
   include_declared: true
   skip: []
   adjust_diff:
-    # stock/etf 复权入库回归：qfq=adjust=all（拆股+分红）——stock 于
-    # 2026-11-06 由不入库专项探针实证、2026-11-12 起入链；etf 于 2026-11-12
-    # raw 直测实证生效（SPY 除息窗口全 19 交易日差异）并扩容声明后入链；
+    # stock/etf 复权入库回归：qfq=adjust=all（拆股+分红）——stock/etf 均
+    # 实证生效（SPY 除息窗口全 19 交易日差异）并扩容声明后入链；
     # PT1H 顺带回归日内周期
     targets: [stock, etf]
     window: {start: 2024-06-01, end: 2024-08-31}   # 分红除权高发窗口
@@ -55,10 +53,10 @@ chain:
     pairs: [[none, qfq]]
     fields: [close]
   history_depth:
-    # 2026-11-12 精化后仅 forex P1W/P1M 残留待收敛：1970 下限仍触底（周/月
-    # 档案深于 1970——官方轨迹 [1970,1980) 档 262 根周线 ≈5 年量级，真实起点
-    # ≈1975），下限再外推至 1950 收敛；stock/etf 粗周期本轮已收敛、forex P1D
-    # 已收敛（≈2003-12-25）、crypto 为收敛值——均不再重探
+    # 精化后仅 forex P1W/P1M 残留待收敛：1970 下限仍触底（周/月档案深于
+    # 1970——官方轨迹 [1970,1980) 档 262 根周线 ≈5 年量级，真实起点 ≈1975），
+    # 下限再外推至 1950 收敛；stock/etf 粗周期与 forex P1D（≈2003-12-25）、
+    # crypto 已收敛——均不再重探
     targets: [forex]
     earliest: 1950-01-01
     era_step_years: 10   # 1950→2026 共 8 档（回溯至 1960-70 空档止）+ 二分
@@ -95,7 +93,7 @@ raw:
       - {method: as_json, kwargs: {}}
     expect: {status: ok, min_fields: [symbol, datetime, timestamp, last_quote_at, close]}
   - id: td-quote-crypto
-    purpose: 加密货币实时快照字段矩阵（2026-11-05 实测无 volume；含 crypto 专属 rolling 字段形态）
+    purpose: 加密货币实时快照字段矩阵（实测无 volume；含 crypto 专属 rolling 字段形态）
     module: twelvedata
     client: {attr: TDClient, kwargs: {apikey: "$TAPEHUB_TWELVEDATA_API_KEY"}}
     call:
@@ -115,7 +113,7 @@ raw:
   # ── 美股 exchange 白名单准入：CBOE（目录 1,502 个 ETF 的交易所）。
   #    本 case 是 manifest 美股白名单含 CBOE 的准入闸门——失败则移除 CBOE
   - id: td-cboe-etf
-    purpose: 验证 exchange=CBOE 参数可用（美股白名单准入闸门，2026-11-06）
+    purpose: 验证 exchange=CBOE 参数可用（美股白名单准入闸门）
     module: twelvedata
     client: {attr: TDClient, kwargs: {apikey: "$TAPEHUB_TWELVEDATA_API_KEY"}}
     call:
@@ -123,7 +121,7 @@ raw:
       - {method: as_json, kwargs: {}}
     expect: {status: ok, min_rows: 1}
 
-  # ── CN/HK 计划门槛指纹（2026-11-05 目录探针：Basic 可用仅 CN stock/etf、
+  # ── CN/HK 计划门槛指纹（目录探针：Basic 可用仅 CN stock/etf、
   #    HK stock 各 1 个标的）：记录 404 Pro 门槛报错形态，升档后复测回填
   - id: td-hk-pro-threshold-fingerprint
     purpose: 采集 HK 标的 Pro 计划门槛错误指纹（CN/HK 不声明的实证依据；观察）
@@ -135,63 +133,4 @@ raw:
       - {method: as_json, kwargs: {}}
     expect: {status: error, error_contains: ""}
 
-notes: >
-  crypto 的 volume 上游可能缺失（→ null），从 availability 的 null_rates 核对；
-  45min/2h/4h/8h 已于 2026-11-04 经实测确认可用并回填 manifest 声明
-  （报告 20261104T061857Z），对应 raw 探针随之移除、由 availability 链路覆盖；
-  24 个周期 history.start 已按全量深度实测回填（报告 20261104T072650Z、
-  20261104T084302Z；粒度 90 天 approx，forex 粗周期触底待精化）；
-  上游 values 默认倒序，适配器已统一升序，报告首尾时间戳应体现这一点；
-  2026-11-05 全量重跑（报告 20261105T184934+0800，人工确认回填）：
-  quote 探针实证 forex/crypto 的 /quote 均未返回 volume（及 currency/
-  mic_code，文档列出但实测缺），manifest quotes fields 收窄为
-  timestamp/last_price、extensions 白名单回填 9 个标量字段；last_quote_at
-  实测≈墙钟实时（快照新鲜度口径成立）；forex PT8H 深度 case 瞬时
-  ReadTimeout（该周期 2026-11-04 报告已确认，本轮其余 23 条深度 case 全
-  过，未重跑）；实测 exchange 值 forex="Forex"、crypto="Binance"；
-  美股 stock/etf（2026-11-06 接入）：目录/计划门槛/adjust 语义/时区已由
-  catalog-coverage-*、plan-dist-3-* 与 20261106T004624+0800 轮次的后续
-  纠偏实证确认（探针目录外脚本，不入库）——**参数名陷阱**：上游 REST 只认
-  adjust，传 adj 会被静默忽略落回默认（=splits 仅拆股）；adjust=dividends
-  实测生效（AAPL 2026 年 150/212 天与 none 有差异），qfq → adjust=all
-  （拆股+分红，与国内口径一致），none → adjust=none；不传时上游默认
-  splits（AAPL 2006 深度实证），适配器始终显式传参；本轮 availability
-  验证 12 周期 × 复权矩阵（stock 24 + etf 12 case）、history_depth 回填
-  24 个周期的 history.start（预算 780 见 pacing 注释，截断则次日续跑）；
-  qfq 与 none case 在有分红的窗口内数据**应存在差异**（除息回溯调整），
-  无差异反而说明复权未生效需排查；
-  2026-11-07 全量重跑（报告 20261107T111630+0800，447/780 配额）：
-  availability 60/60 confirmed（美股 36 条含 24 stock×none/qfq + 12 etf，
-  volume null 率 0；日内 PT1M/PT5M/PT15M/PT30M 触 5000 上限 partial=True）；
-  limit stock/forex 均 5000 confirmed；CBOE 准入 raw case confirmed；
-  td-quote-crypto 修复后 confirmed；48 条 depth complete，stock/etf
-  24 周期 history.start 已按估计日零点回填（人工确认：stock 日内
-  ≈2019-02-01~2020-04-11、etf 日内 ≈2020-02-15~2020-04-11，粗周期
-  触底 2000-01-01 待精化）；forex/crypto 本轮估计与已回填值 ±1 粒度内
-  漂移，维持原值；
-  2026-11-12 改造（粗周期精化 + etf 复权直测 + adjust_diff 入链）：粗周期
-  （P1D/P1W/P1M）earliest 2000→1970 外推精化（targets 收敛 forex/stock/etf，
-  crypto 为收敛值不重探；日内 9 周期不重探）；stock 复权 adjust_diff 首次
-  入链（P1D/PT1H，qfq=all 与 none 应有除息差异）；etf 复权 raw 直测
-  （td-etf-adjust-none/all，SPY 2024-06 除息窗口——链内对未声明 qfq 会
-  skipped 故走 raw）——证实生效则 manifest etf 扩容 [none, qfq]；
-  2026-11-12 本轮结果（报告 20261112T143502+0800，188/780）：
-  confirmed 69 / observe 12 零 failed——stock adjust_diff P1D/PT1H 入链
-  confirmed（差异真实）；etf 复权 raw 全窗口 19/19 交易日差异 ~2.9%
-  （累计分红回溯量级合理）→ manifest etf 扩容 [none, qfq]、adjust_diff
-  targets 加 etf；粗周期精化：US stock ≈1981-01-18（三周期一致，真值≈
-  AAPL IPO 1980-12-12 落窗口内）、US etf ≈1993-03（SPY 1993-01-22 上市
-  落窗口内）、forex P1D ≈2003-12-25 收敛——回填待人工确认；forex P1W/P1M
-  在 1970 下限仍触底（周/月档案深于 1970，approx=True，真实更早）；
-  2026-11-12 收敛轮（报告 20261112T155931+0800，134/780；earliest 1950 /
-  targets [forex] / intervals [P1W, P1M]）：forex P1W/P1M 均收敛
-  ≈1975-01-23（首个非空 90 天窗 [1974-10-25, 1975-01-23]：周线 4 根 /
-  月线 1 根，其前所有窗口验证为空）——粗周期 9 周期全部收敛，经用户确认
-  回填。方法论教训：手动无节流脚本会吃免费档 429 限频、产生假空档（本轮
-  曾误判 1960-1970 档与 1970 年代多窗为空），以框架 10s 节流结果为准；
-  另触底分支的 estimate=earliest 为无证据下限，一律不回填（下限值须先
-  外推收敛或保持 null）。
-  raw→chain 收敛（2026-11-13）：etf 复权扩容声明（[none, qfq]）并
-  adjust_diff targets 加 etf 后，td-etf-adjust-none/all 两条 SPY 除息窗口
-  直测 raw 退役（19/19 交易日差异 ~2.9% 的实证结论见 20261112T143502
-  报告），常态复验由链路 adjust_diff（P1D/PT1H）承担。
+notes: 各轮运行记录见 probes/results/PROBE_LOG.md（不入库）；探针框架规范见 probes/README.md。

@@ -1,94 +1,19 @@
-# 同花顺金融数据 API（ths）适配器：能力声明与内部操作映射。
-# 接口签名已按官方文档核实（2026-11-13 接入，Base URL https://fuyao.aicubes.cn）：
+# 同花顺金融数据 API（ths）能力声明与内部操作映射。
+# 映射细则、上游行为定案与历史覆盖依据：docs/providers/ths.md（唯一出处，本文不复述）。
+# 官方文档：
 #   https://fuyao.aicubes.cn/docs/api-reference/overview/
 #   https://fuyao.aicubes.cn/docs/api-reference/prices/
 #   https://fuyao.aicubes.cn/docs/api-reference/a-share-index/
 #   https://fuyao.aicubes.cn/docs/api-reference/fund-market/
 #   https://fuyao.aicubes.cn/docs/api-reference/futures-prices/
 #   https://fuyao.aicubes.cn/docs/api-reference/options-prices/
-#
-# 说明：
-# - ths 无官方 Python SDK：REST 用 httpx（同步客户端，可选依赖）直连，
-#   认证经 X-api-key 请求头（key 不落 URL，绝不写入代码/manifest/日志）；
-# - 统一 ApiResponse 信封：业务结果（含错误）HTTP 恒 200，经 code 字段表达
-#   （0 成功；4001 频率超限 → UPSTREAM_RATE_LIMITED，其余非 0 → UPSTREAM_ERROR
-#   携 upstream_code/upstream_message）；时间戳统一毫秒 Unix、Asia/Shanghai；
-# - 上游能力边界（端外，文档明示 + 2026-11-13 三轮探针实证，报告
-#   20261113T212034/213321/214147+0800）：历史 K 线仅日线 1d；**窗口口径
-#   实测与文档不符**——指数文档写「≤10 年」实测仅支持**最近约 5 年滚动
-#   窗口**（越界 1003 'recent five years only' 拒绝）、A 股个股实测无滚动
-#   上限（越界软返空）、ETF ≤5 自然年吻合（越界返空不报错）；期货/期权
-#   日 K 端外仅 time_period=day_1（显式传参）；已知上游缺陷：期权日 K
-#   start=2026-10-01（单一日期）触发 5003 'daily quote unavailable'
-#   （邻近起点均正常，窗口避开即可，适配器照常上抛 UPSTREAM_ERROR 不
-#   归一化——单点缺陷而非稳定边界，与 tiingo fx 硬边界先例性质不同）；
-#   同花顺板块/行业指数（88xxxx.TI）与商品指数（850002.TI）属同花顺特有
-#   TI 类指数，本期不纳入（用户拍板 2026-11-13）；
-# - **期货/期权实时快照取分时末点**（/api/futures|options/prices/intraday，
-#   session=intraday、trade_date=0 显式传参）：last_price=末点 price、
-#   timestamp=末点时间（端外仅当前交易日；非交易日/盘前 item=[] 报
-#   UPSTREAM_ERROR）；**volume/amount=全点求和（当日累计）**——分时点量额
-#   逐分钟增量口径经探针实证（各点 turnover/volume 恰等于该点
-#   price×合约乘数、开盘三点 volume 5→26→31 非累计），任一点缺失即不
-#   计算（恒 null 不冒充）；
-# - 快照 timestamp 口径（探针实证）：data.timestamp 为上游响应组装时刻
-#   （盘后随墙钟推进、间隔 10s 两次调用精确 +10s），非成交时点；上游
-#   快照无独立行情时间字段，按文档「最新上游有效时间」口径透出；
-# - 单位：A 股快照/历史 K 线 volume=股、turnover=元（官方文档明示）；
-#   ETF/期货/期权 volume/turnover 单位上游未明示，原值透出（不编造换算）；
-# - 标的代码映射（只收实证条目——文档示例 + 探针价格端点实证，其余
-#   exchange 明确拒绝）：stock/index {SSE→SH, SZSE→SZ, BSE→BJ}（BSE→BJ
-#   2026-11-14 探针第三轮价格端点实证后收编：920000.BJ a-share historical
-#   与 899050.BJ a-share-index historical 各 243 行完整，报告
-#   20261114T135118+0800）；etf {SSE→SH, SZSE→SZ}（北交所无 ETF）；
-#   **contract 五所全实证**（2026-11-14 用户指正形态后复探定案）：
-#   {SHFE→SHF, CZCE→CZC, DCE→DCE, INE→INE, GFEX→GFE}——MA612.CZC /
-#   MA701.CZC / EG2701.DCE / BC2612.INE / LC2701.GFE 均 code=0 且
-#   68~69 行；**首轮四所 3001 根因修正**：ZCE/GFEX 系探针后缀形态错
-#   （ZCE 实为 CZC、GFEX 实为 GFE），DCE/INE 系探针误用已摘牌合约
-#   （M2601/SC2606/LC2606 均已到期 → 3001）；**CZCE 年月码 4→3 还原**
-#   （CN-CZCE-MA2701 → MA701.CZC，MA2701.CZC 3001 / MA701.CZC 实证，
-#   规则与 tqsdk 同构：去年份十位）；SR612.CZC 3001（白糖近月不在 ths
-#   目录，形态无关）；option {CFFEX→CFE}（IO2612-C-4000 chain 复验）；
-#   contract/option symbol 段除 CZCE 还原外原样透传
-#   （CN-CFFEX-IO2612-C-4000 → IO2612-C-4000.CFE）；
-# - adjust 映射（A 股历史 K 线三值语义）：none→none、qfq→forward
-#   （前复权）、hfq→backward（后复权）；ETF 无 adjust 参数、数据固定前复权
-#   口径——探针受控对比实证（报告 20261114T080423+0800：510880 调整生效段
-#   vs baostock none 偏差中位 9.01% / vs qfq 0.34%）后声明 [qfq]（2026-11-14
-#   人工裁决）；指数无复权语义（响应 data.adjust 固定 null）、期货/期权仅
-#   声明 none；
-# - 单次返回行数上限与分页（2026-11-14 第三轮探针定案，报告
-#   20261114T135118+0800）：**historical 的 offset 参数被上游静默忽略**
-#   （2025 全年窗 offset=100 实测 243 行不变、首根不变——适配器不启用
-#   定案维持）；**a-share historical 窗口跨度 ≤10 年**（>10 年窗 1003
-#   拒绝，message 自述 'must span at most 10 years'；首轮「A 股无滚动
-#   上限」系仅验证起点可早于 10 年前，跨度语义本轮定案补充）；10 年窗内
-#   2183~2417 行完整返回无触顶信号 → 行数上限未观测到（≥2417），
-#   **partial 恒 false 定案维持**（触顶判定无观测基础）；
-# - 合约类边界（2026-11-14 探针定案）：**已摘牌合约移出上游目录、仅现活
-#   合约可查**（文档示例已到期 CU2601.SHF / IO2601-C-4000.CFE 存续期窗口
-#   3001 'Target not found'，与现活 CU2706.SHF 同后缀 code=0 干净对照；
-#   负对照 ZZ9999.SHF 同 3001 定案指纹语义）——contract/option 的
-#   history.start 保持 null（「最早可用」随合约轮换漂移，已摘牌全量锚定
-#   的 tushare 先例不适用于 ths）；
-# - 历史覆盖（探针实证回填，人工确认，报告 20261113T212034 三轮 +
-#   20261114T140107 聚焦精化）：个股日线 start ≈2005-01-15（聚焦二分
-#   ±30 天粒度 approx，替代首轮 ≈2005-02-14 ±90 天，真实最早可能更早）；
-#   指数/ETF 为滚动窗口语义，按 retention_days=1825 声明（指数错误消息
-#   自述 'recent five years only'、ETF 文档 5 自然年；可达性实证
-#   2022-01-01 起 969 行完整，边界粗粒度）；
-# - 单体系 Provider：变体与 default_variant 均为 ths（数据源即上游服务自身）；
-#   缺省请求经 provider_routing.yaml 回退链裁决（ths 为付费凭据 API，置于
-#   各组合回退位末位），也可显式传 variant=ths。
+# 探针运行记录：probes/results/PROBE_LOG.md（本地文件，不入库）。
 provider: ths
 default_variant: ths
 
 capabilities:
   # —— 历史 K 线（日线）——
-  # A 股个股：唯一有复权语义的资产类型（none/forward/backward 直映）；
-  # start ≈2005-01-15（探针聚焦二分 ±30 天粒度 approx，替代首轮 ≈2005-02-14
-  # ±90 天，真实最早可能更早——报告 20261114T140107+0800）
+  # A 股个股：唯一有复权语义的资产类型（none/forward/backward 直映）
   - data_type: bars
     markets: [CN]
     asset_types: [stock]
@@ -99,9 +24,7 @@ capabilities:
     adjustments: [none, qfq, hfq]
     fields: [open, high, low, close, volume, amount]
 
-  # 指数（沪深交易所标准指数）：无复权语义（响应 data.adjust 固定 null）；
-  # 滚动窗口语义（文档「≤10 年」实测 'recent five years only' 拒绝），
-  # 按 retention_days=1825 声明（粗粒度，2022-01-01 起可达性实证）
+  # 指数（沪深交易所标准指数）：无复权语义，滚动窗口按 retention_days 声明
   - data_type: bars
     markets: [CN]
     asset_types: [index]
@@ -112,10 +35,7 @@ capabilities:
     adjustments: [none]
     fields: [open, high, low, close, volume, amount]
 
-  # 场内基金（仅 ETF；LOF/场外/REITs 返回 code=3004）：上游无 adjust 参数、
-  #   数据固定前复权口径（受控对比实证报告 20261114T080423+0800，人工确认
-  #   2026-11-14 声明 [qfq]）；滚动窗口语义（文档 5 自然年实测吻合，越界
-  #   返空不报错）
+  # 场内基金（仅 ETF；LOF/场外/REITs 不接入）：上游无 adjust 参数，数据固定前复权口径
   - data_type: bars
     markets: [CN]
     asset_types: [etf]
@@ -126,7 +46,7 @@ capabilities:
     adjustments: [qfq]
     fields: [open, high, low, close, volume, amount]
 
-  # 期货合约（端外仅日 K、time_period=day_1；仅 SHFE 后缀文档实证）
+  # 期货合约（端外仅日 K、time_period=day_1）
   - data_type: bars
     markets: [CN]
     asset_types: [contract]
@@ -137,7 +57,7 @@ capabilities:
     adjustments: [none]
     fields: [open, high, low, close, volume, amount]
 
-  # 期权合约（端外仅日 K、time_period=day_1；仅 CFFEX 后缀文档实证）
+  # 期权合约（端外仅日 K、time_period=day_1）
   - data_type: bars
     markets: [CN]
     asset_types: [option]
@@ -179,8 +99,7 @@ capabilities:
     adjustments: []
     fields: [timestamp, last_price, volume, amount]
 
-  # 期货/期权快照：分时端点取末点作 last_price（口径见头注释）；
-  # volume/amount=全点求和为当日累计（逐分钟增量口径探针实证回填）
+  # 期货/期权快照：分时端点取末点作 last_price，volume/amount=全点求和（当日累计）
   - data_type: quotes
     markets: [CN]
     asset_types: [contract]

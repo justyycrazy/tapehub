@@ -1,35 +1,11 @@
 """富途（futunn）响应映射（ResponseMapper）：信封业务数据 → 统一 Bar / Quote 模型。
 
-信封解析（``ret_code``/``data`` 拆包）在 adapter 完成，本模块消费业务容器：
+字段结构与单位口径见 docs/providers/futunn.md（唯一出处，本文不复述）。
+探针运行记录见 probes/results/PROBE_LOG.md（本地文件，不入库）。
 
-bars（``data.kline_list``，行字段官方文档核实 2026-11-14）：
-
-- 行字段 ``time_key``（毫秒 Unix 时间戳，绝对时刻）/``open``/``close``/
-  ``high``/``low``/``volume``/``turnover``；
-- ``data.volume_precision``：行内 ``volume`` 已被放大 10^n 倍需自行还原
-  （官方口径：仅事件合约/数字货币等特殊品类可能 >0，股票一般 n=0）——
-  缺失/非法按 0 处理（不缩放，即官方默认口径）；
-- ``time_key`` 为绝对时刻，统一经纪元算术转北京时间（Windows 安全，不用
-  ``datetime.fromtimestamp``）；行内 ``time_zone`` 为显示用本地时区偏移
-  （相对 UTC 分钟数），不参与标准化——绝对时刻不依赖时区标注；
-- ``turnover`` → 标准 ``amount``；缺失/NaN → null（不用 0 冒充）；行缺失
-  ``time_key`` 属上游契约违背（bar 无时间戳无法标准化），抛 UPSTREAM_ERROR
-  ——时间戳是 bar 的身份键，loud 失败优于静默丢行；
-- 合法无数据上游返回 ``kline_list=[]``（如停牌/窗口越界），映射为空批次；
-- 单位：volume=股、turnover=成交额（各市场原币），原值透出（官方未标注
-  币种折算，不编造换算）。
-
-quote（``data.quote_list``，单标的取匹配 code 行，由 adapter 完成）：
-
-- ``data_time``（毫秒 Unix）→ 行情时间（0/None 官方语义「不适用品类」，
-  视为无有效行情时间，契约违背）；``last_price`` 直映（缺失属无有效
-  行情，契约违背）；``volume``/``turnover`` → ``volume``/``amount``；
-- 上游轻量快照无盘口五档：bid/ask 恒 null（如实透出，不编造）；
-- extensions 白名单：``open_price``/``high_price``/``low_price``/
-  ``prev_close_price``/``turnover_rate``/``amplitude``（% 数值原样透出，
-  缺失不透出）+ ``suspension``（布尔，停牌标记）；中文名 name 不透出；
-- 上游对 code_list 中非法 code 静默丢弃（ret_code 仍 0）：匹配行缺失
-  属无有效行情，抛 UPSTREAM_ERROR（adapter 完成 code 匹配）。
+时间戳统一毫秒 Unix → 北京时间（经 timeutil 纪元算术，Windows 安全）；
+缺失/NaN → null（不用 0 冒充）；时间戳缺失属上游契约违背，抛
+UPSTREAM_ERROR（bar/quote 无时间戳无法标准化）。
 """
 
 import math

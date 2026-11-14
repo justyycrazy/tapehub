@@ -219,8 +219,8 @@ def test_cn_market_stock_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_unsupported_intervals_rejected_by_operation_routing(
     interval: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """上游 resampleFreq 无周/月线；PT1M/PT5M/PT15M/PT30M/PT2H 随
-    2026-11-14 周期面收窄裁决退出声明——能力目录即不声明。"""
+    """上游 resampleFreq 无周/月线；PT1M/PT5M/PT15M/PT30M/PT2H 已退出
+    声明——能力目录即不声明。"""
     install(monkeypatch)
     adapter = _adapter()
     with pytest.raises(UnsupportedCapabilityError):
@@ -230,8 +230,7 @@ def test_unsupported_intervals_rejected_by_operation_routing(
 def test_crypto_declared_intervals_narrowed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """crypto 声明周期面收窄（2026-11-14 裁决）：仅 PT1H/PT4H/P1D，与
-    fx 同端点同 operation。"""
+    """crypto 声明周期面收窄：仅 PT1H/PT4H/P1D，与 fx 同端点同 operation。"""
     install(monkeypatch)
     preset_payload(monkeypatch, [])
     adapter = _adapter()
@@ -328,10 +327,9 @@ def test_non_array_payload_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_no_data_boundary_normalized_to_empty(monkeypatch: pytest.MonkeyPatch) -> None:
-    """实测核实的边界指纹（2026-11-13 探针实证 + 受控复现：fx 端点档案硬
-    边界 2020-01-01，越界窗口返回两种 400 变体）归一化为空结果作防御兜底
-    ——主路径为请求钳制（见 test_fx_archive_floor_clamped），指纹失配时
-    报错 loud 提示更新。"""
+    """实测核实的边界指纹（受控复现：fx 端点档案硬边界 2020-01-01，越界
+    窗口返回两种 400 变体）归一化为空结果作防御兜底——主路径为请求钳制
+    （见 test_fx_archive_floor_clamped），指纹失配时报错 loud 提示更新。"""
     install(monkeypatch)
     adapter = _adapter()
     for detail in (
@@ -345,7 +343,7 @@ def test_no_data_boundary_normalized_to_empty(monkeypatch: pytest.MonkeyPatch) -
 
 
 def test_fx_archive_floor_clamped(monkeypatch: pytest.MonkeyPatch) -> None:
-    """fx 档案硬边界（2026-11-13 探针实证）：startDate 早于 2020-01-01 的
+    """fx 档案硬边界：startDate 早于 2020-01-01 的
     请求钳到档案起点（上游对越界窗口拒绝而非裁剪），窗口与档案的交集
     如实返回。"""
     install(monkeypatch)
@@ -387,8 +385,8 @@ def test_fx_window_entirely_before_archive_empty(monkeypatch: pytest.MonkeyPatch
 
 
 def test_fx_other_intervals_no_segment_partial(monkeypatch: pytest.MonkeyPatch) -> None:
-    """分段判定仅 fx PT1M 门控（PT1M 已随 2026-11-14 周期面收窄退出声明，
-    判定保留为防御）：PT1H 不适用，partial 恒 false。"""
+    """分段判定仅 fx PT1M 门控（PT1M 已退出声明，判定保留为防御）：
+    PT1H 不适用，partial 恒 false。"""
     install(monkeypatch)
     preset_payload(
         monkeypatch,
@@ -428,7 +426,7 @@ def test_bar_missing_date_contract_violation(monkeypatch: pytest.MonkeyPatch) ->
 
 
 def test_crypto_nested_price_data_flattened(monkeypatch: pytest.MonkeyPatch) -> None:
-    """crypto 端点嵌套 priceData 形状（2026-11-13 探针实证）拍平为标准 bar；
+    """crypto 端点嵌套 priceData 形状拍平为标准 bar；
     外层 ticker 分组元数据（baseCurrency 等）不透出。"""
     install(monkeypatch)
     preset_payload(

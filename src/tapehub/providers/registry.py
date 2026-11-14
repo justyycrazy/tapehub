@@ -156,9 +156,8 @@ class ProviderRegistry:
     """Provider 注册表。
 
     ``routing`` 是缺省路由表（provider_routing.yaml 加载结果）：
-    ``(data_type, market, asset_type) → 完整回退链``。构建期强制显式——
-    凡能力目录覆盖的组合必须恰有条目，order 只能引用已注册且实际声明
-    该组合能力的 Provider；违反即启动失败，不做隐式推导。
+    ``(data_type, market, asset_type) → 完整回退链``。路由语义与注册期
+    完整性校验规则见 README.md「总体设计」与 provider_routing.yaml 头注释。
     """
 
     def __init__(self, records: list[ProviderRecord], routing: RoutingTable) -> None:

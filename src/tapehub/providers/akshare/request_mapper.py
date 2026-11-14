@@ -1,10 +1,8 @@
 """akshare 请求映射（RequestMapper）：标准请求 → akshare 接口参数。
 
-原则：所有相关参数都显式传递，不依赖 akshare 的默认值——
-例如 stock_zh_a_hist 的 adjust 默认 ""（不复权），与 tapehub 的
-声明默认值（个股 qfq）不一致，因此 adjust 必须显式传参。
-
-接口签名均已按官方文档核实（https://akshare.akfamily.xyz/）。
+映射规则与上游行为定案见 docs/providers/akshare.md（唯一出处，本文不复述）。
+探针运行记录见 probes/results/PROBE_LOG.md（本地文件，不入库）。
+官方文档：https://akshare.akfamily.xyz/。
 """
 
 from datetime import datetime
@@ -22,7 +20,7 @@ _EXCHANGE_PREFIXES = {
 }
 
 # 美股东财市场号（secid 前缀，仅列出已在上游文档中确认的）：105=NASDAQ、
-# 106=NYSE；CBOE/OTC 的市场号归属未核实，不声明不映射（探针核实后议）
+# 106=NYSE；CBOE/OTC 的市场号归属未核实，不声明不映射
 _US_EM_MARKET_CODES = {
     "NASDAQ": "105",
     "NYSE": "106",

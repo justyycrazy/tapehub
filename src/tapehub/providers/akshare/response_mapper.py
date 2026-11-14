@@ -1,20 +1,7 @@
 """akshare 响应映射（ResponseMapper）：上游 DataFrame 行 → 统一 Bar 模型。
 
-列名与单位均已按官方文档核实：
-
-- stock_zh_a_hist（东财个股）：中文列名，成交量单位为**手**（标准化为股，×100）；
-- fund_etf_hist_em（东财 ETF）：与东财个股同上游 kline 端点同中文列（无「股票代码」列），
-  成交量单位同为**手**（×100），列映射/扩展白名单/量纲换算直接复用；
-- stock_hk_hist / stock_us_hist（东财港股/美股）：与东财个股同端点同中文列；成交量
-  单位未核实，**原样透出**待探针定标（不预设换算）；时间戳口径：港股交易日=北京
-  同日（北京零点）、美股为美东零点（归一化北京时间 12:00/13:00，对齐 twelvedata）；
-- stock_zh_a_daily（新浪个股）：英文列名，成交量单位为股；
-- stock_zh_a_hist_tx（腾讯个股）：英文列名，成交量单位为股；
-- index_zh_a_hist（东财指数）：与东财个股同端点同中文列；成交量单位为手，
-  **原样透出不换算**（×100 交叉验证成立，用户决策保持指数三源一致的原样口径）；
-- stock_zh_index_daily（新浪指数）：无成交额列；
-- stock_zh_index_daily_tx：无独立成交额列，上游 amount 列语义为成交量（单位手）；
-- futures_zh_daily_sina：无日期参数接口，含 hold（持仓量）、settle（结算价）。
+列名/单位/换算口径见 docs/providers/akshare.md（唯一出处，本文不复述）。
+探针运行记录见 probes/results/PROBE_LOG.md（本地文件，不入库）。
 
 缺失值与 NaN 统一映射为 null；Provider 特有字段仅通过受控白名单进入 extensions。
 """
@@ -169,8 +156,9 @@ _MAPPINGS: dict[str, dict[str, Any]] = {
         "columns": _STOCK_EM_COLUMNS,
         "extensions": _STOCK_EM_EXTENSIONS,
     },
-    # 港股/美股与 A 股同列；成交量单位未核实，无 volume_scale（原样透出待探针定标）；
-    # 美股日线为美东零点口径（BarBatch 统一归一化北京时间）
+    # 港股/美股与 A 股同列；成交量单位未核实，无 volume_scale（原样透出，
+    # 依据见 docs/providers/akshare.md）；美股日线为美东零点口径（BarBatch
+    # 统一归一化北京时间）
     "stock_hk_hist": {
         "columns": _STOCK_EM_COLUMNS,
         "extensions": _STOCK_EM_EXTENSIONS,

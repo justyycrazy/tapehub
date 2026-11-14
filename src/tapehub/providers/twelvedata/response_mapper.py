@@ -1,39 +1,15 @@
 """Twelve Data 响应映射（ResponseMapper）：上游 as_json()/WS price → 统一 Bar / Quote 模型。
 
-bars（REST time-series）结构已按官方文档核实：
+字段结构、datetime 墙钟口径与 extensions 白名单见 docs/providers/twelvedata.md
+（唯一出处，本文不复述）。探针运行记录见 probes/results/PROBE_LOG.md
+（本地文件，不入库）。官方文档：https://twelvedata.com/exchanges/stocks。
 
-- time-series：values 数组，默认倒序=最新在前。每个元素字段：datetime
-  （bar 开盘时间，墙钟时间无时区后缀）、open/high/low/close/volume，
-  均为**字符串**类型；
-- datetime 的墙钟口径按资产类型区分（外汇/加密 2026-11-04 实测 + 官方文档
-  https://twelvedata.com/exchanges/physical_currency|digital_currency；
-  美股 2026-11-05 实测 meta.exchange_timezone + 官方文档
-  https://twelvedata.com/exchanges/stocks）：外汇按 Australia/Sydney
-  （AEDT/AEST 随夏令时切换）、加密货币按 UTC、美股按 America/New_York
-  （EST/EDT 随夏令时切换）；解析为对应时区的 aware datetime，到统一
-  北京时间的归一化由领域层完成；美股日线/周线/月线上游强制返回交易所
-  本地 date-only 时间（零点），归一化后落在北京时间当日 12:00/13:00
-  （随夏令时）；
-- 外汇/加密货币通常无 volume 字段：缺失时标准 volume 为 null，
-  不用 0 冒充（其能力目录 fields 亦不含 volume）；美股 volume 有值；
-- 缺失值与 NaN 统一映射为 null。
-
-quote（WS 实时流 price 事件，2026-11-05 探针实证，报告
-probes/results/twelvedata/ws-behavior-20261105T221000+0800.md 不入库）：
-
-- M2 快照与 M3 流同源：均为 WS 订阅的最新 price 事件（REST /quote
-  路径已退役）；
-- 字段按资产类别差异且少于官方文档示例：加密（BTC/USD）带
-  ``exchange``，外汇（EUR/USD）无 ``exchange``；两者均**无 bid/ask、
-  无 volume**（文档 XAU/USD 示例的顶档买卖价不可推广到货币对）——
-  标准字段只有 ``timestamp`` + ``last_price``，与能力目录 fields 声明一致；
-- ``timestamp`` 为**分钟桶** Unix 秒（对齐分钟边界，非 tick 时刻），
-  按 UTC 解释，统一北京时间归一化由领域层 Quote 完成；快照新鲜度
-  由 ``meta.received_at``（网关接收时刻）表达；
-- ``price`` → ``last_price``；缺失/不可解析属上游契约违背，抛
-  UPSTREAM_ERROR（不伪造）；
-- extensions 白名单 4 个字符串字段：``currency_base`` / ``currency_quote``
-  / ``exchange`` / ``type``（缺失不透出）。
+bars 的 datetime 为墙钟时间（无时区后缀），解析为对应显示时区的 aware
+datetime，统一北京时间归一化由领域层完成；缺失值与 NaN 统一映射为 null。
+quote（WS price 事件）``timestamp`` 为分钟桶 Unix 秒、按 UTC 解释；
+``price`` → ``last_price``，缺失/不可解析属上游契约违背，抛 UPSTREAM_ERROR
+（不伪造）；标准字段只有 ``timestamp`` + ``last_price``（与能力目录 fields
+声明一致）。
 """
 
 import math
@@ -54,8 +30,8 @@ SYDNEY_TIMEZONE = ZoneInfo("Australia/Sydney")
 # 处理 EST/EDT 夏令时切换）
 NEW_YORK_TIMEZONE = ZoneInfo("America/New_York")
 
-# WS price 事件 extensions 白名单（2026-11-05 探针实证）：仅透出实测
-# 稳定出现的字符串元数据字段；数值字段经 _to_float 转换，None 不透出
+# WS price 事件 extensions 白名单：仅透出实测稳定出现的字符串元数据字段；
+# 数值字段经 _to_float 转换，None 不透出
 _PRICE_EXTENSIONS_FIELDS = ("currency_base", "currency_quote", "exchange", "type")
 
 
@@ -150,7 +126,7 @@ def ws_price_to_quote(
     return Quote(
         timestamp=epoch_to_datetime(epoch * 1_000_000_000, timezone.utc),
         last_price=price,
-        volume=None,  # WS price 事件无 volume（探针实证）
+        volume=None,  # WS price 事件无 volume
         amount=None,  # 上游无成交额字段
         provider=provider,
         received_at=received_at,

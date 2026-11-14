@@ -1,33 +1,8 @@
 """Twelve Data 请求映射（RequestMapper）：标准请求 → td.time_series / WS 订阅参数。
 
-接口签名均已按官方文档与探针实证核实：
-
-- ``td.time_series(symbol, interval, outputsize, start_date, end_date).as_json()``
-  （REST，历史 K 线；美股额外显式传 ``exchange`` 与 ``adj``，见下）；
-- 实时快照/快照流走 WS 订阅（``wss://ws.twelvedata.com/v1/quotes/price``），
-  subscribe/unsubscribe 的 symbol 即 ``td_symbol`` 映射结果（2026-11-05
-  探针实证，报告 probes/results/twelvedata/ws-behavior-20261105T221000+0800.md
-  不入库）；REST /quote 路径已退役；
-- symbol：外汇/加密货币为斜杠分隔货币对（``EUR/USD``、``BTC/USD``），
-  美股为交易所原生 ticker（``AAPL``、``SPY``）原样透传，exchange 段
-  白名单 NYSE/NASDAQ/CBOE（OTC 粉单与 IEX 不接入，2026-11-05 目录探针
-  实证分布见 manifest 注释；美股显式传 ``exchange`` 消歧——官方文档
-  推荐目录 symbol 配合 exchange/mic_code 定位）；
-- interval 枚举 1min/5min/15min/30min/45min/1h/2h/4h/8h/1day/1week/1month，
-  本适配器声明全部 12 个周期（45min/2h/4h/8h 经探针实测后补充声明）；
-- datetime 墙钟口径按资产类型区分（外汇 Sydney / 加密 UTC 实测于
-  2026-11-04；美股 America/New_York 出处
-  https://twelvedata.com/exchanges/stocks + meta.exchange_timezone 实测，
-  2026-11-05）：start_date/end_date 无时区后缀，格式 YYYY-MM-DD 或
-  YYYY-MM-DDTHH:MM:SS，故北京时间边界须先转换为对应口径的墙钟再传递；
-- adjust（仅美股传，2026-11-06 探针实证并纠正此前结论）：``none``→
-  ``"none"``（原始价）、``qfq``→``"all"``（拆股+分红前复权，与国内口径
-  一致——adjust=dividends 实测对除息日前历史回溯调整生效，150/212 天
-  有差异）。**上游参数名陷阱**：REST 只认 ``adjust``，传 ``adj`` 会被
-  静默忽略落回默认（=splits 仅拆股）——官方 SDK 的参数名即 ``adjust``，
-  经 SDK 传递天然正确；不传 adjust 时上游默认 ``splits``（AAPL 2006
-  深度数据实证），故美股必须显式传参。外汇/加密货币无复权概念不传；
-- outputsize 范围 1~5000：显式传最大值 5000（不依赖上游默认 30）。
+映射规则与上游行为定案见 docs/providers/twelvedata.md（唯一出处，本文不复述）。
+探针运行记录见 probes/results/PROBE_LOG.md（本地文件，不入库）。
+官方文档：https://twelvedata.com/。
 """
 
 from datetime import datetime
@@ -41,8 +16,8 @@ from tapehub.providers.twelvedata.response_mapper import display_zone
 # 单次请求上限（官方文档：outputsize 范围 1~5000）
 UPSTREAM_MAX_BARS = 5000
 
-# 区间无数据指纹（2026-11-04 数据探针实测核实，报告 20261104T065529Z）：
-# 查询区间内无数据时上游返回 400 BadRequestError，报文含此句，而非空列表
+# 区间无数据指纹：查询区间内无数据时上游返回 400 BadRequestError，
+# 报文含此句，而非空列表
 UPSTREAM_NO_DATA_FINGERPRINT = "No data is available on the specified dates"
 
 # WS 端点（实时快照与快照流共用；API key 经查询参数注入，绝不写日志）
@@ -70,7 +45,7 @@ _ADJUST_CODES: dict[Adjust, str] = {
 }
 
 # 标准代码中 exchange 段的约定命名空间（美股为白名单集合：
-# NYSE/NASDAQ/CBOE，经目录探针 + CBOE 准入探针核实）
+# NYSE/NASDAQ/CBOE；OTC 粉单与 IEX 不接入，依据见 docs/providers/twelvedata.md）
 _ASSET_EXCHANGES: dict[AssetType, frozenset[str]] = {
     AssetType.FOREX: frozenset({"OTC"}),
     AssetType.CRYPTO: frozenset({"CRYPTO"}),

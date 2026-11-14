@@ -134,7 +134,7 @@ def test_capability_catalog(tickflow_client: TestClient) -> None:  # type: ignor
     for cap in caps[:3]:
         assert cap["asset_types"] == ["stock"]
         assert cap["variants"] == ["tickflow"]
-        # 分钟族不声明（免费档无权限，2026-11-07 拍板与 alphafeed 同口径）
+        # 分钟族不声明（免费档无权限，与 alphafeed 同口径）
         assert [i["code"] for i in cap["intervals"]] == ["P1D", "P1W", "P1M"]
         assert cap["adjustments"] == ["none", "qfq", "hfq"]
         starts = {i["code"]: i["history"]["start"] for i in cap["intervals"]}
@@ -192,7 +192,7 @@ def test_default_variant_routes_to_declared_default(
 
 
 # ---------------------------------------------------------------------------
-# 港股 / 美股 K 线链路与实时快照链路（M2，GET /v1/market/quotes）
+# 港股 / 美股 K 线链路与实时快照链路（GET /v1/market/quotes）
 # ---------------------------------------------------------------------------
 
 
@@ -348,7 +348,7 @@ def test_auto_routing_precedence(tickflow_client: TestClient) -> None:
     assert _quote("US-NASDAQ-AAPL") == "tickflow"
     assert _bars("HK-HKEX-00700") == "tickflow"
 
-    # alphafeed 启用时：接管 HK 日线缺省（2026-11-07 拍板），US/CN 缺省不变
+    # alphafeed 启用时：接管 HK 日线缺省，US/CN 缺省不变
     af_settings = make_settings(
         alphafeed_api_key="test-alphafeed-key",
         tickflow_api_key="test-key",

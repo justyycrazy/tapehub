@@ -176,7 +176,7 @@ def intraday_points(
     """分时点列表（timestamp/price/volume/turnover）。
 
     ``volumes``/``turnovers`` 缺省时逐点恒值（12 / 4692000.0）；分时点
-    量额为逐分钟增量口径（2026-11-13 探针实证），当日累计 = 全点求和。
+    量额为逐分钟增量口径（探针实证），当日累计 = 全点求和。
     """
     return [
         {

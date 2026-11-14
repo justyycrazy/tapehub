@@ -251,8 +251,8 @@ def test_capability_catalog(baostock_client: TestClient) -> None:
     ]
     # ETF 复权经探针实证生效（2024 全年 qfq/hfq 逐行差异），回填三复权
     assert etf_cap["adjustments"] == ["none", "qfq", "hfq"]
-    # history.start 探针实证回填（报告 20261108T002941+0800，人工确认）：
-    # 个股/指数 ≈1991-01-18（二分 90 天粒度 approx）、分钟族 2020-01-02（精确）、
+    # history.start 探针实证回填：个股/指数 ≈1991-01-18（二分 90 天粒度 approx）、
+    # 分钟族 2020-01-02（精确）、
     # ETF 日/周/月 2005-02-23（精确）、ETF 分钟族 2026-01-05（精确）
     daily_start = "1991-01-18T00:00:00+08:00"
     minute_start = "2020-01-02T00:00:00+08:00"

@@ -1,14 +1,8 @@
 """baostock 请求映射（RequestMapper）：标准请求 → query_history_k_data_plus 参数。
 
-原则：所有相关参数都显式传递，不依赖 baostock 的默认值——例如
-adjustflag 上游默认 "3"（不复权）、start 默认 2015-01-01，与 tapehub
-的声明默认值（个股 qfq、显式时间范围）不一致，因此必须显式传参。
-
-接口签名均已按官方文档核实（https://baostock.com/mainContent?file=pythonAPI.md）。
-
-文档矛盾备注：参数说明章节写作 ``start/end``，示例代码使用
-``start_date/end_date``——适配器采用示例风格（与全部官方示例一致），
-实际生效行为由数据探针实证（probes/cases/baostock.yaml）。
+映射规则与上游行为定案见 docs/providers/baostock.md（唯一出处，本文不复述）。
+探针运行记录见 probes/results/PROBE_LOG.md（本地文件，不入库）。
+官方文档：https://baostock.com/mainContent?file=pythonAPI.md。
 """
 
 from datetime import datetime
@@ -79,9 +73,8 @@ def _date_code(value: datetime) -> str:
 def date_window(query: BarQuery) -> tuple[str, str]:
     """闭区间 [start, end] 转换为 (start_date, end_date)。
 
-    上游按日期过滤；end 的闭/开区间语义官方文档自相矛盾（stockKData 页
-    称「包含」、indexData 页称「不包含」），按示例风格实现为闭区间，
-    待探针实证后修正口径并回填 README。
+    上游按日期过滤，带时间的边界由适配器在标准化后再次精确过滤；
+    end 区间语义定案见 docs/providers/baostock.md。
     """
     return _date_code(query.start), _date_code(query.end)
 

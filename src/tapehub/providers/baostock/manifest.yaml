@@ -1,30 +1,7 @@
-# baostock 适配器：能力声明与内部操作映射。
-# 接口签名均已按官方文档核实：https://baostock.com/mainContent?file=pythonAPI.md
-#
-# 说明：
-# - variant 为数据源变体：baostock 为独立免费数据平台（证券宝，无需注册、
-#   无凭据概念，恒可注册），变体与其 Provider 同名；
-# - 单一上游函数 query_history_k_data_plus 覆盖全部 K 线查询，login()/logout()
-#   为全局单连接模型（模块级单例 socket、非线程安全），错误经字符串
-#   error_code/error_msg 返回（"0"=成功），行值全为字符串、缺失为空串 ""；
-# - fields 三套（官方「历史行情指标参数」）：日线含 preclose/turn/tradestatus/
-#   pctChg/isST 与估值四项（peTTM/pbMRQ/psTTM/pcfNcfTTM，仅个股日线）；
-#   周/月线无 preclose/tradestatus/isST/估值；分钟线仅 date/time + OHLC + 量额；
-# - 复权为「涨跌幅复权法」（官方声明与同花顺/通达信口径不同），adjustflag
-#   显式传参：3=不复权（上游默认）、2=前复权、1=后复权；
-# - 历史覆盖范围（history.start）已由数据探针实测回填（报告
-#   20261108T002941+0800，人工确认）：个股日/周/月 ≈1991-01-18（二分 90 天
-#   粒度 approx，官方口径 1990-12-19 偏乐观，与 tickflow CN 收敛点同日）、
-#   个股分钟族 2020-01-02（精确，官方口径 2020-01-03 差一天）、指数
-#   ≈1991-01-18（官方口径 2006-01-01 显著偏保守）、ETF 2005-02-23（精确，
-#   2004 全年空；官方口径 2026-01-05 仅指 V0.9.3 新增每日更新 API）；
-# - 指数无分钟线（官方明示，探针实证空结果不报错），分钟族仅个股与 ETF
-#   声明；周/月线仅每周/月最后一个交易日有数据（探针实证：周二单日窗口
-#   查周线空）；
-# - ETF 复权经探针实证生效（2024 全年 qfq/hfq 逐行差异），回填
-#   [none, qfq, hfq]；指数复权为 no-op（零差异），维持 [none]；
-# - 个股分钟族单次上限 5000 根（PT5M 探针实证：2025 全年窗口返回最早 5000
-#   根、尾部截断），适配器据行数判 partial。
+# BaoStock（baostock）能力声明与内部操作映射。
+# 映射细则、上游行为定案与历史覆盖依据：docs/providers/baostock.md（唯一出处，本文不复述）。
+# 官方文档：https://baostock.com/mainContent?file=pythonAPI.md
+# 探针运行记录：probes/results/PROBE_LOG.md（本地文件，不入库）。
 provider: baostock
 default_variant:
   stock: baostock
@@ -62,9 +39,7 @@ capabilities:
     adjustments: [none]
     fields: [open, high, low, close, volume, amount]
 
-  # ETF：日/周/月 + 分钟族；日线复权经探针实证生效（2024 全年 qfq/hfq
-  #   逐行差异），分钟族 2026-01-05 起（探针实证四周期齐备、形态与个股
-  #   分钟同构、hfq 复权管线生效，官方口径一致）
+  # ETF：日/周/月 + 分钟族
   - data_type: bars
     markets: [CN]
     asset_types: [etf]
@@ -126,7 +101,7 @@ operations:
   - match: {data_type: bars, market: CN, asset_type: stock, interval: PT1H, adjust: hfq, variant: baostock}
     operation: history_k_data_plus
 
-  # 指数：仅不复权（官方指数示例不传 adjustflag，适配器同样显式传 "3"）
+  # 指数：仅不复权
   - match: {data_type: bars, market: CN, asset_type: index, interval: P1D, adjust: none, variant: baostock}
     operation: history_k_data_plus
   - match: {data_type: bars, market: CN, asset_type: index, interval: P1W, adjust: none, variant: baostock}
@@ -134,7 +109,7 @@ operations:
   - match: {data_type: bars, market: CN, asset_type: index, interval: P1M, adjust: none, variant: baostock}
     operation: history_k_data_plus
 
-  # ETF：三复权（探针实证 qfq/hfq 跨除息生效）
+  # ETF：三复权
   - match: {data_type: bars, market: CN, asset_type: etf, interval: P1D, adjust: none, variant: baostock}
     operation: history_k_data_plus
   - match: {data_type: bars, market: CN, asset_type: etf, interval: P1D, adjust: qfq, variant: baostock}

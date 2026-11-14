@@ -1,35 +1,13 @@
 """Tiingo 响应映射（ResponseMapper）：REST bars 行 / WS 快照数据 → 统一 Bar / Quote 模型。
 
-bars（REST，形状按 2026-11-13 数据探针实证，报告 20261113T163754+0800——
-官方文档未如实反映 crypto 端点的嵌套结构）：
+响应结构与字段口径见 docs/providers/tiingo.md（唯一出处，本文不复述）。
+探针运行记录见 probes/results/PROBE_LOG.md（本地文件，不入库）。
 
-- ``/tiingo/crypto/prices`` 返回**按 ticker 分组的嵌套数组**，外层元素字段
-  ``ticker/baseCurrency/quoteCurrency/priceData``，``priceData`` 为 bar 行
-  数组（``date`` 为 ISO 8601 带 ``+00:00``、``open/high/low/close``、
-  ``volume``（base 币计）、``volumeNotional``、``tradesDone``）；
-- ``/tiingo/fx/<ticker>/prices`` 返回扁平数组，元素字段：``date``（ISO 带
-  Z 后缀）、``ticker``、``open/high/low/close``——无 volume（标准 volume
-  为 null，不用 0 冒充）；墙钟口径经探针实证为 UTC（tg-fx-date-shape
-  观察 date 全部带 Z 且日内分布吻合）；
-- 适配器按形状统一拍平（嵌套/扁平防御兼容）；``date`` 缺失/不可解析属
-  上游契约违背，抛 ``UPSTREAM_ERROR``（bar 无时间戳无法标准化）；
-- 裸时间（无时区后缀）按 UTC 解释，统一北京时间归一化由领域层 BarBatch
-  完成；缺失值与 NaN 统一映射为 null；amount 上游无成交额字段恒 null。
-
-quote（WS 快照数据元素，官方文档 websockets/crypto|forex 页字段表）：
-
-- TOP（top-of-book）元素字段：``ticker``/``date``/``exchange``/``bidSize``/
-  ``bidPrice``/``askSize``/``askPrice``/``midPrice``；Trade 元素字段：
-  ``lastSize``/``lastPrice``；
-- ``last_price`` 取 ``lastPrice``，缺失回退 ``midPrice``（文档：bid/ask
-  均非空时 mid=(bidPrice+askPrice)/2）；两者均缺失/不可解析属上游契约
-  违背，抛 UPSTREAM_ERROR（不伪造）；
-- ``bid_price1``/``ask_price1``/``bid_volume1``/``ask_volume1`` 防御映射
-  （文档核实字段，缺失 → null）；WS 消息形态与 ``lastSize`` 语义
-  （单笔量 vs 累计量）未经探针实证，标准 ``volume`` 恒 null、fields
-  声明仅 timestamp + last_price（探针实证后扩容）；
-- ``date`` 缺失/不可解析属上游契约违背，抛 UPSTREAM_ERROR；
-- extensions 白名单：``exchange``（缺失不透出）。
+bars 响应按形状统一拍平（crypto 嵌套 / fx 扁平防御兼容），裸时间按 UTC
+解释、统一北京时间归一化由领域层 BarBatch 完成；``date`` 缺失/不可解析
+属上游契约违背，抛 ``UPSTREAM_ERROR``。quote ``last_price`` 取
+``lastPrice``、缺失回退 ``midPrice``，两者均缺失属契约违背，抛
+UPSTREAM_ERROR（不伪造）；缺失值与 NaN 统一映射为 null。
 """
 
 import math
@@ -84,12 +62,9 @@ def _to_timestamp(value: Any) -> datetime:
 def to_standard_bars(rows: list[dict[str, Any]], asset_type: AssetType) -> list[Bar]:
     """上游行列表 → 标准 Bar 列表（保持上游顺序，由分页组件统一升序排序）。
 
-    2026-11-13 数据探针实证（报告 20261113T163754+0800）：两个端点响应
-    形状不同——``/tiingo/crypto/prices`` 返回**按 ticker 分组的嵌套结构**
-    ``{"ticker", "baseCurrency", "quoteCurrency", "priceData": [...]}``（官方
-    文档未如实反映）；``/tiingo/fx/<ticker>/prices`` 为扁平行（date 带 Z、
-    仅 OHLC）。按形状统一拍平（嵌套/扁平防御兼容），bar 字段名两端点一致
-    （date/open/high/low/close[/volume/volumeNotional/tradesDone]）。
+    两端点响应形状不同：crypto 为按 ticker 分组的嵌套结构（``priceData``
+    为 bar 行数组）、fx 为扁平行；按形状统一拍平（嵌套/扁平防御兼容），
+    bar 字段名两端点一致。
     """
     del asset_type  # 两资产类型同构解析；差异仅在 volume 键是否出现
     bars: list[Bar] = []
@@ -115,14 +90,13 @@ def to_standard_bars(rows: list[dict[str, Any]], asset_type: AssetType) -> list[
 def ws_element_to_snapshot(element: Any) -> dict[str, Any]:
     """WS data 元素 → 标准化快照 dict（runtime 缓存/监听/映射统一消费）。
 
-    2026-11-13 WS 行为探针实证（报告 ws-behavior-20261113T2130+0800，
-    官方文档字段表的对象形态**错误**）——data 元素为位置数组：
+    data 元素为位置数组：
 
     - fx Q（8 元素）：``["Q", ticker, date, bidSize, bidPrice, midPrice,
-      askSize, askPrice]``（无 exchange；mid=(bid+ask)/2 探针自洽验证）；
+      askSize, askPrice]``（无 exchange；mid=(bid+ask)/2）；
     - crypto Q（9 元素）：同上，第 4 位多 ``exchange``；
-    - crypto T（6 元素）：``["T", ticker, date, exchange, lastSize,
-      lastPrice]``；
+    - T 元素同理（含 exchange 共 6 位、不含共 5 位：``["T", ticker, date,
+      (exchange,) lastSize, lastPrice]``）；
     - 对象形态透传（防御：上游若回归文档形态按字段名读取）；
     - 形状不足/未知类型返回空 dict（runtime 按 ticker 缺失丢弃）。
     """

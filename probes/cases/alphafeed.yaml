@@ -20,7 +20,7 @@ pacing:
 
 # 同一 asset_type（stock）跨三市场声明能力：用市场限定目标（stock@MARKET）
 # 为每个市场提供独立基准标的；case id 以限定键为前缀（如 stock@HK-P1D-...）。
-# 基准沿用 tickflow 探针第三轮定稿的早上市标的（见 tickflow.yaml targets 注释）：
+# 基准沿用 tickflow 探针定稿的早上市标的（见 tickflow.yaml targets 注释）：
 # 早上市标的的历史深度收敛点是真实库底而非标的自身上市日伪影。
 targets:
   stock@CN:
@@ -34,7 +34,7 @@ targets:
   stock@CN-SZSE:
     instrument: CN-SZSE-000001
     # 平安银行（深市主板）：交易所限定追加目标，逐所细分探测（.SZ 后缀
-    # 此前仅文档示例核实，框架 2026-11-12 起支持交易所限定键后 chain 级实证）
+    # chain 级实证）
     window: {start: 2025-01-01, end: 2025-12-31}
     min_bars: 10
     required_fields: [open, high, low, close, volume, amount]
@@ -42,7 +42,7 @@ targets:
     instrument: CN-BSE-920000
     # 安徽凤凰（精选层存量平移，2020-12-23 上市）：北交所逐所细分目标
     #（.BJ 后缀此前仅文档示例核实；920 段存续性经 tushare 侧探针证实，
-    # 报告 20261112T172921+0800，两家上游独立核实互证）
+    # 两家上游独立核实互证）
     window: {start: 2025-01-01, end: 2025-12-31}
     min_bars: 10
     required_fields: [open, high, low, close, volume, amount]
@@ -52,7 +52,7 @@ targets:
     window: {start: 2025-01-01, end: 2025-12-31}
     min_bars: 10
     # amount 不预设必填：tickflow 实证 HK/US 日线成交额上游原值 0，
-    # alphafeed 是否同口径由本轮观察，如实在报告记录
+    # alphafeed 是否同口径由探针观察如实记录
     required_fields: [open, high, low, close, volume]
   stock@US:
     instrument: US-NYSE-GE
@@ -67,18 +67,16 @@ chain:
   adjust_diff:
     # 三市场复权生效性（forward/backward 是否生效、基准为何）：日线足以判定，
     # 收敛 interval 控制预算（参照 tickflow 先例）。stock@CN-SZSE/CN-BSE 为
-    # 逐所细分复验（2026-11-12 接入）
+    # 逐所细分复验
     targets: [stock@CN, stock@CN-SZSE, stock@CN-BSE, stock@HK, stock@US]
     window: {start: 2024-06-01, end: 2024-08-31}   # 分红除权高发窗口
     intervals: [P1D]
     pairs: [[none, qfq], [none, hfq]]
     fields: [close]
   history_depth:
-    # CN 已收敛 ≈1991-01-14（20261107T201101）、HK 已收敛 ≈1980-02-15
-    # （20261107T203514，与 tickflow HK 结论一致），均不重复消耗配额；US 在
-    # 1960 边界 floor-hit（同报告，比 tickflow US ≈1962 更深），本轮边界提前
-    # 到 1930 收敛真实库底（era_step_years 10 → 10 纪元，max_calls 24/条
-    # 覆盖 10+8+1 ≈ 19 最坏）
+    # 仅 stock@US：CN（≈1991-01-14）/HK（≈1980-02-15，与 tickflow HK 结论
+    # 一致）已收敛回填，不重复消耗配额；earliest 1930 收敛真实库底
+    #（era_step_years 10 → 10 纪元，max_calls 24/条覆盖 10+8+1 ≈ 19 最坏）
     targets: [stock@US]
     earliest: 1930-01-01
     era_step_years: 10
@@ -144,23 +142,4 @@ raw:
     expect: {status: ok, min_rows: 1}
     assert: true
 
-notes: >
-  套餐口径（官方文档未公布限频数值）：K 线与实时快照均 10 次/分钟，K 线
-  1 标的/次、快照 5 标的/次，周期仅 1d/1w/1M（无分钟 K 线权限）——manifest
-  已据此收敛：分钟族 PT1M~PT1H 不再声明（alphafeed 是 CN stock bars 缺省
-  Provider，路由执行失败不回退，声明无权限的周期会 403 打断本可由 tickflow
-  服务的请求）；limit_truncation 一并移除：P1D 全年约 250 根无法触达
-  count=10000 上限（必判 suspect），截断标记逻辑由单测 sized_klines_payload
-  覆盖。1Q/1Y 周期上游存在但超出项目「最大到月线」周期上界，不声明、不探。
-  raw 案例实证（20261107T173550+0800 首轮）：无效 Key 指纹 SDK
-  AuthenticationError「Invalid or expired API key」；无效标的返回 200 空数组
-  （非错误）；**10m 周期上游实测接受并返回数据**（与官方文档枚举不符，
-  PT10M 经人工确认维持不声明）（429 因 SDK 重试掩蔽不可确定性复现，
-  细分映射在适配器层）；quotes 三市场字段矩阵。HK/US amount 上游原值 0、
-  US 日线墙钟美东零点（DST 漂移），与 tickflow 口径一致，已回填 README。
-  history.start 已按人工确认逐市场回填（二分收敛估计窗口右端零点，approx
-  ±90 天）：CN 1991-01-14（20261107T201101）、HK 1980-02-15（20261107T203514）、
-  US 1962-02-17（20261107T205210，此前 1960 floor-hit 为纪元级判定
-  [1960,1970) 有 1987 根，与本轮窗口级收敛不矛盾）；三周期各自口径一致；
-  HK/US 与 tickflow 独立探测结果同日一致（两家上游历史库大概率同源）；
-  bars 能力已拆 CN/HK/US 三块逐市场声明（合并会对 HK 过度声明 18 年）。
+notes: 各轮运行记录见 probes/results/PROBE_LOG.md（不入库）；探针框架规范见 probes/README.md。

@@ -1,6 +1,6 @@
 """应用 lifespan 停机钩子协议测试。
 
-覆盖 2026-11-13 审计修复 M1：停机钩子返回的 awaitable（如 twelvedata 的
+覆盖停机钩子协议：停机钩子返回的 awaitable（如 twelvedata 的
 异步 WS 停机任务）必须被 lifespan await 到完成——裸 create_task 无人
 await 会在 uvicorn 退出时被取消半途、TestClient portal 下直接销毁，
 ws.close 永不落。

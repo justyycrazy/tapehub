@@ -282,8 +282,8 @@ def test_connection_failure_marks_failed(
 def test_first_call_timeout_still_closes_client(monkeypatch: pytest.MonkeyPatch) -> None:
     """connection 首调超时：已创建的客户端在失败路径上仍被释放（防连接泄漏）。
 
-    2026-11-12 真实探针实证的泄漏形态：_spawn 首调挂起超时后，客户端随
-    异常丢弃、永远无人 close（TqApi 及其私有 loop/asyncgen 由 executor
+    真实探针实证的泄漏形态：_spawn 首调挂起超时后，客户端随异常丢弃、
+    永远无人 close（TqApi 及其私有 loop/asyncgen 由 executor
     线程持有至进程退出）。
     """
 

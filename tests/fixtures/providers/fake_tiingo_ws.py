@@ -1,7 +1,6 @@
 """测试用 websockets 假模块（Tiingo WS 协议语义，零网络零凭据）。
 
-帧形状按 2026-11-13 WS 行为探针实证镜像（报告
-ws-behavior-20261113T2130+0800，官方文档字段表的对象形态错误）：
+帧形状按 WS 行为探针实证镜像（官方文档字段表的对象形态错误）：
 
 - ``connect(endpoint, open_timeout=...)``：返回单例式 ``FakeWebSocket``
   （前 ``connect_failures`` 次抛连接异常，测重连退避）；

@@ -583,7 +583,7 @@ def test_adapter_capacity_gate_per_endpoint(monkeypatch: pytest.MonkeyPatch) -> 
 
 
 def test_ws_element_to_snapshot_shapes() -> None:
-    """data 元素位置解析（2026-11-13 WS 探针实证的三种形状）：fx Q 8 元素
+    """data 元素位置解析（WS 探针实证的三种形状）：fx Q 8 元素
     （无 exchange）、crypto Q 9 元素 / T 6 元素（带 exchange）；未知形状
     返回空 dict（runtime 按 ticker 缺失丢弃）；对象形态透传。"""
     fx = ws_element_to_snapshot(

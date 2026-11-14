@@ -1,21 +1,8 @@
 """AlphaFeed 请求映射（RequestMapper）：标准请求 → af.klines.get 参数。
 
-接口签名均已按官方文档核实（https://docs.alphafeed.org/zh-hans/）：
-
-- ``af.klines.get(symbol, period=..., count=..., adjust=..., start_time=..., end_time=...)``；
-- symbol 格式 ``代码.市场后缀``，示例 600519.SH / 000001.SZ / 920047.BJ /
-  00700.HK / AAPL.US（美股 NYSE/NASDAQ/CBOE 统一 US 后缀，与 tickflow 口径一致）；
-- 官方文档 period 枚举 1m/5m/15m/30m/60m/1d/1w/1M/1Q/1Y（无 10m；探针实测
-  10m 上游亦接受并返回数据，报告 20261107T173550+0800，与文档枚举不符，
-  维持不声明）；账户套餐口径仅开通日 K 线权限（1d/1w/1M），分钟族不声明
-  （分钟级需单独的「分钟K线权限」）；1Q 无 ISO 对应，1Y 超出项目最大到
-  月线的周期范围，均不声明；
-- adjust 枚举 none/forward/backward/forward_additive/backward_additive；
-- start_time/end_time 为毫秒时间戳（含端点）；count 上限 10000。
-
-原则：所有相关参数显式传递，不依赖上游默认值
-（注意 SDK/REST 的 period 默认 1d、adjust 默认 forward，均与 tapehub
-的声明默认值无关，必须显式传参）。
+映射规则与上游行为定案见 docs/providers/alphafeed.md（唯一出处，本文不复述）。
+探针运行记录见 probes/results/PROBE_LOG.md（本地文件，不入库）。
+官方文档：https://docs.alphafeed.org/zh-hans/。
 """
 
 from datetime import datetime
@@ -29,7 +16,7 @@ from tapehub.domain.timeutil import datetime_to_epoch
 # 单次请求上限（官方文档：count 最大 10000）
 UPSTREAM_MAX_COUNT = 10000
 
-# 仅声明日/周/月（分钟族无套餐权限、1Q/1Y 超出项目周期上界，见模块 docstring）
+# 仅声明日/周/月（分钟族无套餐权限、1Q/1Y 超出项目周期上界，见 docs/providers/alphafeed.md）
 _PERIOD_CODES: dict[Interval, str] = {
     Interval.parse("P1D"): "1d",
     Interval.parse("P1W"): "1w",
@@ -99,8 +86,7 @@ def build_request(query: BarQuery) -> dict[str, Any]:
 def build_quote_request(query: QuoteQuery) -> dict[str, Any]:
     """构造 af.quotes.get 的关键字参数（symbols/universes 二选一，keyword-only）。
 
-    tapehub 快照为单标的语义：单元素 symbols 列表；上游 5 标的/次的批量
-    容量闲置（套餐限频 10 次/分钟才是约束）。
+    tapehub 快照为单标的语义：单元素 symbols 列表。
     """
     return {"symbols": [symbol_code(query.instrument)]}
 

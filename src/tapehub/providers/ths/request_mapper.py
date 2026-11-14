@@ -1,26 +1,8 @@
 """同花顺（ths）请求映射（RequestMapper）：标准请求 → REST 端点参数。
 
-接口签名已按官方文档核实（2026-11-13，URL 见 manifest.yaml 头注释）：
-
-- 认证经 ``X-api-key`` 请求头（adapter 层注入，key 不落 URL）；
-- 时间边界统一为毫秒 Unix 时间戳显式传参（不依赖上游默认值；上游口径
-  Asia/Shanghai，域层 ``BarQuery`` 已保证边界为北京时间 aware datetime）；
-- 周期：历史 K 线端外仅日线（``interval=1d``），其余周期在能力目录即不声明
-  （operation 二级路由拒绝）；期货/期权日 K 端外仅 ``time_period=day_1``
-  （显式传参）；
-- 复权：仅 A 股历史 K 线有复权语义，``none/forward/backward`` 直映
-  ``none/qfq/hfq``；指数/ETF/期货/期权不传 adjust（指数响应 data.adjust
-  固定 null）；
-- symbol：标准代码三段中 exchange 段按资产类型查后缀表（只收实证条目，
-  见 manifest 头注释），symbol 段除 CZCE 合约 4→3 年月码还原外原样透传
-  （contract/option 亦原样，``CN-CFFEX-IO2612-C-4000`` →
-  ``IO2612-C-4000.CFE``）；查表无果属命名空间外请求，明确拒绝（不透传
-  上游猜错更隐蔽）；
-- 快照：A 股/指数走 ``thscodes``（本网关快照为单标的语义，传单个）、
-  ETF 走 ``thscode``（单值）；期货/期权快照走分时端点（``session=intraday``、
-  ``trade_date=0`` 显式传参，端外仅当前交易日）；
-- historical 的 ``offset`` 分页参数文档已列但行为未核实，不启用（单窗口
-  期望完整返回，隐式截断待探针）。
+映射规则与上游行为定案见 docs/providers/ths.md（唯一出处，本文不复述）。
+探针运行记录见 probes/results/PROBE_LOG.md（本地文件，不入库）。
+官方文档 URL 见 manifest.yaml 头注释。
 """
 
 import re
@@ -47,18 +29,9 @@ _ADJUST_CODES: dict[Adjust, str] = {
     Adjust.HFQ: "backward",
 }
 
-# 标准 exchange 段 → thscode 后缀（只收实证条目——文档示例 + 探针价格
-# 端点实证；见 manifest 头注释的诚实边界说明）：
-# - 2026-11-14 探针第三轮实证 BSE→BJ 价格端点（920000.BJ a-share
-#   historical / 899050.BJ a-share-index historical 各 243 行完整，报告
-#   20261114T135118+0800）后收编；
-# - 期货五所后缀 2026-11-14 探针实证（用户指正形态后复探，EG2701.DCE /
-#   BC2612.INE / LC2701.GFE / MA612.CZC 均 code=0 且 68~69 行）——首轮
-#   四所 3001 的根因修正：ZCE/GFEX 系探针后缀形态错（ZCE 实为 CZC、
-#   GFEX 实为 GFE），DCE/INE 系探针误用已摘牌合约（M2601/SC2606/LC2606
-#   均已到期 → 3001，与 CU2601.SHF 已摘牌对照一致）；
-# - CZCE 合约年月码 4→3 还原（MA2701 → MA701，MA2701.CZC 3001 /
-#   MA701.CZC 5003→复验 code=0 实证，规则与 tqsdk 同构）
+# 标准 exchange 段 → thscode 后缀（只收实证条目，收录依据见
+# docs/providers/ths.md）；CZCE 合约年月码 4→3 还原（MA2701 → MA701，
+# 规则与 tqsdk 同构）
 _SUFFIXES: dict[str, dict[str, str]] = {
     "stock": {"SSE": "SH", "SZSE": "SZ", "BSE": "BJ"},
     "index": {"SSE": "SH", "SZSE": "SZ", "BSE": "BJ"},

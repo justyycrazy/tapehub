@@ -1,44 +1,14 @@
 """同花顺（ths）响应映射（ResponseMapper）：ApiResponse 信封数据 → 统一 Bar / Quote 模型。
 
-信封解析（``code``/``data`` 拆包）在 adapter 完成，本模块消费 ``data`` 容器：
+字段结构、单位与快照/分时映射口径见 docs/providers/ths.md（唯一出处，本文不复述）。
+探针运行记录见 probes/results/PROBE_LOG.md（本地文件，不入库）。
 
-bars（``data.item``，两种行形态统一映射，字段名官方文档核实 2026-11-13）：
-
-- A 股/指数/ETF 历史 K 线：``date_ms``/``open_price``/``high_price``/
-  ``low_price``/``close_price``/``volume``/``turnover``；
-- 期货/期权日 K：``timestamp``/``open_price``/``high_price``/``low_price``/
-  ``close_price``/``volume``/``turnover``（时间键名不同，其余同构）；
-- ``turnover`` → 标准 ``amount``；缺失/NaN → null（不用 0 冒充）；
-  行缺失时间键（``date_ms``/``timestamp`` 均无）属上游契约违背（bar 无时间戳
-  无法标准化），抛 UPSTREAM_ERROR——上游对单字段标明可空，但时间戳是 bar
-  的身份键，loud 失败优于静默丢行；
-- 单位：A 股档 volume=股、turnover=元（官方文档明示）；ETF/期货/期权
-  volume/turnover 单位上游未明示，原值透出（不编造换算）。
-
-quote（``data`` 容器，按 operation 显式分派——形态分派会把畸形快照 item
-误路由到分时路径，报错语义失真）：
-
-- 快照（a_share_snapshot/index_snapshot/fund_snapshot，item[] 含
-  ``last_price``）：``last_price`` 直映、``volume``/``turnover`` →
-  ``volume``/``amount``；``data.timestamp`` 为本次快照最新上游有效时间
-  （null 视为无有效数据，契约违背）；extensions 白名单：open_price/
-  high_price/low_price/prev_price/price_change/price_change_ratio_pct/
-  price_amplitude_ratio_pct/turnover_ratio_pct（快照不返回中文名 name，
-  不透出）；
-- 分时（futures_snapshot/options_snapshot，item[] 含 ``price``）：防御按
-  点时间升序排后取末点——``last_price``=末点 ``price``、``timestamp``=
-  末点 ``timestamp``（行情时间）；**volume/amount=全点求和（当日累计）**
-  （2026-11-13 探针实证分时点量额为逐分钟增量：各点 turnover/volume
-  恰等于该点 price×合约乘数、开盘三点 volume 5→26→31 非累计序列，报告
-  20261113T212034+0800——累计口径需全点求和，volume/amount 两字段独立
-  计算（任一点 volume 缺失则 volume 恒 null、任一点 turnover 缺失则
-  amount 恒 null，部分和不冒充累计））；``item[].timestamp``
-  官方标明可空（盘前等场景），无时间戳的点不参与排序，全部无时间戳
-  或 item 空属无有效行情，抛 UPSTREAM_ERROR；
-- 时间戳统一毫秒 Unix → 北京时间 aware datetime（经 timeutil 纪元算术，
-  Windows 安全）；快照 ``data.timestamp`` 实测为上游响应组装时刻
-  （盘后随墙钟推进、间隔 10s 两次调用精确 +10s，非成交时点）——上游
-  快照无独立行情时间字段，按文档「最新上游有效时间」口径透出。
+bars ``turnover`` → 标准 ``amount``，缺失/NaN → null（不用 0 冒充）；行缺失
+时间键属上游契约违背，抛 UPSTREAM_ERROR（时间戳是 bar 的身份键）。quote 按
+operation 显式分派（形态分派会把畸形快照 item 误路由到分时路径，报错语义
+失真）；分时取末点作 ``last_price``、volume/amount 为全点求和（当日累计，
+任一点缺失则恒 null，部分和不冒充累计）。时间戳统一毫秒 Unix → 北京时间
+（经 timeutil 纪元算术，Windows 安全）。
 """
 
 import math
@@ -206,10 +176,9 @@ def _intraday_to_quote(
 ) -> Quote:
     """分时形（期货/期权）：升序排后取末点作 last_price（口径见模块 docstring）。
 
-    volume/amount 为全点求和（当日累计，探针实证分时点为逐分钟增量），
-    两字段独立计算：任一点 volume 缺失则 volume 恒 null、任一点 turnover
-    缺失则 amount 恒 null（部分和不冒充累计）；null 时间戳点被跳过导致
-    序列不完整时两字段均不计算。
+    volume/amount 为全点求和（当日累计），两字段独立计算：任一点缺失则
+    恒 null（部分和不冒充累计）；null 时间戳点被跳过导致序列不完整时
+    两字段均不计算。
     """
     points: list[tuple[datetime, dict[str, Any]]] = []
     skipped_no_timestamp = 0

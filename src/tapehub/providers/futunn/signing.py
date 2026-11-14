@@ -1,25 +1,8 @@
 """富途 OpenAPI「方式二：传统 API Key」签名辅助。
 
-认证约定（官方 getting-started 页，2026-11-14 核实）：
-
-- 控制台「AppKey 管理」创建 AppKey 并上传公钥（Ed25519 或
-  RSA-SHA256 / PKCS#1 v1.5），私钥本地保存、只经环境变量路径注入
-  （pydantic-settings ``futunn_private_key_path``），绝不写入代码/manifest/
-  日志/异常响应；
-- 签名原文为 5 个字段以 ``\\n`` 连接：``timestamp_ms``（毫秒 Unix）、大写
-  ``http_method``、``request_path``（含路径参数，如
-  ``/api/v1.0/quote/HK.00700/history-kline``）、``query_string``（与实际
-  请求完全一致的查询串，无查询参数为空串）、``body_part``（请求体字节
-  的 SHA256 小写十六进制，无请求体为空串）；
-- 私钥签名后 Base64 编码，经 4 个请求头注入：``X-Api-Key``（AppKey ID）、
-  ``Authorization``（Base64 签名，**不加 Bearer 前缀**）、``X-Timestamp``
-  （毫秒时间戳，须与签名一致；与服务端偏差超过默认 5 秒报 -12006——
-  第一版不做自动校时，依赖宿主机时钟，详见 adapter docstring）、
-  ``X-Nonce``（1-64 位随机字符串，防重放）；
-- 签名算法按私钥 PEM 类型自动检测：Ed25519 → 原文即消息；
-  RSA → SHA256 + PKCS#1 v1.5。两种算法均由 ``cryptography`` 提供
-  （可选依赖，函数内延迟导入，未安装返回 PROVIDER_NOT_IMPLEMENTED，
-  与 httpx 同款处理，不影响服务启动）。
+签名原文/请求头构造与认证约定见 docs/providers/futunn.md（唯一出处，
+本文不复述）；官方 getting-started URL 见 manifest.yaml 头注释。
+探针运行记录见 probes/results/PROBE_LOG.md（本地文件，不入库）。
 """
 
 import base64

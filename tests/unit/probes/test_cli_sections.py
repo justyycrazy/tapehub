@@ -3,7 +3,7 @@
 覆盖 ``probes/cli.py`` 的 ``_run_sections`` 修复：
 
 - 每 Provider 段独立事件循环——前一段遗留的 pending 任务随本段循环消亡，
-  绝不污染下一段（2026-11-12 tqsdk→akshare 跨段崩溃的回归防线）；
+  绝不污染下一段（tqsdk→akshare 跨段崩溃的回归防线）；
 - 段间停机钩子：适配器的 ``shutdown_runtime``（lifespan 同款鸭子类型）
   在每段结束后被调用；
 - 段级异常 containment：单段框架级崩溃计入退出码，不中断后续段。

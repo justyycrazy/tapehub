@@ -1,12 +1,8 @@
 """Tushare 响应映射（ResponseMapper）：上游 DataFrame 行 → 统一 Bar 模型。
 
-输出列与单位均已按官方文档核实：
-
-- 股票（pro_bar → daily，doc_id=27）：trade_date YYYYMMDD；vol 成交量（手）、
-  amount 成交额（千元）→ 标准化为股（×100）与元（×1000）；
-  扩展字段 pre_close/change/pct_chg；
-- 期货（fut_daily，doc_id=138）：vol 成交量（手，保持）、amount 成交金额
-  （万元）→ 标准化为元（×10000）；扩展字段 pre_close/settle/oi（持仓量）。
+输出列/单位换算（股票 vol 手×100、amount 千元×1000；期货 vol 手保持、
+amount 万元×10000）见 docs/providers/tushare.md（唯一出处，本文不复述）。
+探针运行记录见 probes/results/PROBE_LOG.md（本地文件，不入库）。
 
 缺失值与 NaN 统一映射为 null；扩展字段仅按受控白名单进入 extensions。
 """

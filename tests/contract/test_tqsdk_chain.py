@@ -234,7 +234,7 @@ def test_etf_auto_routes_via_routing_config(
 
 
 # ---------------------------------------------------------------------------
-# 实时快照链路（M2，GET /v1/market/quotes；per_request 桩路径）
+# 实时快照链路（GET /v1/market/quotes；per_request 桩路径）
 # ---------------------------------------------------------------------------
 
 QUOTE_PARAMS = {

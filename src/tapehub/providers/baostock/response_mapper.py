@@ -1,17 +1,11 @@
 """baostock 响应映射（ResponseMapper）：上游字符串行 → 统一 Bar 模型。
 
-列名与单位均已按官方文档核实（https://baostock.com/mainContent?file=pythonAPI.md）：
+列名/单位/时间戳口径见 docs/providers/baostock.md（唯一出处，本文不复述）。
+探针运行记录见 probes/results/PROBE_LOG.md（本地文件，不入库）。
+官方文档：https://baostock.com/mainContent?file=pythonAPI.md。
 
-- 上游行值**全为字符串**，缺失值统一为空串 ``""``（如停牌日换手率），
-  转换时映射为 null，不用 0 冒充；
-- 成交量单位已是**股**（无需换算，与 akshare 东财「手」×100 不同）；
-  成交额单位为人民币元；
-- 日/周/月线时间戳为交易日 00:00 北京时间；分钟线由 date + time
-  （YYYYMMDDHHMMSSsss，交易所行情时间）解析为北京时间——bar 起点还是
-  终点口径由探针实证后回填 README，解析本身不做语义加工；
-- fields 三套（日/周月/分钟）与估值四项（peTTM/pbMRQ/psTTM/pcfNcfTTM，
-  仅个股日线）见 request_mapper；Provider 特有字段仅经受控白名单进入
-  extensions。
+上游行值全为字符串，缺失值统一为空串 ``""``，转换时映射为 null；
+Provider 特有字段仅经受控白名单进入 extensions。
 """
 
 import math

@@ -148,7 +148,7 @@ def sized_values_rows(n: int, *, start_day: str = "2026-01-01") -> list[dict[str
 
 
 def forex_quote_payload() -> dict[str, Any]:
-    """外汇 /quote 响应形（2026-11-05 探针实测镜像，报告 20261105T184934+0800）。
+    """外汇 /quote 响应形（探针实测镜像）。
 
     数值字符串、时间戳为 Unix 秒；实测无 volume/currency/mic_code；
     datetime/timestamp 为 interval=1day 日 bar 开盘时刻，last_quote_at 为
@@ -178,9 +178,9 @@ def forex_quote_payload() -> dict[str, Any]:
 
 
 def crypto_quote_payload() -> dict[str, Any]:
-    """加密货币 /quote 响应形（2026-11-05 探针实测镜像 + 防御分支保留）。
+    """加密货币 /quote 响应形（探针实测镜像 + 防御分支保留）。
 
-    实测（报告 20261105T184934+0800）：exchange 为聚合源交易所 "Binance"，
+    实测：exchange 为聚合源交易所 "Binance"，
     无 volume/currency，含 crypto 专属 rolling_*；本条保留 volume 字符串
     仅覆盖映射防御分支（部分品种文档口径可能返回），rolling_* 用于断言
     白名单排除。

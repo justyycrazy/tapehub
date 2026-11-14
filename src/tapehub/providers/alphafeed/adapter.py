@@ -1,22 +1,7 @@
 """AlphaFeed 适配器（已实现）。
 
-约定：
-
-- 官方 Python SDK ``alphafeed`` 是可选依赖：SDK 只在 ``_fetch_sync`` /
-  ``_fetch_quote_sync`` 内部延迟导入，未安装时返回 PROVIDER_NOT_IMPLEMENTED，
-  不影响服务启动；
-- API Key 通过 ``TAPEHUB_ALPHAFEED_API_KEY`` 环境变量注入（pydantic-settings），
-  只经内存传给 SDK 客户端，禁止写入代码、manifest、日志或异常响应；
-- 同步 SDK 调用通过 ``call_in_thread`` 隔离到线程池，不阻塞事件循环；
-- 上游单次上限 10000 根 K 线：达到上限时批次标记 ``partial=true``，
-  API 层据此在 warnings 中提示可能截断；
-- 统一分页由共享 ``paginate_bars`` 完成，闭区间 [start, end] 在标准化后复核；
-- 上游 429（限频）映射为 UPSTREAM_RATE_LIMITED（SDK 对 429/5xx 自带最多
-  3 次退避重试，映射发生在重试耗尽后），401/403 等其余 SDK 异常由应用层
-  统一包装为 UPSTREAM_ERROR；
-- 快照为纯 REST 单次调用语义：无首包超时/QUOTE_NOT_READY（与 tickflow
-  一致），上游无推送接口，不实现 stream_quote（流式请求返回
-  UNSUPPORTED_CAPABILITY）。
+映射规则与上游行为定案见 docs/providers/alphafeed.md（唯一出处，本文不复述）。
+探针运行记录见 probes/results/PROBE_LOG.md（本地文件，不入库）。
 """
 
 from datetime import datetime
@@ -126,8 +111,7 @@ class ProviderAdapter(BaseProviderAdapter):
     def _rate_limited(self, exc: Exception) -> UpstreamRateLimitedError:
         """SDK 限频异常（429，重试耗尽后）→ UPSTREAM_RATE_LIMITED。
 
-        ``retry_after_ms`` 若可从上游错误 details 取得则透传（官方文档：
-        429 响应含建议等待毫秒数）；取不到时不编造。
+        ``retry_after_ms`` 从上游错误 details 取得则透传，取不到不编造。
         """
         details: dict[str, Any] = {"provider": self.name}
         upstream_details = getattr(exc, "details", None)

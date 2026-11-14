@@ -1,4 +1,4 @@
-"""查询应用服务的上游整体超时测试（M2，2026-11-13 审计修复）。
+"""查询应用服务的上游整体超时测试。
 
 覆盖点：``upstream_timeout_seconds`` > 0 时 ``asyncio.wait_for`` 超时 →
 既有 ``TimeoutError`` 映射转 ``UPSTREAM_TIMEOUT``（504）；= 0 时不包裹；

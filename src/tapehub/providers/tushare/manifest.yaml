@@ -1,46 +1,12 @@
-# Tushare 适配器：能力声明与内部操作映射。
-# 接口签名均已按官方文档核实：https://tushare.pro/document/2
-#
-# 说明：
-# - 股票使用模块级函数 ts.pro_bar（asset='E'，freq D/W/M；文档注解 adj
-#   「仅日线复权」偏保守，探针实证周/月线复权真实生效，报告
-#   20261112T110412+0800）；
-# - 期货单一合约使用 pro 对象方法 pro.fut_daily（无复权，单次上限 2000 条，
-#   经主连 CUL.SHF 实测恰为 2000；上游截断为「保尾截头」——保留最新 2000 根，
-#   partial=true 时缺窗口头部更早数据，探针报告 20261112T124404+0800）；
-# - 股票 ts_code 后缀已按文档核实：000001.SH / 000001.SZ（SSE/SZSE，接口
-#   文档示例）；北交所 BSE/.BJ 经探针实证扩容（报告 20261112T172921+0800，
-#   文档 doc_id=14 后缀表列明 + 目录 355 在市标的全部 920 段 + 920000.BJ
-#   daily/adj_factor 双证；83 段老代码已被 920 段替换不再有效）；
-#   history.start 沿用 CN stock 库级声明（BSE 标的均 2020 年后上市，
-#   各标的数据以自身上市日起）；
-# - 期货 ts_code 后缀五所接入（探针实证，报告 20261112T124404+0800）：
-#   .SHF / .DCE / .INE / .CFX / .ZCE——CZCE 在 tushare 为 4 位年月码，与
-#   统一标准码同形（CN-CZCE-SR2601 → SR2601.ZCE 直通；实证 4 位可用、
-#   3 位旧写法全空）；
-# - 主力连续（continuous）：总览页连续合约格式 XX=主力 / XXL=主连，映射
-#   **品种+L 主连**（CN-SHFE-CU → CUL.SHF / CN-CZCE-SR → SRL.ZCE /
-#   CN-DCE-M → ML.DCE / CN-INE-SC → SCL.INE），CFFEX 例外直拼主力
-#   （CN-CFFEX-IF → IF.CFX，该所 IFL/IFL1-3 为当月/次月/当季/下季月份
-#   系列非主连）——五所连续代码探针实证（报告 20261112T133250+0800）；
-#   不参与 CN contract/continuous 的 auto 路由（仅显式 provider=tushare，
-#   见 provider_routing.yaml）；
-# - 单位换算按文档：股票 vol 手→股（×100）、amount 千元→元（×1000）；
-#   期货 vol 保持手、amount 万元→元（×10000）；
-# - 历史覆盖范围（history）：stock 日/周/月经数据探针实测回填（报告
-#   20261112T124404+0800，人工确认；二分估计粒度 90 天 approx，真值≈标的
-#   上市日 1999-11-10 落在估算窗口内，与 akshare 个股二分口径同日互证）；
-#   contract = CU2401 上市首日 2023-01-17（全量模式精确定值 approx=False）；
-#   continuous 主连 ≈1991-01-01（二分下限触底，真实可能更早；报告
-#   20261112T135507+0800，人工确认）；
-# - 单接口体系 Provider：变体与 default_variant 均为 tushare（数据源即上游服务自身，与东方财富无关）：缺省请求即可路由，也可显式传 variant=tushare。
+# Tushare（tushare）能力声明与内部操作映射。
+# 映射细则、上游行为定案与历史覆盖依据：docs/providers/tushare.md（唯一出处，本文不复述）。
+# 官方文档：https://tushare.pro/document/2
+# 探针运行记录：probes/results/PROBE_LOG.md（本地文件，不入库）。
 provider: tushare
 default_variant: tushare
 
 capabilities:
-  # 股票：ts.pro_bar，日/周/月线，三种复权；history.start 探针实测回填
-  #   （报告 20261112T124404+0800，人工确认；二分估计粒度 90 天 approx，
-  #   三周期各自二分收敛、结果一致）
+  # 股票：ts.pro_bar，日/周/月线，三种复权
   - data_type: bars
     markets: [CN]
     asset_types: [stock]
@@ -53,9 +19,7 @@ capabilities:
     adjustments: [none, qfq, hfq]
     fields: [open, high, low, close, volume, amount]
 
-  # 期货单一合约：pro.fut_daily，仅日线、无复权；start 为探针标的 CU2401
-  #   上市首日实测（全量模式精确定值 approx=False，报告 20261112T135507+0800）
-  #   ——capability 为 asset_type 级声明，各合约数据以自身上市日起、随摘牌止
+  # 期货单一合约：pro.fut_daily，仅日线、无复权
   - data_type: bars
     markets: [CN]
     asset_types: [contract]
@@ -66,10 +30,7 @@ capabilities:
     adjustments: [none]
     fields: [open, high, low, close, volume, amount]
 
-  # 期货主力连续：品种+L 主连（CN-SHFE-CU → CUL.SHF / CN-CZCE-SR →
-  #   SRL.ZCE 等），CFFEX 直拼主力（CN-CFFEX-IF → IF.CFX）；仅日线、无复权；
-  #   start 探针二分下限触底（1991-01-01，approx ±90 天、真实最早可能更早，
-  #   主连拼接历史深于个股），capability 为 asset_type 级声明
+  # 期货主力连续：品种+L 主连（CN-SHFE-CU → CUL.SHF / CN-CZCE-SR → SRL.ZCE 等），CFFEX 直拼主力（CN-CFFEX-IF → IF.CFX）；仅日线、无复权
   - data_type: bars
     markets: [CN]
     asset_types: [continuous]

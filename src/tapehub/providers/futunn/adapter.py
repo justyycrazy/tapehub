@@ -1,45 +1,7 @@
 """富途 OpenAPI（futunn）适配器（已实现，纯 REST 直连 + AppKey 签名）。
 
-约定：
-
-- futunn 无官方 Python SDK：``httpx`` 同步客户端（可选依赖）只在
-  ``_call_upstream`` 内部延迟导入，未安装时返回 PROVIDER_NOT_IMPLEMENTED，
-  不影响服务启动；同步调用经 ``call_in_thread`` 隔离到线程池；
-- 凭据经环境变量注入（pydantic-settings）：``TAPEHUB_FUTUNN_APP_KEY``
-  （AppKey ID）与 ``TAPEHUB_FUTUNN_PRIVATE_KEY_PATH``（Ed25519/RSA 私钥
-  PEM 路径），两者全部非空才启用（凭据驱动注册）；签名头经 signing 模块
-  构造（「方式二：传统 API Key」，签名算法按私钥类型自动检测），AppKey/
-  私钥绝不写入日志、manifest 或异常响应；
-- 统一信封（官方约定：业务结果含错误 HTTP 200，经 ret_code 表达）：
-  ``-11``（rate_limited）→ UPSTREAM_RATE_LIMITED（携 Retry-After，如有）；
-  其余非 0（-3/-7/-8/-12/-13/-12006 等）→ UPSTREAM_ERROR 携
-  upstream_code/upstream_message（ret_code 缺失时防御读 code 键——新旧
-  两种封装并存）；HTTP >=400 与 JSON 解析失败为防御性 UPSTREAM_ERROR
-  （携 status_code）——应用层对 TapehubError 直接透传，SDK 异常不穿透 API；
-- bars 分页：官方文档 num 最大 370、page_token 续页；**2026-11-14 探针
-  实证（报告 20261114T111229+0800）：num 参数被上游忽略、单查询恒返回
-  窗口起点起 ≈1000 行、pagination.has_more 恒 False 且无 next_page_token
-  ——page_token 分页实际不可用**；适配器分页循环与 _MAX_PAGES=15 保留为
-  防御（上游若恢复签发 token 即生效）；触页数上限且最早一根晚于 start
-  判 partial=True 的防御判定保留，但**分钟族窗口 >≈1000 根时上游静默
-  截断、partial 无法可靠判定（恒 false）**——人工裁决 2026-11-14：README
-  如实说明、partial 维持（ths 先例），分钟族建议窄窗口使用；
-- 分钟 K 线 end 语义：上游 end 以该日 00:00 截止不含当日，request_mapper
-  对分钟周期 end 日期 +1 天补偿，闭区间 [start, end] 精确复核在适配器
-  完成（日/周/月 K 线 end 含当日，不补偿）；
-- 快照为纯 REST 单次调用语义：无首包超时/QUOTE_NOT_READY（与 ths/
-  alphafeed/tickflow 一致）；上游 REST 无订阅接口（WS 行情推送专区本期
-  不接入，第一版不做流式——用户拍板 2026-11-14），不实现 stream_quote
-  （流式请求返回 UNSUPPORTED_CAPABILITY）；
-- X-Timestamp 与服务端偏差 >5s 报 -12006（HTTP 401 鉴权失败）：第一版
-  不做自动校时（依赖宿主机时钟）；校时端点 GET /api/v1.0/server-time
-  免签可用已探针实证（2026-11-14 报告 20261114T135118+0800：HTTP 200，
-  信封 {"server_time_ms": "1794636908538"} 为字符串类型）——自动校时
-  实现按需立项（人工拍板 2026-11-14 只记录不落地）；
-- 单标的快照 code 匹配：上游对 code_list 中非法 code 静默丢弃（ret_code
-  仍 0），匹配行缺失属无有效行情（UPSTREAM_ERROR）；
-- 统一分页由共享 ``paginate_bars`` 完成，bars/quotes 时间戳统一北京时间
-  归一化由领域层模型完成。
+映射规则与上游行为定案见 docs/providers/futunn.md（唯一出处，本文不复述）。
+探针运行记录见 probes/results/PROBE_LOG.md（本地文件，不入库）。
 """
 
 from datetime import datetime
@@ -186,8 +148,7 @@ class ProviderAdapter(BaseProviderAdapter):
         """延迟导入 httpx 直连 REST（签名请求头），解析统一信封并返回载荷。
 
         query_string 由 request_mapper 统一生成：URL 拼接与签名原文共用
-        同一字符串（GET 无 params 二次编码，POST 体即签名输入），保证签名
-        一致性；GET 显式传 num/autype（不依赖上游默认值）。
+        同一字符串（签名一致性单点保证）。
         """
         try:
             import httpx
@@ -263,10 +224,8 @@ class ProviderAdapter(BaseProviderAdapter):
 def _kline_page(payload: dict[str, Any]) -> tuple[list[dict[str, Any]], int, str | None]:
     """单页信封 → ``(行列表, volume_precision, 下一页令牌)``。
 
-    - ``data.kline_list`` 合法无数据为空列表（映射为空批次，不报错）；
-    - ``pagination.next_page_token`` 非空且 has_more 非 False 才续页
-      （page_token 15 分钟有效；续页免计历史「首请求」额度）；
-    - ``data.volume_precision`` 缺失/非法按 0（官方默认口径，不缩放）。
+    kline_list 合法无数据为空列表；next_page_token 非空且 has_more 非 False
+    才续页；volume_precision 缺失/非法按 0（官方默认口径，不缩放）。
     """
     data = payload.get("data")
     if not isinstance(data, dict):

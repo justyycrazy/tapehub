@@ -110,14 +110,14 @@ def test_capability_catalog(tiingo_client: TestClient) -> None:
     caps_by_asset = {tuple(cap["asset_types"])[0]: cap for cap in bars_caps}
     forex_cap = caps_by_asset["forex"]
     crypto_cap = caps_by_asset["crypto"]
-    # 周期面收窄裁决（2026-11-14）：两资产均仅 PT1H/PT4H/P1D
+    # 周期面收窄：两资产均仅 PT1H/PT4H/P1D
     assert [i["code"] for i in forex_cap["intervals"]] == ["PT1H", "PT4H", "P1D"]
     assert [i["code"] for i in crypto_cap["intervals"]] == ["PT1H", "PT4H", "P1D"]
     for cap in bars_caps:
         assert cap["variants"] == ["tiingo"]
         assert cap["adjustments"] == ["none"]
-    # history 已按 2026-11-14 逐周期探针回填（人工确认）：fx 三周期同值 =
-    # 档案硬边界锚 + 各自 depth 独立收敛一致；crypto P1D = 二分收敛
+    # history 已逐周期探针回填：fx 三周期同值 = 档案硬边界锚 + 各自 depth
+    # 独立收敛一致；crypto P1D = 二分收敛
     # ≈2011-08-25、PT1H/PT4H = 2018-01-01（独立收敛 ≈2017-12-28 保守取整
     # 季初——比日线浅 6.4 年，继承值已证过度声明）
     for interval in forex_cap["intervals"]:
@@ -146,7 +146,7 @@ def test_capability_catalog(tiingo_client: TestClient) -> None:
     assert quote_cap["delivery"] == ["rest"]
     assert quote_cap["intervals"] == []
     assert quote_cap["adjustments"] == []
-    # fields 按 2026-11-13 WS 探针实证扩容：单档 bid/ask（fx Q 数组含
+    # fields 按 WS 探针实证扩容：单档 bid/ask（fx Q 数组含
     # bidSize/bidPrice/midPrice/askSize/askPrice；crypto 同 + exchange）
     assert quote_cap["fields"] == [
         "timestamp", "last_price", "bid_price1", "ask_price1", "bid_volume1", "ask_volume1",
@@ -231,7 +231,7 @@ def test_quote_chain_forex(tiingo_client: TestClient) -> None:
 
     ws = fake_ws.FakeWebSocket.instances[-1]
     frames = ws.subscribe_frames("eurusd")
-    # forex 阈值探针实证为 5（文档口径 7 被上游拒绝，报告 ws-behavior-20261113T2130+0800）
+    # forex 阈值探针实证为 5（文档口径 7 被上游拒绝）
     assert frames and frames[0]["eventData"]["thresholdLevel"] == 5
     assert frames[0]["authorization"] == "test-key"  # token 随帧传递
 

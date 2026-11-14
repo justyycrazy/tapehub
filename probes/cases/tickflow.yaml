@@ -20,9 +20,9 @@ pacing:
 
 # 同一 asset_type（stock）跨三市场声明能力：用市场限定目标（stock@MARKET）
 # 为每个市场提供独立基准标的；case id 以限定键为前缀（如 stock@HK-P1D-...）。
-# 第三轮起永久换用早上市标的作基准（20261107T002854 报告：600000/00700 的
-# 二分收敛点是标的自身上市伪影、AAPL 击穿 1990 边界）——早上市标的的
-# 收敛点若远离其上市日，即真实库底而非标的伪影。
+# 基准换用早上市标的（600000/00700 的二分收敛点是标的自身上市伪影、AAPL
+# 击穿 1990 边界）——早上市标的的收敛点若远离其上市日，即真实库底而非
+# 标的伪影。
 targets:
   stock@CN:
     instrument: CN-SSE-600602
@@ -30,41 +30,39 @@ targets:
     # 标的上市日早于任何合理库底，CN 收敛点 = 真实库深（或市场起点本身）
     window: {start: 2025-01-01, end: 2025-12-31}
     # 跨周期下限（D≈243 / W≈52 / M≈12 根），只用于拦截空结果；按日线标定
-    # 会产生周/月假阳性（首轮探针实证：P1W 实际 52-53 根、P1M 11-12 根均正常）
+    # 会产生周/月假阳性（探针实证：P1W 实际 52-53 根、P1M 11-12 根均正常）
     min_bars: 10
     required_fields: [open, high, low, close, volume]
   stock@CN-SZSE:
     instrument: CN-SZSE-000001
     # 平安银行（深市主板）：交易所限定追加目标，逐所细分探测（SZ→SZ 后缀
-    # 此前仅文档核实，框架 2026-11-12 起支持交易所限定键后 chain 级实证）
+    # chain 级实证）
     window: {start: 2025-01-01, end: 2025-12-31}
     min_bars: 10
     required_fields: [open, high, low, close, volume]
   stock@CN-BSE:
     instrument: CN-BSE-920000
     # 安徽凤凰（精选层存量平移，2020-12-23 上市）：北交所逐所细分目标
-    #（BJ 后缀此前仅文档核实；920 段存续性经 tushare 侧探针证实，报告
-    # 20261112T172921+0800，两家上游独立核实互证）
+    #（BJ 后缀此前仅文档核实；920 段存续性经 tushare 侧探针证实，两家上游
+    # 独立核实互证）
     window: {start: 2025-01-01, end: 2025-12-31}
     min_bars: 10
     required_fields: [open, high, low, close, volume]
   stock@HK:
     instrument: HK-HKEX-00002
-    # 中电控股，港股最古老上市标的之一（精确上市日以权威口径核实后写入
-    # 回填 notes）；00700（2004-06 上市）第二轮收敛 2004-07-17 是标的伪影，
-    # 港股真实最早更早
+    # 中电控股，港股最古老上市标的之一；00700（2004-06 上市）的二分收敛点
+    # 是标的伪影，港股真实最早更早
     window: {start: 2025-01-01, end: 2025-12-31}
     # 跨周期下限（D≈243 / W≈52 / M≈12 根），只用于拦截空结果；按日线标定
-    # 会产生周/月假阳性（首轮探针实证：P1W 实际 52-53 根、P1M 11-12 根均正常）
+    # 会产生周/月假阳性（探针实证：P1W 实际 52-53 根、P1M 11-12 根均正常）
     min_bars: 10
     required_fields: [open, high, low, close, volume]
   stock@US:
     instrument: US-NYSE-GE
-    # GE，1892 年 NYSE 上市且现存续；AAPL（1980-12-12 上市）第二轮击穿
-    # 1990 边界（粒度 None + 7 调，二分未跑），美国库深未知
+    # GE，1892 年 NYSE 上市且现存续；AAPL 击穿 1990 边界，美国库深未知
     window: {start: 2025-01-01, end: 2025-12-31}
     # 跨周期下限（D≈243 / W≈52 / M≈12 根），只用于拦截空结果；按日线标定
-    # 会产生周/月假阳性（首轮探针实证：P1W 实际 52-53 根、P1M 11-12 根均正常）
+    # 会产生周/月假阳性（探针实证：P1W 实际 52-53 根、P1M 11-12 根均正常）
     min_bars: 10
     required_fields: [open, high, low, close, volume]
 
@@ -72,10 +70,9 @@ chain:
   include_declared: true
   skip: []
   adjust_diff:
-    # 三市场复权生效性（forward/backward 是否生效、基准为何）：首轮已实证
-    # 三市场均真实生效（HK qfq max_diff 7.97 元、US hfq 67889 元，首分歧
-    # 2024-06-03 除权期）；日线足以判定生效性，收敛 interval 控制预算。
-    # stock@CN-SZSE/CN-BSE 为逐所细分复验（2026-11-12 接入）
+    # 三市场复权生效性（forward/backward 是否生效、基准为何）：三市场均
+    # 实证真实生效（首分歧落在分红除权期）；日线足以判定生效性，收敛
+    # interval 控制预算。stock@CN-SZSE/CN-BSE 为逐所细分复验
     targets: [stock@CN, stock@CN-SZSE, stock@CN-BSE, stock@HK, stock@US]
     window: {start: 2024-06-01, end: 2024-08-31}   # 分红除权高发窗口
     intervals: [P1D]
@@ -83,18 +80,16 @@ chain:
     fields: [close]
   history_depth:
     targets: [stock@CN, stock@HK, stock@US]
-    # 第二轮（20261107T002854）：CN ≈2000-01-01（600000 上市伪影）、HK
-    # ≈2004-07-17（00700 上市伪影）均 90 天粒度收敛；US 击穿 1990 边界
-    # （粒度 None，二分未跑）。本轮基准换早上市标的并把边界提前到 1930：
-    # 收敛点即库底；floor-hit（粒度 None）=「库深 ≥1930」强声明，下轮边界
-    # 再降（1900/1880）。earliest 为全 targets 共享单值，CN 回溯到首个空
-    # 纪元（1980-1990）即停，不受 1930 影响。
+    # 基准换早上市标的并把边界提前到 1930：收敛点即库底；floor-hit（粒度
+    # None）=「库深 ≥1930」强声明，下轮边界再降（1900/1880）。earliest 为
+    # 全 targets 共享单值，CN 回溯到首个空纪元（1980-1990）即停，不受
+    # 1930 影响。
     earliest: 1930-01-01
     era_step_years: 10   # 1930 起共 10 纪元；步长 5 则仅纪元回溯就要 19 调，装不进 24 预算
     max_calls: 24        # 每条 case 预算：回溯 10 + 二分 ~8 + 验证 1 ≈ 19 最坏，留余量
     intervals: [P1D, P1W, P1M]
-    # 分钟族（PT1M~PT1H，含 60m）不声明（2026-11-07 拍板，免费档无权限、
-    # 与 alphafeed 同口径），历史深度无从探测
+    # 分钟族（PT1M~PT1H，含 60m）不声明（免费档无权限、与 alphafeed 同
+    # 口径），历史深度无从探测
 
 raw:
   # ── 实时行情（tf.quotes.get）：三市场字段矩阵与返回形态。SDK 0.1.25 实测
@@ -133,25 +128,4 @@ raw:
     expect: {status: error, error_contains: ""}   # 任意错误：记录指纹
     assert: false
 
-notes: >
-  首轮实证（20261107T000545+0800）：6.5s 间隔全程未触发限频（无 429）；
-  分钟级 403 指纹为 SDK PermissionError「无分钟K线查询权限」（免费档无分钟
-  权限，经应用层包装 UPSTREAM_ERROR 告知用户）；三市场 P1D × 三复权全
-  confirmed，adjust_diff 实证 forward/backward 在 CN/HK/US 均真实生效
-  （HK qfq max_diff 7.97 元、US hfq 67889 元，首分歧 2024-06-03 除权期）；
-  日线时间戳口径：CN/HK 北京零点，US 美东零点（北京 12:00 夏令 / 13:00
-  冬令，随 DST 漂移）；HK/US 日线 amount 上游原值 0（无成交额数据）；
-  quotes 实测返回 list[dict]（非文档 data 包装、无 session 字段），比例
-  字段为小数比例（1% = 0.01）。本轮复跑验证：min_bars 跨周期下限、
-  quotes 链式调用断言、history_depth 下探 1990。
-  第三轮（本轮）：基准标的永久换早上市标的（CN 600602 / HK 00002 / US GE，
-  破除二分收敛点的标的上市日伪影），history_depth 边界提前至 1930、
-  era_step_years 10、纳入 P1W/P1M（分钟族 PT1M~PT1H 免费档 403 已两轮
-  实证，无法探测历史深度）；预期调用最坏 320。
-  第四轮（2026-11-07 拍板）：分钟族 PT1M~PT1H（含 10m）不再声明，与
-  alphafeed 同口径收敛——免费档无权限，tickflow 又是 CN stock bars 第二
-  候选，声明无权限的周期会 403 打断本可由其他 Provider 服务的请求；
-  availability 由 81 收敛到 27；limit_truncation 一并移除：上轮三条 limit
-  case 已判 suspect（P1D 全年 244/247/250 根 ≠ documented_max 10000），
-  免费档无分钟线时 10000 触顶本就无法实证，单次上限与 partial 标记逻辑
-  由单测 sized_klines_payload 覆盖；预期调用最坏 266。
+notes: 各轮运行记录见 probes/results/PROBE_LOG.md（不入库）；探针框架规范见 probes/README.md。

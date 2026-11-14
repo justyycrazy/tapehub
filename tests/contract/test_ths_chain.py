@@ -128,7 +128,7 @@ def test_capability_catalog(ths_client: TestClient) -> None:
         assert cap["fields"] == ["open", "high", "low", "close", "volume", "amount"]
 
     # 历史覆盖（探针实证回填）：stock 固定起点 ≈2005-01-15（聚焦二分
-    # ±30 天粒度 approx，2026-11-14 精化替代首轮 ≈2005-02-14 ±90 天）；
+    # ±30 天粒度 approx）；
     # index/etf 为滚动窗口语义（retention_days，指数端点实测
     # 'recent five years only'）
     hist_by_asset = {
@@ -143,8 +143,7 @@ def test_capability_catalog(ths_client: TestClient) -> None:
 
     adjustments = {tuple(cap["asset_types"])[0]: cap["adjustments"] for cap in bars_caps}
     assert adjustments["stock"] == ["none", "qfq", "hfq"]  # 唯一三值复权资产
-    # ETF 上游固定前复权（2026-11-14 受控对比实证裁决：无 adjust 参数、
-    # 数据固定 qfq 口径，报告 20261114T080423）
+    # ETF 上游固定前复权（受控对比实证：无 adjust 参数、数据固定 qfq 口径）
     assert adjustments["etf"] == ["qfq"]
     for asset in ("index", "contract", "option"):
         assert adjustments[asset] == ["none"]
@@ -178,9 +177,8 @@ def test_unsupported_interval_p1w_422(ths_client: TestClient) -> None:
 def test_bse_exchange_namespace_mapped(
     ths_client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """BSE→BJ 收编（2026-11-14 探针价格端点实证，报告 20261114T135118
-    +0800）：北交所个股请求正常路由（原「未实证 422 拒绝」断言随收编
-    反转）。"""
+    """BSE→BJ 收编（探针价格端点实证）：北交所个股请求正常路由
+    （原「未实证 422 拒绝」断言随收编反转）。"""
     preset_payload(
         monkeypatch,
         envelope({"item": bar_rows("date_ms", [1767196800000, 1767283200000])}),

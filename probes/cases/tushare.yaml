@@ -10,7 +10,7 @@ requires:
 pacing:
   call_interval_s: 1.5
   timeout_s: 60
-  # chain 展开（2026-11-13 raw→chain 收敛后）：availability 36（stock/SZSE/BSE
+  # chain 展开（raw→chain 收敛后）：availability 36（stock/SZSE/BSE
   # 基准 29 + 期货交易所限定目标 7：contract@CN-DCE/INE/CFFEX +
   # continuous@CN-DCE/CZCE/INE/CFFEX 各 1）+ adjust_diff 36（3 目标 × 3 周期
   # × 2 pair × 2 调）+ history_depth（stock 三周期 + contract 全量 +
@@ -30,16 +30,16 @@ targets:
   stock@CN-SZSE:
     instrument: CN-SZSE-000001
     # 平安银行（深市主板）：交易所限定追加目标，SZ→SZ 后缀 chain 级实证
-    #（此前仅文档示例 000001.SZ；框架 2026-11-12 起支持交易所限定键）
+    #（此前仅文档示例 000001.SZ）
     window: {start: 2025-01-01, end: 2025-12-31}
     min_bars: 10
     required_fields: [open, high, low, close, volume, amount]
   stock@CN-BSE:
     instrument: CN-BSE-920000
-    # 安徽凤凰（精选层存量平移，2020-12-23 上市）：BSE→BJ 后缀 2026-11-12
-    # 接入（raw 三证：目录 920 段/daily/adj_factor，报告 20261112T172921
-    # +0800），chain 级常态复验（availability × adjust_diff）；原 daily/
-    # adj_factor 两条 raw 直测已入链退役，目录 case 保留作标的轮换证据
+    # 安徽凤凰（精选层存量平移，2020-12-23 上市）：BSE→BJ 后缀经 raw 三证
+    # 接入（目录 920 段/daily/adj_factor），chain 级常态复验（availability
+    # × adjust_diff）；原 daily/adj_factor 两条 raw 直测已入链退役，目录
+    # case 保留作标的轮换证据
     window: {start: 2025-01-01, end: 2025-12-31}
     min_bars: 10
     required_fields: [open, high, low, close, volume, amount]
@@ -51,17 +51,16 @@ targets:
     window: {start: 2023-09-01, end: 2023-12-29}
     min_bars: 20
   contract@CN-DCE:
-    # 大商所合约：适配器后缀直拼（CN-DCE-M2705 → M2705.DCE）。2026-11-12
-    # 后缀 raw 直测实证（.DCE confirmed，报告 20261112T110412）并经人工确认
-    # 扩容声明后，常态复验收敛为 chain 目标（原 fut-dce-suffix raw 退役）。
-    # 合约会到期：运行前按大商所挂牌信息核对，失败如实记录，到期轮换为
-    # 当时的现活合约
+    # 大商所合约：适配器后缀直拼（CN-DCE-M2705 → M2705.DCE）。后缀 raw
+    # 直测实证并扩容声明后，常态复验收敛为 chain 目标（原 fut-dce-suffix
+    # raw 退役）。合约会到期：运行前按大商所挂牌信息核对，失败如实记录，
+    # 到期轮换为当时的现活合约
     instrument: CN-DCE-M2705
     window: {start: 2026-09-01, end: 2026-12-31}
     min_bars: 20
   contract@CN-INE:
     # 上期能源合约：后缀直拼（CN-INE-SC2705 → SC2705.INE）；品种码统一大写
-    #（2026-11-12 实证 tushare 统一大写，交易所原生小写 sc 无需保留）
+    #（tushare 统一大写，交易所原生小写 sc 无需保留）
     instrument: CN-INE-SC2705
     window: {start: 2026-09-01, end: 2026-12-31}
     min_bars: 20
@@ -75,9 +74,8 @@ targets:
     window: {start: 2025-01-01, end: 2025-12-31}
     min_bars: 10
   continuous@CN-DCE:
-    # DCE 主连：品种+L 由适配器映射（CN-DCE-M → ML.DCE；2026-11-12 五所连续
-    # 代码实证，报告 20261112T133250）——instrument 写品种码不带 L；
-    # 原 fut-dce-continuous-l raw 直测退役
+    # DCE 主连：品种+L 由适配器映射（CN-DCE-M → ML.DCE；五所连续代码实证）
+    # ——instrument 写品种码不带 L；原 fut-dce-continuous-l raw 直测退役
     instrument: CN-DCE-M
     window: {start: 2025-01-01, end: 2025-12-31}
     min_bars: 10
@@ -104,8 +102,8 @@ chain:
   include_declared: true
   skip: []
   adjust_diff:
-    # stock@CN-SZSE/CN-BSE 为逐所细分复验（2026-11-12 接入）：BSE 复权此前
-    # 仅 adj_factor 输入侧直测，本轮补 none/qfq/hfq 全序列对比
+    # stock@CN-SZSE/CN-BSE 为逐所细分复验：BSE 复权此前仅 adj_factor 输入
+    # 侧直测，补 none/qfq/hfq 全序列对比
     targets: [stock, stock@CN-SZSE, stock@CN-BSE]
     window: {start: 2024-01-01, end: 2024-12-31}   # 含分红除权日
     pairs: [[none, qfq], [none, hfq]]
@@ -121,15 +119,15 @@ chain:
   limit_truncation:
     # contract 生命周期短触不到 2000 条上限（结构性 suspect 如实保留记录）；
     # continuous 主连 16 年窗口经链路打穿上限——原 fut-continuous-cap raw
-    # 直测（2026-11-12：恰 2000 条、保尾截头）收敛入链，顺带复验适配器
-    # partial 覆盖判定语义
+    # 直测（恰 2000 条、保尾截头）收敛入链，顺带复验适配器 partial 覆盖
+    # 判定语义
     targets: [contract, continuous]
     interval: P1D
     max_range: P16Y
     documented_max: 2000
 
 raw:
-  # ── 2026-11-13 raw→chain 收敛：期货五所后缀（.DCE/.ZCE/.INE/.CFX）、连续
+  # ── raw→chain 收敛：期货五所后缀（.DCE/.ZCE/.INE/.CFX）、连续
   #    合约五所代码（品种+L 主连、CFFEX 主力直拼）、fut_daily 2000 条上限、
   #    BSE daily/adj_factor 直测共 12 条 raw 直测 case 退役——均已实证扩容
   #    声明，由 chain 交易所限定目标、limit_truncation（continuous, P16Y）
@@ -156,32 +154,4 @@ raw:
       - {method: query, kwargs: {api_name: "probe_nonexistent_api_for_fingerprint"}}
     expect: {status: error, error_contains: ""}
 
-notes: >
-  adjust_diff 已实证（报告 20261112T110412+0800）：P1W/P1M 的 qfq/hfq 与
-  none 存在真实差异，官方「adj 仅日线复权」偏保守，manifest adjustments
-  维持 [none, qfq, hfq] 不收敛。
-  期货后缀实测（框架修复后报告 20261112T110412 / 20261112T111752）：
-  .DCE / .INE / .CFX confirmed；.ZCE 可用（4 位年月码
-  SR2601.ZCE 实测返回数据；此前 3 位原生码全空系代码格式所致，
-  并非积分档位门槛）。fut_daily 单次上限经主连 CUL.SHF 实测恰为 2000 条、
-  保尾截头（原 fut-continuous-cap raw）。四所后缀经人工确认后已扩容进能力
-  目录（连同既有 .SHF 五所齐备，报告 20261112T124404+0800）；探针不自动改
-  manifest，扩容由人工确认后单独提交。CZCE 约定速记：合约 ts_code 为 4 位
-  年月码（SR2601.ZCE 直通）、fut_basic 的 exchange 参数用交易所代码 CZCE——
-  与后缀 .ZCE 是两套约定。
-  连续合约五所代码实证（报告 20261112T133250+0800）后声明 CN continuous
-  （品种+L 主连、CFFEX 例外主力直拼，不参与 auto 路由）；BSE 三证后扩容
-  （报告 20261112T172921+0800 / 20261112T175738+0800）。
-  history_depth 已全量收敛回填（均经人工确认）：stock P1D/P1W/P1M
-  ≈1999-12-08（approx ±90 天、两轮复现，报告 20261112T124404+0800）；
-  contract 走全量模式精确定值 2023-01-17（= CU2401 上市首日，approx=False，
-  报告 20261112T135507+0800）；continuous ≈1991-01-01（二分下限触底，
-  真实可能更早，同报告）。
-  raw→chain 收敛（2026-11-13）：期货五所合约后缀与主连代码、fut_daily 2000
-  条上限均已实证扩容声明，常态复验收敛为 chain——交易所限定目标
-  contract@CN-DCE/INE/CFFEX 与 continuous@CN-DCE/CZCE/INE/CFFEX（合约键
-  会到期：运行前按交易所挂牌信息核对，失败如实记录，到期轮换现活合约），
-  limit_truncation 加 continuous（P16Y 窗口经链路复验 2000 上限与保尾截头
-  partial 语义）；原后缀/主连/上限/BSE daily·adj_factor 共 12 条 raw 直测
-  case 退役（BSE daily/adj_factor 由 stock@CN-BSE availability × adjust_diff
-  覆盖；目录 case 保留作标的轮换证据）。
+notes: 各轮运行记录见 probes/results/PROBE_LOG.md（不入库）；探针框架规范见 probes/README.md。

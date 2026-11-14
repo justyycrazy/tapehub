@@ -1,47 +1,8 @@
 """Twelve Data 适配器（已实现：历史 K 线 REST + 实时快照/快照流 WS）。
 
-约定：
-
-- 历史K线走官方 Python 库 ``twelvedata``（twelvedata-python，可选依赖）：
-  只在 ``_fetch_rows`` 内部延迟导入，未安装时返回 PROVIDER_NOT_IMPLEMENTED，
-  不影响服务启动；同步调用经 ``call_in_thread`` 隔离到线程池；
-- 实时快照（M2）与快照流（M3）共用 WS 共享运行时
-  （``wss://ws.twelvedata.com/v1/quotes/price``，asyncio 原生、单连接，
-  ``websockets`` 为可选依赖延迟导入——未安装同样 PROVIDER_NOT_IMPLEMENTED）。
-  上游行为按 2026-11-05 探针实证（报告 probes/results/twelvedata/
-  ws-behavior-20261105T221000+0800.md，不入库）：WS credit = 当前活跃
-  订阅 symbol 数（退订即时释放、重订重连免费）；上游支持逐 symbol 真退订，
-  无 tqsdk 式代际回收（不产生 ``recycling`` 事件）；
-- API Key 通过 ``TAPEHUB_TWELVEDATA_API_KEY`` 环境变量注入
-  （pydantic-settings），只经内存传给 SDK/连接 URL，禁止写入代码、
-  manifest、日志或异常响应；
-- 容量闸门：并发订阅 symbol 数达 ``twelvedata_subscription_limit``
-  （默认 8，免费版 WS credit 口径）时急切返回
-  ``UPSTREAM_SUBSCRIPTION_LIMIT``（HTTP 429，SSE 响应头之前）；
-- M2 快照：已活跃订阅直接读缓存即时返回；冷订阅等待首包，超过
-  ``twelvedata_first_snapshot_timeout`` 返回 ``QUOTE_NOT_READY``（408）；
-  取数后引用归零，延迟退订释放 credit（见 runtime 注释）；
-- M3 流：受理校验急切执行（错误为 JSON 结构），订阅在首次迭代进行；
-  事件经共享 ``StreamBuffer``（coalesce 丢旧保新只约束 quote 帧）；
-  迭代器关闭释放引用并注销监听器；
-- 上游 datetime 墙钟口径按资产类型区分（外汇/加密 2026-11-04、美股
-  2026-11-05 实测 + 官方文档）：外汇 Australia/Sydney（AEDT/AEST）、
-  加密货币 UTC、美股 America/New_York（EST/EDT）；解析见 response_mapper，
-  统一北京时间归一化由领域层 BarBatch 完成；
-- 美股 stock/etf（US market）：exchange 段白名单 NYSE/NASDAQ/CBOE，
-  上游请求显式传 exchange（消歧）与 adjust（none→"none"、qfq→"all"
-  拆股+分红前复权，与国内口径一致——2026-11-06 实证；上游参数名只认
-  adjust，传 adj 会被静默忽略落回默认 splits）；volume 有值、amount 恒
-  null；CN/HK 因计划门槛与 EOD-only 产品形态不声明（事实见 manifest 注释）；
-- 上游 outputsize 上限 5000 且按“最新一根”往回返回：采用覆盖判定——
-  返回数量达到上限且最早一根仍晚于请求 start 时标记 partial=true，
-  API 层据此在 warnings 中提示可能截断；
-- values 默认倒序，统一升序排序与分页由共享 ``paginate_bars`` 完成，
-  闭区间 [start, end] 在标准化后复核；
-- 上游 SDK/HTTP 异常类型未在文档中核实，统一由应用层包装为 UPSTREAM_ERROR；
-  唯一实测核实的例外（2026-11-04 探针实测）：区间内无数据时上游返回 400
-  BadRequestError（指纹见 request_mapper.UPSTREAM_NO_DATA_FINGERPRINT），
-  属上游权威的无数据结论，适配器归一化为空列表而非报错。
+映射规则与上游行为定案见 docs/providers/twelvedata.md（唯一出处，本文不复述）。
+探针运行记录见 probes/results/PROBE_LOG.md（本地文件，不入库）。
+官方文档：https://twelvedata.com/。
 """
 
 import asyncio
@@ -97,11 +58,8 @@ class ProviderAdapter(BaseProviderAdapter):
         )
 
     async def fetch_quote(self, query: QuoteQuery) -> Quote:
-        """实时快照：WS 订阅缓存（tqsdk 同构）。
-
-        已活跃订阅直接读缓存即时返回；冷订阅等待首包，超时返回
-        ``QUOTE_NOT_READY``；取数后引用归零（延迟退订释放 credit）。
-        """
+        """实时快照：WS 订阅缓存（tqsdk 同构）——活跃订阅读缓存，冷订阅
+        等首包、超时抛 ``QUOTE_NOT_READY``，取数后引用归零（延迟退订）。"""
         self.resolve_quote_operation(query)
         api_key = self._ensure_ready()
         symbol = td_symbol(query)
@@ -119,10 +77,9 @@ class ProviderAdapter(BaseProviderAdapter):
     def stream_quote(self, query: QuoteQuery) -> AsyncIterator[QuoteStreamEvent]:
         """实时快照流（M3）：WS 订阅 + 监听器 → 有界队列 → 事件流。
 
-        受理校验（operation 路由、凭据、标的映射、容量闸门）在调用时
-        急切执行——错误在响应头发出前统一抛出（JSON 错误结构）；Runtime
-        启动与订阅在首次迭代时进行。断线/重订恢复由 Runtime 以显式
-        status 事件通知（无 ``recycling``——无代际回收）。
+        受理校验急切执行（错误在响应头发出前统一抛出）；Runtime 启动与
+        订阅在首次迭代时进行，断线/重订恢复由 Runtime 以显式 status 事件
+        通知（无 ``recycling``——无代际回收）。
         """
         self.resolve_quote_operation(query)
         api_key = self._ensure_ready()
@@ -166,10 +123,8 @@ class ProviderAdapter(BaseProviderAdapter):
     def shutdown_runtime(self) -> object | None:
         """停机钩子（由应用 lifespan 调用）：关闭 WS Runtime（若已启动）。
 
-        lifespan 在事件循环内同步调用本方法——返回异步停机任务由 lifespan
-        await 到完成（裸 create_task 无人 await 会在 uvicorn 退出时被取消
-        半途、TestClient portal 下直接销毁，ws.close 永不落）；无运行循环的
-        兜底路径直接同步跑完并返回 None（正常不触发）。
+        有运行循环时返回异步停机任务由 lifespan await 到完成；无运行循环
+        的兜底路径同步执行并返回 None。
         """
         runtime = self._runtime
         if runtime is None:
@@ -202,7 +157,7 @@ class ProviderAdapter(BaseProviderAdapter):
         """懒启动进程内唯一 WS Runtime（asyncio 原生，不阻塞事件循环）。
 
         ``start`` 幂等：连接任务已消亡（异常退出/事件循环关闭）时重启，
-        ``_run`` 建连后会对全部活跃引用自动重订（探针实证重订免费）。
+        ``_run`` 建连后会对全部活跃引用自动重订（重订免费）。
         """
         async with self._runtime_lock:
             if self._runtime is None:

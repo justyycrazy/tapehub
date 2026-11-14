@@ -1,21 +1,8 @@
 """TickFlow 请求映射（RequestMapper）：标准请求 → tf.klines.get / tf.quotes.get 参数。
 
-接口签名均已按官方文档核实（https://docs.tickflow.org/zh-hans/）：
-
-- ``tf.klines.get(symbol, period=..., count=..., adjust=..., start_time=..., end_time=...)``；
-- ``tf.quotes.get(symbols=...)``（快照无 period/adjust/时间范围维度）；
-- symbol 格式 ``代码.市场后缀``，后缀 SH / SZ / BJ / HK / US
-  （A 股 SSE/SZSE/BSE，港股 HKEX，美股 NYSE/NASDAQ/CBOE——exchange 段仅作
-  标准代码规范，上游统一 US 后缀）；
-- 上游 period 枚举 1m/5m/10m/15m/30m/60m/1d/1w/1M/1Q/1Y；分钟族不声明
-  （免费档无分钟 K 线权限，403 已三轮实证；2026-11-07 拍板与 alphafeed 同
-  口径收敛到日/周/月）；1Q 无 ISO 对应不声明，1Y 超出项目最大到月线的
-  周期范围，不声明；
-- adjust 枚举 forward/forward_additive/backward/backward_additive/none；
-- start_time/end_time 为毫秒时间戳；count 默认 100、最大 10000。
-
-原则：所有相关参数显式传递，不依赖上游默认值
-（注意 SDK 的 adjust 默认 forward，与 tapehub 的显式传参约定无关）。
+映射规则与上游行为定案见 docs/providers/tickflow.md（唯一出处，本文不复述）。
+探针运行记录见 probes/results/PROBE_LOG.md（本地文件，不入库）。
+官方文档：https://docs.tickflow.org/zh-hans/。
 """
 
 from typing import Any
@@ -27,7 +14,7 @@ from tapehub.domain.models import Adjust, BarQuery, Instrument, QuoteQuery
 # 单次请求上限（官方文档：单次单标的最多 10000 根）
 UPSTREAM_MAX_COUNT = 10000
 
-# 仅声明日/周/月（分钟族无套餐权限不声明，见模块 docstring）
+# 仅声明日/周/月（分钟族无套餐权限不声明，见 docs/providers/tickflow.md）
 _PERIOD_CODES: dict[Interval, str] = {
     Interval.parse("P1D"): "1d",
     Interval.parse("P1W"): "1w",

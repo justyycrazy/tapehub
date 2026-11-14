@@ -303,7 +303,7 @@ def test_us_etf_chain(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_us_etf_qfq_maps_to_adjust_all(monkeypatch: pytest.MonkeyPatch) -> None:
-    """ETF qfq 已声明（2026-11-12 探针实证复权生效）：映射上游 adjust=all。"""
+    """ETF qfq 已声明（探针实证复权生效）：映射上游 adjust=all。"""
     from tests.fixtures.providers.stub_twelvedata import StubTDClient
 
     install(monkeypatch)

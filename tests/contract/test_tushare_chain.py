@@ -96,7 +96,7 @@ def test_futures_chain(
     [
         # CZCE 与统一标准码同为 4 位年月，直通（探针实证 4 位可用、3 位旧写法全空）
         ("CN-CZCE-RM2701", "RM2701.ZCE"),
-        # 其余四所后缀直拼（探针实证，报告 20261112T124404+0800）
+        # 其余四所后缀直拼（探针实证）
         ("CN-DCE-V2601", "V2601.DCE"),
     ],
 )
@@ -170,7 +170,7 @@ def test_capability_catalog(tushare_client: tuple[TestClient, Any]) -> None:  # 
     )
     assert [i["code"] for i in continuous_cap["intervals"]] == ["P1D"]
     assert continuous_cap["adjustments"] == ["none"]
-    # history.start 探针回填：主连二分下限触底（报告 20261112T135507+0800）
+    # history.start 探针回填：主连二分下限触底
     assert continuous_cap["intervals"][0]["history"]["start"] == "1991-01-01T00:00:00+08:00"
 
 

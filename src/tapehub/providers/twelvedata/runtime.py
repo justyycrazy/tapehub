@@ -2,20 +2,12 @@
 
 asyncio 原生实现（与 tqsdk 的线程模型不同）：``single`` 部署模式下
 Runtime 连接任务运行在主事件循环上，所有状态仅事件循环内访问，无锁、
-无线程桥。上游行为全部按 2026-11-05 探针实证（报告
-probes/results/twelvedata/ws-behavior-20261105T221000+0800.md，不入库）：
+无线程桥。WS 协议行为定案见 docs/providers/twelvedata.md（唯一出处，
+本文不复述）。探针运行记录见 probes/results/PROBE_LOG.md（本地文件，
+不入库）。
 
-- 端点 ``wss://ws.twelvedata.com/v1/quotes/price``（API key 走查询参数，
-  绝不写日志）；免费版限 1 连接——本 Runtime 恒为单连接，断线重连重订；
-- credit = **当前活跃订阅 symbol 数**（免费版 8）：退订即时释放、重订
-  重连免费——与 tqsdk 不同，上游支持真正的逐 symbol 退订，无休眠
-  订阅累积、无代际回收（不产生 ``recycling`` 事件）；
-- 协议：``{"action": "subscribe|unsubscribe|heartbeat", "params": {...}}``；
-  ``subscribe-status`` / ``unsubscribe-status`` 为显式确认（退订与确认
-  之间存在在途事件竞态，以确认为准）；heartbeat 每 ~10s 发送且有应答；
-- price 事件：``timestamp`` 为分钟桶 Unix 秒、``price`` 为最新价；
-  外汇无 ``exchange`` 字段，两者均无 bid/ask / volume（映射见
-  response_mapper.ws_price_to_quote）。
+要点：credit = 当前活跃订阅 symbol 数——退订即时释放、重订免费，上游支持
+逐 symbol 真退订，无休眠订阅累积、无代际回收（不产生 ``recycling`` 事件）。
 
 事件通知（listener 回调 ``callback(kind, symbol, snapshot)``）：
 
@@ -152,7 +144,7 @@ class TwelvedataWsRuntime:
 
     def subscribe(self, symbol: str) -> None:
         """引用 +1；首次引用且无缓存快照时向上游发订阅（幂等，重复
-        订阅同 symbol 上游不重复计费——探针实证）。"""
+        订阅同 symbol 上游不重复计费）。"""
         task = self._linger_tasks.pop(symbol, None)
         if task is not None:
             task.cancel()

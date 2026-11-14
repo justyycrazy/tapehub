@@ -1,63 +1,9 @@
-# TqSdk 适配器：能力声明与内部操作映射。
-# 接口签名均已按官方文档核实：
-# https://doc.shinnytech.com/tqsdk/latest/usage/mddatas.html
-# https://doc.shinnytech.com/tqsdk/latest/reference/tqsdk.api.html
-#
-# 说明：
-# - TqSdk 为官方 Python SDK：TqApi(auth=TqAuth(账户, 密码)) 鉴权必填（快期账户）；
-# - 合约代码格式 交易所.合约（交易所全大写；标准 symbol 恒为大写 4 位年月，
-#   交易所原生写法由适配器还原——SHFE 品种小写如 SHFE.cu2607、CZCE 合约
-#   4→3 位年月码如 CZCE.RM701，均探针实证）；主力连续 KQ.m@<交易所>.<品种>；
-#   指数连续（加权）KQ.i@<交易所>.<品种>；
-# - get_kline_serial(symbol, duration_seconds, data_length, adj_type)：
-#   周期为不超过 1 日的任意秒数（日线 86400）；data_length 默认 200；
-#   单次上限 2026-11-03 探针实测 5000 根（PT1M/PT5M 同时恰好 5000，
-#   文档 8000/10000 口径未复现，疑受当前套餐限制）；达到上限时标记 partial=true；
-#   adj_type 仅对股票/基金有效（F=前复权、B=后复权、None=不复权），
-#   期货/指数无复权概念，始终传 None；复权实证（2026-11-03 探针 + 
-#   2026-11-13 盘中探针补充，报告 20261113T092656+0800）：分钟族（≤PT15M）
-#   qfq/hfq 均与 none 零差异（no-op，SSE/SZSE/ETF 三组一致），PT30M/PT1H/
-#   P1D 差异显著（生效，分界线在 PT30M）——分钟族 adjustments 经人工确认
-#   收窄为仅 none（adjust_diff suspect 18 条与 qfq/hfq 显著差异各 12 条为
-#   证据链）；
-# - 返回列 id/datetime/open/high/low/close/volume/open_oi/close_oi：
-#   datetime 为纳秒时间戳；无成交额字段，标准 amount 恒为 null；
-#   持仓量 open_oi/close_oi 进入受控 extensions：期货为真实持仓，
-#   股票/指数/ETF 列存在但恒为 0（如实透出 0.0，不用 null 冒充）；
-#   期货 volume 保持手；股票/ETF 的 volume 单位文档未写明，
-#   2026-11-03 探针量级对照判定为股（600000 日 volume 约 5×10^7）；
-# - 权限说明（usage/mddatas 原文 + 2026-11-04 探针）：数据可见性由**天勤平台
-#   账户档位**决定（免费版/专业版），与 SDK 及其版本无关。免费版账户仅
-#   期货/期权与四大指数实时，专业版账户含 A股股票/ETF 实时与历史。
-#   当前部署账户为**专业版**（2026-11-04 用户确认）：股票/ETF 实时五档
-#   （600000/510050 盘中实测）、股票/指数/ETF 历史日线实测可用。
-#   能力目录只声明结构性能力（SDK 能做什么）；账户权限不足是运行期事实，
-#   请求失败包装为 UPSTREAM_ERROR，不作为能力缺口声明；
-# - 每次请求独立创建并关闭 TqApi 实例（在线程池中执行，一个线程一个实例）；
-# - 实时快照（get_quote，M2）：订阅-推送模型（await get_quote 至首包 +
-#   wait_update 驱动 is_changing 增量），字段白名单以 P5 探针实证为准
-#   （2026-11-04，probes/results/tqsdk/20261104T012958Z）：期货/主连/加权/
-#   股票/ETF/指数订阅均成功；指数与加权指数无盘口（bid/ask 价格 NaN →
-#   null 如实透出，量侧为 0）；股票/ETF 实时五档需专业版账户（运行期事实，
-#   不作为能力缺口声明）。快照无周期/复权维度，intervals/adjustments 为空、
-#   operations match 对无意义维度显式 null。**M2 为按请求租约订阅**：
-#   请求结束即退订本地维护（Quote 转休眠账本，重复请求经唤醒即时返回
-#   新鲜快照），休眠回收阀门（TAPEHUB_TQSDK_SUBSCRIPTION_LIMIT）因此
-#   对纯 M2 流量同样可达；
-# - 上游返回“从最新一根往回”的序列：当返回数量达到上限且最早一根仍晚于
-#   请求 start 时，无法覆盖请求窗口，标记 partial=true；
-# - 历史覆盖范围（history，2026-11-03 探针：日线二分估计，次轮粒度 5 天）：
-#   日线 continuous/weighted-index 自 2016-01-05、stock/index/etf 自 2018-01-02
-#   （数据自该时点起大体连续）；分钟级为**滚动保留**（按数据类划分：
-#   现货三类一致、期货两类一致），以 retention_days 声明——覆盖
-#   「now − N 天 → now」，边界随时间前移，不声明固定起点；
-#   取整规则（向下取，留安全余量）：不足 90 天取 7 的倍数（周），
-#   不小于 90 天取 30 的倍数（月）；六周期折算根数均落在 5000 根量级，
-#   与单次上限（data_length 5000）一致——保留深度即序列存储上限；
-#   PT30M/PT1H 于 2026-11-03 第三轮探针补测；contract 随挂牌期限，全 null 不编造；
-# - 单接口 Provider：变体与 default_variant 均为 tqsdk（官方 SDK 包名，
-#   背后为天勤 TianQin 行情平台，与东方财富无关）：缺省请求即可路由，
-#   也可显式传 variant=tqsdk。
+# TqSdk（tqsdk）能力声明与内部操作映射。
+# 映射细则、上游行为定案与历史覆盖依据：docs/providers/tqsdk.md（唯一出处，本文不复述）。
+# 官方文档：
+#   https://doc.shinnytech.com/tqsdk/latest/usage/mddatas.html
+#   https://doc.shinnytech.com/tqsdk/latest/reference/tqsdk.api.html
+# 探针运行记录：probes/results/PROBE_LOG.md（本地文件，不入库）。
 provider: tqsdk
 default_variant: tqsdk
 
@@ -88,7 +34,6 @@ capabilities:
       - {code: PT15M, history: {retention_days: 240, end: null}}
       - {code: PT30M, history: {retention_days: 450, end: null}}
       - {code: PT1H, history: {retention_days: 840, end: null}}
-      # 探针 limit case 实测最早一根（cu 主连日线，北京时间 2016-01-05）
       - {code: P1D, history: {start: "2016-01-05T00:00:00+08:00", end: null}}
     adjustments: [none]
     fields: [open, high, low, close, volume]
@@ -103,13 +48,10 @@ capabilities:
       - {code: PT15M, history: {retention_days: 180, end: null}}
       - {code: PT30M, history: {retention_days: 390, end: null}}
       - {code: PT1H, history: {retention_days: 690, end: null}}
-      # 探针二分估计（2026-11-03 第二轮，粒度 5 天）：au 加权日线最早 ≈2016-01-05（北京时间）
       - {code: P1D, history: {start: "2016-01-05T00:00:00+08:00", end: null}}
     adjustments: [none]
     fields: [open, high, low, close, volume]
-  # 股票分钟族（≤PT15M）：adj_type 复权为 no-op——2026-11-13 盘中探针实证
-  # （报告 20261113T092656+0800）：qfq/hfq 与 none 零差异（identical=True，
-  # SSE/SZSE 双所一致），经人工确认收窄为仅 none；PT30M 起复权真实生效
+  # 股票分钟族（≤PT15M）：adj_type 复权为 no-op，仅声明 none
   - data_type: bars
     markets: [CN]
     asset_types: [stock]
@@ -121,9 +63,7 @@ capabilities:
       - {code: PT15M, history: {retention_days: 450, end: null}}
     adjustments: [none]
     fields: [open, high, low, close, volume]
-  # 股票 PT30M/PT1H/P1D：adj_type 复权真实生效（2026-11-13 盘中探针实证：
-  # qfq/hfq 与 none 差异显著，PT30M 起分界），三值声明；
-  # 实时与历史行情需专业版权限
+  # 股票 PT30M/PT1H/P1D：adj_type 复权真实生效，三值声明
   - data_type: bars
     markets: [CN]
     asset_types: [stock]
@@ -132,12 +72,10 @@ capabilities:
     intervals:
       - {code: PT30M, history: {retention_days: 930, end: null}}
       - {code: PT1H, history: {retention_days: 1500, end: null}}
-      # 探针二分估计（粒度 90 天）：600000 日线最早 ≈2018-01-02
       - {code: P1D, history: {start: "2018-01-02T00:00:00+08:00", end: null}}
     adjustments: [none, qfq, hfq]
     fields: [open, high, low, close, volume]
-  # 指数：adj_type 对指数无效，仅 none；免费版仅四大指数（上证50/沪深300/
-  # 中证500/中证1000）实时，历史权限未核实
+  # 指数：adj_type 对指数无效，仅声明 none
   - data_type: bars
     markets: [CN]
     asset_types: [index]
@@ -149,13 +87,11 @@ capabilities:
       - {code: PT15M, history: {retention_days: 450, end: null}}
       - {code: PT30M, history: {retention_days: 930, end: null}}
       - {code: PT1H, history: {retention_days: 1500, end: null}}
-      # 探针二分估计（粒度 90 天）：000016 日线最早 ≈2018-01-02
       - {code: P1D, history: {start: "2018-01-02T00:00:00+08:00", end: null}}
     adjustments: [none]
     fields: [open, high, low, close, volume]
-  # ETF 分钟族（≤PT15M）：adj_type 复权为 no-op（2026-11-13 盘中探针实证
-  # 与股票同模式：qfq/hfq 与 none 零差异），收窄为仅 none；
-  # ETF PT30M/PT1H/P1D：复权真实生效，三值声明；属基金大类，权限口径未核实
+  # ETF 分钟族（≤PT15M）：adj_type 复权为 no-op，仅声明 none
+  # ETF PT30M/PT1H/P1D：复权真实生效，三值声明
   - data_type: bars
     markets: [CN]
     asset_types: [etf]
@@ -175,12 +111,10 @@ capabilities:
     intervals:
       - {code: PT30M, history: {retention_days: 930, end: null}}
       - {code: PT1H, history: {retention_days: 1500, end: null}}
-      # 探针二分估计（2026-11-03 第二轮，粒度 5 天）：510050 日线最早 ≈2018-01-02
       - {code: P1D, history: {start: "2018-01-02T00:00:00+08:00", end: null}}
     adjustments: [none, qfq, hfq]
     fields: [open, high, low, close, volume]
-  # 实时快照（M2）：订阅-推送模型，无周期/复权维度（两维度声明为空，
-  # 路由与能力匹配跳过）；字段白名单以 P5 探针实证为准（见文件头注释）
+  # 实时快照（M2）：订阅-推送模型，无周期/复权维度，两维度声明为空
   - data_type: quotes
     markets: [CN]
     asset_types: [contract, continuous, weighted-index, stock, index, etf]
@@ -215,8 +149,7 @@ capabilities:
       - amount
 
 operations:
-  # 全部资产类型 × 周期组合都调用同一上游接口 api.get_kline_serial；
-  # 显式枚举以保证能力目录与内部操作一一对应。
+  # 全部资产类型 × 周期组合都调用同一上游接口 api.get_kline_serial。
   - match: {data_type: bars, market: CN, asset_type: contract, interval: PT1M, adjust: none, variant: tqsdk}
     operation: get_kline_serial
   - match: {data_type: bars, market: CN, asset_type: contract, interval: PT5M, adjust: none, variant: tqsdk}

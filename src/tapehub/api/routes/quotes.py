@@ -44,7 +44,7 @@ async def stream_market_quote(
     """SSE 行情流：``text/event-stream``（quote / status / heartbeat 三类帧）。
 
     受理阶段（响应头发出前）的错误统一走 JSON 错误结构（含
-    ``STREAM_LIMIT_REACHED`` 429）；流中事件见 README「实时行情流」。
+    ``STREAM_LIMIT_REACHED`` 429）；流中事件见 docs/api.md「实时行情流（SSE）」。
     """
     query = to_quote_query(params)
     stream = service.open(query)  # 急切受理：闸门/路由错误在此抛出
@@ -61,7 +61,7 @@ async def stream_market_quote(
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
-            # 代理（如 nginx）不得缓冲 SSE；连接时长即「耗时」，见 README
+            # 代理（如 nginx）不得缓冲 SSE；连接时长即「耗时」，见 docs/api.md
             "X-Accel-Buffering": "no",
         },
     )

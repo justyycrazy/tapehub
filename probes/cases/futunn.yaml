@@ -1,12 +1,11 @@
 # 富途 OpenAPI（futunn）数据探针：三市场全声明维度可用性、逐所细分
-# （SZSE/BSE）、复权生效性、历史深度（逐周期 era 二分，第三轮扩围五目标）、
-# 无签名错误指纹与校时端点形态采集。
+# （SZSE/BSE）、复权生效性、历史深度（逐周期 era 二分）、无签名错误指纹
+# 与校时端点形态采集。
 #
-# 限频与额度（官方口径 2026-11-14）：IP 入口层行情类 100 次/分钟；业务限流
-# 走 HTTP 200 + ret_code=-11。**历史 K 线独立额度池：每标的首次成功返回
-# 非空即占用一个额度（默认 7×24 小时后释放，重复读取不延期）**——首轮已
-# 占 5 个基准标的额度，depth 专项复用同标的（重复读取不新增占用）；逐所
-# 细分新增 SZ.000001/BJ.920000 两个标的占用（容量数值未公布，保守 +2）。
+# 限频与额度（官方口径）：IP 入口层行情类 100 次/分钟；业务限流走
+# HTTP 200 + ret_code=-11。历史 K 线独立额度池：每标的首次成功返回非空
+# 即占用一个额度（默认 7×24 小时后释放，重复读取不延期）——depth 专项
+# 复用 availability 已占额度的基准标的（不新增占用；容量数值未公布）。
 # pacing 2 秒（任意 60 秒窗口 ≤30 次 < 100 次，留 3 倍余量）。
 probe: futunn
 version: 1
@@ -24,14 +23,12 @@ pacing:
   # 免计「首请求」（实测上游未签发 token，分页循环保留为防御）
   call_interval_s: 2.0
   timeout_s: 60
-  # 本轮构成（2026-11-14 第三轮，depth 扩围立项）：availability 160
-  # （8 目标键 × 8 周期 × 各自复权面；quotes 快照不经 chain——框架 chain
-  # 仅覆盖 fetch_bars，快照经目录外取证与单测覆盖）+ adjust_diff 12
-  # （6 case × 2 调）+ history_depth 40 case（5 目标 × 8 周期）× 最坏 24
-  # = 960 最坏 + raw 6（2 case 各 3 调）≈ 1138 最坏，预算 1200 留余量
-  # （era 10 年步长下单 case 实测约 8~15 调，实测全程 ≈600 调约 30 分钟，
-  # 后台运行）；额度池不新增占用——depth 四新目标复用 availability 已占
-  # 额度的基准标的
+  # 本轮构成：availability 160（8 目标键 × 8 周期 × 各自复权面；quotes 快照
+  # 不经 chain——框架 chain 仅覆盖 fetch_bars，快照经目录外取证与单测覆盖）
+  # + adjust_diff 12（6 case × 2 调）+ history_depth 40 case（5 目标 ×
+  # 8 周期）× 最坏 24 = 960 最坏 + raw 6（2 case 各 3 调）≈ 1138 最坏，
+  # 预算 1200 留余量（era 10 年步长下单 case 约 8~15 调）；额度池不新增
+  # 占用——depth 四新目标复用 availability 已占额度的基准标的
   max_calls: 1200
 
 # 跨三市场（CN/HK/US）声明能力：用市场限定目标（stock@MARKET）为每个市场
@@ -65,14 +62,14 @@ targets:
   stock@CN-SZSE:
     instrument: CN-SZSE-000001
     # 平安银行（深市主板，alphafeed 逐所细分同款目标）：.SZ 前缀此前仅
-    # 品类表核实、价格端点零实证——本轮 chain 级实证（2026-11-14 第二轮）
+    # 品类表核实、价格端点零实证——chain 级实证
     window: {start: 2025-01-01, end: 2025-12-31}
     min_bars: 10
     required_fields: [open, high, low, close, volume]
   stock@CN-BSE:
     instrument: CN-BSE-920000
     # 安徽凤凰（北交所 920 段，alphafeed 逐所细分同款目标）：品类表明示
-    # BJ 支持正股，价格端点此前零实证——本轮 chain 级实证，不通过则收窄
+    # BJ 支持正股，价格端点此前零实证——chain 级实证，不通过则收窄
     # exchange 白名单（ths「BJ 仅元信息域实证不收」先例对照）
     window: {start: 2025-01-01, end: 2025-12-31}
     min_bars: 10
@@ -108,16 +105,14 @@ chain:
     intervals: [P1D]
     pairs: [[none, qfq], [none, hfq]]
     fields: [close]
-  # history_depth 扩围（2026-11-14 第三轮立项，人工确认）：CN stock 已收敛
-  # 回填（日/周/月 1990-12-19 上市日锚 + 分钟族 2014-01-21），本轮扩
-  # index/etf/HK/US 四组合共 32 个周期组合——四新目标复用 availability 已
-  # 占额度标的（SH.000001/SH.510300/HK.00002/US-NYSE-GE），不新增历史额度
-  # 占用，成本仅 IP 频率；tiingo 裁决「逐周期独立探测，机制边界外推不作为
-  # 逐周期证据」→ 8 周期全跑；era_step 10 年减半深库回溯调用（HK.00002/
-  # US GE 为深库候选，二分精度仍由 bisect 收敛到 probe_span_days=90 天）；
-  # earliest 1890-01-01（GE 1892 上市，深库下界；触底分支
-  # estimate=earliest 一律不回填——twelvedata 教训）；SZSE/BSE 维持
-  # capability 级以基准标的库底为准、不单独 depth（README 注明）
+  # history_depth 五目标 × 8 周期全跑（逐周期独立探测，机制边界外推不作为
+  # 逐周期证据——tiingo 先例）：四新目标复用 availability 已占额度标的
+  #（SH.000001/SH.510300/HK.00002/US-NYSE-GE），不新增历史额度占用，成本
+  # 仅 IP 频率；era_step 10 年减半深库回溯调用（HK.00002/US GE 为深库候选，
+  # 二分精度仍由 bisect 收敛到 probe_span_days=90 天）；earliest 1890-01-01
+  #（GE 1892 上市，深库下界；触底分支 estimate=earliest 一律不回填——
+  # twelvedata 教训）；SZSE/BSE 维持 capability 级以基准标的库底为准、
+  # 不单独 depth（README 注明）
   history_depth:
     targets: [stock@CN, index@CN, etf@CN, stock@HK, stock@US]
     earliest: 1890-01-01
@@ -158,157 +153,4 @@ raw:
     expect: {status: ok, min_fields: [ret_code]}
     close: {method: close, kwargs: {}}
 
-notes: >
-  2026-11-14 接入首轮 case 设计（真实跑前占位）：接入范围用户拍板 CN
-  stock（SSE/SZSE/BSE）/index/etf（SSE/SZSE）+ HK stock + US stock ×
-  bars/quotes；8 核心周期（PT1M~P1H/P1D/P1W/P1M）全量声明、history 全
-  null（历史覆盖未核实）；stock 三复权声明（autype 文档明示）、index/etf
-  仅 none。待回填项（探针报告 → 人工确认 → manifest/README 单独提交）：
-  ①各周期 history.start（额度池核实后 depth 专项）；②adjust_diff 复权
-  生效性（qfq/hfq 差异基准；若与 none 一致判 suspect 并收窄声明）；
-  ③ETF autype 生效性（声明外观察，生效则扩声明）；④turnover/volume
-  口径与币种、volume_precision 非零品类分布；⑤日/周/月 K 线 time_key
-  墙钟口径（北京零点还是市场零点，影响闭区间复核与 README 时间口径段）；
-  ⑥quotes data_time 口径与盘前盘后段是否透出 extensions。
-  2026-11-14 首轮（报告 20261114T111229+0800，confirmed 94 / observe 1 /
-  **failed 0**，预算 103/120）：三市场 × 8 周期 availability 全 confirmed、
-  adjust_diff 6/6 confirmed（三市场 stock qfq/hfq 均生效，复权声明面
-  维持）、raw 401 指纹 observe（{'code': -12006, 'trace_id': ...}——新封装
-  code 键，与适配器防御读 code 键一致）。日/周/月线全窗口完整（P1D
-  243/246/249、P1W 52、P1M 12，与交易日历吻合）。目录外实证（同日）：
-  quotes 5 组合全 OK——data_time 口径 CN 收盘 15:00 整、HK 最后成交时刻、
-  US 美东收盘 16:00 毫秒精度，extensions 白名单 7 键齐备。**实证定案**：
-  ①time_key 墙钟口径——CN/HK 日/周/月线北京零点（00:00+08）、US 为美东
-  零点（13:00+08）、分钟线盘中时刻（北京时间），绝对时刻口径与
-  response_mapper 现实现一致，无需改动；②time_zone 字段实测为小时口径
-  （8）非文档的分钟偏移（480）——不参与标准化，仅记录（文档失真第 1 处）；
-  ③**num 参数被上游忽略**：请求传 370 实测单页返回 1000 行、
-  pagination.has_more 恒 False 且无 next_page_token——page_token 分页
-  实际不可用（文档失真第 2 处），单查询上限 ≈1000 行、从窗口起点升序
-  截断（适配器分页循环与 UPSTREAM_MAX_BARS=5550 现状不触发、保留为防御）；
-  ④**分钟族隐式截断 + partial 缺口（待人工裁决）**：PT1M 全年窗实测
-  count=1000/911（CN/US）、单月窗 1000/1000、末根远早于窗口 end 且
-  meta.partial=False——窗口 >1000 根时静默截断无信号；候选方案：行数
-  触顶+末根<end 判 partial / README 隐式截断说明（th「partial 恒 false
-  待核实」先例）/ 收窄分钟族声明，三选一待定；额度占用：5 个基准标的各
-  1 个历史额度（7×24h 释放），预检/取证复用同标的未新增。待回填项新增：
-  ⑦partial 语义裁决；history.start 仍 null（depth 待额度池容量核实后
-  单独立项）。
-  2026-11-14 partial 裁决落地（人工拍板）：分钟族隐式截断按「README 如实
-  说明 + partial 维持 false」处理（ths「partial 恒 false 待核实」同构
-  先例）——上游无截断信号（has_more 恒 False、行数上限 ≈1000 且 US 个案
-  低于 1000 使行数阈值判定漏判），适配器分页循环与触顶防御判定保留；
-  README/manifest/adapter docstring 三处注释同步，不动能力声明面。
-  2026-11-14 分页约定页核对（官方 quote/pagination，用户提示）：契约确认——
-  分页信息在响应顶层 pagination、以 has_more=false 停止、续页优先
-  page_token 没有令牌时回传 data.next_time——适配器读法与停止语义对齐
-  官方契约（实现无误）；补取证：PT1M 月窗信封 data 顶层仅
-  kline_list+volume_precision，next_page_token 与 data.next_time 两种
-  续页游标均未签发——「单查询 ≈1000 行截断、分页不可用」定案维持，
-  裁决不变；待查线索：history-kline 页称 page_token 与「历史额度保护」
-  绑定，当前账号两种游标均未出现，可能为账号/服务端层行数上限或待开通
-  配置——下轮探针核对，若 token 开始签发适配器分页循环自动生效。
-  2026-11-14 第二轮（报告 20261114T121154+0800，confirmed 150 / observe 9 /
-  **failed 0**，预算 225/300）：逐所 SZSE/BSE availability 全 confirmed
-  （SZ.000001 正股、BJ.920000 正股、BJ.899050 北证50 指数价格端点真实
-  可用，行数/首末根与 SSE 完全同构——exchange 白名单维持无需收窄）；
-  depth 专项 CN stock（600602 老八股，1990-12-19 上市）8 周期全 observe
-  收敛——**分钟族 5 周期各自独立二分一致收敛 ≈2014-01-21T09:45+08:00**
-  （90 天粒度 approx，跨周期互证）；P1D/P1W/P1M 全 era 满到 earliest
-  边界 1990-01-01（P1D 1000 行截断 floor-hit；P1W/P1M 无截断，era#7
-  [1990-1995] count=208/49 与上市日 1990-12-19 精确吻合——缺口恰为
-  1990 年前 50 周/11 个月）。目录外实证（同日）：ETF autype 三值复权
-  证据链完成——510300 日线 2024 全年 242/242 close 全差异（none vs qfq）
-  + hfq vs none 242/242 差异 → autype 对 ETF 生效；错误指纹
-  -7 invalid symbol（HK.99999）/ -8 unsupported market（UK.00700）落袋；
-  US.GE 盘前/盘后/夜盘段全有真实数据（上周五盘后 60.3 万股）——
-  extensions 扩容候选；NASDAQ 消歧 OK（US.AAPL 直通），time_key 夏令
-  再证（6 月日线 12:00+08=美东零点 EDT、1 月 13:00+08=EST）。额度占用
-  累计 8 个标的（首轮 5 + 逐所 2 + 消歧 1）。待人工确认回填清单：
-  ①CN stock history.start（P1W/P1M 独立实证库底 ≈1990-12-19 上市日锚、
-  P1D 同库互证、SZSE/BSE 未单独 depth）；②分钟族 5 周期 history.start
-  ≈2014-01-21（approx 90 天粒度）；③etf adjustments 扩 [none,qfq,hfq]；
-  ④extensions 盘前盘后段扩容与否。
-  2026-11-14 回填落地（人工确认）：①CN stock 日/周/月线 history.start =
-  1990-12-19T00:00:00+08:00（上市日锚：P1W/P1M era#7 count 缺口精确
-  吻合、P1D 同库互证 floor-hit；SZSE/BSE 未单独 depth，capability 级
-  声明以基准标的库底为准，README 注明）；②分钟族 PT1M~PT1H
-  history.start = 2014-01-21T09:45:00+08:00（五周期独立二分一致收敛，
-  90 天粒度 approx）；③etf adjustments 扩 [none, qfq, hfq]（operations
-  8→24 条，manifest/README/契约测试断言同步）；④extensions 盘前盘后段
-  扩容搁置（本轮不落地，证据保留于本 notes，字段选型设计待后续立项）。
-  2026-11-14 第三轮立项（人工确认，case 改动随本轮提交）：①depth 扩围——
-  targets 扩 [stock@CN, index@CN, etf@CN, stock@HK, stock@US] × 8 周期
-  全跑（era 10 年步长、earliest 1890-01-01、逐周期独立探测），四新目标
-  复用 availability 已占额度标的零新增占用，收敛值经 P1W/P1M era count
-  缺口判定真库底 vs 上市日伪影后呈人工确认回填；②page_token 复核（目录
-  外脚本）：pagination.has_more / next_page_token / data.next_time /
-  num 回显 / 单页行数 / data 顶层键集合——若 token 开始签发适配器分页
-  循环自动生效；③PT2H/PT4H ktype 候选观察（目录外脚本，manifest 注释
-  「探针后再议」收口）；④**extensions 盘前盘后段扩容——用户拍板不声明**
-  （现有证据 US.GE 盘后 60.3 万股已支撑裁决：白名单维持 7 键、盘前盘后
-  段数据不透出，待办项④闭合，回填时仅同步 manifest/README 注记）；
-  ⑤校时端点 GET /api/v1.0/server-time 免签观察 raw case（adapter
-  docstring 遗留项）。max_calls 300→1200（最坏 ≈1138：availability 160 +
-  adjust 12 + depth 40 case × 单 case 子预算 24 + raw 6；era 10 年步长下
-  单 case 实测约 8~15 调）。
-  2026-11-14 第三轮（报告 20261114T135118+0800，confirmed 165 / observe 42 /
-  **failed 1（孤立）**，预算 602/1200；目录外取证 futunn_observe_round3.py
-  7 调 + round3b 跟进 3 调 + ktype 15/16 补探 2 调）：
-  - **depth 扩围五目标 × 8 周期完成**。日/周/月族干净收敛（era 窗对日线
-    族有效；est = 最小非空 90 天窗终点，过冲 ≤90 天）：**CN index 日/周/
-    月 est ≈1991-01-18T16:52**（最终窗 [1990-10-20, 1991-01-18] count=23
-    吻合 ≈1990-12-19 回溯发布锚起算，与 CN stock 同库界；[1990-06-29,
-    1990-09-27] 空）；**CN etf 日/周/月 est ≈2012-06-09**（最终窗
-    [2012-03-11, 2012-06-09] count=10 与 510300 上市日 2012-05-28→06-09
-    交易日数精确吻合——上市日锚，count-exact）；**HK stock 日/周/月 est
-    ≈1991-01-18T16:52**（count=13 → 底 ∈ (1990-11-23, 1991-01-18]，与 CN
-    同窗但 HK 独立探测；alphafeed/tickflow HK 库底 1980-02-15 对照——
-    futunn HK 日线库显著更浅，差异如实记录）；**US stock 日/周/月 est
-    ≈1997-01-25T00:33**（count=17 → 底 ∈ (1996-11-29, 1997-01-25]，
-    ≈1996-12；GE 1892 上市，收敛点为真实库底而非上市日伪影）；
-  - **分钟族分化（重要方法论发现）**：index/etf/US 分钟族干净收敛（探测
-    计数 0-or-cap 两态、五周期同值互证）——**index 分钟 5 周期 est
-    ≈2015-05-15T23:37**（底 ∈ (2015-03-20, 2015-05-15]）、**US 分钟 5
-    周期 est ≈2015-05-15T23:37**（同窗独立收敛）、**etf 分钟 5 周期 est
-    ≈2015-07-11T08:26**（底 ∈ (2015-05-15, 2015-07-11]）；**CN/HK stock
-    分钟族碎片区失效**——era 10 年宽窗对分钟族触发上游静默返空（era
-    [2000,2010] PT1M 返 0 而其内部 90 天子窗返回 241/120/1 根碎片数据，
-    连续性假设不成立），估计值为算术伪影（CN/HK 同值 2007-01-14T03:45
-    复现证明）→ 不可回填：CN stock 分钟维持二轮 2014-01-21（连续可查
-    起点；更早存在稀疏碎片如实注记）、**HK stock 分钟保持 null**（连续
-    可查起点未定案，碎片区二分失效待专项方法——窄窗逐窗扫描类——重探）；
-  - **etf@CN-P1D-hfq 孤立失败**：同组 23 case（含 P1W/P1M/分钟族 hfq）全
-    confirmed、二轮 adjust_diff 已证 510300 P1D hfq 生效（242/242 差异）
-    ——单请求上游瞬时错误，不动声明面，下轮复验；
-  - **page_token 复核定案维持**：num=370 仍返回 1000 行（num 被忽略复验）、
-    pagination={"has_more": false}、无 next_page_token/data.next_time、
-    data 顶层键 [kline_list, volume_precision]——分页不可用第三轮复核
-    一致（「下轮核对」待办闭合）；
-  - **ktype 候选定案（「探针后再议」收口）**：ktype=10 = **PT3M**（相邻
-    间距 180s、80 根/交易日）、ktype=14 = **PT2H**（11:30/15:00 两根、
-    间距 3.5h）真实可用且与文档「3 分/120 分」枚举吻合；ktype=15 = 180
-    分（PT3H）返回与 PT2H 完全相同形态（CN 上午盘仅 2h 会话退化）；
-    ktype=16 → -3 invalid（**PT4H 无可用映射**）；ktype=11 接受但返空
-    （不定案）。PT3M/PT2H 扩容候选：端点可用已实证但历史深度未探 + 行
-    字段集更宽（含 name/change_rate/pe_ratio 等，标准 OHLCV 字段齐备）
-    ——扩容与否人工裁决（成本：manifest intervals/operations 扩容 +
-    depth 专项另探）；
-  - **校时端点免签可用定案**：GET /api/v1.0/server-time 免签 HTTP 200
-    （X-Futu-Methodname=GetServerTime），信封
-    {"server_time_ms": "1794636908538"}（**字符串类型**）——自动校时可行
-    （adapter docstring 待核实项收口；落地与否按需立项）；
-  - **extensions 盘前盘后不声明定案**（用户拍板本轮）：白名单维持 7 键、
-    盘前盘后段数据不透出（证据 US.GE 盘后 60.3 万股保留二轮 notes），
-    待办项④闭合。
-  待人工确认回填清单：①CN index 日/周/月 history.start ②CN etf 日/周/
-  月（2012-05-28 上市日锚）③HK stock 日/周/月 ④US stock 日/周/月
-  ⑤index/etf/US 分钟族 5 周期 ⑥HK stock 分钟保持 null（定案记录）
-  ⑦PT3M/PT2H 扩容与否 ⑧自动校时立项与否。
-  2026-11-14 回填落地（人工确认三项拍板：①history.start 按建议回填——
-  etf 日/周/月锚定 2012-05-28（count-exact）、index/HK/US 日/周/月与
-  index/etf/US 分钟族按 est 原值 approx、HK stock 分钟保持 null（碎片区
-  定案）；②PT3M/PT2H 维持不声明（可用性证据保留本 notes）；③自动校时
-  只记录不落地）——manifest 四组合 intervals 32 值、契约测试 history
-  断言改写、adapter docstring 校时定案、README（历史覆盖改写/周期收口/
-  校时端点/time_key 墙钟口径 stale 注记清理）、routing stale 注释同步。
+notes: 各轮运行记录见 probes/results/PROBE_LOG.md（不入库）；探针框架规范见 probes/README.md。

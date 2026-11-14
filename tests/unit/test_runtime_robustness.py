@@ -1,4 +1,4 @@
-"""运行时健壮性补强测试（批次 3，2026-11-13 审计低危项）。
+"""运行时健壮性补强测试。
 
 - tqsdk ``_fetch_coro``：已取消请求早退（不消耗 SDK 协程）；
 - ``_StreamIterator``：在飞 ``__anext__`` 下 aclose 不抛 already-executing、

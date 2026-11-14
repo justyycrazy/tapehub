@@ -1,126 +1,56 @@
 # tapehub 缺省路由顺序配置：跨 Provider 能力冲突的集中裁决。
 #
-# 定位（关注点分离）：
-# - 各 Provider 的 manifest.yaml 只声明「我能做什么」（capabilities 与
-#   operations 映射）；
-# - 本文件声明「缺省由谁来做」：同一 (data_type, market, asset_type) 组合
-#   被多个 Provider 覆盖时，先选谁、按什么顺序回退（完整回退链）。
-# - 两者均属配置：加载或校验失败直接启动失败，不做单条隔离（与 manifest
-#   的失败惯例一致）。
-#
-# 语义（拍板定稿 2026-11-07）：
-# - 每个条目的 match 显式写全三维 data_type × market × asset_type，与
-#   manifest operations 的「显式写全、不依赖默认值」哲学一致，不做隐式通配；
-#   interval/adjust/variant 不在本文件出现——order 只决定 Provider 级
-#   优先顺序，具体能力仍经六维匹配逐个解析（回退链中前一个 Provider 不
-#   支持该请求的具体周期/复权/变体时，自动尝试下一个）。
-# - order 是完整回退链：第一个「已注册、已启用且能力可解析」的 Provider 即
-#   缺省数据源；未启用（凭据未填写、显式禁用、SDK 未安装）的条目自动跳过。
-#   回退只发生在路由选择阶段：请求执行失败不切换 Provider（无故障转移）。
-# - 完整性校验（注册期强制）：凡能力目录覆盖的 (data_type, market,
-#   asset_type) 组合必须在本文件恰有一条；组合缺失、重复，order 引用
-#   未注册 Provider 或未声明该组合能力的 Provider，均启动失败。
-# - 本文件生效后，代码内注册顺序（BUILTIN_PROVIDERS）不承载路由语义，
-#   仅决定 Provider 初始化顺序。
-#
+# 定位：各 Provider 的 manifest.yaml 只声明「我能做什么」；本文件声明
+# 同一 (data_type, market, asset_type) 组合被多个 Provider 覆盖时
+# 「缺省由谁来做」（完整回退链）。
+# 语义要点：match 显式写全三维 data_type × market × asset_type；order
+# 是完整回退链，第一个「已注册、已启用且能力可解析」的 Provider 即缺省
+# 数据源；回退只在路由选择阶段，请求执行失败不切换；注册期强制校验
+# 覆盖完整性；代码注册顺序不承载路由语义。
 # 部署覆盖：Settings 的 TAPEHUB_ROUTING_CONFIG 指定外部文件路径时，
 # 外部文件整体替换本内置版本（不做合并）。
+# 路由模型与裁决细节见 README.md「总体设计」；各 Provider 位次依据见
+# docs/providers/<name>.md。
 version: 1
 
 defaults:
   # —— bars · 历史 K 线 ——
-
-  # CN 个股：baostock 置于首位（2026-11-08 接入拍板：免费无凭据、个股日/周/月
-  # 官方口径 1990-12-19 起深于既有各源、分钟族免费有权限）；akshare 上游不稳
-  # 定降为末位（2026-11-07 调整）；tqsdk 不参与本组合的 auto 路由（能力保留、
-  # 仅显式 provider=tqsdk 可用），链上不写即明确不参与——校验只要求组合有
-  # 条目与 order 引用合法，不要求穷举；ths 末位回退（2026-11-13 接入：
-  # 付费凭据 API、历史覆盖未探针实证，仅日线）；futunn 最末位回退
-  # （2026-11-14 接入：AppKey 凭据 API、8 周期面、历史覆盖未探针实证）
   - match: {data_type: bars, market: CN, asset_type: stock}
     order: [baostock, alphafeed, tickflow, tushare, akshare, ths, futunn]
 
-  # CN 指数：akshare 优先（库底 ≈1991-01-01 深于 baostock 官方口径 2006-01-01，
-  # baostock 置末位补位，避免浅库底源在路由选择阶段截胡更早区间——回退只在
-  # 路由选择阶段发生，执行失败不切换）；tqsdk 虽声明指数日线，不参与本组合的
-  # auto 路由，仅显式 provider=tqsdk 可用；ths 末位回退（2026-11-13 接入，
-  # 仅日线、历史覆盖未探针实证）；futunn 最末位回退（2026-11-14 接入：
-  # AppKey 凭据 API、8 周期面、历史覆盖未探针实证）
   - match: {data_type: bars, market: CN, asset_type: index}
     order: [akshare, baostock, ths, futunn]
 
-  # CN ETF：tqsdk 缺省；baostock 回退（2026-11-08 接入，数据 2026-01-05 起，
-  # tqsdk 凭据未配置时自动跳过 → baostock 生效）；akshare 末位兜底（2026-11-08
-  # 接入东财 ETF 日/周/月，history.start 未核实，与 CN 个股链中 akshare 置末位
-  # 风格一致）；twelvedata 的 etf 仅 US 市场；ths 最末位回退（2026-11-13
-  # 接入：付费凭据 API、仅日线、窗口上限 5 自然年；仅 qfq——上游固定前复权
-  # 口径，2026-11-14 探针实证裁决，etf 默认 none 的 auto 请求不落 ths）；
-  # futunn 最末位回退（2026-11-14 接入：AppKey 凭据 API、8 周期面、复权
-  # 三值探针实证生效、历史覆盖已探针回填 2026-11-14）
   - match: {data_type: bars, market: CN, asset_type: etf}
     order: [tqsdk, baostock, akshare, ths, futunn]
 
-  # CN 期货合约：tqsdk 缺省；回退 akshare（新浪源）。tushare 已声明期货
-  # 单一合约（五所后缀探针实证，仅日线无复权），仍不参与本组合的 auto
-  # 路由（仅显式 provider=tushare 可用）；ths 末位回退（2026-11-13 接入，
-  # 仅日线无复权、交易所后缀仅 SHFE 文档实证）
   - match: {data_type: bars, market: CN, asset_type: contract}
     order: [tqsdk, akshare, ths]
 
-  # CN 期权合约：ths 独占（2026-11-13 接入，首个期权 Provider；端外仅日线
-  # 无复权、交易所后缀仅 CFFEX 文档实证）
   - match: {data_type: bars, market: CN, asset_type: option}
     order: [ths]
 
-  # CN 主力连续：tqsdk 缺省；回退 akshare（新浪源）。tushare 已声明主连
-  # （品种+L，CFFEX 直拼主力，仅日线无复权），仍不参与 auto 路由
-  # （仅显式 provider=tushare 可用）
   - match: {data_type: bars, market: CN, asset_type: continuous}
     order: [tqsdk, akshare]
 
-  # CN 加权指数：tqsdk 独占
   - match: {data_type: bars, market: CN, asset_type: weighted-index}
     order: [tqsdk]
 
-  # US 个股：twelvedata 优先（2026-11-07 拍板维持既有回退结果）；
-  # alphafeed 第二候选（官方文档核实美股日线 1d/1w/1M，探针实证后可再议
-  # 升缺省）；tickflow 第三候选；akshare 末位免凭据兜底（2026-11-08 接入
-  # 东财美股，history.start 与成交量单位未核实，仅 NYSE/NASDAQ）；
-  # futunn 最末位回退（2026-11-14 接入：AppKey 凭据 API、8 周期面、
-  # 历史覆盖未探针实证；OTC 不支持由适配器 exchange 白名单拒绝）
   - match: {data_type: bars, market: US, asset_type: stock}
     order: [twelvedata, alphafeed, tickflow, akshare, futunn]
 
-  # HK 个股：alphafeed 缺省（2026-11-07 拍板接管，官方文档核实港股日线
-  # 1d/1w/1M），tickflow 回退（其港股日线探针实证更深，库底存疑时可显式
-  # 指定）；akshare 末位免凭据兜底（2026-11-08 接入东财港股，未核实项待
-  # 探针）；futunn 最末位回退（2026-11-14 接入：AppKey 凭据 API、8 周期
-  # 面、历史覆盖未探针实证）
   - match: {data_type: bars, market: HK, asset_type: stock}
     order: [alphafeed, tickflow, akshare, futunn]
 
-  # US ETF：twelvedata 独占
   - match: {data_type: bars, market: US, asset_type: etf}
     order: [twelvedata]
 
-  # GLOBAL 外汇 / 加密货币：twelvedata 优先，tiingo 回退（2026-11-13 接入：
-  # 免费档配额紧——50 请求/时、1000 请求/天、500 唯一品种/月、1GB 带宽/月，
-  # 且仅声明 twelvedata 全周期矩阵的子集，置回退位不改变缺省行为；
-  # 周期面收窄裁决 2026-11-14：tiingo 仅 PT1H/PT4H/P1D——周期子集的回退
-  # 在路由选择阶段按六维逐个解析）
   - match: {data_type: bars, market: GLOBAL, asset_type: forex}
     order: [twelvedata, tiingo]
   - match: {data_type: bars, market: GLOBAL, asset_type: crypto}
     order: [twelvedata, tiingo]
 
   # —— quotes · 实时快照 ——
-
-  # CN 资产快照：tqsdk 缺省；个股快照回退链 alphafeed 第二候选（2026-11-07
-  # 追加，官方文档核实 A 股快照）、tickflow 第三；ths 末位回退（2026-11-13
-  # 接入：付费凭据 API、纯 REST 单次调用语义——个股/指数/ETF 快照直出，
-  # 期货/期权快照经分时端点取末点、量额口径未核实不透出）；期权快照 ths
-  # 独占（首个期权 Provider）；futunn 最末位回退（2026-11-14 接入：AppKey
-  # 凭据 API、纯 REST 单次调用语义、无盘口五档）
   - match: {data_type: quotes, market: CN, asset_type: stock}
     order: [tqsdk, alphafeed, tickflow, ths, futunn]
   - match: {data_type: quotes, market: CN, asset_type: index}
@@ -136,16 +66,11 @@ defaults:
   - match: {data_type: quotes, market: CN, asset_type: option}
     order: [ths]
 
-  # HK / US 个股快照：alphafeed 缺省（2026-11-07 拍板接管，官方文档核实
-  # 三市场快照），tickflow 回退；futunn 最末位回退（2026-11-14 接入：
-  # AppKey 凭据 API、纯 REST 单次调用语义、无盘口五档）
   - match: {data_type: quotes, market: HK, asset_type: stock}
     order: [alphafeed, tickflow, futunn]
   - match: {data_type: quotes, market: US, asset_type: stock}
     order: [alphafeed, tickflow, futunn]
 
-  # GLOBAL 外汇 / 加密货币快照：twelvedata 优先，tiingo 回退（2026-11-13 接入，
-  # 快照/快照流走 WS 共享订阅——不占 tiingo REST 请求配额）
   - match: {data_type: quotes, market: GLOBAL, asset_type: forex}
     order: [twelvedata, tiingo]
   - match: {data_type: quotes, market: GLOBAL, asset_type: crypto}

@@ -1,24 +1,8 @@
 """Tiingo 请求映射（RequestMapper）：标准请求 → REST 端点参数 / WS 订阅参数。
 
-接口签名已按官方文档核实（2026-11-13，URL 见 manifest.yaml 头注释）：
-
-- 历史K线 REST（``Authorization: Token <key>`` 请求头认证，token 不落 URL）：
-  加密 ``GET /tiingo/crypto/prices``（多 ticker 查询参数 ``tickers``）；
-  外汇 ``GET /tiingo/fx/<ticker>/prices``（每 ticker 独立路径端点）；
-  两端点均显式传 ``startDate``/``endDate``/``resampleFreq``（不依赖上游默认值）；
-- ``resampleFreq`` 合法格式 ``<n>min|hour|day``、最小 ``1min``，上游**无**
-  周/月线——声明集见 manifest（其余格式合法值待探针实证后扩容）；
-- ``startDate``/``endDate`` 官方文档示例为 ``YYYY-MM-DD``，同时接受完整
-  ISO 时间戳：适配器统一传 UTC 墙钟 ``YYYY-MM-DDTHH:MM:SS``（无时区后缀）
-  保留日内精度——加密货币 ``date`` 字段官方口径为 UTC；外汇墙钟口径未
-  核实，首版同按 UTC 解释（待探针实证后修正）；
-- symbol：标准代码三段中 exchange 段白名单（外汇 ``OTC``、加密 ``CRYPTO``），
-  symbol 段去斜杠转小写（``EUR/USD`` → ``eurusd``、``BTC/USD`` → ``btcusd``，
-  官方示例均为小写连写）；
-- WS 实时快照/快照流端点与订阅级别（官方文档 websockets 页）：
-  crypto ``wss://api.tiingo.com/crypto`` thresholdLevel=2（top-of-book +
-  成交）、forex ``wss://api.tiingo.com/fx`` thresholdLevel=7（top-of-book）；
-  订阅/退订帧构造见 runtime（authorization 随帧传递，绝不写日志）。
+映射规则与上游行为定案见 docs/providers/tiingo.md（唯一出处，本文不复述）。
+探针运行记录见 probes/results/PROBE_LOG.md（本地文件，不入库）。
+官方文档 URL 见 manifest.yaml 头注释。
 """
 
 from datetime import datetime, timezone
@@ -34,18 +18,17 @@ REST_BASE = "https://api.tiingo.com"
 WS_CRYPTO_ENDPOINT = "wss://api.tiingo.com/crypto"
 WS_FX_ENDPOINT = "wss://api.tiingo.com/fx"
 
-# WS 订阅级别（2026-11-13 WS 行为探针实证，报告 ws-behavior-20261113T2130
-# +0800：文档/AsyncAPI 口径不可信——fx=7 被上游拒绝「thresholdLevel not
-# valid」并断连，fx=5 实测持续推送 top-of-book；crypto=2 = top-of-book +
-# 成交，与文档一致）
+# WS 订阅级别（文档/AsyncAPI 口径不可信：fx=7 被上游拒绝
+# 「thresholdLevel not valid」并断连，故 fx 用 5 = top-of-book；
+# crypto=2 = top-of-book + 成交，与文档一致）
 WS_CRYPTO_THRESHOLD_LEVEL = 2
 WS_FX_THRESHOLD_LEVEL = 5
 
-# 时间边界统一解释为 UTC 墙钟（2026-11-13 探针实证：crypto date 带 +00:00、
-# forex date 带 Z，两端点均为 UTC 口径）
+# 时间边界统一解释为 UTC 墙钟（crypto date 带 +00:00、forex date 带 Z，
+# 两端点均为 UTC 口径）
 BOUNDARY_ZONE = timezone.utc
 
-# 区间早于上游档案起点的错误指纹（2026-11-13 探针实证 + 目录外受控复现）：
+# 区间早于上游档案起点的错误指纹：
 # fx 端点档案硬边界 2020-01-01（UTC 墙钟），窗口越界返回两种 400 变体——
 # end < 2020 → {"detail": "End date must be >= 2020-01-01"}；start < 2020
 # 且 end >= 2020 → {"detail": "Start date must be >= 2020-01-01"}。主处理
@@ -58,8 +41,7 @@ UPSTREAM_NO_DATA_FINGERPRINT = "must be >= 2020-01-01"
 # 字典序比较）：上游对越界窗口拒绝而非裁剪，适配器对 fx 请求钳制——
 # startDate 早于档案起点时钳到起点（窗口与档案有交集则如实返回边界后
 # 数据，闭区间复核兜底）；完全越界（endDate 亦早于起点）的窗口由适配器
-# 直接返回空批不发请求。上游档案若前移（边界下移），钳制值需经探针
-# 复核后人工更新（case notes 记录变更探针方法）
+# 直接返回空批不发请求
 FX_ARCHIVE_FLOOR = "2020-01-01T00:00:00"
 
 _INTERVAL_CODES: dict[Interval, str] = {

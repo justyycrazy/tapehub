@@ -1,4 +1,4 @@
-"""call_in_thread 取消语义测试（M4，2026-11-13 审计修复）。
+"""call_in_thread 取消语义测试。
 
 实测基准（anyio 4.15 / Python 3.12）：原始 ``asyncio`` 任务取消会穿透
 shield 立即送达调用方——``abandon_on_cancel`` 的差异在于工作线程的归宿
@@ -6,7 +6,7 @@ shield 立即送达调用方——``abandon_on_cancel`` 的差异在于工作线
 验证服务实际依赖的两条语义：
 
 - 可放弃：取消即时返回，线程后台跑完（结果丢弃）；
-- 应用层 ``asyncio.wait_for`` 包裹（M2 超时路径）在线程长调用下按
+- 应用层 ``asyncio.wait_for`` 超时包裹在线程长调用下按
   deadline 到点超时（504 即时语义），不被线程拖住。
 """
 

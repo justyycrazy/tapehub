@@ -114,16 +114,14 @@ def test_capability_catalog(twelvedata_client: TestClient) -> None:  # type: ign
             assert cap["fields"] == ["open", "high", "low", "close"]
 
     # 美股 stock/etf（US market）：volume 有值；qfq 均映射 adjust=all
-    # （拆股+分红前复权，与国内口径一致：stock 2026-11-06、etf 2026-11-12
-    # 探针实证生效，SPY 除息窗口全 19 交易日差异）
+    # （拆股+分红前复权，口径见 docs/providers/twelvedata.md）
     us_caps = {tuple(cap["asset_types"])[0]: cap for cap in bars_caps if cap["markets"] == ["US"]}
     assert set(us_caps) == {"stock", "etf"}
     assert us_caps["stock"]["adjustments"] == ["none", "qfq"]
     assert us_caps["etf"]["adjustments"] == ["none", "qfq"]
     for cap in us_caps.values():
         assert cap["fields"] == ["open", "high", "low", "close", "volume"]
-        # history 已按探针报告回填（估计日零点，approx）：全部非 null；
-        # 粗周期为 2026-11-12 精化收敛值（2000-01-01 为无证据下限已废弃）
+        # history 已按探针报告回填（估计日零点，approx）：全部非 null
         starts = {i["code"]: i["history"]["start"] for i in cap["intervals"]}
         assert all(v is not None for v in starts.values())
         assert starts["PT1M"] == "2020-04-11T00:00:00+08:00"
@@ -146,7 +144,7 @@ def test_capability_catalog(twelvedata_client: TestClient) -> None:  # type: ign
     assert quote_cap["delivery"] == ["rest"]
     assert quote_cap["intervals"] == []
     assert quote_cap["adjustments"] == []
-    # 2026-11-05 探针实测 forex/crypto 均未返回 volume → 不声明
+    # 探针实测 forex/crypto 均未返回 volume → 不声明
     assert quote_cap["fields"] == ["timestamp", "last_price"]
 
 
@@ -203,7 +201,7 @@ def test_us_stock_chain_default_qfq(
     kwargs = StubTDClient.instances[-1].calls[0]
     assert kwargs["symbol"] == "AAPL"
     assert kwargs["exchange"] == "NASDAQ"  # 显式传 exchange 消歧
-    assert kwargs["adjust"] == "all"  # qfq → 拆股+分红前复权（口径见 README）
+    assert kwargs["adjust"] == "all"  # qfq → 拆股+分红前复权（口径见 docs/providers/twelvedata.md）
 
     data = body["data"]
     assert data["instrument"] == "US-NASDAQ-AAPL"
@@ -332,7 +330,7 @@ def test_quote_chain_forex(twelvedata_client: TestClient) -> None:  # type: igno
     assert quote["amount"] is None
     assert quote["bid_price1"] is None  # 上游无盘口：五档恒 null
     assert quote["ask_price5"] is None
-    # extensions 白名单（2026-11-05 WS 探针实证回填）：4 个字符串字段
+    # extensions 白名单（WS 探针实证回填）：4 个字符串字段
     assert quote["extensions"] == {
         "currency_base": "Euro",
         "currency_quote": "US Dollar",

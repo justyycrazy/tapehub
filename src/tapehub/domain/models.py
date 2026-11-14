@@ -2,7 +2,7 @@
 
 Domain 不依赖 FastAPI、PyYAML 或任何 Provider SDK；
 时间字段一律要求带时区偏移，全市场统一归一化为北京时间（+08:00）
-（2026-11-04 数据探针确认上游口径后统一，见 README「时间边界与时区」）。
+（见 docs/api.md「时间边界与时区」）。
 """
 
 import re
@@ -287,7 +287,7 @@ class Quote(BaseModel):
     价格为 null、量为 0（如实透出，不编造）。``timestamp`` 为行情时间，
     构造时要求时区感知并统一归一化为北京时间（+08:00）——快照无批次
     包装，模型自身完成归一化。Provider 特有字段只经 ``extensions``
-    白名单透出（tqsdk 白名单以 P5 探针实证为准，见 README 映射表）。
+    白名单透出（tqsdk 白名单见 docs/providers/tqsdk.md）。
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -364,7 +364,8 @@ class StreamStatusKind(StrEnum):
     # Runtime 新一代重建中（北京时间 04:00 跨交易日回收 / watchdog / 休眠
     # 订阅回收阈值），活跃订阅将在新一代自动重订
     RECYCLING = "recycling"
-    # 流空闲超时，服务端本地退订并结束流（上游订阅保留至回收，见 README）
+    # 流空闲超时，服务端本地退订并结束流（上游订阅保留至回收，
+    # 见 docs/providers/tqsdk.md）
     IDLE_UNSUBSCRIBED = "idle_unsubscribed"
 
 

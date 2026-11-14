@@ -1,9 +1,8 @@
 # 同花顺金融数据 API（ths）数据探针：历史 K 线可用性、复权生效性、历史深度
-# 收敛，快照/分时形态观察（量额口径核实），及 ETF 复权口径实证（2026-11-14
-# 加入：fund historical 无 adjust 参数但文档称「价格数据采用前复权口径」，
-# 与现声明 [none] 的口径一致性待受控对比实证，见 raw 段注释）；第三轮
-# （2026-11-14）立项：隐式截断与 offset 分页边界、期货交易所后缀与已摘牌
-# 合约可查性、北交所价格端点（见 chain/raw 段注释与 notes 立项段）。
+# 收敛，快照/分时形态观察（量额口径核实），ETF 复权口径留存（fund
+# historical 无 adjust 参数、文档称「价格数据采用前复权口径」，见 raw 段
+# 注释），隐式截断与 offset 分页边界，期货交易所后缀与已摘牌合约可查性，
+# 北交所价格端点（见 chain/raw 段注释）。
 #
 # 上游限频为「约定 QPS」（超限信封 code=4001），具体 QPS 未公布：pacing 2 秒
 # （≤0.5 QPS）保守起步，探针报告中观察 4001 出现情况后收紧。
@@ -17,13 +16,11 @@ requires:
   env: [TAPEHUB_THS_API_KEY]
 
 pacing:
-  # 2 秒（2026-11-13 第二轮实验后回收）：5 秒间隔无法规避 option 日 K 失败
-  # ——根因已定位为 start=2026-10-01 单一日期触发上游 5003（邻近起点
-  # 09-27/10-02/10-09/11-01 全部正常，与调用频率无关），见 notes 第二轮；
-  # 4001 限频两轮 + 目录外诊断均未复现
+  # 2 秒：5 秒间隔无法规避 option 日 K 失败——根因为 start=2026-10-01 单一
+  # 日期触发上游 5003（邻近起点均正常，与调用频率无关）；4001 限频未复现
   call_interval_s: 2.0
   timeout_s: 60
-  # 本轮构成（2026-11-14 第三轮立项 + BSE/期货五所收编后）：availability
+  # 本轮构成（BSE/期货五所收编后）：availability
   # 13（bars 13：stock 三复权 + index + etf + contract + option + BSE 逐所
   # stock/index + 期货逐所 CZCE/DCE/INE/GFEX）+ adjust_diff 4（stock 1
   # 目标 × 2 pair × 2 调）+ history_depth 3 case × 最坏 12 +
@@ -46,15 +43,15 @@ targets:
     required_fields: [open, high, low, close, volume, amount]
   stock@CN-BSE:
     instrument: CN-BSE-920000
-    # 北交所个股（920 段）：BSE→BJ 价格端点 2026-11-14 探针实证后收编
-    # （_SUFFIXES 扩容，报告 20261114T135118+0800：243 行完整），本键为
-    # chain 常态复验目标（alphafeed/tickflow/futunn 逐所细分同款先例）
+    # 北交所个股（920 段）：BSE→BJ 价格端点探针实证后收编（_SUFFIXES
+    # 扩容），本键为 chain 常态复验目标（alphafeed/tickflow/futunn 逐所
+    # 细分同款先例）
     window: {start: 2025-01-01, end: 2025-12-31}
     min_bars: 10
     required_fields: [open, high, low, close, volume, amount]
   index@CN-BSE:
     instrument: CN-BSE-899050
-    # 北证 50 指数：a-share-index 价格端点同轮实证（243 行完整），同上
+    # 北证 50 指数：a-share-index 价格端点实证收编，同上
     window: {start: 2025-01-01, end: 2025-12-31}
     min_bars: 10
     required_fields: [open, high, low, close, volume, amount]
@@ -73,23 +70,20 @@ targets:
     required_fields: [open, high, low, close, volume, amount]
   contract@CN-CZCE:
     instrument: CN-CZCE-MA701
-    # 甲醇 2701（2027-01 交割）：CZCE→CZC + 年月码 4→3 还原（2026-11-14
-    # 用户指正形态后探针实证，报告 20261114T135118+0800 追记）。合约会
-    # 到期：运行前按郑商所挂牌信息核对并轮换
+    # 甲醇 2701（2027-01 交割）：CZCE→CZC + 年月码 4→3 还原。合约会到期：
+    # 运行前按郑商所挂牌信息核对并轮换
     window: {start: 2026-08-03, end: 2026-11-13}
     min_bars: 20
     required_fields: [open, high, low, close, volume, amount]
   contract@CN-DCE:
     instrument: CN-DCE-EG2701
-    # 乙二醇 2701（文档示例形态）：DCE→DCE（首轮 M2601 误用已摘牌合约
-    # 3001 的根因修正）。合约会到期：同上轮换
+    # 乙二醇 2701（文档示例形态）：DCE→DCE。合约会到期：同上轮换
     window: {start: 2026-08-03, end: 2026-11-13}
     min_bars: 20
     required_fields: [open, high, low, close, volume, amount]
   contract@CN-INE:
     instrument: CN-INE-BC2612
-    # 国际铜 2612（文档示例形态）：INE→INE（同上根因修正）。合约会到期：
-    # 同上轮换
+    # 国际铜 2612（文档示例形态）：INE→INE。合约会到期：同上轮换
     window: {start: 2026-08-03, end: 2026-11-13}
     min_bars: 20
     required_fields: [open, high, low, close, volume, amount]
@@ -104,8 +98,8 @@ targets:
     # 沪深300期权（文档示例 IO2601-C-4000.CFE 已到期）：CFFEX→CFE 为唯一
     # 文档实证后缀。月度合约会到期：运行前按中金所挂牌信息核对（行权价
     # 4000 需在挂牌行权价序列内），失败如实记录，到期轮换为现活合约。
-    # 窗口起点避开 2026-10-01（2026-11-13 第二轮实证：该单一日期触发
-    # 上游 5003 'daily quote unavailable'，邻近起点均正常，见 notes）
+    # 窗口起点避开 2026-10-01（该单一日期触发上游 5003
+    # 'daily quote unavailable'，邻近起点均正常）
     window: {start: 2026-11-01, end: 2026-11-30}
     min_bars: 5
     required_fields: [open, high, low, close, volume, amount]
@@ -124,31 +118,27 @@ chain:
   # 历史覆盖全部保持 null（文档未公布）：P1D 先行二分收敛；仅对证券类
   # 目标做 depth——期货/期权合约生命周期有限（到期归档），「最早可用」
   # 语义随合约轮换漂移，不做回溯（待 continuous 主连纳入声明后再议）。
-  # earliest 折中取 2022-01-01（2026-11-13 首轮实证：指数端点越界窗口
-  # 1003 拒绝且实测口径为「recent five years only」滚动 5 年、ETF 同为
-  # 约 5 年滚动但越界整体返空——earliest=2000 会使指数/ETF 深度 case
-  # 全程撞界；stock 首轮已独立收敛 ≈2005-02-14 见 notes，本轮三目标
-  # 统一浅边界复验）。已摘牌锚定经 raw 先行（ths-delisted-*-historical
-  # 探可查性）：上游支持已摘牌查询则回填轮将 targets.contract/option
-  # 轮换为已摘牌合约并启用 full_history_targets 全量模式锚定精确上市日
-  # （tushare 先例，各合约以自身上市日为准），不支持则保持 null 定案
+  # earliest 折中取 2022-01-01：指数端点越界窗口 1003 拒绝且实测口径为
+  # 「recent five years only」滚动 5 年、ETF 同为约 5 年滚动但越界整体
+  # 返空——earliest=2000 会使指数/ETF 深度 case 全程撞界，三目标统一浅
+  # 边界复验。已摘牌锚定经 raw 先行（ths-delisted-*-historical 探可查性）：
+  # 上游支持已摘牌查询则回填轮将 targets.contract/option 轮换为已摘牌
+  # 合约并启用 full_history_targets 全量模式锚定精确上市日（tushare 先例，
+  # 各合约以自身上市日为准），不支持则保持 null 定案
   history_depth:
     targets: [stock, index, etf]
     earliest: 2022-01-01
     era_step_years: 5
     max_calls: 12
     intervals: [P1D]
-  # 隐式截断立项（2026-11-14 第三轮，人工确认）：官方未标注行数上限（A 股/
-  # 指数窗口 ≤10 年、ETF ≤5 自然年为窗口上限而非行数上限，越界上游拒绝而非
-  # 裁剪——错误码 1003 由信封错误映射兜底；offset 分页行为另经 raw
-  # ths-historical-offset-behavior 观察，适配器仍不启用）——首轮「A 股无
-  # 滚动上限」仅验证起点可早于 10 年前（[2000,2005] 软返空），第三轮目录外
-  # 诊断定案：**a-share historical 窗口跨度 ≤10 年**（>10 年窗 1003 拒绝，
+  # 隐式截断观察：官方未标注行数上限；A 股/指数窗口 ≤10 年、ETF ≤5 自然年
+  # 为窗口上限而非行数上限，越界上游拒绝而非裁剪（错误码 1003 由信封错误
+  # 映射兜底）——a-share historical 窗口跨度 ≤10 年（>10 年窗 1003 拒绝，
   # message 自述 'must span at most 10 years'），故 max_range 取 P9Y
-  # （≈2180 行）观测行数触顶：9 年近窗实测 2183 行完整返回（无触顶信号）
-  # ——documented_max 不设 → observe；若未来触顶则 partial 覆盖判定候选
-  # （触顶+末根<end → partial）人工裁决后回填，不触顶则「单窗口完整返回、
-  # partial 恒 false」定案维持
+  # （≈2180 行）观测行数触顶；documented_max 不设 → observe，若未来触顶则
+  # partial 覆盖判定候选（触顶+末根<end → partial），不触顶则「单窗口完整
+  # 返回、partial 恒 false」。offset 分页行为另经 raw
+  # ths-historical-offset-behavior 观察，适配器仍不启用
   limit_truncation:
     targets: [stock]
     interval: P1D
@@ -172,7 +162,7 @@ raw:
 
   # 期货分时形态观察（快照 volume/amount 回填依据）：核实分时点量额口径
   # 是逐分钟增量还是当日累计——单日末点 volume 与全点求和对比即可判别；
-  # 结论人工确认后回填 manifest fields 声明与 response_mapper 映射
+  # 结论回填 manifest fields 声明与 response_mapper 映射
   - id: ths-futures-intraday-quantity-semantics
     purpose: 期货分时点量额口径核实（volume/turnover 为逐分钟增量或当日
       累计——期货/期权快照 volume/amount 是否透出的判定依据）
@@ -198,20 +188,15 @@ raw:
     expect: {status: ok, min_rows: 1}
     close: {method: close, kwargs: {}}
 
-  # ETF 复权口径实证（2026-11-14 加入并已实证，观察）：fund historical 端点
-  # 无 adjust 请求参数（复权方式不可选），官方文档明示「adjust null 当前固定
-  # 为 null；价格数据仍采用前复权口径」——**受控对比已实证文档属实**（目录
-  # 外脚本 probes/results/ths/etf-adjust-20261114T080423+0800：510880 红利
-  # ETF 2023-2025 窗口，除息日 2023-01-16/2024-01-23/2025-01-21；调整生效段
-  # ths vs baostock none 中位偏差 9.01%、vs qfq 仅 0.34%，事件日样本 2.8840
-  # ≈qfq 2.8924 远离 none 3.0270）——**ths ETF 日线为固定前复权，现声明
-  # [none] 系口径错标**，声明形态回填（qfq 单值 / none+口径注记）人工裁决后
-  # 单独提交。参照序列（baostock none/qfq，复权生效性已实证）经目录外脚本
-  # 对比（baostock ResultData 非 JSON 形态、模块级 login/logout 模型不适配
-  # 声明式 client/close）。本 case 常态留存 ths 侧证据：窗口钉在 2025-01-21
-  # 除息日 ±7 自然日（跨除息口径差异肉眼可核）。框架 kwargs 统一关键字传参
-  # （dict.get 不接受关键字），无法链式抽取 item——链止于整信封、以
-  # min_fields 判定，样本随窄窗口限量。
+  # ETF 复权口径留存（观察）：fund historical 端点无 adjust 请求参数（复权
+  # 方式不可选），官方文档明示「adjust null 当前固定为 null；价格数据仍采用
+  # 前复权口径」——受控对比实证文档属实（对照 baostock none/qfq 序列），
+  # manifest etf 复权声明据实回填 [qfq]。baostock ResultData 非 JSON 形态、
+  # 模块级 login/logout 模型不适配声明式 client/close，参照序列对比走目录外
+  # 脚本。本 case 常态留存 ths 侧证据：窗口钉在 2025-01-21 除息日 ±7 自然日
+  # （跨除息口径差异肉眼可核）。框架 kwargs 统一关键字传参（dict.get 不接受
+  # 关键字），无法链式抽取 item——链止于整信封、以 min_fields 判定，样本随
+  # 窄窗口限量。
   - id: ths-etf-dividend-window
     purpose: ETF 跨除息窗口日线可得性与复权口径证据留存（2025-01-21 除息日
       ±7 自然日；结论见目录外对比报告 etf-adjust-20261114T080423+0800）
@@ -237,10 +222,10 @@ raw:
     expect: {status: ok, min_fields: [code, message, data]}
     close: {method: close, kwargs: {}}
 
-  # —— 第三轮立项（2026-11-14，人工确认）——
-  # 以下 case 全部仅观察（assert: false），结论人工裁决后单独回填；
-  # 历史 K 线参数显式传全（a-share 含 adjust；期货/期权 time_period=day_1，
-  # 端外仅日线），窗口毫秒时间戳与上方 ETF case 同风格。
+  # —— 以下 case 全部仅观察（assert: false），结论回填见
+  # probes/results/PROBE_LOG.md；历史 K 线参数显式传全（a-share 含 adjust；
+  # 期货/期权 time_period=day_1，端外仅日线），窗口毫秒时间戳与上方 ETF
+  # case 同风格。
 
   # offset 分页行为（manifest「historical 的 offset 分页参数行为未核实，
   # 不启用」待办项）：2025 全年窗（availability 基线 243 根、首根
@@ -257,9 +242,8 @@ raw:
     expect: {status: ok, min_fields: [code, message, data]}
     close: {method: close, kwargs: {}}
 
-  # 期货交易所后缀实证（2026-11-14 用户指正形态后复探全绿，_SUFFIXES 五所
-  # 收编随本轮提交）：窗口取 2026-08~11 存续期、time_period=day_1 显式
-  # 传参。zce-4digit 为 4→3 还原对照 case（MA2701.CZC 3001 实证四位码
+  # 期货交易所后缀实证（_SUFFIXES 五所收编）：窗口取 2026-08~11 存续期、
+  # time_period=day_1 显式传参。zce-4digit 为 4→3 还原对照 case（四位码
   # 不识别）；MA701 首探 5003 系瞬时（复验 code=0）；SR612.CZC 3001 系
   # 白糖近月不在 ths 目录（形态无关）
   - id: ths-futures-suffix-dce
@@ -372,183 +356,4 @@ raw:
     expect: {status: ok, min_fields: [code, message, data]}
     close: {method: close, kwargs: {}}
 
-notes: >
-  2026-11-13 接入首轮 case 设计（真实跑前占位）：上游限频为「约定 QPS」
-  （超限信封 code=4001）但未公布数值，pacing 2 秒保守起步，首轮报告观察
-  4001 后收紧。
-  快照链路（quotes）框架 chain 仅覆盖 fetch_bars，快照可用性经 raw case
-  观察（ths-snapshot-shape 覆盖 A 股快照；指数/ETF 快照与 A 股同构信封，
-  差异仅在端点路径，由单测确定性覆盖）。
-  待回填项（探针报告 → 人工确认 → 单独提交）：history.start（stock/index/
-  etf 三目标 P1D 二分收敛）、期货/期权快照 volume/amount 是否透出
-  （ths-futures-intraday-quantity-semantics：末点 volume 与全点求和对比
-  判别增量/累计口径）、无效 key 错误指纹核对（ths-invalid-key-fingerprint，
-  预期信封 code=2001）、其余期货交易所后缀（ZCE/DCE/INE/GFEX 未在文档
-  示例实证，确认后扩容 _SUFFIXES）、北交所 BSE→BJ 价格端点（元信息域
-  实证、价格端点未实证）、historical 的 offset 分页行为（决定是否启用
-  显式传参与 partial 覆盖判定）、A 股/指数窗口 10 年与 ETF 5 年越界报错
-  形态（信封 code=1003 实证）。
-  合约类目标（contract/option）会到期：运行前按交易所挂牌信息核对并轮换，
-  失败如实记录（tushare 先例）。
-  2026-11-13 首轮（报告 20261113T212034+0800，confirmed 7 / failed 3 /
-  observe 5，预算 33/60；诊断目录外受控调用 ~9 次）：
-  - **confirmed 7**：证券类 availability（stock 三复权 + index + etf）与
-    adjust_diff 双 pair（none vs qfq/hfq 收盘价全差异——复权管线真实生效）；
-  - **failed 3 均为瞬态/方法论问题，非适配器缺陷**：contract/option
-    availability 失败系夜盘开局时段上游日 K 数据源瞬时不可用（期权实测
-    code=5003 message='daily quote unavailable'，约 40 分钟后重试
-    code=0 返回 13 行；期货 CU2706.SHF 同窗口诊断 code=0 返回 69 行
-    ——SHFE→SHF / CFFEX→CFE 后缀与合约有效性双实证）；history-depth-index
-    失败系探针 earliest=2000 超出上游实测窗口（见下条），非数据问题；
-  - **文档与实测不符（重要）**：指数历史 K 线文档明示「窗口 ≤10 年」，
-    实测 1003 message='Parameter value out of range: start (recent five
-    years only)'——仅支持**最近约 5 年滚动窗口**（2020-01-01 起点亦被拒）；
-    ETF 文档「5 自然年」实测吻合（[2020,2025] 整体返空、[2022,2026] 969
-    行——越界**返空不报错**，与指数的**拒绝**行为不同）；A 股个股无滚动
-    上限（[2000,2005] 软返空）；回填 manifest 注记与 README 窗口口径需
-    人工确认后单独提交；
-  - **分时量额口径已实证（快照 volume/amount 回填依据）**：逐分钟增量——
-    各点 turnover/volume 恰等于该点 price×5（cu 5 吨/手乘数，分钟 VWAP
-    微差），且 21:00/21:01/21:02 三点 volume 5→26→31 非累计序列；若回填
-    快照 volume/amount 需全点求和（口径变更涉及 fields 扩容，人工裁决）；
-  - **股票深度已收敛**：earliest ≈2005-02-14（approx ±90 天粒度，600519，
-    11 调 complete；[2005,2010] era 1153 行完整日 K）——显著深于 dump
-    模块「10 年」口径，回填候选待人工确认；
-  - **无效 key 指纹实测**：code=2003 message='Invalid or revoked API key'
-    （文档写 2001=未认证——实测无效 key 走 2003，信封错误映射已兜底，
-    文档矛盾点记录）；
-  - **快照 data.timestamp 口径存疑（待复核）**：周五 21:18 盘后请求返回
-    timestamp=21:21（响应组装时刻），非收盘行情时点（15:00）——适配器
-    现按文档「最新上游有效时间」用作 Quote.timestamp，盘后语义需人工
-    复核（快照 item 无独立行情时间字段可用）；
-  - 下一轮：availability 复验（预期 contract/option 转 confirmed）、
-    depth 按折中 earliest=2022-01-01 重收敛 index/etf、夜盘时段日 K
-    5003 复现观察（确认时段性规律后可在 README 注明重试窗口）。
-  2026-11-13 第二轮（报告 20261113T213321+0800，confirmed 8 / failed 1 /
-  observe 6，预算 23/60，pacing 5 秒）：
-  - **contract availability 转正**（confirmed）；**option 仍 failed——5 秒
-    间隔无法规避**。目录外受控判别（7 调）定位根因：**start=2026-10-01
-    单一日期触发 5003 'daily quote unavailable'**（三轮探针 + 三次诊断
-    一致复现；邻近起点 2026-09-27/10-02/10-09/11-01 全部 code=0 正常，
-    27/26/30/10 行各异但与交易日数吻合）——上游该日期桶的单点缺陷，
-    与调用频率、夜盘时段均无关（09-27 周日起点、期货 08-01 周六起点
-    亦正常）。期权目标窗口已改 [2026-11-01, 2026-11-30]（实测 10 行）；
-    pacing 回收 2 秒（放宽无收益已实证）；
-  - **depth 三目标全部收敛**：earliest_estimate=2022-01-01（=探针折中
-    边界，bounded-below）、[2022,2025] 窗口各 969 行（≈四年全量日 K，
-    三资产各自独立合理）——index/etf 在滚动 5 年窗口内数据完整，
-    stock 深界 ≈2005-02-14 已于首轮 banked；
-  - 累计待人工确认回填项（不变）：期货/期权快照 fields 扩容（分时逐分钟
-    增量口径 → 求和为当日累计）、指数窗口 5 年滚动实测 vs 文档 10 年、
-    history.start 回填、快照 data.timestamp 组装时刻口径复核、无效 key
-    实测 2003 vs 文档 2001、start=2026-10-01 日期桶缺陷（是否归一化为
-    空批待设计裁决——tiingo fx 边界钳制先例）。
-  2026-11-13 第三轮（报告 20261113T214147+0800，**confirmed 9 / observe 6 /
-  failed 0——全绿**，预算 23/60，pacing 2 秒）：option 目标窗口避开
-  2026-10-01 缺陷日期后 availability 转正（confirmed，样本 3 根日 K，
-  首根 2026-11-02，OHLC/volume/amount 齐备）——**「10-01 日期桶缺陷」
-  定性收口：窗口规避有效，适配器映射（CFFEX→CFE、symbol 透传）与
-  两端点全链路（bars 五资产 + quotes 五资产经 raw 观察）实证无缺陷**；
-  depth 三目标复验一致（[2022,2025] 各 969 行）。两轮三报告存档：
-  20261113T212034 / 213321 / 214147+0800。
-  2026-11-14 ETF 复权口径实证立项（人工提出「ths 的 etf 没有复权吗」后
-  核对文档发现口径矛盾）：fund historical 端点无 adjust 请求参数（复权
-  方式不可选），但文档明示「adjust null 当前固定为 null；价格数据仍采用
-  前复权口径」——现声明 [none] 与之存在错标风险（分红除息时前复权与不复权
-  有实质差异，twelvedata SPY 先例 ~2.9%）。加入 ths-etf-dividend-window
-  （510880 红利ETF，2023-01-01→2025-12-31 跨除息窗口）与
-  ths-etf-adjust-field-shape（短窗口 data.adjust 字段观察）两个 observe
-  case；参照序列（baostock sh.510880 none/qfq，ETF 复权生效性已实证）经
-  目录外受控对比脚本实证（报告 probes/results/ths/etf-adjust-<ts>.md，
-  baostock ResultData 非 JSON 形态、模块级 login/logout 模型不适配声明式
-  client/close），结论人工裁决后回填声明（qfq 单值 / 维持 none+口径注记
-  二选一），探针不自改 manifest。max_calls 60→80。
-  2026-11-14 受控对比实证（报告 etf-adjust-20261114T080423+0800，脚本
-  probes/results/etf_adjust_semantics.py）：**ths ETF 日线为固定前复权，
-  文档口径属实、现声明 [none] 系错标**——510880（红利ETF）2023-01-01→
-  2025-12-31 窗口，除息日估计 2023-01-16/2024-01-23/2025-01-21（年度分红
-  与基金公告一致口径）；调整生效段（对齐 727 交易日全覆盖，baostock 涨跌
-  幅复权法 qfq 全程偏离 none）ths vs none 相对偏差中位数 9.01%、vs qfq 仅
-  0.34%（方法性残差），事件日样本（2025-01-21）ths 2.8840 ≈ qfq 2.8924、
-  远离 none 3.0270；响应 data.adjust=null 实测（与文档一致）。
-  首轮 case 设计（链式 get 抽取 item）踩框架限制：raw kwargs 统一关键字
-  传参、dict.get 不接受关键字——链止于整信封 + min_fields 判定，窗口钉
-  2025-01-21 除息日 ±7 自然日控样本量。声明形态回填（qfq 单值 / none+口径
-  注记）待人工裁决：qfq 单值语义最贴上游真实口径但改变 etf 默认 none 的
-  auto 路由（routing yaml 需同步），none+注记保持路由不动但标签不实。
-  2026-11-14 第三轮立项（人工确认，case 改动随本轮提交）：①隐式截断/
-  offset 分页边界——新增 limit_truncation（stock P1D 20 年窗、无
-  documented_max → observe 记录实测行数与末根位置；触顶则 partial 覆盖
-  判定候选人工裁决，不触顶则 partial 恒 false 定案维持）与
-  ths-historical-offset-behavior（2025 全年窗 offset=100 对照
-  availability 基线 243 根/首根 2025-01-02 判跳行生效或被忽略）；②期货
-  交易所后缀 ZCE/DCE/INE/GFEX 直调上游实证（适配器 _SUFFIXES 本地即拒、
-  上游指纹空白）——ZCE 双形态 SR601（三位年月码）/SR2601（四位）并探，
-  GFEX 品种大小写形态一并记录；③已摘牌合约可查性（contract/option
-  history.start 锚定前置，tushare 先例）：文档示例已到期 CU2601.SHF /
-  IO2601-C-4000.CFE 存续期窗口——支持则回填轮轮换 targets 并启用
-  full_history_targets 全量模式锚定精确上市日（各合约以自身上市日为准），
-  不支持则保持 null 定案「仅现活合约可得」；④北交所 BSE→BJ 价格端点
-  （920000.BJ a-share + 899050.BJ index historical，futunn BJ 先例对照），
-  实证通过则扩容 _SUFFIXES 与 targets 逐所键；⑤stock 深度精化：聚焦
-  裁剪目录单跑 earliest=2000-01-01 / probe_span_days=30（±30 天粒度收紧
-  ≈2005-02-14）。补记：ETF 复权声明形态已于本日人工裁决落地 [qfq]
-  （manifest 已声明，前段「二选一未决」以 manifest 为准）。
-  max_calls 80→130（最坏 ≈100：availability 12 + adjust 4 + depth 最坏
-  12 + limit 2 + raw 15 case 各 3 调）。
-  2026-11-14 第三轮（报告 20261114T135118+0800，confirmed 9 / observe 18 /
-  failed 1，预算 60/130；目录外诊断 ths_observe_round3.py 8 调 + P9Y 近窗
-  1 调）：
-  - **offset 分页定案：参数被上游静默忽略**——2025 全年窗 offset=100 实测
-    243 行不变、首根 date_ms=2025-01-02 不变（与 availability 基线一致）
-    ——「offset 不启用」定案维持（manifest 注记维持）；
-  - **limit_truncation 20 年窗 failed 收口（窗口跨度裁决）**：根因 1003
-    message='Parameter value out of range: [start, end] must span at most
-    10 years'——**a-share historical 窗口跨度 ≤10 年**（目录外 8 调定位：
-    近窗 P20Y/P15Y/P12Y/P10Y 全 1003 拒绝，半窗 [now-20Y, now-10Y] 成功
-    2417 行、P9Y 近窗成功 2183 行——首轮「A 股无滚动上限」系仅验证起点可
-    早于 10 年前（[2000,2005] 软返空），跨度语义本轮定案补充）；10 年窗内
-    2183~2417 行完整返回无触顶信号 → **行数上限未观测到（≥2417），partial
-    恒 false 定案维持**；limit case max_range 改 P9Y 常态复验；
-  - **期货后缀四所实证未通过**：M2601.DCE / SR601.ZCE（三位）/SR2601.ZCE
-    （四位）/SC2606.INE / LC2606.GFEX 全部 3001 'Target not found'——负
-    对照 ZZ9999.SHF（不存在的 SHFE 代码）同样 3001，定案 3001 = 目录无此
-    标的通用指纹 → 四所标的不在 ths 目录（或代码形态不符但无正向证据）
-    ——**_SUFFIXES 不扩容，维持 SHF/CFE 双实证**；
-  - **已摘牌合约不可查定案**：CU2601.SHF / IO2601-C-4000.CFE（文档示例
-    已到期合约）存续期窗口 3001，与现活 CU2706.SHF（同后缀 code=0）干净
-    对照——已摘牌合约移出上游目录、**仅现活合约可查** → contract/option
-    history.start 保持 null（「最早可用」随合约轮换漂移的既有裁决成立，
-    tushare 已摘牌全量锚定先例不适用于 ths）；
-  - **北交所 BSE→BJ 价格端点实证通过**：920000.BJ a-share historical 与
-    899050.BJ a-share-index historical 均 code=0 且 2025 全年 243 行完整
-    （首根 2025-01-02）——回填候选：_SUFFIXES 扩 {stock/index: BSE→BJ}
-    （etf 无北交所标的）+ targets 逐所键 + 契约测试 422 断言反转，人工
-    确认后落地（futunn BJ.920000/BJ.899050 先例对照）；
-  - **stock 深度精化**：聚焦裁剪目录单跑（earliest=2000-01-01 /
-    probe_span_days=30，报告 20261114T140107+0800）收敛 earliest
-    ≈2005-01-15（±30 天粒度 approx）——替代首轮 ≈2005-02-14（±90 天），
-    manifest 回填候选 2005-01-15T00:00:00+08:00（人工确认）。
-  2026-11-14 回填落地（探针实证人工确认）：BSE→BJ 收编——request_mapper
-  _SUFFIXES 扩 {stock/index: BSE→BJ}、manifest 头注释与 README 标的映射
-  bullet 同步、契约/单测「BJ 未实证 422 拒绝」断言反转为正向映射断言
-  （test_bse_exchange_namespace_mapped / test_bse_exchange_mapped）、
-  targets 增 stock@CN-BSE / index@CN-BSE 常态复验键；stock 深度精化回填
-  2005-01-15（±30 天粒度替代 2005-02-14）；offset 静默忽略 / 窗口跨度
-  ≤10 年 / 行数上限未观测（≥2417，partial 恒 false 维持）/ 已摘牌仅现活
-  可查（contract/option history.start 保持 null 定案，tushare 已摘牌全量
-  锚定先例不适用）四处定案记入 manifest 头注释与 README。
-  2026-11-14 期货四所结论修正（用户指正形态后复探定案）：首轮「四所 3001
-  = 标的不在 ths 目录」**根因修正**——ZCE/GFEX 系探针后缀形态错（ZCE 实为
-  CZC 且三位年月码、GFEX 实为 GFE），DCE/INE 系探针误用已摘牌合约
-  （M2601/SR601/SC2606/LC2606 均已到期 → 3001，与 CU2601.SHF 已摘牌对照
-  一致）；正确形态复探全绿：MA612.CZC / MA701.CZC / EG2701.DCE /
-  BC2612.INE / LC2701.GFE 均 code=0 且 68~69 行（MA701 首探 5003 系瞬时，
-  复验 code=0；MA612 近月 68 行排除「远月无数据」疑虑）；MA2701.CZC 3001
-  → **CZCE 年月码 4→3 还原实证**（规则与 tqsdk 同构：去年份十位）；
-  SR612.CZC 3001（白糖近月不在 ths 目录，形态无关）。raw suffix 5 case
-  更正形态常态留存、targets 增期货逐所 4 键常态复验；_SUFFIXES 扩五所 +
-  CZCE 还原回填（人工确认随本轮提交）。
-
-
-
+notes: 各轮运行记录见 probes/results/PROBE_LOG.md（不入库）；探针框架规范见 probes/README.md。

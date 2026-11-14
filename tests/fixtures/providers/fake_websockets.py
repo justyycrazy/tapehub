@@ -1,6 +1,6 @@
 """测试用 websockets 假模块（Twelve Data WS 协议语义，零网络零凭据）。
 
-模拟 ``websockets.connect`` 与 WS 收发（2026-11-05 探针实证的协议行为）：
+模拟 ``websockets.connect`` 与 WS 收发（探针实证的协议行为）：
 
 - ``connect(uri, open_timeout=...)``：返回单例式 ``FakeWebSocket``
   （前 ``connect_failures`` 次抛连接异常，测重连退避）；
@@ -28,7 +28,7 @@ import sys
 import types
 from typing import Any
 
-# 探针实测样本（2026-11-05，EUR/USD）：timestamp 为分钟桶 Unix 秒
+# 探针实测样本（EUR/USD）：timestamp 为分钟桶 Unix 秒
 INITIAL_PRICE = 1.12183
 INITIAL_TIMESTAMP = 1793887260
 

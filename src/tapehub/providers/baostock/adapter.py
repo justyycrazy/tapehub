@@ -1,26 +1,8 @@
 """baostock 适配器（已实现）。
 
-约定：
-
-- baostock 是可选依赖：SDK 只在 ``_fetch_sync`` 内部延迟导入，
-  未安装时返回 PROVIDER_NOT_IMPLEMENTED，不影响服务启动；
-- baostock 为免费无凭据数据平台（证券宝），恒可注册——registry 不登记
-  凭据，凭据推断恒通过；
-- 同步阻塞调用通过 ``call_in_thread`` 隔离到线程池，不阻塞事件循环；
-- baostock 是 ``login()/logout()`` 全局单连接模型（模块级单例 socket，
-  非线程安全）：模块级锁把「登录 → 查询 → 行收集」全程串行化；会话
-  采用「懒登录 + 进程内复用 + 错误重登」——首次调用登录，之后复用；
-  查询返回未登录/网络类错误码时重登一次并重试一次。不主动 logout
-  （进程退出即断，baostock >=0.8.9 已修复退出时 socket 未关闭问题）；
-- 上游错误经字符串 ``error_code/error_msg`` 返回而非异常（"0"=成功），
-  非零错误码统一包装为 ``UPSTREAM_ERROR``（details 透出上游错误码字符串，
-  本 Provider 无凭据可泄露）；SDK 异常由应用层统一包装，不穿透 API；
-- 上游接口不支持 offset/limit，统一分页由共享 ``paginate_bars`` 完成；
-  上游按日期过滤的边界由适配器在标准化后按闭区间 [start, end] 精确复核；
-- **单次返回上限 5000 根**（2026-11-08 探针实证，报告 20261108T002941+0800：
-  PT5M 全年窗口返回最早 5000 根、尾部截断）：返回行数达到 5000 时置
-  ``partial=True``，由应用层透出截断 warning——窗口起点侧数据完整、
-  窗口尾部取不到，调用方需自行缩小窗口。
+映射规则与上游行为定案见 docs/providers/baostock.md（唯一出处，本文不复述）。
+探针运行记录见 probes/results/PROBE_LOG.md（本地文件，不入库）。
+官方文档：https://baostock.com/mainContent?file=pythonAPI.md。
 """
 
 import threading
@@ -34,7 +16,7 @@ from tapehub.providers.baostock.response_mapper import to_standard_bars
 from tapehub.providers.base import BaseProviderAdapter, call_in_thread
 from tapehub.providers.pagination import paginate_bars
 
-# 上游单次返回行数上限（探针实证：恰 5000 根截断，返回窗口内最早 5000 根）
+# 上游单次返回行数上限（恰 5000 根截断，返回窗口内最早 5000 根）
 _UPSTREAM_ROW_LIMIT = 5000
 
 # baostock 的 login/query_* 作用于模块级单例 socket 会话（进程全局），
@@ -87,10 +69,7 @@ def _upstream_error(message: str, error_code: str, error_msg: str) -> UpstreamEr
 
 
 def _ensure_session(bs: Any) -> None:
-    """懒登录：进程内复用会话；登录失败包装为 UpstreamError。
-
-    官方错误码 "0" 表示成功；其余（含黑名单 10001011）如实透出。
-    """
+    """懒登录：进程内复用会话；登录失败包装为 UpstreamError（官方错误码 "0" 为成功）。"""
     global _SESSION_LOGGED_IN, _SESSION_OWNER
     if _SESSION_LOGGED_IN and _SESSION_OWNER is bs:
         return
@@ -162,8 +141,8 @@ class ProviderAdapter(BaseProviderAdapter):
     def _collect_rows(self, result: Any) -> list[dict[str, Any]]:
         """ResultData → 字典行列表（按 rs.fields 成键）；空结果返回空列表。
 
-        上游行值全为字符串；服务端分批对调用者透明（next() 循环取尽），
-        行长度与 fields 不齐按契约违背处理（zip strict 抛错 → 上层包装）。
+        服务端分批对调用者透明（next() 循环取尽）；行长与 fields 不齐
+        按契约违背上抛（zip strict → 上层包装）。
         """
         fields = list(getattr(result, "fields", None) or [])
         rows: list[dict[str, Any]] = []

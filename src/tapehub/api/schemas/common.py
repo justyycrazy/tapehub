@@ -1,9 +1,8 @@
 """API 通用 schema 工具：时间序列化类型。
 
-- ``BeijingDatetime``：项目内部统一北京时间（+08:00）——服务级时间戳
-  （健康检查、能力目录 generated_at）一律使用；
-- ``MarketDatetime``：行情数据时间，领域层已全市场统一归一化为北京时间
-  （+08:00，2026-11-04 数据探针确认上游口径后统一），序列化原样保留偏移。
+- ``BeijingDatetime``：服务级时间戳（健康检查、能力目录 generated_at）；
+- ``MarketDatetime``：行情数据时间，序列化原样保留偏移。
+时间戳口径见 docs/api.md「时间边界与时区」。
 """
 
 from datetime import datetime

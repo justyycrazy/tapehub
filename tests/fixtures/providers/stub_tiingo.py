@@ -114,8 +114,8 @@ def forex_rows(dates: list[str]) -> list[dict[str, Any]]:
 
 
 def crypto_rows(dates: list[str]) -> list[dict[str, Any]]:
-    """加密 /tiingo/crypto/prices 响应形（2026-11-13 探针实证镜像，报告
-    20261113T163754+0800——官方文档未如实反映的嵌套结构）：
+    """加密 /tiingo/crypto/prices 响应形（探针实证镜像——官方文档未如实
+    反映的嵌套结构）：
     按 ticker 分组的外层元素 + ``priceData`` bar 行数组（date 带 +00:00、
     含 volume（base 币计）/volumeNotional/tradesDone）。
     """

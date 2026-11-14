@@ -16,13 +16,12 @@ pacing:
   timeout_s: 60
   # 预算：availability 66（stock 基准 21 + stock@CN-SZSE 追加 21 + index 3 +
   # etf 21，含 ETF 分钟族 12）+ adjust_diff 12（stock/stock@CN-SZSE/etf 各
-  # 2 case × 2 调，etf 2026-11-13 入链）+ raw 21 条 × 4 调 = 期望 162
+  # 2 case × 2 调）+ raw 21 条 × 4 调 = 期望 162
   #（history_depth 六条已收敛全量 skip，不占预算；bs-lifecycle-login-query
   # 与 bs-etf-adjust-observe 两条 raw 已退役——生命周期由适配器懒登录下的
   # chain availability 隐含复验，ETF 复权由链路 adjust_diff 常态复验）。
-  # ⚠ 分钟族重查询可能贴线/超时：2026-11-12 盘后实测
-  # 3 例 TIMEOUT（timeout_s=60，PT5M-hfq/PT15M-none 双所同现，属上游瞬时
-  # 时延非能力缺口，上轮同查询时延 22~49s），failed 时重跑复验即可。
+  # ⚠ 分钟族重查询可能贴线/超时（属上游瞬时时延非能力缺口），failed 时
+  # 重跑复验即可。
   max_calls: 280
 
 # 基准标的沿用 tickflow/alphafeed 探针定稿的「早上市标的」原则（破除二分
@@ -39,9 +38,9 @@ targets:
   stock@CN-SZSE:
     instrument: CN-SZSE-000001
     # 平安银行（深市主板，1991-04-03 上市）：交易所限定追加目标，sz. 前缀
-    # 分支 chain 级实证（此前仅文档示例核实；框架 2026-11-12 起支持交易所
-    # 限定键）。不进 history_depth：与 stock 同库同查询，库底证据已由
-    # 基准标的收敛；BSE 不声明（官方仅覆盖沪深两市，代码层明确拒绝）
+    # 分支 chain 级实证（此前仅文档示例核实）。不进 history_depth：与 stock
+    # 同库同查询，库底证据已由基准标的收敛；BSE 不声明（官方仅覆盖沪深
+    # 两市，代码层明确拒绝）
     window: {start: 2025-01-01, end: 2025-12-31}
     min_bars: 10
     required_fields: [open, high, low, close, volume, amount]
@@ -64,8 +63,8 @@ targets:
 chain:
   include_declared: true
   skip:
-    # history.start 六条已收敛（20261108T002941+0800：个股/指数 ≈1991-01-18
-    # 三周期同值、ETF 2005-02-23 经 raw 边界精确实测），不再重复消耗配额
+    # history.start 六条已收敛（个股/指数 ≈1991-01-18 三周期同值、
+    # ETF 2005-02-23 经 raw 边界精确实测），不再重复消耗配额
     - case: history-depth-stock-P1D-baostock
       reason: 已收敛 ≈1991-01-18（90 天粒度 approx、complete=True），已人工确认回填
     - case: history-depth-stock-P1W-baostock
@@ -81,9 +80,9 @@ chain:
   adjust_diff:
     # 个股复权生效性（官方「涨跌幅复权法」，与同花顺/通达信口径不同）：
     # 日线足以判定，收敛 interval 控制预算。etf 三复权经 2024 全年逐行对比
-    # 实证（2026-11-08 回填 [none,qfq,hfq]）后入链常态复验，原
-    # bs-etf-adjust-observe 单窗口观察退役；指数复权为 no-op 维持 [none]
-    # 无可比。stock@CN-SZSE 为逐所细分复验（2026-11-12 接入）
+    # 实证（[none,qfq,hfq]）后入链常态复验，原 bs-etf-adjust-observe 单
+    # 窗口观察退役；指数复权为 no-op 维持 [none] 无可比。
+    # stock@CN-SZSE 为逐所细分复验
     targets: [stock, stock@CN-SZSE, etf]
     window: {start: 2024-06-01, end: 2024-08-31}   # 分红除权高发窗口
     intervals: [P1D]
@@ -108,8 +107,8 @@ raw:
   #    转为 list[dict]，使 min_rows 行数判定可用；样本（≤3 行）即字段矩阵
   #    观察。baostock 的 logout 是模块级函数且适配器不主动登出（懒登录
   #    复用、进程退出即断），探针不设独立 logout case。会话生命周期由
-  #    chain availability 隐含复验（适配器懒登录，原 bs-lifecycle-login-query
-  #    raw 于 2026-11-13 退役）。
+  #    chain availability 隐含复验（适配器懒登录，原
+  #    bs-lifecycle-login-query raw 已退役）。
   #
   # ── 官方文档矛盾点与边界行为（assert: false 仅观察，行数判读见注释）──
   - id: bs-start-param-name-observe
@@ -191,13 +190,13 @@ raw:
       - {method: to_dict, kwargs: {orient: records}}
     expect: {status: ok, min_rows: 0}
     assert: false
-  # ── 指数分钟族全量补探（2026-11-08 固化为可复现 case；此前为临时脚本
-  #    补探）：官方明示指数无分钟线，本组把结论实证到全周期族——上证指数
-  #    × 15/30/60 分钟（与 fingerprint 的 5 分钟凑齐四周期，2025-06）、
+  # ── 指数分钟族全量补探：官方明示指数无分钟线，本组把结论实证到全周期
+  #    族——上证指数 × 15/30/60 分钟（与 fingerprint 的 5 分钟凑齐四周期，
+  #    2025-06）、
   #    沪深 300 跨标的、2015 纪元历史窗口、2026 年窗口（1 月边界 + 6 月
   #    年中，对照 ETF 分钟族 2026-01-05 起点，排除「仅 2026 年起才有」）。
   #    全空 → 「指数无分钟线」稳固，manifest 指数能力维持仅日/周/月；
-  #    任一组合返回数据则推翻现声明，需人工确认后回填。
+  #    任一组合返回数据则推翻现声明。
   - id: bs-index-minute-15m-observe
     purpose: |
       指数分钟线补探（frequency=15）：与 bs-index-minute-fingerprint（5 分钟）
@@ -443,49 +442,4 @@ raw:
     expect: {status: ok, min_rows: 0}
     assert: false
 
-notes: >
-  首轮实证（20261108T002941+0800，157/280 调 + 22 补探调，全部离线可复核）：
-  availability 27 全 confirmed、0 failed；adjust_diff 日线 qfq/hfq 均生效
-  （涨跌幅复权法）。history.start 已人工确认回填：个股/指数 ≈1991-01-18
-  （二分 90 天粒度 approx、complete=True、12 探测/条，三周期同值；个股与
-  tickflow CN 收敛点同日、与 alphafeed ≈1991-01-14 接近，几家 CN 库大概率
-  同源；官方口径个股 1990-12-19 / 指数 2006-01-01 均与实测不符——前者偏乐观、
-  后者显著偏保守）；分钟族 2020-01-02（raw 边界精确：2019-12 窗口空、四周期
-  首根同日；官方 2020-01-03 差一天）；ETF 2005-02-23（raw 逐年+月粒度精确：
-  2004 全年空、2005-01~02-22 空；官方口径 2026-01-05 仅指 V0.9.3 新增每日
-  更新 API，与 query_history_k_data_plus 实际覆盖无关）。
-  复权回填：ETF qfq/hfq 经 2024 全年逐行对比实证生效（242 行全差异），
-  adjustments 回填 [none,qfq,hfq]；指数 qfq/hfq 为 no-op（零差异）维持
-  [none]；个股分钟族复权生效（PT5M 3072 行全差异、首分歧 2024-06-03 除权日）。
-  口径实证：start/end 参数表风格在 SDK 签名层报 TypeError（start_date/
-  end_date 唯一合法，适配器现实现正确）；end 闭区间（stock/index 单日窗口
-  各返回 1 行）；分钟 time 为 bar 终点口径（0935/0945/1000/1030 首根全吻合）；
-  指数无分钟线/无效代码/超范围日期/无效周期均空结果不报错（错误码仅 SDK
-  stderr 打印，适配器按空批次透出）；周线仅每周最后交易日有数据（周二单日
-  窗口空）；停牌行 147 行实测 OHLC=前收、量额=0、turn 空串（与官方口径
-  吻合，""→null 映射依据）。单次上限：PT5M 2025 全年窗口恰返回 5000 根
-  （最早 5000 根、尾部截断）→ 适配器 partial 语义已补（行数 ≥5000 判
-  partial）；PT5M 大窗口时延 22~49s（重查询）。ETF target window 维持
-  2026-01-05 起（availability 稳定窗口，不代表数据起点）。
-  分钟族补探（2026-11-08，~20 调）：指数无分钟线实证稳固（三指数 × 5m/60m
-  × 2025/2015 五组合全空）；ETF 分钟族实证齐备——沪深两所（510050/159915）
-  均有数据、起点精确 2026-01-05（2025Q4 全空、2026-01-02 单日空、四周期
-  首根同日、与官方口径一致）、fields/time 与个股分钟同构（time=bar 终点）、
-  hfq 复权管线生效（1056 行全差异）→ ETF 分钟族已声明（PT5M/PT15M/PT30M/
-  PT1H × 三复权，history.start 2026-01-05）。
-  指数分钟族 case 固化复跑（20261108T161734+0800 聚焦运行，24/40 调，全部
-  rows=0 零报错）：上证指数 5/15/30/60 分钟 × 2025-06、沪深 300 5 分钟 ×
-  2025-06、上证指数 5 分钟 × 2015-06——四周期 × 跨标的 × 历史纪元全空，
-  「指数无分钟线」由临时脚本证据升级为可复现 case 证据，manifest 指数能力
-  维持仅日/周/月，无需回填。
-  指数分钟族 2026 窗口补探（20261108T163551+0800 聚焦运行，16/24 调，全部
-  rows=0 零报错）：对照 ETF 分钟族 2026-01-05 起点，排除「指数分钟同样
-  2026 年起才有」——上证指数 5 分钟 × 2026-01（1 月边界窗口）、上证指数
-  5/60 分钟 × 2026-06、沪深 300 5 分钟 × 2026-06 全空。指数分钟族累计
-  10 组合实证全空，结论稳固。
-  ETF 复权入链（2026-11-13 raw→chain 收敛）：adjust_diff targets 加 etf
-  （none vs qfq/hfq 序列常态复验），原 bs-etf-adjust-observe 单窗口观察与
-  bs-lifecycle-login-query 生命周期两条 raw 退役（后者由适配器懒登录下的
-  chain availability 隐含复验）。
-  下轮预期调用（收敛后）：availability 66 + adjust_diff 12（etf 入链 +8）
-  + raw 84 = 162（history_depth 已全量 skip）。
+notes: 各轮运行记录见 probes/results/PROBE_LOG.md（不入库）；探针框架规范见 probes/README.md。

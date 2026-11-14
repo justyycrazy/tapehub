@@ -1,6 +1,6 @@
 """Twelve Data WS Runtime 与适配器流式/快照链路单元测试（假 websockets 桩）。
 
-覆盖（按 2026-11-05 探针实证语义，报告见 probes/results/twelvedata/）：
+覆盖（按探针实证语义）：
 
 - Runtime：subscribed→quote 事件序列、缓存存在时监听器补发订阅确认、
   引用计数与 linger 真退订（上游 unsubscribe 释放 credit）、断连

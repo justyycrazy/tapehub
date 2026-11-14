@@ -1,19 +1,10 @@
 """TickFlow 响应映射（ResponseMapper）：上游返回对象 → 统一 Bar / Quote 模型。
 
-K 线响应结构已按官方文档核实（CompactKlineData，紧凑列式，每字段为数组）：
+字段结构与 extensions 白名单口径见 docs/providers/tickflow.md（唯一出处，
+本文不复述）。探针运行记录见 probes/results/PROBE_LOG.md（本地文件，不入库）。
 
-- 必填字段：timestamp（毫秒）、open/high/low/close/volume/amount；
-- 可选字段：prev_close（前收盘）、open_interest（持仓量）、settlement_price（结算价），
-  仅在存在且非空时进入受控 ``extensions``；
-- SDK 原始模式返回含数组字段的对象（``klines['close'][-1]``）；
-  若外层包含 ``data`` 字段则取其 ``data``；缺失值与 NaN 统一映射为 null。
-
-快照响应（QuotesResponse）：``data`` 数组，每项含 symbol/region/last_price/
-prev_close/open/high/low/volume/amount/timestamp（毫秒）/session（可空枚举）/
-ext（可空：name/change_pct/change_amount/amplitude/turnover_rate，比例字段
-0.01 = 1%，即数值即百分数，按文档原值透出）。标准 Quote 模型无开高低/
-昨收字段，这些字段与 session/ext 一并经 ``extensions`` 白名单透出；
-timestamp 缺失或 last_price 不可解析属上游契约违背，抛 ``UPSTREAM_ERROR``。
+缺失值与 NaN 统一映射为 null；``timestamp`` 缺失或 ``last_price`` 不可解析
+属上游契约违背，抛 ``UPSTREAM_ERROR``（不伪造）。
 """
 
 import math

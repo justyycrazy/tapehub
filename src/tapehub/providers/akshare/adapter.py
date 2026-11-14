@@ -1,13 +1,7 @@
 """akshare 适配器（已实现）。
 
-约定：
-
-- akshare 是可选依赖：SDK 只在 ``_fetch_sync`` 内部延迟导入，
-  未安装时返回 PROVIDER_NOT_IMPLEMENTED，不影响服务启动；
-- 同步阻塞调用通过 ``call_in_thread`` 隔离到线程池，不阻塞事件循环；
-- 接口名仅存在于本适配器与 manifest 的 operations 中，不暴露到公共 API；
-- 上游接口不支持 offset/limit，统一分页由共享 ``paginate_bars`` 完成；
-  上游按日期过滤的边界由适配器在标准化后按闭区间 [start, end] 精确复核。
+映射规则与上游行为定案见 docs/providers/akshare.md（唯一出处，本文不复述）。
+探针运行记录见 probes/results/PROBE_LOG.md（本地文件，不入库）。
 """
 
 from datetime import datetime

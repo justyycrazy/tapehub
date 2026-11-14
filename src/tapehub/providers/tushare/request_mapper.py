@@ -1,24 +1,8 @@
 """Tushare 请求映射（RequestMapper）：标准请求 → ts.pro_bar / pro.fut_daily 参数。
 
-接口签名均已按官方文档核实（https://tushare.pro/document/2）：
-
-- 股票：模块级 ``ts.pro_bar(ts_code, asset='E', freq, adj, start_date, end_date)``；
-  freq 枚举 D/W/M（默认 D），adj 枚举 None/qfq/hfq（仅日线复权，默认 None 未复权）；
-- 期货单一合约：``pro.fut_daily(ts_code, start_date, end_date)``（无复权）；
-- ts_code 股票后缀 .SH/.SZ 已按文档示例核实；北交所 BSE→BJ 经探针实证
-  （报告 20261112T172921+0800，全市场 920 段）；期货后缀五所经探针实证
-  （报告 20261112T124404+0800）：SHF/DCE/INE/CFX/ZCE——CZCE 在 tushare
-  为 4 位年月码，与统一标准码同形（CN-CZCE-SR2601 → SR2601.ZCE，直通；
-  2026-11-12 探针实证 4 位可用、3 位旧写法全空）；
-- 主力连续（总览页 doc_id=134 连续合约格式 XX=主力 / XXL=主连）：多数交易所
-  主连为品种+L（CUL.SHF/SRL.ZCE/ML.DCE/SCL.INE），CFFEX 连续后缀是月份系列
-  （IFL=当月、IFL1-3=次月/当季/下季），主力即主连候选直拼品种（IF.CFX）——
-  探针实证报告 20261112T133250+0800；
-- 日期格式 YYYYMMDD。
-
-原则：所有相关参数显式传递，不依赖上游默认值——
-pro_bar 的 freq 默认 D、adj 默认 None（未复权），与 tapehub 的声明默认值
-（股票 qfq）不同，必须显式传参（adjust=none 时传 Python None 表示不复权）。
+映射规则与上游行为定案见 docs/providers/tushare.md（唯一出处，本文不复述）。
+探针运行记录见 probes/results/PROBE_LOG.md（本地文件，不入库）。
+官方文档：https://tushare.pro/document/2。
 """
 
 from typing import Any
@@ -43,11 +27,8 @@ _ADJUST_CODES: dict[Adjust, str | None] = {
     Adjust.HFQ: "hfq",
 }
 
-# 股票/期货 ts_code 后缀（标准代码 exchange 段 → tushare 后缀）：探针实证条目。
-# BSE→BJ 经探针实证（报告 20261112T172921+0800：目录 355 在市标的全部 920 段
-# + 920000.BJ daily 真实日线；文档 doc_id=14 后缀表核实，83 段老代码已迁移）；
-# 期货五所（报告 20261112T124404+0800，.SHF 出自文档示例，其余四所 raw 实证）；
-# 证伪即移除，绝不预填未核实条目
+# 股票/期货 ts_code 后缀（标准代码 exchange 段 → tushare 后缀）：实证条目表
+# （收录依据见 docs/providers/tushare.md）；证伪即移除，绝不预填未核实条目
 _STOCK_SUFFIXES = {"SSE": "SH", "SZSE": "SZ", "BSE": "BJ"}
 _FUTURES_SUFFIXES = {
     "SHFE": "SHF",
@@ -58,8 +39,8 @@ _FUTURES_SUFFIXES = {
 }
 
 # 主力连续 ts_code 规则：多数交易所主连 = 品种 + "L"（CUL.SHF/SRL.ZCE/
-# ML.DCE/SCL.INE，探针实证 20261112T133250+0800）；CFFEX 主力直拼品种
-# （IF.CFX，该所连续后缀 IFL/IFL1-3 为当月/次月/当季/下季月份系列）
+# ML.DCE/SCL.INE）；CFFEX 主力直拼品种（IF.CFX，该所连续后缀 IFL/IFL1-3
+# 为当月/次月/当季/下季月份系列）
 _CONTINUOUS_PRODUCT_SUFFIX = "L"
 _CONTINUOUS_DIRECT_EXCHANGES = frozenset({"CFFEX"})
 

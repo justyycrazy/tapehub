@@ -1,25 +1,12 @@
 """TqSdk 响应映射（ResponseMapper）：上游数据 → 统一模型。
 
-K 线（DataFrame 行 → ``Bar``）输出列已按官方文档核实：
+字段结构与快照白名单口径见 docs/providers/tqsdk.md（唯一出处，本文不复述）。
+探针运行记录见 probes/results/PROBE_LOG.md（本地文件，不入库）。
 
-- ``id, datetime, open, high, low, close, volume, open_oi, close_oi``；
-- datetime 为自 unix epoch 以来的**纳秒**数（K 线起点，按北京时间），
-  绝对时间戳，规范为北京时间（+08:00）；
-- 无成交额字段：标准 ``amount`` 恒为 null，不用 0 冒充；
-- 持仓量 open_oi/close_oi 进入受控 ``extensions``；volume 保持手；
-- 缺失值与 NaN 统一映射为 null。
-
-实时快照（Quote dict → ``Quote``）字段白名单以 2026-11-04 P5 探针实证
-（probes/results/tqsdk/20261104T012958Z）为准，未核实字段不透出：
-
-- ``datetime`` 为北京时间墙钟字符串（如 ``2026-11-04 10:14:46.500000``）；
-- 标准字段：last_price、五档买卖价量（bid/ask_price1..5、bid/ask_volume1..5）、
-  volume、amount；期货/主连/加权/股票/ETF/指数订阅均成功；
-- 指数与加权指数无盘口：bid/ask 价格为 NaN → null 如实透出（量侧为 0）；
-- ``extensions`` 白名单：open/highest/lowest/average、pre_settlement/pre_close、
-  open_interest/pre_open_interest、upper_limit/lower_limit
-  （均为探针样本中实证有值的行情字段；合约元数据字段 M2 不透出）；
-- 缺失值与 NaN 统一映射为 null（量侧真实 0 保留 0.0，不用 null 冒充）。
+K 线 datetime 为自 unix epoch 以来的纳秒数，规范为北京时间（+08:00）；
+无成交额字段：标准 ``amount`` 恒为 null；缺失值与 NaN 统一映射为 null
+（量侧真实 0 保留 0.0，不用 null 冒充）。快照 datetime 为北京时间墙钟
+字符串；指数与加权指数无盘口：bid/ask 价格为 NaN → null 如实透出。
 """
 
 import math
@@ -31,7 +18,7 @@ from tapehub.domain.timeutil import epoch_to_datetime
 
 _EXTENSIONS_FIELDS = ("open_oi", "close_oi")
 
-# 快照 extensions 白名单（P5 探针实证，见模块 docstring）
+# 快照 extensions 白名单（未核实字段不透出，依据见 docs/providers/tqsdk.md）
 _QUOTE_EXTENSIONS_FIELDS = (
     "open",
     "highest",

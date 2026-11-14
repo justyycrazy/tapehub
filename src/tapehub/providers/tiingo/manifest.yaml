@@ -1,103 +1,17 @@
-# Tiingo 适配器：能力声明与内部操作映射。
-# 接口签名已按官方文档核实（2026-11-13 接入）：
+# Tiingo（tiingo）能力声明与内部操作映射。
+# 映射细则、上游行为定案与历史覆盖依据：docs/providers/tiingo.md（唯一出处，本文不复述）。
+# 官方文档：
 #   https://www.tiingo.com/documentation/general/connecting
 #   https://www.tiingo.com/documentation/crypto
 #   https://www.tiingo.com/documentation/forex
 #   https://www.tiingo.com/documentation/websockets/crypto
 #   https://www.tiingo.com/documentation/websockets/forex
-#
-# 说明：
-# - Tiingo 无官方 Python SDK：REST 历史K线用 httpx（同步客户端，可选依赖）
-#   直连 https://api.tiingo.com，认证经 Authorization: Token <key> 请求头
-#   （token 不落 URL，降低日志泄漏面）；
-# - 标的代码约定（本网关标准格式 → 上游 ticker 小写去斜杠）：
-#   外汇 GLOBAL-OTC-EUR/USD → "eurusd"；加密货币 GLOBAL-CRYPTO-BTC/USD →
-#   "btcusd"（官方示例均小写连写）；
-# - 历史 K 线端点：加密 GET /tiingo/crypto/prices?tickers=&startDate=&
-#   endDate=&resampleFreq=；外汇 GET /tiingo/fx/<ticker>/prices?startDate=&
-#   endDate=&resampleFreq=（每 ticker 独立端点）；resampleFreq 合法格式
-#   <n>min|hour|day、最小 1min，**无周/月线**。周期面收窄裁决（2026-11-14
-#   人工拍板）：仅声明 PT1H/PT4H/P1D——PT1M/PT5M/PT15M/PT30M/PT2H 与
-#   10min/6hour/12hour/24hour 等其余格式收窄不声明（2hour/4hour 曾经
-#   2026-11-13 两轮探针实证可用后扩容，随收窄一并退出声明）；
-# - **响应形状（2026-11-13 探针实证，官方文档未如实反映）**：crypto 端点
-#   返回按 ticker 分组的嵌套结构 {"ticker", "baseCurrency", "quoteCurrency",
-#   "priceData": [...]}（bar 行在 priceData 内，字段 date/open/high/low/
-#   close/volume/volumeNotional/tradesDone）；forex 端点为扁平行（仅 OHLC，
-#   无 volume）。适配器按形状统一拍平；
-# - 历史覆盖范围（history.start）已按 2026-11-13 四轮 + 2026-11-14 逐周期
-#   探针回填（人工确认）：fx 三周期同值 = 上游档案硬边界 2020-01-01（UTC
-#   墙钟）换算北京时间 2020-01-01T08:00——PT1H/PT4H/P1D 各自 depth 独立
-#   收敛一致 ≈2020-02-15 与边界相符（受控复现实证：越界窗口 400 拒绝）；
-#   crypto P1D = depth 二分收敛 ≈2011-08-25（窗口右端零点，90 天粒度
-#   approx、真值可能更早，三轮一致）；crypto PT1H/PT4H = 2018-01-01T00:00
-#   （逐周期探测独立收敛 ≈2017-12-28、两周期一致——比日线浅 6.4 年，
-#   原 P1D 继承值已证过度声明，保守取整季初；报告
-#   20261114T093403+0800）；
-# - **日内数据密度与分段（2026-11-13 受控调用 + limit 专项实证，纠正
-#   首轮「crypto 1min 稀疏 ≈14 根/天」误判——年窗 5001 根系分段截断，
-#   实际密集 ≈1440 根/天）**：fx 1min 单日 2811 根（充足）且单次请求
-#   仅返回窗口起点首个连续段 ≈6 自然日（保头截尾，segment 后分段查询
-#   可行）；crypto 1min 密集但段上限 ≈5001 行（≈3.5 天/段）。crypto 日内
-#   分钟族的 2026-11-13 恢复声明已于次日（2026-11-14 周期面收窄裁决）
-#   再次退出声明——分段语义作为上游行为事实保留记录；
-# - **日内周期单次请求分段（limit 专项实证，partial 判定已落地）**：
-#   fx PT1M 段长按时间 ≈6 自然日 → 末根距请求 end >7 天标 partial
-#   （PT1M 已收窄不声明——判定保留为防御，适配器按 PT1M 门控）；
-#   crypto 段上限按行数 ≈5001 行（返回行数触顶即标 partial，逐行数
-#   判定不限周期；PT1H 实用窗长 ≈208 天内无影响、PT4H ≈416 天、P1D
-#   远超）；fx 其余周期一月窗完整实证不受影响；网关侧不做多段聚合
-#   （fx PT1M 一年 ≈61 段请求会打满小时配额），长窗调用方分段查询；
-# - 单次返回行数上限：官方文档未标注（受 1GB/月带宽配额约束），
-#   partial 恒 false，上限与隐式截断行为待探针核实；
-# - interval/时间边界口径（2026-11-13 探针实证）：两端点均为 UTC
-#   （crypto date 带 +00:00、forex date 带 Z，日内分布吻合）；适配器负责
-#   北京时间 ↔ UTC 的转换；
-# - 加密货币 volume 有值（base 币计）、外汇仅 OHLC（volume 恒 null）；
-#   两者均无成交额字段（amount 恒 null）；无复权概念，adjust 仅声明 none；
-# - 免费档限额（账户页与官方文档口径）：50 请求/小时、1000 请求/天、
-#   500 个唯一品种/月、1GB 带宽/月——REST 调用计请求数，WS 不计请求数
-#   只计带宽；因配额紧于 twelvedata，缺省路由置回退位（仅显式
-#   provider=tiingo 或 twelvedata 缺席/不可解析时启用）；
-# - 实时快照与快照流（WS wss://api.tiingo.com/crypto 与 wss://api.tiingo.com/
-#   fx，websockets 库直连）：subscribe 帧 {"eventName": "subscribe",
-#   "authorization": <token>, "eventData": {"thresholdLevel": <2|5>,
-#   "tickers": [<ticker>]}}——阈值按 2026-11-13 WS 行为探针实证（报告
-#   ws-behavior-20261113T2130+0800）：fx=5（文档/AsyncAPI 口径 7 被上游
-#   拒绝「thresholdLevel not valid」并断连）、crypto=2（top-of-book+
-#   成交，与文档一致）；下行 {service, messageType: A|U|D|I|E|H, data}：
-#   I = 订阅 ack（data.subscriptionId 整数下发）、H = 心跳（订阅后立即
-#   回 1 帧，此后实测 ~60-90s，看门狗 180s）、E = 错误帧（错误后服务端
-#   主动断连，重连状态机接管）；**data 元素为位置数组**（文档字段表的
-#   对象形态错误，标准化见 response_mapper.ws_element_to_snapshot）——
-#   fx Q 8 元素 [Q,ticker,date,bidSize,bidPrice,midPrice,askSize,askPrice]、
-#   crypto Q 9 元素（+exchange）/ T 6 元素 [T,ticker,date,exchange,
-#   lastSize,lastPrice]；tickers 服务端过滤实测生效（客户端兜底过滤保留
-#   防御）；阈值全值矩阵（二次探针附录）：fx 有效 {2,5,省略} 均推 TOP、
-#   crypto 有效 {2=Q+T 混合, 5=仅成交 T, 省略=默认仅 T}；退订定案：逐
-#   symbol 退订生效且不断连（被退 symbol 经短暂在途竞态后停止）、退订
-#   最后一个 symbol（空订阅）服务端关闭连接（重连状态机恢复，linger
-#   语义成立）；subscriptionId 增删订阅**不可用**（增订帧两次实证触发
-#   服务端断连）——维持逐 symbol 独立订阅帧方案；
-# - 并发订阅软上限：TAPEHUB_TIINGO_SUBSCRIPTION_LIMIT（默认 8，防失控；
-#   上游未公布并发上限，硬约束为月度 500 唯一品种，网关不做计数），
-#   达限急切返回 UPSTREAM_SUBSCRIPTION_LIMIT（429）；
-# - 单接口 Provider：变体与 default_variant 均为 tiingo（数据源即上游服务
-#   自身）；缺省请求经 provider_routing.yaml 回退链裁决（tiingo 为
-#   GLOBAL forex/crypto 第二顺位），也可显式传 variant=tiingo。
+# 探针运行记录：probes/results/PROBE_LOG.md（本地文件，不入库）。
 provider: tiingo
 default_variant: tiingo
 
 capabilities:
-  # 外汇（聚合 top-of-book 报价）：仅 OHLC，无 volume/成交额。
-  # 周期面收窄裁决（2026-11-14）：仅声明 PT1H/PT4H/P1D——PT1M/PT5M/
-  # PT15M/PT30M/PT2H 收窄不声明（日内逐周期 depth 探测成本/噪声高，
-  # 机制边界外推不作为逐周期证据）；P1W/P1M 上游 resampleFreq 无
-  # week/month 格式，周期本身不存在。
-  # history.start = 上游档案硬边界 2020-01-01（UTC 墙钟，2026-11-13 受控
-  # 复现实证：越界窗口 400 拒绝）换算北京时间 08:00，三周期同值——
-  # PT1H/PT4H/P1D 各自 depth 独立收敛一致（≈2020-02-15 与边界相符，
-  # 报告 20261114T093403+0800；2026-11-14 人工确认回填）
+  # 外汇（聚合 top-of-book 报价）：仅 OHLC，无 volume/成交额
   - data_type: bars
     markets: [GLOBAL]
     asset_types: [forex]
@@ -110,18 +24,7 @@ capabilities:
     adjustments: [none]
     fields: [open, high, low, close]
 
-  # 加密货币（聚合对）：volume 有值（base 币计）。
-  # 周期面收窄裁决（2026-11-14，推翻 2026-11-13「分钟族恢复声明」）：仅
-  # 声明 PT1H/PT4H/P1D——PT1M/PT5M/PT15M/PT30M/PT2H 收窄不声明（日内
-  # 逐周期 depth 探测成本/噪声高：分段 ≈5001 行/段下探针噪声大）；P1W/
-  # P1M 上游 resampleFreq 无 week/month 格式，周期本身不存在。
-  # history.start：P1D = depth 二分收敛 ≈2011-08-25（窗口右端零点，90 天
-  # 粒度 approx、真值可能更早，三轮一致，显著深于 twelvedata crypto
-  # ≈2017-08）；PT1H/PT4H = 2018-01-01T00:00（2026-11-14 逐周期探测
-  # 独立收敛 ≈2017-12-28、两周期一致——比日线浅 6.4 年，原 P1D 继承值
-  # 已证过度声明，保守取整季初，approx ±90 天；报告 20261114T093403
-  # +0800，人工确认）；段上限 ≈5001 行对 PT1H 实用窗长 ≈208 天内无
-  # 影响、PT4H ≈416 天
+  # 加密货币（聚合对）：volume 有值（base 币计）
   - data_type: bars
     markets: [GLOBAL]
     asset_types: [crypto]
@@ -134,12 +37,7 @@ capabilities:
     adjustments: [none]
     fields: [open, high, low, close, volume]
 
-  # 实时快照与快照流（WS 订阅推送，M2 缓存读取 + M3 SSE 同源）：无周期/
-  # 复权维度（两维度声明为空，路由与能力匹配跳过）；fields 按 2026-11-13
-  # WS 行为探针实证扩容（报告 ws-behavior-20261113T2130+0800）：fx Q 数组
-  # 含 bidSize/bidPrice/midPrice/askSize/askPrice、crypto Q 同（+exchange）
-  # ——单档 bid/ask 声明（五档其余恒 null）；标准 volume/amount 恒 null
-  # （lastSize 为单笔成交量口径未实证，不冒充累计成交量）
+  # 实时快照与快照流（WS 订阅推送，M2 缓存读取 + M3 SSE 同源）：无周期/复权维度，显式空
   - data_type: quotes
     markets: [GLOBAL]
     asset_types: [forex, crypto]
@@ -150,16 +48,14 @@ capabilities:
     fields: [timestamp, last_price, bid_price1, ask_price1, bid_volume1, ask_volume1]
 
 operations:
-  # 外汇历史K线：显式枚举全部声明组合（2026-11-14 周期面收窄裁决，
-  # 仅 PT1H/PT4H/P1D）→ 同一上游端点 GET /tiingo/fx/<ticker>/prices
+  # 外汇历史K线：显式枚举全部声明组合，同一上游端点 GET /tiingo/fx/<ticker>/prices
   - match: {data_type: bars, market: GLOBAL, asset_type: forex, interval: PT1H, adjust: none, variant: tiingo}
     operation: fx_prices
   - match: {data_type: bars, market: GLOBAL, asset_type: forex, interval: PT4H, adjust: none, variant: tiingo}
     operation: fx_prices
   - match: {data_type: bars, market: GLOBAL, asset_type: forex, interval: P1D, adjust: none, variant: tiingo}
     operation: fx_prices
-  # 加密货币历史K线：GET /tiingo/crypto/prices（2026-11-14 周期面收窄
-  # 裁决，仅 PT1H/PT4H/P1D，见 capabilities 注释）
+  # 加密货币历史K线：GET /tiingo/crypto/prices
   - match: {data_type: bars, market: GLOBAL, asset_type: crypto, interval: PT1H, adjust: none, variant: tiingo}
     operation: crypto_prices
   - match: {data_type: bars, market: GLOBAL, asset_type: crypto, interval: PT4H, adjust: none, variant: tiingo}

@@ -10,8 +10,8 @@ from tests.conftest import make_settings
 
 # 内置路由配置必须声明的组合数（provider_routing.yaml 现状快照）：
 # bars 12 条（stock CN/US/HK + index + contract + option + continuous +
-# weighted-index + etf CN/US + forex + crypto，option 为 2026-11-13 ths
-# 接入新增）+ quotes 11 条（CN 五类资产 + HK/US stock + GLOBAL forex/crypto）。
+# weighted-index + etf CN/US + forex + crypto）+ quotes 11 条
+# （CN 五类资产 + HK/US stock + GLOBAL forex/crypto）。
 EXPECTED_BUILTIN_ENTRY_COUNT = 23
 
 
@@ -20,11 +20,7 @@ class TestLoadRoutingConfig:
         """包内内置路由配置可加载，且与既有 Provider 能力覆盖一一对应。"""
         table = load_routing_config()
         assert len(table) == EXPECTED_BUILTIN_ENTRY_COUNT
-        # 拍板定稿的关键裁决：US 个股 K 线 twelvedata 优先（alphafeed 第二
-        # 候选 2026-11-07 追加）、tickflow 回退、akshare 末位免凭据兜底
-        # （2026-11-08 接入东财港美股）；HK 个股 K 线 alphafeed 接管缺省；
-        # futunn 2026-11-14 接入（AppKey 凭据 API、8 周期面、历史覆盖未探针
-        # 实证），置全部 10 个覆盖组合的最末位回退
+        # US / HK 个股 K 线的完整回退链
         assert table[(DataType.BARS, "US", AssetType.STOCK)] == (
             "twelvedata",
             "alphafeed",
@@ -38,12 +34,8 @@ class TestLoadRoutingConfig:
             "akshare",
             "futunn",
         )
-        # 完整回退链示例：CN 个股七源（baostock 置于首位 2026-11-08 接入拍板、
-        # ths 末位回退 2026-11-13 接入、futunn 最末位 2026-11-14 接入）；
-        # tqsdk 缺省的期货合约（ths 末位）；
-        # CN 指数 akshare 优先（库底更深）、baostock 补位；CN ETF tqsdk 缺省、
-        # baostock 回退、akshare 兜底（ths/futunn 最末位）；CN 期权
-        # 为 ths 独占（首个期权 Provider）
+        # 完整回退链示例：CN 个股七源；tqsdk 缺省的期货合约（ths 末位）；
+        # CN 指数与 ETF 多源回退；CN 期权为 ths 独占
         assert table[(DataType.BARS, "CN", AssetType.STOCK)] == (
             "baostock",
             "alphafeed",
@@ -72,8 +64,7 @@ class TestLoadRoutingConfig:
             "ths",
         )
         assert table[(DataType.BARS, "CN", AssetType.OPTION)] == ("ths",)
-        # 个股快照缺省：CN tqsdk 缺省（alphafeed 第二候选 2026-11-07 追加）；
-        # HK/US alphafeed 接管缺省（tickflow 回退，futunn 最末位 2026-11-14）
+        # 个股快照缺省：CN tqsdk 缺省；HK/US alphafeed 接管缺省
         assert table[(DataType.QUOTE, "CN", AssetType.STOCK)] == (
             "tqsdk",
             "alphafeed",
@@ -81,7 +72,7 @@ class TestLoadRoutingConfig:
             "ths",
             "futunn",
         )
-        # CN 期权快照 ths 独占（2026-11-13 接入：分时端点取末点语义）
+        # CN 期权快照 ths 独占
         assert table[(DataType.QUOTE, "CN", AssetType.OPTION)] == ("ths",)
         assert table[(DataType.QUOTE, "HK", AssetType.STOCK)] == (
             "alphafeed",

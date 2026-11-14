@@ -85,8 +85,8 @@ def test_stock_request_and_response_mapping(monkeypatch: pytest.MonkeyPatch) -> 
 
 
 def test_bse_stock_request_mapping(monkeypatch: pytest.MonkeyPatch) -> None:
-    """北交所 BSE→BJ 后缀映射（探针实证报告 20261112T172921+0800：目录 355
-    在市标的全部 920 段 + 920000.BJ daily/adj_factor 双证）。"""
+    """北交所 BSE→BJ 后缀映射（探针实证：目录 355 在市标的全部 920 段
+    + 920000.BJ daily/adj_factor 双证）。"""
     stub = install(monkeypatch)
     stub.pro_bar_rows = stock_rows(["2026-01-05"])
     adapter = _adapter()
@@ -163,7 +163,7 @@ def test_futures_partial_on_row_limit(monkeypatch: pytest.MonkeyPatch) -> None:
 @pytest.mark.parametrize(
     ("code", "asset_type", "expected"),
     [
-        # 五所期货后缀（探针实证，报告 20261112T124404+0800）
+        # 五所期货后缀（探针实证）
         ("CN-SHFE-CU2401", AssetType.CONTRACT, "CU2401.SHF"),
         ("CN-DCE-V2601", AssetType.CONTRACT, "V2601.DCE"),
         ("CN-INE-SC2409", AssetType.CONTRACT, "SC2409.INE"),
@@ -173,8 +173,7 @@ def test_futures_partial_on_row_limit(monkeypatch: pytest.MonkeyPatch) -> None:
         ("CN-CZCE-RM2701", AssetType.CONTRACT, "RM2701.ZCE"),
         # 3 位旧写法输入不做年份猜测，如实透传给上游（查空如实表现）
         ("CN-CZCE-SR601", AssetType.CONTRACT, "SR601.ZCE"),
-        # 主力连续：多数交易所品种+L（XXL 主连），CFFEX 主力直拼
-        # （探针实证，报告 20261112T133250+0800）
+        # 主力连续：多数交易所品种+L（XXL 主连），CFFEX 主力直拼（探针实证）
         ("CN-SHFE-CU", AssetType.CONTINUOUS, "CUL.SHF"),
         ("CN-CZCE-SR", AssetType.CONTINUOUS, "SRL.ZCE"),
         ("CN-DCE-M", AssetType.CONTINUOUS, "ML.DCE"),

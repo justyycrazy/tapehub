@@ -1,37 +1,11 @@
-# AlphaFeed 适配器：能力声明与内部操作映射。
-# 接口签名均已按官方文档核实：https://docs.alphafeed.org/zh-hans/
-#
-# 说明：
-# - AlphaFeed 为 REST API（GET /v1/klines / GET /v1/quotes），官方 Python SDK
-#   包名为 alphafeed，客户端 AlphaFeed(api_key=...)，K 线方法 af.klines.get(...)，
-#   快照方法 af.quotes.get(symbols=..., universes=... 二选一)；
-# - symbol 格式 代码.市场后缀，示例已核实 600519.SH / 000001.SZ / 920047.BJ /
-#   00700.HK / AAPL.US；
-# - period 官方文档枚举 1m/5m/15m/30m/60m/1d/1w/1M/1Q/1Y（无 10m；但探针
-#   实测 10m 上游亦接受并返回数据，报告 20261107T173550+0800，与文档枚举
-#   不符，维持不声明）；账户套餐口径仅开通日 K 线权限（1d/1w/1M，三市场
-#   一致），分钟族不声明——alphafeed 是 CN stock bars 缺省 Provider，路由
-#   执行失败不回退，声明无权限的周期会 403 打断本可由其他 Provider 服务的
-#   请求；季线 1Q 无法用 ISO 8601 Duration 表达，不声明；年线 1Y 超出项目
-#   「最大支持到月线」的周期范围，不声明；
-# - adjust 枚举 none/forward/backward/forward_additive/backward_additive
-#   （SDK 默认 forward），tapehub 的 qfq/hfq 映射为 forward/backward；
-# - start_time/end_time 为毫秒时间戳（含端点）；单次上限 10000 根，
-#   可能截断时响应标记 partial=true；
-# - 历史覆盖（history）：history_depth 探针二分收敛（报告 20261107T201101
-#   CN / 20261107T203514 HK / 20261107T205210 US，三周期各自口径一致），
-#   start 取估计窗口右端零点（approx ±90 天，真实最早可能更早）：
-#   CN (1990-10-16, 1991-01-14]（含上交所开业日 1990-12-19）、
-#   HK (1979-11-17, 1980-02-15]、US (1961-11-19, 1962-02-17]
-#   （HK/US 与 tickflow 独立探测结果同日一致，两家上游历史库大概率同源）；
-# - 单接口 Provider：变体与 default_variant 均为 alphafeed（数据源即上游服务自身）：缺省请求即可路由，也可显式传 variant=alphafeed。
+# AlphaFeed（alphafeed）能力声明与内部操作映射。
+# 映射细则、上游行为定案与历史覆盖依据：docs/providers/alphafeed.md（唯一出处，本文不复述）。
+# 官方文档：https://docs.alphafeed.org/zh-hans/
+# 探针运行记录：probes/results/PROBE_LOG.md（本地文件，不入库）。
 provider: alphafeed
 default_variant: alphafeed
 
 capabilities:
-  # 三市场周期集相同，但历史深度经探针二分收敛确认不同（HK/US 合并声明会
-  # 对 HK 过度声明 18 年），拆三块逐市场声明 history.start；operations 不受
-  # 块拆分影响（本就按市场枚举）。
   - data_type: bars
     markets: [CN]
     asset_types: [stock]
@@ -66,8 +40,7 @@ capabilities:
     adjustments: [none, qfq, hfq]
     fields: [open, high, low, close, volume, amount]
 
-  # 实时快照：官方 /v1/quotes 支持 CN/US/HK 个股（symbols 批量 / universes
-  # 标的池二选一）；快照是当前时点订阅数据，interval/adjust 维度无意义，显式空。
+  # 实时快照：快照是当前时点订阅数据，interval/adjust 维度无意义，显式空。
   - data_type: quotes
     markets: [CN, HK, US]
     asset_types: [stock]
@@ -78,8 +51,7 @@ capabilities:
     fields: [timestamp, last_price, volume, amount]
 
 operations:
-  # 全部周期 × 复权 × 市场组合都调用同一上游接口 af.klines.get；
-  # 显式枚举以保证能力目录与内部操作一一对应（AlphaFeed 无 10m 周期）。
+  # 全部周期 × 复权 × 市场组合都调用同一上游接口 af.klines.get。
   # —— CN ——
   - match: {data_type: bars, market: CN, asset_type: stock, interval: P1D, adjust: none, variant: alphafeed}
     operation: klines

@@ -1,30 +1,8 @@
 """富途（futunn）请求映射（RequestMapper）：标准请求 → REST 端点参数。
 
-接口签名已按官方文档核实（2026-11-14，URL 见 manifest.yaml 头注释）：
-
-- 认证经 AppKey 签名请求头（adapter 层经 signing 模块注入，AppKey ID/
-  私钥不落 URL、不写日志）；
-- bars：``GET /api/v1.0/quote/{code}/history-kline``——``start``/``end``
-  为标的市场时区日期（``yyyy-MM-dd``，CN=Asia/Shanghai、HK=Asia/Hong_Kong、
-  US=America/New_York；域层 ``BarQuery`` 已保证边界归一北京时间，此处再转
-  标的市场墙钟取日历日期）、``ktype``（周期数字枚举，见下）、``autype``
-  （复权 0/1/2，显式传参不依赖上游默认值——上游缺省 1=前复权）、``num``
-  （单次行数上限，默认与最大 370，显式传满）、``page_token``（续页令牌，
-  有值时置于末位）；**分钟 K 线 ``end`` 以该日 00:00 为截止、不含当日**，
-  查闭区间需 end 日期 +1 天（日/周/月 K 线 end 含当日，不补偿）；
-- quotes：``POST /api/v1.0/quote/stock-quote``——body
-  ``{"code_list": [code]}``（单次最多 400，本网关快照为单标的语义传 1 个）；
-- 周期映射（ktype 文档明示取值）：PT1M→1、PT5M→6、PT15M→7、PT30M→8、
-  PT1H→9（上游 60 分）、P1D→2、P1W→3、P1M→4；PT3M/PT2H/PT4H 等不声明；
-- 复权映射：none→0（不复权）、qfq→1（前复权）、hfq→2（后复权）；
-- symbol：标准代码三段中 exchange 段查前缀表（只收文档实证条目：
-  SSE→SH、SZSE→SZ、BSE→BJ、HKEX→HK、NASDAQ/NYSE/AMEX→US——上游美股
-  前缀不区分交易所；OTC 不支持，不在白名单即拒绝），symbol 段数字代码
-  原样透传（CN 6 位证券代码）、港股短码零填充 5 位（``700``→``00700``，
-  与 akshare 惯例一致）、美股 ticker 已由域层大写归一；
-- 查询串经 request_mapper 统一生成（固定键序 start/end/ktype/autype/num/
-  page_token），与签名原文、URL 拼接共用同一字符串（签名一致性由
-  UpstreamRequest 单点保证）。
+映射规则与上游行为定案见 docs/providers/futunn.md（唯一出处，本文不复述）。
+探针运行记录见 probes/results/PROBE_LOG.md（本地文件，不入库）。
+官方文档 URL 见 manifest.yaml 头注释。
 """
 
 import json

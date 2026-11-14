@@ -1,30 +1,7 @@
 """同花顺金融数据 API（ths）适配器（已实现，纯 REST 直连）。
 
-约定：
-
-- ths 无官方 Python SDK：``httpx`` 同步客户端（可选依赖）只在
-  ``_call_upstream`` 内部延迟导入，未安装时返回 PROVIDER_NOT_IMPLEMENTED，
-  不影响服务启动；同步调用经 ``call_in_thread`` 隔离到线程池；
-- API Key 通过 ``TAPEHUB_THS_API_KEY`` 环境变量注入（pydantic-settings），
-  认证经 ``X-api-key`` 请求头（key 不落 URL，绝不写入代码、manifest、日志
-  或异常响应）；
-- 统一 ApiResponse 信封（官方约定：业务结果含错误 HTTP 恒 200，经 code
-  字段表达）：``code=4001``（频率超限）→ UPSTREAM_RATE_LIMITED；其余非 0
-  （1001-1004/2001/2003/3001-3004/5001-5003）→ UPSTREAM_ERROR 携
-  ``upstream_code``/``upstream_message``；HTTP >=400 与 JSON 解析失败为
-  防御性 UPSTREAM_ERROR（携 status_code）——应用层对 TapehubError 直接
-  透传，SDK 异常不穿透 API；
-- 快照为纯 REST 单次调用语义：无首包超时/QUOTE_NOT_READY（与
-  alphafeed/tickflow 一致），上游无推送接口，不实现 stream_quote
-  （流式请求返回 UNSUPPORTED_CAPABILITY）；
-- 期货/期权快照经分时端点取末点（last_price=末点价格、量额=全点求和为
-  当日累计——分时点逐分钟增量口径经 2026-11-13 探针实证，映射口径见
-  response_mapper 模块 docstring）；
-- 单次返回行数上限：官方文档未标注（historical 的 offset 分页参数行为
-  未核实，不启用），partial 恒 false（隐式截断行为待探针核实后补充
-  覆盖判定）；
-- 统一分页由共享 ``paginate_bars`` 完成，闭区间 [start, end] 在标准化后
-  复核；bars/quotes 时间戳统一北京时间归一化由领域层模型完成。
+映射规则与上游行为定案见 docs/providers/ths.md（唯一出处，本文不复述）。
+探针运行记录见 probes/results/PROBE_LOG.md（本地文件，不入库）。
 """
 
 from datetime import datetime
@@ -84,8 +61,7 @@ class ProviderAdapter(BaseProviderAdapter):
         bars = to_standard_bars(rows)
         # 上游按毫秒时间过滤（闭区间），这里按闭区间 [start, end] 精确复核
         window = [bar for bar in bars if query.start <= bar.timestamp <= query.end]
-        # 单次行数上限官方未标注（窗口上限 ≠ 行数上限；offset 分页行为未
-        # 核实未启用），覆盖判定待探针后补充，诚实起见 partial 恒 false
+        # 单次行数上限官方未标注，隐式截断无法可靠判定：诚实起见 partial 恒 false
         page = paginate_bars(window, query.offset, query.limit)
         return BarBatch(
             instrument=query.instrument,

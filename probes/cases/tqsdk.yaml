@@ -10,22 +10,19 @@ requires:
 pacing:
   call_interval_s: 3.0
   timeout_s: 120
-  # ⚠ 运行时段建议：**盘中（如 09:30-15:00）运行**。2026-11-12 盘后实测
-  # （19:25 启动，实时日志逐 case 实证）：股票/ETF 全部 qfq/hfq 复权 case
-  # 的 get_kline_serial(adj_type=F/B) 均挂满 120s 超时（同标的同周期
-  # adj_type=None 3~6s 正常通过，SSE/SZSE 双所一致）——盘后复权数据服务
-  # 无响应，36 availability + 36 adjust_diff ≈ 2.4h 纯超时燃烧；复权生效性
-  # 本身已有 11-03 盘中实证（hfq/none 差异显著）。复权 case 判定以盘中
-  # 运行为准；另实测天勤不支持 BSE 前缀（BSE.920000 快速报
-  # 「non-existent instrument」graphql 错误，闸门 case quote-bse-fingerprint）
+  # ⚠ 运行时段建议：盘中（如 09:30-15:00）运行——盘后复权数据服务无响应，
+  # 股票/ETF 全部 qfq/hfq 复权 case 的 get_kline_serial(adj_type=F/B) 均挂满
+  # timeout 超时（同标的同周期 adj_type=None 正常通过）；复权生效性已有盘中
+  # 实证（hfq/none 差异显著），复权 case 判定以盘中运行为准；天勤不支持
+  # BSE 前缀（BSE.920000 快速报「non-existent instrument」graphql 错误，
+  # 闸门 case quote-bse-fingerprint）
   # 可用性 66（stock/stock@CN-SZSE/etf 各 12：分钟族仅 none + PT30M/PT1H/
-  # P1D 三值——2026-11-13 复权收窄后拆块；index/contract/continuous/
-  # weighted-index/contract@CN-CZCE 各 6）+ adjust_diff 36 case（分钟族 18
-  # 条显式 SKIP：compared adjust 未声明，0 调；PT30M+/P1D 18 条 × 2 调）+
+  # P1D 三值——复权收窄后拆块；index/contract/continuous/weighted-index/
+  # contract@CN-CZCE 各 6）+ adjust_diff 36 case（分钟族 18 条显式 SKIP：
+  # compared adjust 未声明，0 调；PT30M+/P1D 18 条 × 2 调）+
   # history_depth 30 case×~13 + limit 1 + connection 9+12（创建+首调+释放）
   # + raw 9 case×2 调用（quote 矩阵含 BSE 闸门 + 郑商所 4 位 kline 挂起
-  # 复验；原 kline-czce-3digit 已退役——3 位接受度由 chain contract@CN-CZCE
-  # 还原链路常态复验）
+  # 复验；3 位接受度由 chain contract@CN-CZCE 还原链路常态复验）
   # ≈ 622
   # （深度探针全周期同轮测量：保留边界随时间前移，矩阵须同一时点）
   max_calls: 700
@@ -38,13 +35,11 @@ targets:
     window: {start: 2026-07-01, end: 2026-11-30}
     min_bars: 30
   contract@CN-CZCE:
-    # 郑商所合约：标准码统一 4 位年月（公开现行约定；tushare/新浪 侧
-    # 2026-11-12 实证 4 位可用、3 位全空）。2026-11-12 探针实证 TianQin
-    # 只认 3 位（CZCE.RM701 有数据、4 位 CZCE.RM2701 无响应挂起），
-    # 适配器做 4→3 位还原（RM2701 → RM701），本目标 availability 即还原
-    # 链路的常态复验；4 位直传挂起的原始证据见 raw case kline-czce-4digit
-    #（原 kline-czce-3digit raw 于 2026-11-13 退役——3 位接受度由本目标
-    # availability 覆盖）
+    # 郑商所合约：标准码统一 4 位年月（公开现行约定；tushare/新浪 侧实证
+    # 4 位可用、3 位全空）。TianQin 只认 3 位（CZCE.RM701 有数据、
+    # 4 位 CZCE.RM2701 无响应挂起），适配器做 4→3 位还原（RM2701 → RM701），
+    # 本目标 availability 即还原链路的常态复验；4 位直传挂起的原始证据见
+    # raw case kline-czce-4digit
     instrument: CN-CZCE-RM2701
     window: {start: 2026-07-01, end: 2026-12-31}
     min_bars: 30
@@ -63,10 +58,9 @@ targets:
     min_bars: 60
   stock@CN-SZSE:
     # 平安银行（深市主板）：交易所限定追加目标，SZSE. 前缀 chain 级实证
-    #（tqsdk 代码格式 {exchange}.{symbol} 直拼，此前仅 SSE 实测；框架
-    # 2026-11-12 起支持交易所限定键）。BSE 不上 chain 目标：天勤对 BSE
-    # 前缀的支持性未知，由 raw 闸门 quote-bse-fingerprint 先探指纹，
-    # 确认支持后再补目标
+    #（tqsdk 代码格式 {exchange}.{symbol} 直拼）。BSE 不上 chain 目标：
+    # 天勤对 BSE 前缀的支持性未知，由 raw 闸门 quote-bse-fingerprint 先探
+    # 指纹，确认支持后再补目标
     instrument: CN-SZSE-000001
     window: {start: 2026-07-01, end: 2026-11-30}
     min_bars: 60
@@ -86,7 +80,7 @@ chain:
   skip: []
   adjust_diff:
     # 股票/ETF adj_type F/B 实证：前/后复权序列应与不复权存在差异（分红除权期）。
-    # stock@CN-SZSE 为逐所细分复验（2026-11-12 接入）
+    # stock@CN-SZSE 为逐所细分复验
     targets: [stock, stock@CN-SZSE, etf]
     window: {start: 2024-06-01, end: 2024-08-31}
     pairs: [[none, qfq], [none, hfq]]
@@ -297,7 +291,7 @@ raw:
     assert: false
   - id: kline-czce-4digit
     purpose: 郑商所 4 位年月码上游接受度实证（get_kline_serial CZCE.RM2701，
-      观察不判定；2026-11-12 已实证 4 位无响应挂起——TianQin 只认 3 位，
+      观察不判定；已实证 4 位无响应挂起——TianQin 只认 3 位，
       适配器据此做 4→3 位还原，本 case 常态复验该结论；3 位侧常态复验由
       chain contract@CN-CZCE 承担，原 kline-czce-3digit raw 已退役）
     module: tqsdk
@@ -317,29 +311,4 @@ raw:
     expect: {status: ok, min_rows: 1}
     assert: false
 
-notes: >
-  文档对单次上限存在两种口径（data_length 每序列上限 10000，使用说明另有 8000 根
-  表述，以 API 参考为准），limit_truncation 不设 documented_max，以实测裁决；
-  connection 探针（P1 建连耗时 / P2 并发 4 实例共存）为单实例化改造提供连接
-  预算依据；raw quote 探针（P5）验证订阅成功与字段键存在，NaN 与实际值差异看
-  sample（Quote 首包前字段为 NaN 属正常，休市时段值不前进），get_quote 未配
-  wait_update，避免声明式探针阻塞——字段键存在性判定与权限报错捕获不受影响；
-  期货/指数无复权概念，adjust_diff 仅配股票/ETF（实证 adj_type F/B 是否生效）；
-  股票/ETF 的 volume 单位与 ETF/指数历史权限已在 2026-11-03/04 探针回填 README。
-  P3/P4/P6/P7 四项运行时基准已于 2026-11-05 用 Runtime 集成基准脚本实证
-  （probes/results/runtime-bench-20261105T161229+0800.md 与
-  memory-curve-20261105T161708+0800.md（脚本随产物保存于 probes/results/、
-  不入库；真实上游、默认配置
-  max_inflight=16/subscription_limit=64）：P3 同连接并发 await 矩阵——
-  并发 1/2/4/8 各 5 轮全部成功，p50 187-750ms、max ≤750ms，并发 8 无退化
-  （p50 266ms，上游并发有收益），统一实例设计成立；P4 历史大请求下的推送
-  抖动——并发 8×5000 根负载期间，新订阅首包延迟由基线 p50 320ms 升至
-  p50 1164ms（约 3.6×、p95 1875ms），零失败零误拒，tick 循环响应度下降但
-  仍在秒级（非交易时段以首包延迟为推送代用指标，交易时段建议复测真实
-  推送间隔）；P6 订阅累积与回收——顺序订阅 120 池第 67 个触发休眠回收
-  （gen1→2），活跃订阅（au/cu 主连）自动重订恢复，120 订阅零失败；内存曲线
-  每休眠订阅约 +0.03MB（60 个共 +2.1MB），回收代际切换瞬时峰值约 +34MB
-  （新一代构造），无泄漏迹象；P7 协程重建重订阅——休眠累积触发新一代重建
-  （gen2→3），流事件序列完整：subscribed(0.75s)×3 → recycling(15.25s)×3 →
-  subscribed(18.19s)×3，回收窗口约 2.9s（含 2s 退避 + 新代构造 + 重订首包），
-  端到端验证绝不静默断流。探针永不自动改 manifest，能力回填人工确认后提交。
+notes: 各轮运行记录见 probes/results/PROBE_LOG.md（不入库）；探针框架规范见 probes/README.md。

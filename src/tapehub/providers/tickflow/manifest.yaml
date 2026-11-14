@@ -1,49 +1,11 @@
-# TickFlow 适配器：能力声明与内部操作映射。
-# 接口签名均已按官方文档核实：https://docs.tickflow.org/zh-hans/
-#
-# 说明：
-# - TickFlow 为 REST API（GET /v1/klines、GET /v1/quotes），官方 Python SDK
-#   包名为 tickflow，客户端 TickFlow(api_key=...)，K 线方法 tf.klines.get(...)，
-#   实时行情方法 tf.quotes.get(symbols=[...])；
-# - symbol 格式为 代码.市场后缀，后缀已核实支持 SH / SZ / BJ / US / HK：
-#   A 股（SSE/SZSE/BSE）、港股（HKEX）、美股（NYSE/NASDAQ/CBOE，exchange 段
-#   仅作标准代码规范，上游统一 US 后缀）均声明 stock；
-# - period 枚举 1m/5m/10m/15m/30m/60m/1d/1w/1M/1Q/1Y：
-#   季线 1Q 无法用 ISO 8601 Duration 表达，不声明；年线 1Y 超出项目
-#   「最大支持到月线」的周期范围，不声明；
-# - adjust 枚举 forward/forward_additive/backward/backward_additive/none，
-#   tapehub 的 qfq/hfq 映射为 forward/backward（加权差值变体不对外暴露）；
-# - 上游单次上限 10000 根 K 线，可能截断时响应标记 partial=true；
-# - 历史覆盖范围（history）：日/周/月经 history_depth 探针实证回填
-#   （20261107T145801，早上市基准标的 600602/00002/GE，二分 90 天粒度收敛
-#   complete=True：CN ≈1991-01-18、HK ≈1980-02-15、US ≈1962-02-17，日/周/月
-#   同值；能力为三市场合并声明，start 取跨市场最早 US 值，approx ±90 天）；
-#   分钟族免费档无分钟 K 线权限（403 已三轮实证）无法核实，保持 null，不编造；
-# - quotes 快照：上游支持逗号分隔批量（本项目单标的快照，单标的单次调用），
-#   返回 last_price/volume/amount 与 session/ext（name/change_pct 等，经
-#   extensions 白名单透出）；quote 无 interval/adjust 维度，显式声明空；
-# - 单接口 Provider：变体与 default_variant 均为 tickflow（数据源即上游服务自身）：
-#   缺省请求即可路由，也可显式传 variant=tickflow。
-# - 不声明缺省路由（provider_routing.yaml 裁决：CN stock 快照归 tqsdk、
-#   US stock K 线归 twelvedata；tickflow 独占的 HK 能力与 US stock 快照
-#   自动路由到本 Provider，重叠能力可显式 provider=tickflow 使用）。
+# TickFlow（tickflow）能力声明与内部操作映射。
+# 映射细则、上游行为定案与历史覆盖依据：docs/providers/tickflow.md（唯一出处，本文不复述）。
+# 官方文档：https://docs.tickflow.org/zh-hans/
+# 探针运行记录：probes/results/PROBE_LOG.md（本地文件，不入库）。
 provider: tickflow
 default_variant: tickflow
 
 capabilities:
-  # bars 三块逐市场声明：三市场周期集与复权相同，但 history_depth 探针
-  # （20261107T145801，早上市基准标的，二分 90 天粒度收敛）确认历史深度
-  # 不同——原合并块 start 取跨市场最早 US 值，对 CN 过度声明 29 年，拆块
-  # 后目录声明与探针证据一一对应；operations 不受块拆分影响（本就按市场
-  # 枚举）。history.start 取估计窗口右端零点（approx ±90 天，真实最早可能
-  # 更早），per-market 真值带：CN [1990-12-19, 1991-01-18]（不早于上交所
-  # 开业日）、HK (1979-08-19, 1980-02-15]、US (1961-09-23, 1962-02-17]。
-  # 分钟族（PT1M~PT1H，含 10m）不声明（2026-11-07 拍板，与 alphafeed 同
-  # 口径）：免费档无分钟 K 线权限（403 指纹「无分钟K线查询权限」已三轮
-  # 实证），tickflow 又是 CN stock bars 第二候选——声明无权限的周期会 403
-  # 打断本可由其他 Provider 服务的请求；去掉声明后 US 分钟 K 由 twelvedata
-  # 服务，CN/HK 分钟 K 无人声明、auto 路由诚实返回 NO_PROVIDER_AVAILABLE；
-  # 升档后按探针流程实测再回填。
   - data_type: bars
     markets: [CN]
     asset_types: [stock]
@@ -88,8 +50,7 @@ capabilities:
 
 operations:
   # 全部市场 × 周期 × 复权组合都调用同一上游接口 tf.klines.get；
-  # quotes 快照按市场各一条，调用 tf.quotes.get；
-  # 显式枚举以保证能力目录与内部操作一一对应。
+  # quotes 快照按市场各一条，调用 tf.quotes.get。
   - match: {data_type: bars, market: CN, asset_type: stock, interval: P1D, adjust: none, variant: tickflow}
     operation: klines
   - match: {data_type: bars, market: CN, asset_type: stock, interval: P1D, adjust: qfq, variant: tickflow}

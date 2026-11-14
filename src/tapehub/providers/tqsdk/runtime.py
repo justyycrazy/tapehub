@@ -1,55 +1,22 @@
 """TqSdkRuntime：进程内唯一的 TqApi 长连接运行时（``conn_mode=shared``）。
 
-线程模型（tqsdk 官方并发模式，2026-11-04 经真实连接实验验证）：
+线程模型、代际生命周期与订阅协议的设计定案见 docs/providers/tqsdk.md
+（唯一出处，本文不复述）。探针运行记录见 probes/results/PROBE_LOG.md
+（本地文件，不入库）。
 
-- Runtime 独占一个线程，按 tick 驱动 tqsdk 私有事件循环：
-  收割已完成请求 → 非阻塞接收新请求（``api.create_task`` 并发协程）
-  → ``api.wait_update(deadline=tick)``（维持 peek_message 推送与连接保活，
-  并推进全部并发协程）；
-- 取数协程结果经 ``concurrent.futures.Future`` 回填，适配器在 FastAPI
-  事件循环中 ``await wrap_future(f)``，互不阻塞对方线程；
-- SDK 延迟导入仅发生在 Runtime 线程内；不依赖 FastAPI，后台进程可复用。
+要点：Runtime 独占一个线程按 tick 驱动 tqsdk 私有事件循环；快照只在线程内
+``dict(quote)`` 拷贝后发布（外部拿到的是纯 dict）；tqsdk 协议不支持取消
+订阅——退订只停止本地快照维护，休眠订阅累计到 ``subscription_limit`` 触发
+新一代重建清理，仍被引用的订阅在新一代自动重订。
 
-生命周期：
-
-- ``start()`` 懒启动：创建线程，线程内构造 TqApi（构造期 ``wait_update``
-  自行驱动收初始截面，实测 ~1s；此时循环未运行，构造函数的守卫不触发）；
-- 新一代重建：失败在飞请求 → ``api.close()``（tick 返回后循环未运行，
-  close 才被允许）→ 同线程构造新一代。触发：北京时间 04:00 跨交易日窗口
-  （采纳官方「跨交易日重启」建议）、watchdog 连续异常、休眠订阅累计到
-  ``subscription_limit``（tqsdk 协议不支持取消订阅，退订只停止本地快照
-  维护，上游推送仍在消耗带宽——累计到阈值即重建一代清理，仍被引用的
-  订阅在新一代自动重订）；
-- ``shutdown()``：置停止标志并唤醒 tick → 线程内 close → join。
-
-实时快照订阅（M2）：
-
-- ``subscribe(symbol)`` 引用计数 +1；首个订阅者经订阅协程
-  ``await api.get_quote(symbol)`` 订阅并等到首包（官方文档的协程用法，
-  由 tick 循环的 wait_update 驱动，不阻塞 tick）；
-- 首包到达即在 Runtime 线程内 ``dict(quote)`` 拷贝发布首个快照；此后
-  tick 循环以 ``api.is_changing`` 判定增量并刷新 ``{symbol: dict}``
-  快照缓存——快照只在线程内拷贝后发布，外部拿到的是纯 dict；
-- ``latest(symbol)`` 读取最新快照（未收到首包/已退订返回 None）；
-- ``unsubscribe(symbol)`` 引用计数 -1；最后一个订阅者退订时停止本地
-  维护并丢弃快照，Quote 引用转入「休眠」（上游订阅仍在，等待代际回收）。
-
-实时快照流监听器（M3，SSE 数据出口）：
-
-- ``add_stream_listener(symbol, callback)`` 注册流监听器，返回注销句柄；
-  callback 在 Runtime 线程被调用，收到 ``(kind, symbol, snapshot)``：
-  ``subscribed``（首包到达/休眠唤醒/代际重订完成，携带快照拷贝）、
-  ``quote``（is_changing 增量，与快照缓存同源的拷贝）、
-  ``upstream_disconnected``（wait_update 异常/停机）、``recycling``
-  （代际重建，重订后自动恢复 subscribed）；
-- 通知只传线程内已拷贝的纯 dict，回调异常只记录、绝不阻塞 tick；
-- 监听器注册表跨代保留：回收后仍被引用的订阅在新一代自动重订，
-  重订首包到达即恢复推送——SSE 客户端经 ``recycling`` → ``subscribed``
-  事件感知整个窗口，绝不静默断流。
-
-健壮性：并发闸门（在飞 ≤ 上限，超限立即 ``ConcurrencyLimitError``）；
-watchdog（连续 wait_update 异常触发新一代重建）；构造失败为致命
-（凭据类错误重建无意义），Runtime 进入 fatal 并拒绝后续请求。
+实时快照流监听器（M3，SSE 数据出口）：``add_stream_listener(symbol,
+callback)`` 注册流监听器，callback 在 Runtime 线程被调用，收到
+``(kind, symbol, snapshot)``：``subscribed``（首包到达/休眠唤醒/代际重订
+完成，携带快照拷贝）、``quote``（is_changing 增量，与快照缓存同源的拷贝）、
+``upstream_disconnected``（wait_update 异常/停机）、``recycling``（代际
+重建，重订后自动恢复 subscribed）——通知只传线程内已拷贝的纯 dict，回调
+异常只记录、绝不阻塞 tick；SSE 客户端经 ``recycling`` → ``subscribed``
+事件感知回收窗口，绝不静默断流。
 """
 
 from __future__ import annotations
@@ -448,13 +415,11 @@ class TqSdkRuntime:
     def _tick_loop(self, api: Any, next_recycle: float) -> None:
         """tick 驱动循环：收割完成请求 → 接新请求 → wait_update 驱动一切。
 
-        **peek 门闩复位（关键）**：tqsdk 的推送协议要求客户端发出
-        ``peek_message`` 后才推送数据；``wait_update`` 仅在**收到数据**时
-        复位 ``_pending_peek`` 门闩（api.py _fetch_msg）。deadline 到期且
-        无数据的静默 tick 会把门闩留在 True——后续 tick 不再发 peek，
-        服务器停止推送，整个连接变聋（实测：夜盘数据断流、新订阅挂起）。
-        因此每个 tick 主动复位门闩，等价于活跃策略主循环的持续
-        wait_update 行为；``_fetch_msg`` 残留任务由每日 04:00 回收清理。
+        **peek 门闩复位（关键）**：tqsdk 推送协议要求客户端发出
+        ``peek_message`` 后才推送数据，静默 tick 会把 ``_pending_peek``
+        门闩留在 True 导致连接变聋——因此每个 tick 主动复位门闩
+        （机制定案见 docs/providers/tqsdk.md）；``_fetch_msg`` 残留任务
+        由每日 04:00 回收清理。
         """
         wait_exc_streak = 0
         silent_ticks = 0
@@ -624,7 +589,7 @@ class TqSdkRuntime:
 
         计数回收必须在 ``set_result`` **之前**（同协程内同步完成）：若依赖
         task done callback（循环下一拍才触发），调用方可能在闸门计数未释放
-        的窗口内提交下一请求，造成偶发误拒（实测并发闸门 flake 的根因）。
+        的窗口内提交下一请求，造成偶发误拒。
         """
         # 计数回收（无论请求是否已被取消都要执行，防止并发闸门泄漏）
         with self._lock:

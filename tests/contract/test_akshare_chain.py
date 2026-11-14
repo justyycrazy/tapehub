@@ -319,8 +319,8 @@ def test_capability_catalog(akshare_client: TestClient) -> None:
         [i["history"]["start"] for i in index_em_cap["intervals"]]
         == ["1991-01-01T00:00:00+08:00"] * 3
     )
-    # history.start 探针实证回填（报告 20261108T150042+0800，人工确认，
-    # approx ±90 天；P1W/P1M 与 P1D 同上游端点同数据区间，同值声明）
+    # history.start 探针实证回填（approx ±90 天；P1W/P1M 与 P1D 同上游端点
+    # 同数据区间，同值声明）
     etf_start = "2005-03-20T00:00:00+08:00"
     hk_start = "1989-01-27T00:00:00+08:00"
     us_start = "1986-02-21T00:00:00+08:00"

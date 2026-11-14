@@ -285,8 +285,7 @@ def test_contract_suffix_mapping(
     expected_thscode: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """期货五所后缀 2026-11-14 探针实证收编（用户指正形态后复探全绿）；
-    CZCE 年月码 4→3 还原与 tqsdk 同构。"""
+    """期货五所后缀探针实证收编；CZCE 年月码 4→3 还原与 tqsdk 同构。"""
     install(monkeypatch)
     preset_payload(
         monkeypatch,
@@ -325,8 +324,8 @@ def test_unverified_exchange_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_bse_exchange_mapped(monkeypatch: pytest.MonkeyPatch) -> None:
-    """BSE→BJ 收编（2026-11-14 探针价格端点实证：920000.BJ a-share
-    historical 243 行完整，报告 20261114T135118+0800）。"""
+    """BSE→BJ 收编（探针价格端点实证：920000.BJ a-share historical
+    243 行完整）。"""
     install(monkeypatch)
     preset_payload(
         monkeypatch,

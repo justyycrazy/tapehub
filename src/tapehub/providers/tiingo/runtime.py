@@ -1,27 +1,8 @@
 """Tiingo WebSocket 共享运行时（M2 快照缓存 + M3 流式同源）。
 
-asyncio 原生实现（与 twelvedata Runtime 同构，协议细节按官方文档
-websockets/crypto|forex 页实现，**消息形态细节待数据探针实证**）：
-
-- 端点按资产类型分流：``wss://api.tiingo.com/crypto``（thresholdLevel=2，
-  top-of-book+成交）与 ``wss://api.tiingo.com/fx``（thresholdLevel=7，
-  top-of-book）——同一适配器持两个懒启动实例，各自单连接互不干扰；
-- 订阅帧（token 随帧传递，绝不写日志）：``{"eventName": "subscribe",
-  "authorization": <token>, "eventData": {"thresholdLevel": <2|5>,
-  "tickers": [<ticker>]}}``；退订同构 ``eventName: "unsubscribe"``。
-  2026-11-13 WS 行为探针实证（报告 ws-behavior-20261113T2130+0800）：
-  tickers 服务端过滤**生效**（客户端兜底过滤保留防御）；subscriptionId
-  经订阅 ack（I 帧）``data.subscriptionId``（整数）下发——增删订阅机制
-  未采用（逐 symbol 订阅帧已工作）；fx 退订空订阅后服务端断连（重连
-  状态机自动恢复），crypto 退订后连接存活；
-- 下行 ``{service, messageType: A|U|D|I|E|H, data}``：``H`` 为服务端
-  心跳（订阅后立即回 1 帧，此后实测 ~60-90s；客户端不发送应用层心跳，
-  静默看门狗 180s）；``E`` 为错误帧（``response.code/message``，错误后
-  服务端主动断连，重连状态机接管）；``data`` 为数组，元素按位置解析
-  （fx Q 8 元素 / crypto Q 9 元素、T 6 元素），标准化见
-  response_mapper.ws_element_to_snapshot，映射见 ws_price_to_quote；
-- 订阅确认语义：symbol 处于等首包态时收到首条匹配 data 元素即视为
-  ``subscribed``（twelvedata「首包到达」口径一致）。
+asyncio 原生实现，与 twelvedata Runtime 同构；WS 协议行为定案见
+docs/providers/tiingo.md（唯一出处，本文不复述）。探针运行记录见
+probes/results/PROBE_LOG.md（本地文件，不入库）。
 
 事件通知（listener 回调 ``callback(kind, symbol, snapshot)``）：
 
@@ -57,8 +38,7 @@ StreamListener = Callable[[str, str, "dict[str, Any] | None"], None]
 _RECONNECT_BACKOFF_SECONDS = 2.0
 # 引用归零后的真退订延迟（秒）：M2 轮询 / 流快速重连免重订
 _SNAPSHOT_LINGER_SECONDS = 60.0
-# 静默看门狗（秒）：服务端心跳实测 ~60-90s（2026-11-13 WS 探针，报告
-# ws-behavior-20261113T2130+0800；客户端不发送应用层心跳），该窗口内无
+# 静默看门狗（秒）：服务端心跳实测 ~60-90s（客户端不发送应用层心跳），该窗口内无
 # 任何报文即判定连接僵死重连（约两倍心跳周期留余量）
 _SILENCE_WATCHDOG_SECONDS = 180.0
 # WS 建连超时（秒）
@@ -187,9 +167,8 @@ class TiingoWsRuntime:
     def unsubscribe(self, symbol: str) -> None:
         """引用 -1；归零后延迟 ``_SNAPSHOT_LINGER_SECONDS`` 真退订。
 
-        上游退订生效性待探针实证：若上游忽略 unsubscribe，linger 到期后
-        仍完成本地释放（缓存清空、活跃口径回落），带宽残留由 README 限额
-        说明与上游侧兜底。
+        若上游忽略 unsubscribe，linger 到期后仍完成本地释放（缓存清空、
+        活跃口径回落），带宽残留由 docs/operations.md 限额说明与上游侧兜底。
         """
         refs = max(0, self._refs.get(symbol, 0) - 1)
         if refs > 0:
@@ -386,13 +365,9 @@ class TiingoWsRuntime:
                 self._handle_message(message)
 
     def _handle_message(self, message: dict[str, Any]) -> None:
-        """按 messageType 分发；data 元素按 ``ticker`` 客户端兜底过滤。
-
-        A 帧 data 实测为**单个扁平位置数组**（2026-11-13 探针实证：data
-        即 ``["Q", ticker, date, …]`` 本身，形状与标准化见
-        response_mapper.ws_element_to_snapshot）——标准化为 snapshot dict
-        后走统一链路；对象形态透传兼容（防御）。E 帧提取 ``response.message``
-        告警（错误后服务端会主动断连，由重连状态机接管）。
+        """按 messageType 分发；data 元素按 ``ticker`` 客户端兜底过滤（防御，
+        服务端 tickers 过滤为主）。E 帧提取 ``response.message`` 告警（错误后
+        服务端会主动断连，由重连状态机接管）。
         """
         message_type = message.get("messageType")
         if message_type == "H":
@@ -418,9 +393,8 @@ class TiingoWsRuntime:
         for element in elements:
             snapshot = ws_element_to_snapshot(element)
             ticker = snapshot.get("ticker")
-            # 客户端兜底过滤：服务端 tickers 过滤已实证生效（探针报告
-            # ws-behavior-20261113T2130+0800），防御保留——非本 Runtime
-            # 订阅集的报文直接忽略（订阅集=活跃引用）
+            # 客户端兜底过滤（防御保留）：非本 Runtime 订阅集的报文直接忽略
+            # （订阅集=活跃引用）
             if not isinstance(ticker, str) or ticker not in self._refs:
                 continue
             self._snapshots[ticker] = snapshot

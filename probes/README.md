@@ -1,7 +1,9 @@
 # probes — Provider 数据探针规范
 
-用真实上游调用实证核实能力目录声明（及声明之外的边界），把 README 中
-「未核实 / 保持 null / 待核实」的诚实边界变成**有据可查的时点证据**。
+用真实上游调用实证核实能力目录声明（及声明之外的边界），把
+`docs/providers/<name>.md` 中「未核实 / 保持 null / 待核实」的诚实边界
+变成**有据可查的时点证据**。各轮运行记录见 `results/PROBE_LOG.md`
+（不入库，见「结果记录」一节）。
 
 设计动机与决策记录见 [PLAN.md](PLAN.md)。**探针不是服务运行时的一部分，
 也不进入 CI 测试**：`uv run pytest` 保持零网络、零真实凭据。
@@ -15,6 +17,7 @@ probes/
   schema.py / loader.py / runner.py / analysis.py / report.py / cli.py / logging_setup.py
   cases/                 # 探针文件：每 Provider 一个，与 BUILTIN_PROVIDERS 同名
   results/               # 运行产出（.gitignore 整目录，不入库）
+    PROBE_LOG.md         # 各轮运行记录（人工追加，见「结果记录」一节）
 tests/unit/probes/       # 框架自身离线测试
 ```
 
@@ -197,7 +200,19 @@ notes: 本探针要回答的问题与已知存疑点。
 - 样本数据每 case 最多 3 根 bar；凭据只记录「是否已配置」布尔。
 
 **manifest 回填流程**：报告 → 人工确认 → 修订 manifest（`history.start`、
-复权声明收敛、新增周期/后缀声明）与 README → 单独提交。探针永不自动改 manifest。
+复权声明收敛、新增周期/后缀声明）与 `docs/providers/<name>.md` → 单独提交。
+探针永不自动改 manifest。
+
+## 结果记录
+
+- `results/PROBE_LOG.md` 是全部轮次运行记录的唯一汇总文档（不入库）：
+  **每轮跑完后，把该轮条目追加到对应 Provider 小节最上方**（节内按时间倒序）；
+- 条目格式（见该文件「记录格式」）：日期与轮次、报告产物文件名、
+  confirmed/failed/observe 统计与预算、关键结论（保留关键数字与根因结论）、
+  后续待办；
+- 能力结论的规范出处是 `docs/providers/<name>.md`；PROBE_LOG 只记录运行
+  事实与报告产物位置，不复述规范；
+- 原始 JSON 证据与 `report-*.md` 报告同目录留存（时点证据，不入库）。
 
 ## 安全纪律
 

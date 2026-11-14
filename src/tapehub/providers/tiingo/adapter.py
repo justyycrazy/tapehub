@@ -1,45 +1,7 @@
 """Tiingo 适配器（已实现：历史 K 线 REST + 实时快照/快照流 WS）。
 
-约定：
-
-- 历史K线走 REST 直连（Tiingo 无官方 Python SDK）：``httpx`` 同步客户端
-  （可选依赖）只在 ``_fetch_rows`` 内部延迟导入，未安装时返回
-  PROVIDER_NOT_IMPLEMENTED，不影响服务启动；同步调用经 ``call_in_thread``
-  隔离到线程池；认证经 ``Authorization: Token <key>`` 请求头（token 不落
-  URL，绝不写入代码、manifest、日志或异常响应）；
-- 上游 429（限频）映射为 UPSTREAM_RATE_LIMITED（免费档 50 请求/时、
-  1000 请求/天，由 README 限额说明与探针 pacing 兜底）；其余非 2xx 与
-  JSON 解析失败以 UPSTREAM_ERROR（携带 status_code）上抛——应用层
-  TapehubError 直接透传；
-- 单次返回行数上限：官方文档未标注（受 1GB/月带宽配额约束）。
-  **fx PT1M 分段语义**（2026-11-13 limit 专项实证，报告
-  limit-truncation-20261113T2130+0800）：单次请求仅返回窗口起点首个
-  连续段（≈6 自然日，保头截尾、静默缺失）——末根距请求 end 超 7 天
-  标记 partial=true；其余周期维持 partial=false（段容量远超实用窗长）。
-  PT1M 已随 2026-11-14 周期面收窄裁决退出声明，该判定保留为防御；
-- 实时快照（M2）与快照流（M3）共用按资产类型分流的 WS 共享运行时
-  （crypto/fx 各自端点单连接，``websockets`` 为可选依赖延迟导入）。
-  WS 协议细节已按 2026-11-13 行为探针实证（报告
-  ws-behavior-20261113T2130+0800）：data 元素为**位置数组**（标准化见
-  response_mapper.ws_element_to_snapshot）、tickers 服务端过滤生效
-  （客户端兜底保留）、subscriptionId 经 I 帧下发（未采用，逐 symbol
-  订阅帧已工作）、心跳实测 ~60-90s（看门狗 180s）、fx 退订空订阅后
-  服务端断连（重连状态机恢复）；
-- API Key 通过 ``TAPEHUB_TIINGO_API_KEY`` 环境变量注入（pydantic-settings）；
-- 容量闸门：并发订阅 symbol 数达 ``tiingo_subscription_limit``（默认 8，
-  软上限防失控；上游硬约束为月度 500 唯一品种，网关不做计数）时急切返回
-  ``UPSTREAM_SUBSCRIPTION_LIMIT``（HTTP 429，SSE 响应头之前）；
-- M2 快照：已活跃订阅直接读缓存即时返回；冷订阅等待首包，超过
-  ``tiingo_first_snapshot_timeout`` 返回 ``QUOTE_NOT_READY``（408）；
-- M3 流：受理校验急切执行（错误为 JSON 结构），订阅在首次迭代进行；
-  事件经共享 ``StreamBuffer``（coalesce 丢旧保新只约束 quote 帧）；
-  迭代器关闭释放引用并注销监听器；
-- 免费档限额（账户页与官方文档口径）：50 请求/时、1000 请求/天、
-  500 个唯一品种/月、1GB 带宽/月——REST 计请求数，WS 不计请求数只计
-  带宽；缺省路由置 twelvedata 之后的回退位（见 provider_routing.yaml）；
-- 统一分页由共享 ``paginate_bars`` 完成，闭区间 [start, end] 在标准化后
-  复核；bars 时间戳解析见 response_mapper（crypto UTC 官方口径、forex
-  待探针），统一北京时间归一化由领域层 BarBatch 完成。
+映射规则与上游行为定案见 docs/providers/tiingo.md（唯一出处，本文不复述）。
+探针运行记录见 probes/results/PROBE_LOG.md（本地文件，不入库）。
 """
 
 import asyncio
@@ -88,9 +50,9 @@ _HTTP_TIMEOUT_SECONDS = 20.0
 _FX_ONE_MIN = Interval.parse("PT1M")
 # 尾部缺失容差：段长 ≈6 自然日 + 周末/假日 1 天余量（窗口 ≤7 天不误报）
 _FX_SEGMENT_TOLERANCE = timedelta(days=7)
-# crypto 端点段上限（2026-11-13 limit 专项实证：一周/一月/段后窗三次
-# 均恰 5001 行，alphafeed 式 count>=MAX 判定）——PT1M ≈3.5 天/段、
-# PT1H ≈208 天、PT2H ≈416 天、PT4H/P1D 远超实用窗长
+# crypto 端点段上限（一周/一月/段后窗均恰 5001 行，alphafeed 式
+# count>=MAX 判定）——PT1M ≈3.5 天/段、PT1H ≈208 天、PT2H ≈416 天、
+# PT4H/P1D 远超实用窗长
 _CRYPTO_MAX_ROWS = 5001
 
 # 声明 quotes 能力的资产类型（WS 端点分流；与 manifest 声明一致）
@@ -116,11 +78,8 @@ class ProviderAdapter(BaseProviderAdapter):
         )
 
     async def fetch_quote(self, query: QuoteQuery) -> Quote:
-        """实时快照：WS 订阅缓存（twelvedata 同构）。
-
-        已活跃订阅直接读缓存即时返回；冷订阅等待首包，超时返回
-        ``QUOTE_NOT_READY``；取数后引用归零（延迟退订）。
-        """
+        """实时快照：WS 订阅缓存（twelvedata 同构）——活跃订阅读缓存，
+        冷订阅等首包、超时抛 ``QUOTE_NOT_READY``，取数后引用归零。"""
         self.resolve_quote_operation(query)
         api_key = self._ensure_ready()
         symbol = tiingo_symbol(query)
@@ -138,10 +97,9 @@ class ProviderAdapter(BaseProviderAdapter):
     def stream_quote(self, query: QuoteQuery) -> AsyncIterator[QuoteStreamEvent]:
         """实时快照流（M3）：WS 订阅 + 监听器 → 有界队列 → 事件流。
 
-        受理校验（operation 路由、凭据、标的映射、容量闸门）在调用时
-        急切执行——错误在响应头发出前统一抛出（JSON 错误结构）；Runtime
-        启动与订阅在首次迭代时进行。断线/重订恢复由 Runtime 以显式
-        status 事件通知（无 ``recycling``——无代际回收）。
+        受理校验急切执行（错误在响应头发出前统一抛出）；Runtime 启动与
+        订阅在首次迭代时进行，断线/重订恢复由 Runtime 以显式 status 事件
+        通知。
         """
         self.resolve_quote_operation(query)
         api_key = self._ensure_ready()
@@ -187,10 +145,8 @@ class ProviderAdapter(BaseProviderAdapter):
     def shutdown_runtime(self) -> object | None:
         """停机钩子（由应用 lifespan 调用）：关闭已启动的 WS Runtime。
 
-        lifespan 在事件循环内同步调用本方法——返回异步停机任务由 lifespan
-        await 到完成（裸 create_task 无人 await 会在 uvicorn 退出时被取消
-        半途、TestClient portal 下直接销毁，ws.close 永不落）；无运行循环的
-        兜底路径直接同步跑完并返回 None（正常不触发）。
+        有运行循环时返回异步停机任务由 lifespan await 到完成；无运行循环
+        的兜底路径同步执行并返回 None。
         """
         runtimes = list(self._runtimes.values())
         if not runtimes:
@@ -300,14 +256,10 @@ class ProviderAdapter(BaseProviderAdapter):
         bars = to_standard_bars(rows, query.asset_type)
         # 上游按日期范围过滤，这里按闭区间 [start, end] 精确复核统一时间语义
         window = [bar for bar in bars if query.start <= bar.timestamp <= query.end]
-        # fx PT1M 分段语义（2026-11-13 limit 专项实证，报告
-        # limit-truncation-20261113T2130+0800）：单次请求仅返回窗口起点的
-        # 第一个连续数据段（≈6 自然日，保头截尾、静默缺失，段后分段查询
-        # 可行）——末根距请求 end 超 7 天（段长 + 周末/假日余量）即判定
-        # 尾部截断。判定保留为防御：PT1M 已于 2026-11-14 周期面收窄裁决
-        # 退出声明（当前不可达）；crypto 段上限按行数（≈5001）不限周期，
-        # PT1H 实用窗长 ≈208 天内无影响、PT4H ≈416 天、P1D 远超
-        # （行数上限官方未标注，不编造截断结论）
+        # fx PT1M 分段语义（定案见 docs/providers/tiingo.md）：单次请求仅
+        # 返回窗口起点的第一个连续数据段——末根距请求 end 超容差即判定
+        # 尾部截断（判定保留为防御，PT1M 当前不在声明周期集内）；
+        # crypto 段上限按行数不限周期（行数上限官方未标注，不编造截断结论）
         partial = False
         if query.asset_type is AssetType.FOREX and query.interval == _FX_ONE_MIN and window:
             partial = (query.end - max(bar.timestamp for bar in window)) > _FX_SEGMENT_TOLERANCE
@@ -351,9 +303,9 @@ class ProviderAdapter(BaseProviderAdapter):
                 details={"provider": self.name, "status_code": response.status_code},
             )
         if response.status_code == 400 and UPSTREAM_NO_DATA_FINGERPRINT in response.text:
-            # 请求区间早于上游档案起点（2026-11-13 探针实证：fx 端点硬边界
-            # 2020-01-01，报文见 request_mapper 指纹注释）——上游权威的
-            # 无数据结论，归一化为空结果而非报错
+            # 请求区间早于上游档案起点（fx 端点硬边界 2020-01-01，报文见
+            # request_mapper 指纹注释）——上游权威的无数据结论，
+            # 归一化为空结果而非报错
             return []
         if response.status_code >= 400:
             raise UpstreamError(

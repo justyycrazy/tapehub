@@ -21,8 +21,8 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="TAPEHUB_", env_file=".env", extra="ignore")
 
     deployment_mode: Literal["single"] = "single"
-    # tqsdk 连接模式：shared（进程内唯一长连接 Runtime，懒启动；2026-11-05
-    # 15.3h 观察期验证后为默认）／ per_request（每请求独立实例，回滚配置）
+    # tqsdk 连接模式：shared（进程内唯一长连接 Runtime，懒启动）为默认／
+    # per_request（每请求独立实例，回滚配置）
     tqsdk_conn_mode: Literal["per_request", "shared"] = "shared"
     # shared 模式的在飞取数上限（并发闸门，超出返回 CONCURRENCY_LIMIT）
     tqsdk_max_inflight_fetch: int = Field(default=16, ge=1)
@@ -34,15 +34,15 @@ class Settings(BaseSettings):
     # （仍被引用的订阅自动重订）
     tqsdk_subscription_limit: int = Field(default=64, ge=1)
     # Twelve Data WS 并发订阅 symbol 上限（超出 UPSTREAM_SUBSCRIPTION_LIMIT 429）。
-    # 2026-11-05 探针实证：WS credit = 当前活跃订阅 symbol 数（免费版 8 个），
-    # 退订/断连即时释放；升档后调大该值即可
+    # 免费版 8 个 credit，退订/断连即时释放；升档后调大该值即可
     twelvedata_subscription_limit: int = Field(default=8, ge=1)
     # Twelve Data 实时快照冷订阅首包等待超时（秒）：超时返回 QUOTE_NOT_READY
     # （HTTP 408）；已活跃订阅直接读缓存即时返回
     twelvedata_first_snapshot_timeout: float = Field(default=5.0, gt=0)
     # Tiingo WS 并发订阅 symbol 软上限（超出 UPSTREAM_SUBSCRIPTION_LIMIT 429）。
     # 上游未公布并发订阅数上限（硬约束为月度 500 个唯一品种，网关不做计数，
-    # 由 README 限额说明与上游超限报错兜底）；默认 8 与 twelvedata 对齐防失控
+    # 由 docs/providers/tiingo.md 限额说明与上游超限报错兜底）；默认 8 与
+    # twelvedata 对齐防失控
     tiingo_subscription_limit: int = Field(default=8, ge=1)
     # Tiingo 实时快照冷订阅首包等待超时（秒）：超时返回 QUOTE_NOT_READY
     # （HTTP 408）；已活跃订阅直接读缓存即时返回

@@ -144,7 +144,7 @@ def test_period_codes(
 def test_minute_periods_not_supported(
     interval: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """分钟族不声明（免费档无权限，2026-11-07 拍板与 alphafeed 同口径收敛）：
+    """分钟族不声明（免费档无权限，与 alphafeed 同口径收敛）：
     二级路由必须拒绝，auto 路由落到其他 Provider。"""
     install(monkeypatch)
     adapter = _adapter()

@@ -1,22 +1,8 @@
 """Tushare 适配器（已实现）。
 
-约定：
-
-- 官方 Python SDK ``tushare`` 是可选依赖：SDK 只在 ``_fetch_sync`` 内部
-  延迟导入，未安装时返回 PROVIDER_NOT_IMPLEMENTED，不影响服务启动；
-- Token 通过 ``TAPEHUB_TUSHARE_TOKEN`` 环境变量注入（pydantic-settings），
-  只经内存传给 SDK 客户端（ts.pro_api），禁止写入代码、manifest、日志或异常响应；
-- 同步 SDK 调用通过 ``call_in_thread`` 隔离到线程池，不阻塞事件循环；
-- 两级路由：manifest operations 选中 pro_bar（股票）或 fut_daily（期货单一
-  合约与主力连续——主连品种+L / CFFEX 主力直拼 / CZCE 3→4 位码转换，
-  见 request_mapper），上游函数名仅存在于本适配器与 manifest 内部；
-- fut_daily 单次上限 2000 条（主连 CUL.SHF 16 年窗口实测恰 2000，报告
-  20261112T124404+0800）：达到上限时批次标记 ``partial=true``，API 层据此
-  在 warnings 中提示可能截断；上游截断为「保尾截头」——保留最新 2000 根，
-  partial=true 时缺的是窗口头部更早数据；
-- 统一分页由共享 ``paginate_bars`` 完成，闭区间 [start, end] 在标准化后复核；
-- 上游 SDK 异常/积分限频的具体类型未在文档中核实，统一由应用层包装为
-  UPSTREAM_ERROR（40203 等积分错误码待核实后补充）。
+映射规则与上游行为定案见 docs/providers/tushare.md（唯一出处，本文不复述）。
+探针运行记录见 probes/results/PROBE_LOG.md（本地文件，不入库）。
+官方文档：https://tushare.pro/document/2。
 """
 
 from datetime import datetime

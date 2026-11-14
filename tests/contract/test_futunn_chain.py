@@ -145,8 +145,7 @@ def test_capability_catalog(futunn_client: TestClient) -> None:
         ]
         assert cap["fields"] == ["open", "high", "low", "close", "volume", "amount"]
 
-    # history.start（2026-11-14 depth 探针实证回填，两轮人工确认，报告
-    # 20261114T121154 / 20261114T135118+0800）：CN stock 日/周/月 1990-12-19
+    # history.start（depth 探针实证回填）：CN stock 日/周/月 1990-12-19
     # （上市日锚）、分钟族 2014-01-21（连续可查起点）；CN index 日/周/月
     # ≈1991-01-18、分钟族 ≈2015-05-15；CN etf 日/周/月 2012-05-28（上市日
     # 锚 count-exact）、分钟族 ≈2015-07-11；HK stock 日/周/月 ≈1991-01-18、
@@ -204,8 +203,8 @@ def test_capability_catalog(futunn_client: TestClient) -> None:
     assert adjustments[("HK", "stock")] == ["none", "qfq", "hfq"]
     assert adjustments[("US", "stock")] == ["none", "qfq", "hfq"]
     assert adjustments[("CN", "index")] == ["none"]  # 指数无复权语义
-    # ETF autype 生效性探针实证（2026-11-14：510300 日线 2024 全年三值
-    # 242/242 close 全差异，人工确认扩三值）
+    # ETF autype 生效性探针实证（510300 日线 2024 全年三值 242/242 close
+    # 全差异，扩三值）
     assert adjustments[("CN", "etf")] == ["none", "qfq", "hfq"]
 
     # 实时快照：无周期/复权维度（显式空），无盘口五档

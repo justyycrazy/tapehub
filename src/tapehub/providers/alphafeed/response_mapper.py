@@ -1,16 +1,10 @@
 """AlphaFeed 响应映射（ResponseMapper）：上游返回对象 → 统一 Bar/Quote 模型。
 
-响应结构已按官方文档核实（GET /v1/klines）：顶层 ``data`` 为 CompactKlineData
-列式结构（各数组等长，同下标对应同一根K线）：
+字段结构与缺失值口径见 docs/providers/alphafeed.md（唯一出处，本文不复述）。
+探针运行记录见 probes/results/PROBE_LOG.md（本地文件，不入库）。
 
-- 必填字段：timestamp（毫秒）、open/high/low/close/volume/amount；
-- 可选字段：prev_close（前收盘价），存在且非空时进入受控 ``extensions``；
-- 缺失值与 NaN 统一映射为 null。
-
-实时快照（GET /v1/quotes）：``data`` 为 Quote 字典数组（SDK 默认返回
-``list[Quote dict]``），字段 symbol/region/last_price/prev_close/open/high/
-low/volume/amount/timestamp（毫秒）/ext{name, change_pct, ...}；
-``last_price``/``timestamp`` 缺失属上游契约违背，抛 UPSTREAM_ERROR（不伪造）。
+缺失值与 NaN 统一映射为 null；``last_price``/``timestamp`` 缺失属上游契约
+违背，抛 UPSTREAM_ERROR（不伪造）。
 """
 
 import math

@@ -1,94 +1,18 @@
-# 富途 OpenAPI（futunn）适配器：能力声明与内部操作映射。
-# 接口签名已按官方文档核实（2026-11-14 接入，HTTP 直连版 Base URL
-# https://webapi.futunn.com，纯 REST 无 FutuOpenD 网关、无官方 Python SDK）：
+# 富途 OpenAPI（futunn）能力声明与内部操作映射。
+# 映射细则、上游行为定案与历史覆盖依据：docs/providers/futunn.md（唯一出处，本文不复述）。
+# 官方文档：
 #   https://open.futunn.com/zh-cn/api/overview/getting-started
 #   https://open.futunn.com/zh-cn/api/overview/api-authority
 #   https://open.futunn.com/zh-cn/api/overview/rate-limit
 #   https://open.futunn.com/zh-cn/api/quote/realtime/stock-quote
 #   https://open.futunn.com/zh-cn/api/quote/basic-data/history-kline
-#
-# 说明：
-# - futunn 无官方 Python SDK：REST 用 httpx（同步客户端，可选依赖）直连，
-#   认证采用「方式二：传统 API Key」——控制台 AppKey 管理创建 AppKey 并上传
-#   公钥（Ed25519 或 RSA-SHA256/PKCS#1 v1.5），本地私钥对签名原文
-#   （timestamp_ms\nMETHOD\nrequest_path\nquery_string\nbody_sha256）签名，
-#   经 X-Api-Key / Authorization（无 Bearer）/ X-Timestamp / X-Nonce 请求头
-#   注入（私钥只经环境变量路径注入，绝不写入代码/manifest/日志）；
-# - 统一信封：业务结果（含错误）HTTP 200，经 ret_code 字段表达（0 成功）：
-#   -11 rate_limited → UPSTREAM_RATE_LIMITED（可能带 Retry-After），其余
-#   非 0（-3 invalid_parameter / -7 invalid_symbol / -8 unsupported /
-#   -12 history_quota_exceeded / -13 quota_unavailable / -12006 鉴权失败等）
-#   → UPSTREAM_ERROR 携 upstream_code/upstream_message；HTTP >=400 与 JSON
-#   解析失败为防御性 UPSTREAM_ERROR（携 status_code）；
-# - 接入范围（用户拍板 2026-11-14，只接入以下组合）：CN stock（SSE/SZSE/
-#   BSE——上游文档明示 SH/SZ/BJ 前缀支持正股/指数）/ index / etf（SSE/SZSE，
-#   BJ 无 ETF）、HK stock（正股，窝轮/牛熊证不接入）、US stock（OTC 不支持，
-#   上游不支持获取）；exchange 白名单在 request_mapper 强制（还原表只收
-#   文档实证条目，越界明确拒绝）；
-# - 行情权限（api-authority 页）：A 股境内认证客户免费 LV1（国际客户暂
-#   不支持）、港股股票境内认证客户免费 LV2、美股股票推广期免费 LV3——
-#   未开通对应市场权限时上游返回 invalid_symbol/quota 类错误，原样上抛；
-# - 限频与额度（rate-limit 页）：IP 入口层行情类 100 次/分钟；业务限流走
-#   HTTP 200 + ret_code=-11；**历史 K 线独立额度池：每标的首次成功返回非空
-#   即占用一个额度（默认 7×24 小时后释放，重复读取不延期）**——分页续读
-#   必须用 page_token（免计「首请求」；next_time 分页仍计入）；
-# - 周期面（ktype 文档明示 1/3/5/10/15/30/60/120/180/240 分与日/周/月/季/
-#   年，本适配器取 8 个核心周期）：PT1M→1、PT5M→6、PT15M→7、PT30M→8、
-#   PT1H→9（60 分）、P1D→2、P1W→3、P1M→4；未声明周期探针收口（2026-11-14
-#   第三轮目录外实证，报告 20261114T135118+0800）：ktype=10 = PT3M、
-#   ktype=14 = PT2H 端点真实可用（与文档 3 分/120 分枚举吻合）、ktype=15 =
-#   180 分（PT3H）与 PT2H 同形态（CN 上午盘 2h 会话退化）、**PT4H 无可用
-#   ktype 映射**（ktype=16 → -3 invalid）——**PT3M/PT2H 维持不声明**
-#   （可用性证据保留探针 notes；扩容需 manifest/operations 扩容 + 深度
-#   专项另探，人工拍板 2026-11-14）；历史覆盖（2026-11-14 depth 探针实证
-#   回填，两轮人工确认，报告 20261114T121154 / 20261114T135118+0800）：
-#   CN stock（日/周/月 1990-12-19 上市日锚、分钟族 2014-01-21 连续可查
-#   起点——更早存在稀疏碎片数据）、CN index（日/周/月 ≈1991-01-18、
-#   分钟族 ≈2015-05-15）、CN etf（日/周/月 2012-05-28 上市日锚 count-
-#   exact、分钟族 ≈2015-07-11）、HK stock（日/周/月 ≈1991-01-18、分钟族
-#   保持 null）、US stock（日/周/月 ≈1997-01-25、分钟族 ≈2015-05-15），
-#   日/周/月与 index/etf/US 分钟均 approx 90 天粒度——**HK stock 分钟
-#   保持 null**（碎片区：era 宽窗静默返空 + 稀疏碎片数据使连续性假设
-#   失效，二分法不可定案，待专项方法重探）；
-# - 复权面（autype 0/1/2 文档明示）：stock [none, qfq, hfq] 直映；
-#   index [none]（指数无复权语义，与 ths 惯例一致）；etf [none, qfq, hfq]
-#   ——autype 对 ETF 生效性探针实证（2026-11-14，报告 20261114T121154
-#   +0800：510300 日线 2024 全年三值 242/242 close 全差异，人工确认扩三值）；
-# - 分页与边界：请求 start/end 为标的市场时区日期（CN=Asia/Shanghai、
-#   HK=Asia/Hong_Kong、US=America/New_York），分钟 K 线 end 以该日 00:00
-#   为截止、不含当日（查闭区间需 end 日期 +1 天，request_mapper 处理），
-#   日/周/月 K 线 end 含当日；闭区间 [start, end] 复核在适配器完成；
-# - 单查询行数上限（2026-11-14 探针实证，报告 20261114T111229+0800，
-#   文档失真）：请求 num=370 被上游忽略、实测单查询恒返回窗口起点起
-#   ≈1000 行、pagination.has_more 恒 False 且无 next_page_token——
-#   page_token 分页实际不可用（适配器分页循环与 _MAX_PAGES=15 保留为
-#   防御）；分钟族窗口 >≈1000 根时静默截断、partial 无法可靠判定
-#   （恒 false，人工裁决 2026-11-14：README 如实说明 + partial 维持，
-#   ths 先例），分钟族建议窄窗口使用；
-# - 返回行 time_key 为毫秒 Unix 时间戳（绝对时刻），volume 已按
-#   volume_precision 放大 10^n 倍需自行还原（response_mapper 处理，
-#   股票一般 n=0）；排序方向文档未明示，统一由分页组件升序归一；
-# - 快照为纯 REST 单次调用语义（POST /api/v1.0/quote/stock-quote，
-#   code_list 单次最多 400，本网关单标的传 1 个）：无首包超时/
-#   QUOTE_NOT_READY（与 ths/alphafeed/tickflow 一致），无盘口五档
-#   （bid/ask 恒 null）；WS 行情推送专区（wss://webapi-quote.futunn.com/ws）
-#   本期不接入——第一版不做流式（用户拍板 2026-11-14），流式请求返回
-#   UNSUPPORTED_CAPABILITY；
-# - 单体系 Provider：变体与 default_variant 均为 futunn（数据源即上游
-#   服务自身）；缺省请求经 provider_routing.yaml 回退链裁决（AppKey 凭据
-#   API，置于各组合回退位末位），也可显式传 variant=futunn。
+# 探针运行记录：probes/results/PROBE_LOG.md（本地文件，不入库）。
 provider: futunn
 default_variant: futunn
 
 capabilities:
-  # —— 历史 K 线（8 核心周期，history 全 null 未核实）——
-  # A 股个股：唯一有复权语义的 CN 资产类型（autype 0/1/2 直映）；
-  # history.start（2026-11-14 depth 探针实证回填，人工确认，报告
-  # 20261114T121154+0800）：日/周/月线 ≈1990-12-19——基准标的 600602
-  # 老八股（1990-12-19 上市），P1W/P1M 独立实证 era#7 count=208/49 与
-  # 上市日精确吻合、P1D 同库互证 floor-hit；SZSE/BSE 未单独 depth，
-  # capability 级声明以基准标的库底为准；分钟族五周期各自独立二分
-  # 一致收敛 ≈2014-01-21T09:45（90 天粒度 approx，跨周期互证）
+  # —— 历史 K 线（8 核心周期）——
+  # A 股个股：唯一有复权语义的 CN 资产类型（autype 0/1/2 直映）
   - data_type: bars
     markets: [CN]
     asset_types: [stock]
@@ -106,10 +30,7 @@ capabilities:
     adjustments: [none, qfq, hfq]
     fields: [open, high, low, close, volume, amount]
 
-  # 指数（沪深北交易所标准指数）：无复权语义；历史覆盖 2026-11-14 探针
-  # 实证回填（报告 20261114T135118+0800，人工确认）：日/周/月 ≈1991-01-18
-  # （est 上界，最终窗 count=23 吻合 ≈1990-12-19 回溯发布锚起算）、分钟族
-  # ≈2015-05-15（0-or-cap 干净收敛、五周期同值互证），approx 90 天粒度
+  # 指数（沪深北交易所标准指数）：无复权语义
   - data_type: bars
     markets: [CN]
     asset_types: [index]
@@ -127,13 +48,7 @@ capabilities:
     adjustments: [none]
     fields: [open, high, low, close, volume, amount]
 
-  # 场内基金（仅 ETF）：autype 三值复权生效性探针实证（2026-11-14，报告
-  # 20261114T121154+0800：510300 日线 2024 全年 none vs qfq、none vs hfq
-  # 各 242/242 close 全差异 → 扩 [none, qfq, hfq]，人工确认）；历史覆盖
-  # 2026-11-14 探针实证回填（报告 20261114T135118+0800，人工确认）：日/
-  # 周/月 2012-05-28（510300 上市日锚——最终窗 [2012-03-11, 2012-06-09]
-  # count=10 与上市日→窗末交易日数精确吻合）、分钟族 ≈2015-07-11（0-or-cap
-  # 干净收敛），approx 90 天粒度
+  # 场内基金（仅 ETF）：autype 三值复权生效
   - data_type: bars
     markets: [CN]
     asset_types: [etf]
@@ -151,12 +66,7 @@ capabilities:
     adjustments: [none, qfq, hfq]
     fields: [open, high, low, close, volume, amount]
 
-  # 港股个股（正股；境内认证客户免费 LV2）：历史覆盖 2026-11-14 探针实证
-  # 回填（报告 20261114T135118+0800，人工确认）：日/周/月 ≈1991-01-18
-  # （est 上界，最终窗 count=13 → 底 ∈ (1990-11-23, 1991-01-18]；与
-  # alphafeed/tickflow HK 库底 1980-02-15 对照显著更浅，差异如实记录）；
-  # **分钟族保持 null**——碎片区（era 宽窗静默返空 + 稀疏碎片数据使连续性
-  # 假设失效，二分法不可定案），待专项方法重探
+  # 港股个股（正股）：分钟族 history.start 保持 null
   - data_type: bars
     markets: [HK]
     asset_types: [stock]
@@ -174,11 +84,7 @@ capabilities:
     adjustments: [none, qfq, hfq]
     fields: [open, high, low, close, volume, amount]
 
-  # 美股个股（推广期免费 LV3；OTC 不支持，exchange 白名单拒绝）：历史覆盖
-  # 2026-11-14 探针实证回填（报告 20261114T135118+0800，人工确认）：日/
-  # 周/月 ≈1997-01-25（est 上界，最终窗 count=17 → 底 ∈ (1996-11-29,
-  # 1997-01-25] ≈1996-12；GE 1892 上市，收敛点为真实库底而非上市日伪影）、
-  # 分钟族 ≈2015-05-15（0-or-cap 干净收敛），approx 90 天粒度
+  # 美股个股（OTC 不接入，exchange 白名单拒绝）
   - data_type: bars
     markets: [US]
     asset_types: [stock]
@@ -196,8 +102,7 @@ capabilities:
     adjustments: [none, qfq, hfq]
     fields: [open, high, low, close, volume, amount]
 
-  # —— 实时快照（REST 单次调用语义，无首包超时/QUOTE_NOT_READY）——
-  # 五个组合共用同一 POST 端点（code_list 单标的传 1 个）；无盘口五档
+  # —— 实时快照 ——
   - data_type: quotes
     markets: [CN]
     asset_types: [stock]
@@ -240,8 +145,7 @@ capabilities:
     fields: [timestamp, last_price, volume, amount]
 
 operations:
-  # —— 历史 K 线：显式枚举全部声明组合（六维全写，统一端点
-  # GET /api/v1.0/quote/{code}/history-kline，operation=history_kline）——
+  # —— 历史 K 线：显式枚举全部声明组合（六维全写，统一端点 GET /api/v1.0/quote/{code}/history-kline）——
   # CN stock：8 周期 × 3 复权
   - match: {data_type: bars, market: CN, asset_type: stock, interval: PT1M, adjust: none, variant: futunn}
     operation: history_kline
@@ -310,7 +214,7 @@ operations:
   - match: {data_type: bars, market: CN, asset_type: index, interval: P1M, adjust: none, variant: futunn}
     operation: history_kline
 
-  # CN etf：8 周期 × 3 复权（autype 生效性探针实证 2026-11-14 扩三值）
+  # CN etf：8 周期 × 3 复权
   - match: {data_type: bars, market: CN, asset_type: etf, interval: PT1M, adjust: none, variant: futunn}
     operation: history_kline
   - match: {data_type: bars, market: CN, asset_type: etf, interval: PT1M, adjust: qfq, variant: futunn}
@@ -461,7 +365,6 @@ operations:
     operation: history_kline
 
   # —— 实时快照：周期/复权对快照无意义，match 显式 null ——
-  # 五个组合共用 POST /api/v1.0/quote/stock-quote（code_list 单标的传 1 个）
   - match: {data_type: quotes, market: CN, asset_type: stock, interval: null, adjust: null, variant: futunn}
     operation: stock_quote
   - match: {data_type: quotes, market: CN, asset_type: index, interval: null, adjust: null, variant: futunn}

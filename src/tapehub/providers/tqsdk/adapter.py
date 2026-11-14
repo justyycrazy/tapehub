@@ -1,33 +1,7 @@
 """TqSdk 适配器（已实现：历史 K 线 + 实时快照 + 实时快照流）。
 
-约定：
-
-- 官方 Python SDK ``tqsdk`` 是可选依赖：SDK 只在取数路径内部延迟导入，
-  未安装时返回 PROVIDER_NOT_IMPLEMENTED，不影响服务启动；
-- 快期账户凭据（TqAuth）通过 ``TAPEHUB_TQSDK_AUTH_USER`` /
-  ``TAPEHUB_TQSDK_AUTH_PASSWORD`` 环境变量注入（pydantic-settings），
-  只经内存传给 SDK 客户端，禁止写入代码、manifest、日志或异常响应；
-- 连接模式 ``tqsdk_conn_mode``（settings）：
-  - ``per_request``：每次请求在线程池中独立创建并关闭 TqApi
-    （同步阻塞经 ``call_in_thread`` 隔离），无跨请求状态；
-  - ``shared``（默认）：进程内唯一 ``TqSdkRuntime`` 长连接（懒启动），
-    K 线请求提交为并发协程，取数在 Runtime 线程完成，不占线程池线程；
-  两种模式下标准化与语义完全一致（见下）；
-- 实时快照（M2）：shared 模式经 Runtime 订阅（引用计数 + 首包等待），
-  订阅存活期间快照由 tick 循环持续保鲜，重复请求即时返回；M2 快照
-  请求不退订（快照是订阅状态而非一次性取数，退订由 SSE 流式与回收
-  阈值管理）。首包在 ``tqsdk_first_snapshot_timeout`` 内未到达则抛
-  ``QUOTE_NOT_READY``；per_request 模式退化为每请求独立订阅取快照；
-- 实时快照流（M3，``stream_quote``）：仅 shared 模式支持（流依赖长连接
-  订阅；per_request 返回 UNSUPPORTED_CAPABILITY）。Runtime 流监听器
-  事件经 ``loop.call_soon_threadsafe`` 桥接进本适配器的有界队列，队列满
-  丢旧保新（行情「最新」比「完整」有价值，见 README）；迭代器关闭时
-  释放订阅引用并注销监听器；
-- get_kline_serial 从“最新一根”往回取 data_length 根：当返回数量达到
-  上限且最早一根仍晚于请求 start 时，无法覆盖请求窗口，标记 partial=true，
-  API 层据此在 warnings 中提示可能截断；
-- 统一分页由共享 ``paginate_bars`` 完成，闭区间 [start, end] 在标准化后复核；
-- 上游 SDK 异常类型未在文档中核实，统一由应用层包装为 UPSTREAM_ERROR。
+映射规则与上游行为定案见 docs/providers/tqsdk.md（唯一出处，本文不复述）。
+探针运行记录见 probes/results/PROBE_LOG.md（本地文件，不入库）。
 """
 
 import asyncio
@@ -111,12 +85,8 @@ class ProviderAdapter(BaseProviderAdapter):
     async def fetch_quote(self, query: QuoteQuery) -> Quote:
         """实时快照：按请求租约订阅（读 Runtime 最新缓存或等首包）。
 
-        租约语义：请求结束（成功/首包超时/客户端断开）即退订——引用归零后
-        Quote 转入休眠账本、缓存丢弃，``TAPEHUB_TQSDK_SUBSCRIPTION_LIMIT``
-        的休眠回收阀门保持可达（否则纯 M2 流量下 refs 永不归零、回收永不
-        触发）。重复请求经休眠唤醒即时返回新鲜快照：unsubscribe 归零即丢弃
-        缓存（``latest`` 此后返回 None），唤醒时 ``_handle_subscribe`` 发布
-        Quote 当前值（上游持续推送，唤醒即新鲜），无陈旧快照问题。
+        租约语义：请求结束即退订引用归零——Quote 转入休眠账本、缓存丢弃，
+        休眠回收阀门保持可达；重复请求经休眠唤醒即时返回新鲜快照。
         """
         self.resolve_quote_operation(query)
         auth = self._ensure_ready()
@@ -137,12 +107,8 @@ class ProviderAdapter(BaseProviderAdapter):
         )
 
     def shutdown_runtime(self) -> None:
-        """停机钩子（由应用 lifespan 调用）：关闭共享运行时（若已启动）。
-
-        同步完成（内部 join 上限 10s）：tqsdk 停机必须等待线程 close 完整
-        TqApi，停机期短暂阻塞事件循环属可接受代价；返回 None（无待 await
-        的停机任务，与 twelvedata 的异步钩子协议兼容）。
-        """
+        """停机钩子（由应用 lifespan 调用）：同步关闭共享运行时（内部
+        join 上限 10s）；返回 None（无待 await 的停机任务）。"""
         if self._runtime is not None:
             self._runtime.shutdown()
 
@@ -150,9 +116,8 @@ class ProviderAdapter(BaseProviderAdapter):
     def runtime_status(self) -> str | None:
         """共享运行时生命周期状态（鸭子类型，供能力目录回填）。
 
-        值域即 ``RuntimeStatus``：``idle``（懒启动前）/``starting``/``ready``/
-        ``recycling``/``fatal``；``per_request`` 模式无常驻长连接，返回
-        ``None``（能力目录回退 ``unknown``，不伪造状态）。
+        值域即 ``RuntimeStatus``；``per_request`` 模式返回 ``None``
+        （能力目录回退 ``unknown``，不伪造状态）。
         """
         if self._conn_mode() != "shared":
             return None
@@ -164,13 +129,9 @@ class ProviderAdapter(BaseProviderAdapter):
     def stream_quote(self, query: QuoteQuery) -> AsyncIterator[QuoteStreamEvent]:
         """实时快照流（M3）：Runtime 订阅 + 流监听器 → 有界队列 → 事件流。
 
-        受理校验（operation 路由、凭据、连接模式、标的映射）在调用时急切
-        执行——错误在响应头发出前统一抛出（JSON 错误结构）；Runtime 启动
-        与订阅在首次迭代时进行。
-
-        事件桥接：Runtime 线程回调经 ``loop.call_soon_threadsafe`` 投递进
-        本流的有界 ``asyncio.Queue``（队列满丢旧保新——行情「最新」比
-        「完整」有价值）；迭代器关闭时释放订阅引用并注销监听器。
+        受理校验急切执行（错误在响应头发出前统一抛出）；Runtime 线程回调
+        经 ``loop.call_soon_threadsafe`` 桥接进本流的有界队列（队列满丢旧
+        保新，见 docs/api.md）；迭代器关闭时释放订阅引用并注销监听器。
         """
         self.resolve_quote_operation(query)
         auth = self._ensure_ready()
@@ -342,11 +303,8 @@ class ProviderAdapter(BaseProviderAdapter):
     def _fetch_quote_per_request(
         self, auth: tuple[str, str], symbol: str
     ) -> dict[str, Any]:
-        """per_request 快照（回滚模式）：独立实例订阅取首包后立即关闭。
-
-        真实 SDK 的同步 get_quote 会阻塞至首包（内部 wait_update 驱动，
-        上游 30s 兜底超时）；快照在 close 之前完成拷贝。
-        """
+        """per_request 快照：独立实例订阅取首包后立即关闭（快照在 close
+        之前完成拷贝）。"""
         try:
             from tqsdk import TqApi, TqAuth
         except ImportError as exc:

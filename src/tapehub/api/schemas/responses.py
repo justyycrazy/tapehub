@@ -1,12 +1,7 @@
 """API 响应模型：能力目录、健康检查、历史 K 线、实时快照与行情流。
 
-时间字段分两类：
-
-- ``BeijingDatetime``：服务级时间戳（健康检查 timestamp、能力目录 generated_at），
-  项目内部统一北京时间（+08:00）；
-- ``MarketDatetime``：行情数据时间（bar timestamp、received_at 等），
-  已由领域层全市场统一归一化为北京时间（+08:00，2026-11-04 数据探针
-  确认上游口径后统一），序列化原样保留偏移。
+时间字段分两类：``BeijingDatetime``（服务级时间戳）与 ``MarketDatetime``
+（行情数据时间）；时间戳口径见 docs/api.md「时间边界与时区」。
 """
 
 import json
