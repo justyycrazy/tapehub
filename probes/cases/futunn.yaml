@@ -26,7 +26,7 @@ pacing:
   # 本轮构成：availability 160（8 目标键 × 8 周期 × 各自复权面；quotes 快照
   # 不经 chain——框架 chain 仅覆盖 fetch_bars，快照经目录外取证与单测覆盖）
   # + adjust_diff 12（6 case × 2 调）+ history_depth 40 case（5 目标 ×
-  # 8 周期）× 最坏 24 = 960 最坏 + raw 6（2 case 各 3 调）≈ 1138 最坏，
+  # 8 周期）× 最坏 24 = 960 最坏 + raw 3（1 case 3 调）≈ 1135 最坏，
   # 预算 1200 留余量（era 10 年步长下单 case 约 8~15 调）；额度池不新增
   # 占用——depth 四新目标复用 availability 已占额度的基准标的
   max_calls: 1200
@@ -123,6 +123,11 @@ chain:
     intervals: [PT1M, PT5M, PT15M, PT30M, PT1H, P1D, P1W, P1M]
 
 raw:
+  # 已定案退役：futunn-server-time-endpoint（GET /api/v1.0/server-time 免签
+  # HTTP 200 可用、server_time_ms 字符串类型，2026-11-14 第 3 轮定案；第一版
+  # 不做自动校时，后续立项自动校时时按需复探；原始证据见
+  # probes/results/PROBE_LOG.md，不入库）。
+  #
   # 错误指纹仅观察：采集无签名请求的 401 报文形态（ret_code/code 封装、
   # 错误码 -12006 等），供鉴权失败路径的防御分支核实（字面量假 Key，
   # 非真实凭据）
@@ -135,22 +140,6 @@ raw:
       - {method: get, kwargs: {url: "https://webapi.futunn.com/api/v1.0/quote/HK.00700/history-kline?start=2025-01-01&end=2025-01-02&ktype=2&autype=0&num=10", headers: {"X-Api-Key": "probe-invalid-key-not-a-credential"}}}
       - {method: json, kwargs: {}, target: result}
     expect: {status: error, error_contains: ""}
-    close: {method: close, kwargs: {}}
-
-  # 校时端点观察（adapter docstring 遗留待核实项）：X-Timestamp 与服务端
-  # 偏差 >5s 报 -12006（HTTP 401），第一版不做自动校时（依赖宿主机时钟）
-  # ——server-time 免签可用性与响应形态观察是后续「按需补充自动校时」的
-  # 判定依据；若 401 则指纹落袋（免签性结论即观察所得）
-  - id: futunn-server-time-endpoint
-    purpose: GET /api/v1.0/server-time 免签可用性与响应形态观察（时钟漂移
-      防御依据）
-    assert: false
-    module: httpx
-    client: {attr: Client, kwargs: {}}
-    call:
-      - {method: get, kwargs: {url: "https://webapi.futunn.com/api/v1.0/server-time"}}
-      - {method: json, kwargs: {}, target: result}
-    expect: {status: ok, min_fields: [ret_code]}
     close: {method: close, kwargs: {}}
 
 notes: 各轮运行记录见 probes/results/PROBE_LOG.md（不入库）；探针框架规范见 probes/README.md。

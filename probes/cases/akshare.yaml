@@ -9,12 +9,14 @@ requires:
 pacing:
   call_interval_s: 5.0   # 东方财富 push2 对高频断连限流：首次约 5 分钟恢复，
   timeout_s: 60          # 反复触发需 40 分钟以上；实测 2s 节流即被限流
-  max_calls: 342         # availability 50（CN stock 15 + index 5 + etf 9 +
+  max_calls: 340         # availability 50（CN stock 15 + index 5 + etf 9 +
                          # 期货 3（含 contract@CN-CZCE）+ HK/US stock 各 9）+
                          # adjust_diff 24（P1D 限定）+
                          # history_depth 9 条 × ≤24 + variant_consistency 29
-                         # + raw 2（sina-futures-czce-4digit 已退役——
-                         # 4 位直通由 chain contract@CN-CZCE 常态复验）
+                         # + raw 1（bse-stock-fingerprint；
+                         # sina-futures-czce-4digit/3digit 均已退役——4 位
+                         # 直通由 chain contract@CN-CZCE 常态复验，3 位全空
+                         # 负对照结论已与 tushare 侧同日互证定案）
   # ⚠ 东财限流恢复态脆弱：封禁期后单次零星调用「预检通过」不代表恢复——
   # 探针恢复 5s 节流访问模式后首个调用即再触发，且限流期内每轮失败调用
   # 都会延长封禁（越试越封）。重试规程：数小时零调用长冷却 → 单次预检 →
@@ -54,8 +56,9 @@ targets:
     window: {start: 2024-06-01, end: 2024-09-30}
     min_bars: 20
   contract@CN-CZCE:
-    # 郑商所合约：标准码统一 4 位年月（公开现行约定；3 位码接受度对照由
-    # raw case sina-futures-czce-3digit 实证）。适配器当前原样透传，本目标
+    # 郑商所合约：标准码统一 4 位年月（公开现行约定；3 位码全空已与 tushare
+    # 侧同日互证定案，原 raw 对照 case sina-futures-czce-3digit 随定案退役，
+    # 证据见 probes/results/PROBE_LOG.md）。适配器当前原样透传，本目标
     # availability 即「4 位直通新浪」的常态复验
     instrument: CN-CZCE-RM2701
     window: {start: 2026-07-01, end: 2026-12-31}
@@ -99,21 +102,13 @@ raw:
   - id: bse-stock-fingerprint
     purpose: 北交所个股（CN-BSE-920000 安徽凤凰，tushare 侧已探针证实存续）
       在东财 A 股接口（stock_zh_a_hist）的支持性指纹（观察不判定）：
-      行数与首尾日期即归属与覆盖的直接证据
+      行数与首尾日期即归属与覆盖的直接证据。多轮实证 matched=False（东财
+      A 股接口不返回 BSE 数据），维持「BSE 未探针不声明」口径——负闸门：
+      上游转正后再议 stock@CN-BSE chain 目标并退役本 case
     module: akshare
     call:
       - {module_func: stock_zh_a_hist, kwargs: {symbol: "920000", period: "daily", start_date: "20251101", end_date: "20251112", adjust: ""}}
     expect: {status: ok, min_rows: 0}
-    assert: false
-  - id: sina-futures-czce-3digit
-    purpose: 新浪期货郑商所 3 位年月码接受度实证（RM701，观察不判定；4 位侧
-      已由 chain contract@CN-CZCE 可用性常态复验——适配器原样透传，原
-      sina-futures-czce-4digit raw 已退役，本 case 为对照侧，
-      链路无法表达 3 位码输入故保留 raw）
-    module: akshare
-    call:
-      - {module_func: futures_zh_daily_sina, kwargs: {symbol: "RM701"}}
-    expect: {status: ok, min_rows: 1}
     assert: false
 
 notes: 各轮运行记录见 probes/results/PROBE_LOG.md（不入库）；探针框架规范见 probes/README.md。

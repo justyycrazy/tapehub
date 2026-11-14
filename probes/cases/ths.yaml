@@ -1,8 +1,10 @@
 # 同花顺金融数据 API（ths）数据探针：历史 K 线可用性、复权生效性、历史深度
-# 收敛，快照/分时形态观察（量额口径核实），ETF 复权口径留存（fund
-# historical 无 adjust 参数、文档称「价格数据采用前复权口径」，见 raw 段
-# 注释），隐式截断与 offset 分页边界，期货交易所后缀与已摘牌合约可查性，
-# 北交所价格端点（见 chain/raw 段注释）。
+# 收敛与隐式截断常态复验，快照/分时形态观察（量额口径核实），ETF 复权口径
+# 留存（fund historical 无 adjust 参数、文档称「价格数据采用前复权口径」，
+# 见 raw 段注释）。探索性 raw（期货五所后缀正面形态、BSE→BJ 价格端点、
+# offset 分页行为、已摘牌合约可查性、ETF adjust 字段形态）已随定案退役——
+# 正面形态由 chain contract@CN-* 与 stock@CN-BSE/index@CN-BSE 目标常态
+# 复验，结论与证据出处见 raw 段注释。
 #
 # 上游限频为「约定 QPS」（超限信封 code=4001），具体 QPS 未公布：pacing 2 秒
 # （≤0.5 QPS）保守起步，探针报告中观察 4001 出现情况后收紧。
@@ -20,13 +22,13 @@ pacing:
   # 日期触发上游 5003（邻近起点均正常，与调用频率无关）；4001 限频未复现
   call_interval_s: 2.0
   timeout_s: 60
-  # 本轮构成（BSE/期货五所收编后）：availability
+  # 本轮构成（BSE/期货五所收编后，探索性 raw 随定案退役）：availability
   # 13（bars 13：stock 三复权 + index + etf + contract + option + BSE 逐所
   # stock/index + 期货逐所 CZCE/DCE/INE/GFEX）+ adjust_diff 4（stock 1
   # 目标 × 2 pair × 2 调）+ history_depth 3 case × 最坏 12 +
-  # limit_truncation ≈2 + raw 15 case 各 3 调（client + get + json），
-  # 最坏约 76，预算 130 留余量（约 6 分钟）
-  max_calls: 130
+  # limit_truncation ≈2 + raw 5 case 各 3 调（client + get + json），
+  # 最坏约 70，预算 100 留余量（约 5 分钟）
+  max_calls: 100
 
 targets:
   stock:
@@ -121,10 +123,11 @@ chain:
   # earliest 折中取 2022-01-01：指数端点越界窗口 1003 拒绝且实测口径为
   # 「recent five years only」滚动 5 年、ETF 同为约 5 年滚动但越界整体
   # 返空——earliest=2000 会使指数/ETF 深度 case 全程撞界，三目标统一浅
-  # 边界复验。已摘牌锚定经 raw 先行（ths-delisted-*-historical 探可查性）：
-  # 上游支持已摘牌查询则回填轮将 targets.contract/option 轮换为已摘牌
-  # 合约并启用 full_history_targets 全量模式锚定精确上市日（tushare 先例，
-  # 各合约以自身上市日为准），不支持则保持 null 定案
+  # 边界复验。已摘牌合约可查性已定案（原 ths-delisted-*-historical raw
+  # 探证后随定案退役）：上游移出目录、仅现活合约可查（2026-11-14 第 7 轮
+  # CU2601.SHF / IO2601-C-4000.CFE 3001 vs CU2706.SHF code=0 对照）→
+  # contract/option history.start 保持 null，tushare「已摘牌全量锚定」
+  # 先例不适用
   history_depth:
     targets: [stock, index, etf]
     earliest: 2022-01-01
@@ -137,17 +140,18 @@ chain:
   # message 自述 'must span at most 10 years'），故 max_range 取 P9Y
   # （≈2180 行）观测行数触顶；documented_max 不设 → observe，若未来触顶则
   # partial 覆盖判定候选（触顶+末根<end → partial），不触顶则「单窗口完整
-  # 返回、partial 恒 false」。offset 分页行为另经 raw
-  # ths-historical-offset-behavior 观察，适配器仍不启用
+  # 返回、partial 恒 false」。offset 分页已定案被上游静默忽略、适配器不启用
+  #（原 ths-historical-offset-behavior raw 探证后随定案退役，2026-11-14
+  # 第 7 轮 2025 全年窗 offset=100 行数与首根均不变）
   limit_truncation:
     targets: [stock]
     interval: P1D
     max_range: P9Y
 
 raw:
-  # A 股快照形态观察（快照不返回中文名 name 的文档口径确认、data.timestamp
-  # 为「最新上游有效时间」的取值形态）；headers 携带 X-api-key（凭据只经
-  # 环境变量引用，结果文件不记录值）
+  # ── 快照/分时形态观察：快照与分时不经 chain（框架 chain 仅覆盖
+  #    fetch_bars）；headers 携带 X-api-key（凭据只经环境变量引用，结果
+  #    文件不记录值）
   - id: ths-snapshot-shape
     purpose: A 股快照响应形态观察（item 字段完整性、data.timestamp 口径、
       name 缺失确认）
@@ -209,65 +213,22 @@ raw:
     expect: {status: ok, min_fields: [code, message, data]}
     close: {method: close, kwargs: {}}
 
-  # data.adjust 字段实证（观察）：近期短窗口整信封留存，核对 ETF 响应
-  # data.adjust 是否如文档固定 null、item 行形态（date_ms/OHLC/量额键名）
-  - id: ths-etf-adjust-field-shape
-    purpose: ETF fund historical 响应 data.adjust 字段取值与 item 行形态观察
-    assert: false
-    module: httpx
-    client: {attr: Client, kwargs: {}}
-    call:
-      - {method: get, kwargs: {url: "https://fuyao.aicubes.cn/api/fund/market/historical", params: {thscode: "510880.SH", interval: "1d", start: 1766505600000, end: 1767196799000}, headers: {"X-api-key": "$TAPEHUB_THS_API_KEY"}}}
-      - {method: json, kwargs: {}, target: result}
-    expect: {status: ok, min_fields: [code, message, data]}
-    close: {method: close, kwargs: {}}
-
-  # —— 以下 case 全部仅观察（assert: false），结论回填见
-  # probes/results/PROBE_LOG.md；历史 K 线参数显式传全（a-share 含 adjust；
-  # 期货/期权 time_period=day_1，端外仅日线），窗口毫秒时间戳与上方 ETF
-  # case 同风格。
-
-  # offset 分页行为（manifest「historical 的 offset 分页参数行为未核实，
-  # 不启用」待办项）：2025 全年窗（availability 基线 243 根、首根
-  # 2025-01-02）传 offset=100——返回行数与首样本 date_ms 可判跳行生效
-  # （行数 ≈143、首根 ≈2025-06）或被静默忽略（行数不变、首根不变）
-  - id: ths-historical-offset-behavior
-    purpose: a_share historical offset 参数行为观察（跳行生效 / 被静默忽略）
-    assert: false
-    module: httpx
-    client: {attr: Client, kwargs: {}}
-    call:
-      - {method: get, kwargs: {url: "https://fuyao.aicubes.cn/api/a-share/prices/historical", params: {thscode: "600519.SH", interval: "1d", adjust: "none", start: 1735660800000, end: 1767196799000, offset: 100}, headers: {"X-api-key": "$TAPEHUB_THS_API_KEY"}}}
-      - {method: json, kwargs: {}, target: result}
-    expect: {status: ok, min_fields: [code, message, data]}
-    close: {method: close, kwargs: {}}
-
-  # 期货交易所后缀实证（_SUFFIXES 五所收编）：窗口取 2026-08~11 存续期、
-  # time_period=day_1 显式传参。zce-4digit 为 4→3 还原对照 case（四位码
-  # 不识别）；MA701 首探 5003 系瞬时（复验 code=0）；SR612.CZC 3001 系
-  # 白糖近月不在 ths 目录（形态无关）
-  - id: ths-futures-suffix-dce
-    purpose: 大商所后缀 DCE 实证（EG2701 乙二醇，文档示例形态）
-    assert: false
-    module: httpx
-    client: {attr: Client, kwargs: {}}
-    call:
-      - {method: get, kwargs: {url: "https://fuyao.aicubes.cn/api/futures/prices/daily", params: {thscode: "EG2701.DCE", start: 1785715200000, end: 1794614399000, time_period: "day_1"}, headers: {"X-api-key": "$TAPEHUB_THS_API_KEY"}}}
-      - {method: json, kwargs: {}, target: result}
-    expect: {status: ok, min_fields: [code, message, data]}
-    close: {method: close, kwargs: {}}
-
-  - id: ths-futures-suffix-zce-3digit
-    purpose: 郑商所后缀 CZC 三位年月码实证（MA612 甲醇近月）
-    assert: false
-    module: httpx
-    client: {attr: Client, kwargs: {}}
-    call:
-      - {method: get, kwargs: {url: "https://fuyao.aicubes.cn/api/futures/prices/daily", params: {thscode: "MA612.CZC", start: 1785715200000, end: 1794614399000, time_period: "day_1"}, headers: {"X-api-key": "$TAPEHUB_THS_API_KEY"}}}
-      - {method: json, kwargs: {}, target: result}
-    expect: {status: ok, min_fields: [code, message, data]}
-    close: {method: close, kwargs: {}}
-
+  # ── 已定案退役的探索性 raw（原始证据见 probes/results/PROBE_LOG.md，
+  #    不入库；结论均已回填 manifest 头注释与 docs/providers/ths.md）：
+  #    ① 期货五所后缀正面形态（EG2701.DCE / BC2612.INE / LC2701.GFE /
+  #      MA612.CZC 三位年月码，2026-11-14 复探全绿）——chain contract@CN-CZCE/
+  #      DCE/INE/GFEX 目标常态复验同一端点同一代码形态；
+  #    ② BSE→BJ 价格端点（920000.BJ / 899050.BJ 2025 全年 243 行完整）——
+  #      chain stock@CN-BSE / index@CN-BSE 目标常态复验；
+  #    ③ offset 静默忽略（2025 全年窗 offset=100 行数与首根均不变）——
+  #      「不启用」定案，limit_truncation 注释留档；
+  #    ④ 已摘牌合约仅现活可查（CU2601/IO2601 3001 vs CU2706 code=0）——
+  #      contract/option history.start 保持 null 定案；
+  #    ⑤ ETF data.adjust=null 字段形态——与 dividend-window 口径留存同源，
+  #      [qfq] 声明已回填。
+  #
+  # 仅存负对照：郑商所四位年月码——适配器 4→3 还原后链路永远发不出 4 位
+  # 形态，无法入链，常态留存（与 tqsdk kline-czce-4digit 同款设计）。
   - id: ths-futures-suffix-zce-4digit
     purpose: 郑商所四位年月码对照实证（MA2701.CZC 3001——4→3 还原依据
       常态留存，非后缀探测）
@@ -276,82 +237,6 @@ raw:
     client: {attr: Client, kwargs: {}}
     call:
       - {method: get, kwargs: {url: "https://fuyao.aicubes.cn/api/futures/prices/daily", params: {thscode: "MA2701.CZC", start: 1785715200000, end: 1794614399000, time_period: "day_1"}, headers: {"X-api-key": "$TAPEHUB_THS_API_KEY"}}}
-      - {method: json, kwargs: {}, target: result}
-    expect: {status: ok, min_fields: [code, message, data]}
-    close: {method: close, kwargs: {}}
-
-  - id: ths-futures-suffix-ine
-    purpose: 上期能源后缀 INE 实证（BC2612 国际铜，文档示例形态）
-    assert: false
-    module: httpx
-    client: {attr: Client, kwargs: {}}
-    call:
-      - {method: get, kwargs: {url: "https://fuyao.aicubes.cn/api/futures/prices/daily", params: {thscode: "BC2612.INE", start: 1785715200000, end: 1794614399000, time_period: "day_1"}, headers: {"X-api-key": "$TAPEHUB_THS_API_KEY"}}}
-      - {method: json, kwargs: {}, target: result}
-    expect: {status: ok, min_fields: [code, message, data]}
-    close: {method: close, kwargs: {}}
-
-  - id: ths-futures-suffix-gfex
-    purpose: 广期所后缀 GFE 实证（LC2701 碳酸锂——后缀实为 GFE 非 GFEX）
-    assert: false
-    module: httpx
-    client: {attr: Client, kwargs: {}}
-    call:
-      - {method: get, kwargs: {url: "https://fuyao.aicubes.cn/api/futures/prices/daily", params: {thscode: "LC2701.GFE", start: 1785715200000, end: 1794614399000, time_period: "day_1"}, headers: {"X-api-key": "$TAPEHUB_THS_API_KEY"}}}
-      - {method: json, kwargs: {}, target: result}
-    expect: {status: ok, min_fields: [code, message, data]}
-    close: {method: close, kwargs: {}}
-
-  # 已摘牌合约可查性（contract/option history.start 锚定前置，tushare
-  # 先例「已摘牌合约全量拉取直读最早 bar = 精确上市日」）：探测对象用
-  # 文档示例已到期合约（CU2601.SHF / IO2601-C-4000.CFE）存续期中段窗口
-  # ——code=0 有数据 → 回填轮轮换 targets 并启用 history_depth
-  # full_history_targets 全量模式锚定精确上市日；返空/报错 → 保持 null
-  # 定案「仅现活合约可得」
-  - id: ths-delisted-contract-historical
-    purpose: 已摘牌期货合约可查性实证（CU2601.SHF 2025-06~12 存续期中段）
-    assert: false
-    module: httpx
-    client: {attr: Client, kwargs: {}}
-    call:
-      - {method: get, kwargs: {url: "https://fuyao.aicubes.cn/api/futures/prices/daily", params: {thscode: "CU2601.SHF", start: 1748707200000, end: 1765814399000, time_period: "day_1"}, headers: {"X-api-key": "$TAPEHUB_THS_API_KEY"}}}
-      - {method: json, kwargs: {}, target: result}
-    expect: {status: ok, min_fields: [code, message, data]}
-    close: {method: close, kwargs: {}}
-
-  - id: ths-delisted-option-historical
-    purpose: 已摘牌期权合约可查性实证（IO2601-C-4000.CFE 2025-11~12 存续期）
-    assert: false
-    module: httpx
-    client: {attr: Client, kwargs: {}}
-    call:
-      - {method: get, kwargs: {url: "https://fuyao.aicubes.cn/api/options/prices/daily", params: {thscode: "IO2601-C-4000.CFE", start: 1761926400000, end: 1765814399000, time_period: "day_1"}, headers: {"X-api-key": "$TAPEHUB_THS_API_KEY"}}}
-      - {method: json, kwargs: {}, target: result}
-    expect: {status: ok, min_fields: [code, message, data]}
-    close: {method: close, kwargs: {}}
-
-  # 北交所 BSE→BJ 价格端点（manifest「BSE→BJ 仅元信息域实证、价格端点
-  # 未实证不收」待办项）：a-share / a-share-index historical 直调——
-  # 实证通过则扩容 _SUFFIXES（stock/index: BSE→BJ）与 targets 逐所键
-  # （futunn BJ.920000/BJ.899050 先例对照）
-  - id: ths-bse-stock-historical-endpoint
-    purpose: 北交所个股价格端点实证（920000.BJ 2025 全年窗）
-    assert: false
-    module: httpx
-    client: {attr: Client, kwargs: {}}
-    call:
-      - {method: get, kwargs: {url: "https://fuyao.aicubes.cn/api/a-share/prices/historical", params: {thscode: "920000.BJ", interval: "1d", adjust: "none", start: 1735660800000, end: 1767196799000}, headers: {"X-api-key": "$TAPEHUB_THS_API_KEY"}}}
-      - {method: json, kwargs: {}, target: result}
-    expect: {status: ok, min_fields: [code, message, data]}
-    close: {method: close, kwargs: {}}
-
-  - id: ths-bse-index-historical-endpoint
-    purpose: 北交所指数价格端点实证（899050.BJ 北证50 2025 全年窗）
-    assert: false
-    module: httpx
-    client: {attr: Client, kwargs: {}}
-    call:
-      - {method: get, kwargs: {url: "https://fuyao.aicubes.cn/api/a-share-index/prices/historical", params: {thscode: "899050.BJ", interval: "1d", start: 1735660800000, end: 1767196799000}, headers: {"X-api-key": "$TAPEHUB_THS_API_KEY"}}}
       - {method: json, kwargs: {}, target: result}
     expect: {status: ok, min_fields: [code, message, data]}
     close: {method: close, kwargs: {}}
