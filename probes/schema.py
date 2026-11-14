@@ -22,7 +22,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from tapehub.domain.intervals import Interval
 from tapehub.domain.models import Adjust, AssetType, Instrument
 
-PROBE_SCHEMA_VERSION = 1
+PROBE_SCHEMA_VERSION = 2
 
 # 目标限定引用：``stock``（不限定市场，标的自身市场即市场）、``stock@HK``
 # （限定市场）或 ``stock@CN-SSE``（限定市场内交易所）。同一 asset_type 跨多
@@ -160,13 +160,16 @@ class AdjustDiffSpec(_Strict):
 
 
 class HistoryDepthSpec(_Strict):
-    """历史深度探针：纪元回溯 + 二分搜索最早可用窗口。
+    """历史深度探针：纪元回溯 + 日历边界网格二分搜索最早可用窗口。
 
     按 (interval × variant) 全量展开；``max_calls`` 是**每条 case** 的预算。
-    ``full_history_targets`` 中的目标改走**全量模式**：单次全窗口调用直接读
-    最早 bar（精确值），适用于上游无日期参数（每次返回全量历史，适配器内存
-    过滤）或全量拉取代价可忽略的接口——对这类接口，回溯 + 二分只是重复
-    下载同一份全量数据，单次调用反而更省且无粒度误差。
+    ``snap`` 声明历史起点对齐的日历边界粒度：声明值 = 首个 ≥ 首根实测的
+    日历边界（保守上界，查询从声明起点起保证有数据）；首根实测另记入
+    ``first_bar`` 证据。``full_history_targets`` 中的目标改走**全量模式**：
+    单次全窗口调用直接读最早 bar（精确值），适用于上游无日期参数（每次
+    返回全量历史，适配器内存过滤）或全量拉取代价可忽略的接口——对这类
+    接口，回溯 + 二分只是重复下载同一份全量数据，单次调用反而更省且无
+    粒度误差。
     """
 
     targets: list[TargetRef] = Field(min_length=1)
@@ -174,8 +177,8 @@ class HistoryDepthSpec(_Strict):
     era_step_years: int = Field(default=5, ge=1)
     max_calls: int = Field(default=24, ge=1)
     intervals: list[Interval] = Field(default_factory=list)
-    # 二分窗口宽度即精度：earliest_estimate 误差约为该值（天）
-    probe_span_days: int = Field(default=90, ge=1)
+    # 声明值对齐的日历边界粒度（与 analysis.SNAP_STEPS_MONTHS 取值一致）
+    snap: Literal["month", "quarter", "half_year"] = "month"
     # 走全量模式（单次调用读最早 bar）的目标
     full_history_targets: list[AssetType] = Field(default_factory=list)
 

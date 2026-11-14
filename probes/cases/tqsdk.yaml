@@ -1,7 +1,7 @@
 # TqSdk 数据探针：合约/主连/加权可用性、data_length 上限实测裁决（8000 vs 10000）。
 # TqApi 实例创建较慢，pacing 显著放宽。
 probe: tqsdk
-version: 1
+version: 2
 
 requires:
   extras: [tqsdk]
@@ -90,14 +90,14 @@ chain:
     fields: [close]
   history_depth:
     # stock 历史深度受专业版权限直接影响，是权限口径实证的关键探针；
-    # probe_span_days=5：二分窗口 5 天，为分钟线滚动保留边界提供 ±5 天精度；
-    # 分钟级周期一并探测，实测各类资产的滚动保留深度
+    # snap=month：声明值对齐月边界（保守上界），首根实测记入 first_bar 证据；
+    # 分钟级周期一并探测，实测各类资产的滚动保留深度。era 5 年 + 网格月粒度
+    # 二分：最坏 6 纪元 + ~6 网格调 = 12 ≤ 16
     targets: [continuous, stock, index, etf, weighted-index]
     earliest: 2000-01-01
     era_step_years: 5
     max_calls: 16
     intervals: [P1D, PT1M, PT5M, PT15M, PT30M, PT1H]
-    probe_span_days: 5
   limit_truncation:
     targets: [continuous]
     interval: P1D

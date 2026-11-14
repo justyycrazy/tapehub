@@ -1,7 +1,7 @@
 # TickFlow 数据探针：三市场（CN/HK/US）全声明维度可用性、复权生效性、
 # 历史深度、单次上限与实时行情（quotes）字段矩阵实测。
 probe: tickflow
-version: 1
+version: 2
 
 requires:
   extras: [tickflow]
@@ -80,13 +80,13 @@ chain:
     fields: [close]
   history_depth:
     targets: [stock@CN, stock@HK, stock@US]
-    # 基准换早上市标的并把边界提前到 1930：收敛点即库底；floor-hit（粒度
-    # None）=「库深 ≥1930」强声明，下轮边界再降（1900/1880）。earliest 为
-    # 全 targets 共享单值，CN 回溯到首个空纪元（1980-1990）即停，不受
-    # 1930 影响。
+    # 基准换早上市标的并把边界提前到 1930：收敛点即库底；floor-hit（触底
+    # estimate=earliest）=「库深 ≥1930」强声明，下轮边界再降（1900/1880）。
+    # earliest 为全 targets 共享单值，CN 回溯到首个空纪元（1980-1990）即停，
+    # 不受 1930 影响。
     earliest: 1930-01-01
     era_step_years: 10   # 1930 起共 10 纪元；步长 5 则仅纪元回溯就要 19 调，装不进 24 预算
-    max_calls: 24        # 每条 case 预算：回溯 10 + 二分 ~8 + 验证 1 ≈ 19 最坏，留余量
+    max_calls: 24        # 每条 case 预算：回溯 10 + 网格二分 ~7 ≈ 17 最坏，留余量
     intervals: [P1D, P1W, P1M]
     # 分钟族（PT1M~PT1H，含 60m）不声明（免费档无权限、与 alphafeed 同
     # 口径），历史深度无从探测

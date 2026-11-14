@@ -8,7 +8,7 @@
 # 复用 availability 已占额度的基准标的（不新增占用；容量数值未公布）。
 # pacing 2 秒（任意 60 秒窗口 ≤30 次 < 100 次，留 3 倍余量）。
 probe: futunn
-version: 1
+version: 2
 
 requires:
   # extras 按「可导入模块名」判定（框架 _module_available）：futunn 无官方
@@ -109,7 +109,8 @@ chain:
   # 逐周期证据——tiingo 先例）：四新目标复用 availability 已占额度标的
   #（SH.000001/SH.510300/HK.00002/US-NYSE-GE），不新增历史额度占用，成本
   # 仅 IP 频率；era_step 10 年减半深库回溯调用（HK.00002/US GE 为深库候选，
-  # 二分精度仍由 bisect 收敛到 probe_span_days=90 天）；earliest 1890-01-01
+  # 声明值由网格二分收敛到日历边界——snap=month 保守上界，首根实测另记
+  # first_bar 证据）；earliest 1890-01-01
   #（GE 1892 上市，深库下界；触底分支 estimate=earliest 一律不回填——
   # twelvedata 教训）；SZSE/BSE 维持 capability 级以基准标的库底为准、
   # 不单独 depth（README 注明）
@@ -117,8 +118,8 @@ chain:
     targets: [stock@CN, index@CN, etf@CN, stock@HK, stock@US]
     earliest: 1890-01-01
     era_step_years: 10
-    # 单 case（目标×周期）子预算：era 10 年回溯 + 二分至 90 天粒度，
-    # 最坏 ≈24 调（深库 candidates：HK.00002/US GE）
+    # 单 case（目标×周期）子预算：era 10 年回溯 + 网格月粒度二分（一个纪元
+    # 宽度 ≤120 点 → ~7 调），最坏 ≈21 调（深库 candidates：HK.00002/US GE）
     max_calls: 24
     intervals: [PT1M, PT5M, PT15M, PT30M, PT1H, P1D, P1W, P1M]
 

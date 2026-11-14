@@ -61,7 +61,8 @@ class ChainCase:
     required_fields: tuple[str, ...] = ()
     declared_history_start: dt.datetime | None = None
     era_step_years: int = 5
-    probe_span_days: int = 90
+    # history_depth 声明值对齐的日历边界粒度（取值经 schema Literal 校验）
+    snap: str = "month"
     # history_depth 全量模式：单次全窗口调用直接读最早 bar（上游无日期过滤）
     full_history: bool = False
     # variant_consistency 判定容差（绝对值）；差异幅度始终如实记录
@@ -318,7 +319,7 @@ def _history_depth_cases(
                         variant=variant,
                         window_start=_to_beijing(config.earliest),
                         era_step_years=config.era_step_years,
-                        probe_span_days=config.probe_span_days,
+                        snap=config.snap,
                         full_history=full_history,
                         # 全量模式单次调用即得精确值，预算声明按实际计
                         expected_calls=1 if full_history else config.max_calls,

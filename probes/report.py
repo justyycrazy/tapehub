@@ -223,7 +223,10 @@ def render_markdown(run: RunResult) -> str:
             extra = ""
             if case.kind == "history_depth":
                 est = case.observation.get("earliest_estimate")
-                extra = f"earliest≈{est} approx={case.observation.get('approx')}"
+                extra = (
+                    f"earliest={est} first_bar={case.observation.get('first_bar')} "
+                    f"approx={case.observation.get('approx')}"
+                )
             lines.append(f"| {case.case_id} | {case.verdict} | {case.reason} {extra} |")
     else:
         lines.append("（无）")
@@ -233,14 +236,14 @@ def render_markdown(run: RunResult) -> str:
     lines.append("")
     if histories:
         lines.append(
-            "| case | earliest_estimate | approx | 粒度(天) | 探测次数 | complete | 阶段 |"
+            "| case | earliest_estimate | 首根 bar | approx | 粒度 | 探测次数 | complete | 阶段 |"
         )
-        lines.append("| --- | --- | --- | --- | --- | --- | --- |")
+        lines.append("| --- | --- | --- | --- | --- | --- | --- | --- |")
         for case in histories:
             obs = case.observation
             lines.append(
-                f"| {case.case_id} | {obs.get('earliest_estimate')} | {obs.get('approx')} "
-                f"| {obs.get('granularity_days')} | {obs.get('calls_used')} "
+                f"| {case.case_id} | {obs.get('earliest_estimate')} | {obs.get('first_bar')} "
+                f"| {obs.get('approx')} | {obs.get('snap')} | {obs.get('calls_used')} "
                 f"| {obs.get('complete')} | {_phase_summary(obs.get('probes'))} |"
             )
     else:

@@ -53,8 +53,9 @@ uv run python -m probes.cli run --provider ths --yes -v --log-file probes/result
 
 - `history_depth` 二分模式：每轮探测一行，带阶段标签与预算水位
   （`era#1 [2021-01-01, 2025-12-31] count=0 (预算 2/24)`）；阶段
-  `era` / `bisect` / `verify`（全量模式为 `full`）同时写入 JSON 证据的
-  probes 条目，Markdown history 表汇总为「阶段」列；
+  `era` / `bisect` / `verify`（全量模式为 `full`；`bisect` 为日历边界
+  网格二分）同时写入 JSON 证据的 probes 条目，Markdown history 表汇总
+  为「阶段」列；
 - `adjust_diff`：baseline / compared 每侧一行（adjust 值 + bar 数）；
 - `variant_consistency`：每个 variant 抓取一行（variant 名 + bar 数）；
 - `raw`：client 构造、每条 call（序号 + 方法名 + 行数或异常）、close 各一行；
@@ -78,7 +79,7 @@ observation 同口径。
 
 ```yaml
 probe: tushare                     # 必须等于 BUILTIN_PROVIDERS 中的名称
-version: 1                         # 探针文件格式版本（当前 1）
+version: 2                         # 探针文件格式版本（当前 2，迁移说明见下）
 
 requires:                          # 运行前提；缺失时整文件 skip 并写入报告
   extras: [tushare]                # SDK 模块名（同时是 pyproject 可选依赖组名）
@@ -115,11 +116,13 @@ chain:                             # ── 统一链路探针（经 adapter.fet
     window: {start: 2024-01-01, end: 2024-12-31}
     pairs: [[none, qfq], [none, hfq]]
     fields: [close]
-  history_depth:                   # 历史深度：纪元回溯 + 二分
+  history_depth:                   # 历史深度：纪元回溯 + 日历边界网格二分
     targets: [stock]
     earliest: 1991-01-01
     era_step_years: 5
     max_calls: 24
+    snap: month                    # 可选：声明值对齐的日历边界粒度
+                                   #（month=每月 1 日 / quarter=季初 / half_year=半年初，默认 month）
     full_history_targets: []       # 可选：这些目标单次全窗口调用直接读最早 bar
   variant_consistency:             # 跨 variant 一致性
     targets: [stock, index]
@@ -158,6 +161,16 @@ raw:                               # ── 声明外探索 / 错误指纹（SDK
 notes: 本探针要回答的问题与已知存疑点。
 ```
 
+### 格式版本迁移
+
+- **v2（当前）**：`history_depth` 删除 `probe_span_days`，新增 `snap`
+  （声明值对齐的日历边界粒度：`month` / `quarter` / `half_year`，默认
+  `month`）——二分搜索空间从连续日期改为日历边界网格；声明口径变为
+  **保守上界**（首个 ≥ 首根实测的日历边界），首根实测另记 `first_bar`
+  证据；迁移方式：删除 case 文件中的 `probe_span_days` 键、`version: 2`；
+- **v1**：二分以 `probe_span_days` 天为窗口粒度，`earliest_estimate` 为
+  上界估计（粒度 = 窗口宽度，收敛点为任意日期）。
+
 ### 规范化规则
 
 | 规则 | 说明 |
@@ -181,7 +194,7 @@ notes: 本探针要回答的问题与已知存疑点。
 | --- | --- | --- | --- |
 | availability | chain | 对每个声明组合查一次 | 0 bars / 低于 min_bars / required 字段全 null → failed；否则 confirmed |
 | adjust_diff | chain | 同窗口 none vs qfq/hfq 对比（按 interval × variant × pair 全量展开） | 序列完全一致 → **suspect**（adjust_no_op_suspect）；有差异 → confirmed；无重叠 → suspect |
-| history_depth | chain | 5 年档回溯 + 90 天窗口二分（按 interval × variant 全量展开）；`full_history_targets` 中的目标改走全量模式：单次全窗口调用直接读最早 bar，适用于上游无日期参数（每次返回全量历史，适配器内存过滤）或全量拉取代价可忽略的接口 | 恒为 observe；二分模式报告 `earliest_estimate`（**近似值**，粒度 = 窗口宽度）；全量模式给出**精确**最早 bar（approx=False） |
+| history_depth | chain | 纪元回溯 + 日历边界网格二分（`snap` 粒度，默认月边界；按 interval × variant 全量展开）：收敛到最小非空边界 B*，B* 之前逐窗实测无数据 + B* 窗口实测有数据；`full_history_targets` 中的目标改走全量模式：单次全窗口调用直接读最早 bar，适用于上游无日期参数（每次返回全量历史，适配器内存过滤）或全量拉取代价可忽略的接口 | 恒为 observe；声明值 `earliest_estimate` = 首个 ≥ 首根实测的日历边界（**保守上界**，查询从声明起点起保证有数据），`first_bar` 为首根实测（二分模式 = 验证窗返回首根；全量模式 = 精确最早 bar，approx=False）；触底（estimate=earliest）/预算中断/未收敛一律不回填 |
 | limit_truncation | chain | 最小周期 + 超长窗口数 bar（按 variant 全量展开） | 实测 = documented_max → confirmed；不等 → suspect；未设 → observe |
 | variant_consistency | chain | 同一 (interval, adjust) 查询在跨能力聚合的全部 variant 下重放并两两对比 | 差异 ≤ `tolerance` → confirmed（差异幅度如实记录）；超出 → suspect，记录 max_abs_diff 与 first_divergence；无重叠 / 预算中断 → suspect |
 | raw | SDK 反射 | 声明外能力探测、错误指纹、快照字段矩阵（`min_fields` 验证 mapping 字段存在性） | 期望匹配 → confirmed / 不匹配 → failed；`assert: false` → observe |
@@ -201,7 +214,9 @@ notes: 本探针要回答的问题与已知存疑点。
 
 **manifest 回填流程**：报告 → 人工确认 → 修订 manifest（`history.start`、
 复权声明收敛、新增周期/后缀声明）与 `docs/providers/<name>.md` → 单独提交。
-探针永不自动改 manifest。
+探针永不自动改 manifest。`history.start` 回填口径：取报告中的
+`earliest_estimate`（日历边界、保守上界），首根实测（`first_bar`）留在
+探针证据与 PROBE_LOG，不入 manifest。
 
 ## 结果记录
 

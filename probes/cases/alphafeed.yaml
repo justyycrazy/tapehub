@@ -1,7 +1,7 @@
 # AlphaFeed 数据探针：三市场（CN/HK/US）日线全声明维度可用性、复权生效性、
 # 历史深度与实时行情（quotes）字段矩阵、错误指纹实测。
 probe: alphafeed
-version: 1
+version: 2
 
 requires:
   extras: [alphafeed]
@@ -76,7 +76,7 @@ chain:
   history_depth:
     # 仅 stock@US：CN（≈1991-01-14）/HK（≈1980-02-15，与 tickflow HK 结论
     # 一致）已收敛回填，不重复消耗配额；earliest 1930 收敛真实库底
-    #（era_step_years 10 → 10 纪元，max_calls 24/条覆盖 10+8+1 ≈ 19 最坏）
+    #（era_step_years 10 → 10 纪元，max_calls 24/条覆盖 10+7 ≈ 17 最坏）
     targets: [stock@US]
     earliest: 1930-01-01
     era_step_years: 10

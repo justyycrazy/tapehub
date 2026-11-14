@@ -33,7 +33,7 @@ def _registry() -> ProviderRegistry:
 def _probe(**chain: object) -> ProbeFile:
     data = {
         "probe": "fake-provider",
-        "version": 1,
+        "version": 2,
         "targets": {
             "stock": {
                 "instrument": "CN-SSE-600000",
@@ -361,7 +361,7 @@ def _multi_var_probe(provider: str, chain_extra: dict) -> ProbeFile:
     """probe 名必须与 manifest 的 provider 名一致，否则文件级跳过。"""
     data = {
         "probe": provider,
-        "version": 1,
+        "version": 2,
         "targets": {
             "stock": {
                 "instrument": "CN-SSE-600000",
@@ -489,7 +489,7 @@ def test_history_depth_full_mode_exact_estimate() -> None:
     }
     for case in cases:
         assert case.verdict == "observe"
-        assert "exactly" in case.reason
+        assert "exact" in case.reason
         obs = case.observation
         assert obs["approx"] is False
         assert obs["complete"] is True

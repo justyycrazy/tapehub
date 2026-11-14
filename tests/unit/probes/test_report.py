@@ -48,12 +48,13 @@ def _run() -> RunResult:
                 case_id="history-depth-stock",
                 kind="history_depth",
                 verdict="observe",
-                reason="earliest window estimate (informational)",
+                reason="calendar-boundary declaration (conservative upper bound; informational)",
                 observation={
-                    "earliest_estimate": "2003-04-11T00:00:00+08:00",
+                    "earliest_estimate": "2003-05-01T00:00:00+08:00",
+                    "first_bar": "2003-04-10T00:00:00+08:00",
                     "approx": True,
-                    "granularity_days": 90,
-                    "calls_used": 18,
+                    "snap": "month",
+                    "calls_used": 12,
                     "complete": True,
                 },
             ),
@@ -78,7 +79,8 @@ def test_render_markdown_sections() -> None:
     assert "stock-P1D-none-eastmoney" in text
     assert "adjust_no_op_suspect" in text
     assert "运行时间（北京时间 +08:00）：2026-01-01T00:00:00+08:00" in text
-    assert "2003-04-11T00:00:00+08:00" in text
+    assert "2003-05-01T00:00:00+08:00" in text
+    assert "2003-04-10T00:00:00+08:00" in text
     assert "测试原因" in text
 
 

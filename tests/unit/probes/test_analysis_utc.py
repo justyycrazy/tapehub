@@ -60,8 +60,10 @@ def test_history_depth_preserves_input_zone() -> None:
     )
     assert result.complete
     assert result.earliest_estimate is not None
-    # 估计值保持 UTC 口径，且绝对时刻与北京时间表达互换相等
-    assert result.earliest_estimate.utcoffset() == dt.timedelta(0)
-    cn_view = result.earliest_estimate.astimezone(CN_TIMEZONE)
-    assert cn_view == result.earliest_estimate
-    assert abs((result.earliest_estimate - DATA_START).days) <= 90
+    assert result.first_bar is not None
+    # 声明值与首根实测都保持 UTC 口径，且绝对时刻与北京时间表达互换相等
+    for value in (result.earliest_estimate, result.first_bar):
+        assert value.utcoffset() == dt.timedelta(0)
+        assert value.astimezone(CN_TIMEZONE) == value
+    # 声明值 = 首个 ≥ 首根实测（2003-04-10 UTC）的月边界（UTC 日历对齐）
+    assert result.earliest_estimate == dt.datetime(2003, 5, 1, tzinfo=UTC)

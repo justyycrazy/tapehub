@@ -3,7 +3,7 @@
 # 官方文档矛盾点/边界行为与指数分钟族等探索性 raw 已随定案退役（退役清单与
 # 证据出处见 raw 段注释；结论已回填 manifest 与 docs/providers/baostock.md）。
 probe: baostock
-version: 1
+version: 2
 
 requires:
   # 免费无凭据数据平台（证券宝）：只依赖 SDK 安装，无环境变量前提

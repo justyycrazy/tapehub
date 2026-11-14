@@ -114,8 +114,10 @@ def test_history_depth_finds_earliest() -> None:
         )
     )
     assert result.complete
-    assert result.earliest_estimate is not None
-    assert abs((result.earliest_estimate - DATA_START).days) <= 90
+    assert result.snap == "month"
+    # 声明值 = 首个 ≥ 首根实测（2003-04-10）的月边界（保守上界）
+    assert result.earliest_estimate == dt.datetime(2003, 5, 1, tzinfo=CN_TIMEZONE)
+    assert result.first_bar == DATA_START
 
 
 def test_history_depth_no_data() -> None:
@@ -132,6 +134,7 @@ def test_history_depth_no_data() -> None:
     )
     assert result.complete
     assert result.earliest_estimate is None
+    assert result.first_bar is None
 
 
 def test_history_depth_respects_budget() -> None:
@@ -148,8 +151,8 @@ def test_history_depth_respects_budget() -> None:
     assert result.probes  # 已记录部分探测轨迹
 
 
-def test_history_depth_bisect_stops_at_span() -> None:
-    """二分收敛到窗口粒度即止：估算精度不变，调用数从对数(区间/1天)降为对数(区间/窗口)。"""
+def test_history_depth_grid_converges_in_log_calls() -> None:
+    """网格二分对数收敛：era 回溯 + 锚点纪元内网格点对数探测（6 era + ≤6 网格）。"""
     calls = 0
     base = _fetch_from_data_start()
 
@@ -168,11 +171,76 @@ def test_history_depth_bisect_stops_at_span() -> None:
         )
     )
     assert result.complete
-    assert result.granularity_days == 90
-    # 区间 ~35 年：收敛到 1 天约需 13 次二分 + 验证，收敛到 90 天约 6 次
+    assert result.snap == "month"
     assert result.calls_used == calls
-    assert calls <= 20
-    assert abs((result.earliest_estimate - DATA_START).days) <= 90
+    assert calls <= 15
+    assert result.earliest_estimate == dt.datetime(2003, 5, 1, tzinfo=CN_TIMEZONE)
+
+
+def test_history_depth_boundary_exact_first_bar() -> None:
+    """首根恰落在日历边界上：声明值 = 该边界本身，不推到下一周期。"""
+    boundary = dt.datetime(2003, 4, 1, tzinfo=CN_TIMEZONE)
+
+    async def fetch(start: dt.datetime, end: dt.datetime) -> list[Bar]:
+        if end > boundary and start < SEARCH_END:
+            return [_bar(max(start, boundary))]
+        return []
+
+    result = asyncio.run(
+        run_history_depth(
+            fetch,
+            earliest=dt.datetime(1991, 1, 1, tzinfo=CN_TIMEZONE),
+            latest=SEARCH_END,
+            era_step_years=5,
+            max_calls=40,
+        )
+    )
+    assert result.complete
+    assert result.first_bar == boundary
+    assert result.earliest_estimate == boundary
+
+
+@pytest.mark.parametrize(
+    ("snap", "expected_month", "expected_day"),
+    [
+        ("month", 5, 1),
+        ("quarter", 7, 1),
+        ("half_year", 7, 1),
+    ],
+)
+def test_history_depth_snap_alignment(snap: str, expected_month: int, expected_day: int) -> None:
+    """三档 snap：声明值 = 首个 ≥ 首根实测（2003-04-10）的对应日历边界。"""
+    result = asyncio.run(
+        run_history_depth(
+            _fetch_from_data_start(),
+            earliest=dt.datetime(1991, 1, 1, tzinfo=CN_TIMEZONE),
+            latest=SEARCH_END,
+            era_step_years=5,
+            max_calls=40,
+            snap=snap,
+        )
+    )
+    assert result.snap == snap
+    assert result.earliest_estimate == dt.datetime(
+        2003, expected_month, expected_day, tzinfo=CN_TIMEZONE
+    )
+
+
+def test_history_depth_grid_budget_exhausted() -> None:
+    """网格二分中途预算耗尽：已验证边界的声明候选照常产出，complete=False（约定不回填）。"""
+    result = asyncio.run(
+        run_history_depth(
+            _fetch_from_data_start(),
+            earliest=dt.datetime(1991, 1, 1, tzinfo=CN_TIMEZONE),
+            latest=SEARCH_END,
+            era_step_years=10,
+            max_calls=8,
+        )
+    )
+    assert not result.complete
+    assert result.calls_used == 8
+    assert result.first_bar is not None
+    assert result.earliest_estimate is not None
 
 
 def test_history_depth_on_step_reports_phases() -> None:
@@ -193,12 +261,12 @@ def test_history_depth_on_step_reports_phases() -> None:
     assert steps == result.probes  # 回调收到的就是写入证据的同一批条目
     phases = [entry["phase"] for entry in steps]
     assert set(phases) <= {"era", "bisect", "verify"}
-    assert phases[0] == "era" and "bisect" in phases  # 先纪元回溯，后二分
+    assert phases[0] == "era" and "bisect" in phases  # 先纪元回溯，后网格二分
     assert phases.index("era") < phases.index("bisect")
 
 
 def test_history_depth_full_mode_reads_exact_earliest() -> None:
-    """全量模式：单次调用直接返回精确最早 bar，无粒度误差。"""
+    """全量模式：单次调用直接返回精确最早 bar，声明值对齐日历边界（保守上界）。"""
 
     async def fetch(start: dt.datetime, end: dt.datetime) -> list[Bar]:
         if end > DATA_START and start < SEARCH_END:
@@ -215,7 +283,8 @@ def test_history_depth_full_mode_reads_exact_earliest() -> None:
     assert result.complete
     assert result.approx is False
     assert result.calls_used == 1
-    assert result.earliest_estimate == DATA_START  # 精确值，不是窗口估算
+    assert result.first_bar == DATA_START  # 精确首根
+    assert result.earliest_estimate == dt.datetime(2003, 5, 1, tzinfo=CN_TIMEZONE)
     assert result.probes[0]["phase"] == "full"
 
 
@@ -235,3 +304,4 @@ def test_history_depth_full_mode_empty_range_is_exact_answer() -> None:
     assert result.complete
     assert result.approx is False
     assert result.earliest_estimate is None
+    assert result.first_bar is None

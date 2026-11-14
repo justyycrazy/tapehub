@@ -548,7 +548,7 @@ async def _run_history_depth(ctx: RunContext, case: ChainCase, base: CaseResult)
         if case.full_history:
             # 全量模式：上游无日期过滤（每次返回全量历史），单次调用直接读最早 bar
             result = await analysis.run_history_depth_full(
-                fetch, earliest=case.window_start, latest=latest
+                fetch, earliest=case.window_start, latest=latest, snap=case.snap
             )
         else:
             # 二分模式：analysis 经 on_step 回传每轮探测条目（含 phase 阶段
@@ -570,7 +570,7 @@ async def _run_history_depth(ctx: RunContext, case: ChainCase, base: CaseResult)
                 earliest=case.window_start,
                 latest=latest,
                 era_step_years=case.era_step_years,
-                probe_span_days=case.probe_span_days,
+                snap=case.snap,
                 max_calls=case.expected_calls,
                 on_step=_on_step,
             )
@@ -581,8 +581,9 @@ async def _run_history_depth(ctx: RunContext, case: ChainCase, base: CaseResult)
         "earliest_estimate": (
             result.earliest_estimate.isoformat() if result.earliest_estimate else None
         ),
+        "first_bar": result.first_bar.isoformat() if result.first_bar else None,
         "approx": result.approx,
-        "granularity_days": result.granularity_days,
+        "snap": result.snap,
         "calls_used": result.calls_used,
         "complete": result.complete,
         "probes": result.probes,
@@ -592,9 +593,9 @@ async def _run_history_depth(ctx: RunContext, case: ChainCase, base: CaseResult)
     elif not result.complete:
         base.reason = "search stopped early: call budget exhausted"
     elif case.full_history:
-        base.reason = "earliest bar observed exactly (single full-history call)"
+        base.reason = "first bar exact (full-history call); start snapped to calendar boundary"
     else:
-        base.reason = "earliest window estimate (informational)"
+        base.reason = "calendar-boundary declaration (conservative upper bound; informational)"
     return base
 
 

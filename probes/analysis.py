@@ -16,7 +16,10 @@ from typing import Any, Protocol
 from tapehub.domain.intervals import Interval
 from tapehub.domain.models import Bar
 
-PROBE_SPAN_DAYS = 90  # history-depth 二分搜索的窗口粒度（天）
+# 历史深度声明的日历边界粒度 → 网格步长（月数）：month=每月 1 日、
+# quarter=季初（1/4/7/10 月 1 日）、half_year=半年初（1/7 月 1 日）。
+SNAP_STEPS_MONTHS: dict[str, int] = {"month": 1, "quarter": 3, "half_year": 6}
+DEFAULT_SNAP = "month"
 
 
 class BudgetExhausted(Exception):
@@ -93,16 +96,52 @@ def compare_price_series(
 class HistoryDepthResult:
     """历史深度探针结果。
 
-    ``earliest_estimate`` 是最早非空窗口的起点，粒度受 ``granularity_days`` 限制，
-    因此永远是近似值（``approx=True``）；``complete=False`` 表示预算耗尽提前停止。
+    ``earliest_estimate`` 是**声明值**：首个 ≥ 首根实测的日历边界（``snap``
+    粒度，保守上界口径——查询从声明起点起保证有数据，与旧「上界估计」口径
+    的保证级别一致）；``first_bar`` 是首根实测（二分模式 = 中奖验证窗返回
+    首根，上游截断时为返回首根；全量模式 = 精确最早 bar）；``approx=False``
+    仅全量模式（首根精确且全区间覆盖）；``complete=False`` 表示预算耗尽
+    提前停止。
     """
 
     earliest_estimate: dt.datetime | None
+    first_bar: dt.datetime | None
     approx: bool
-    granularity_days: int | None
+    snap: str
     probes: list[dict[str, Any]] = field(default_factory=list)
     calls_used: int = 0
     complete: bool = True
+
+
+def _add_months(base: dt.datetime, months: int) -> dt.datetime:
+    """从 base 推进 months 个日历月（日 clamp 到目标月末，时刻与时区保留）。"""
+    total = base.year * 12 + (base.month - 1) + months
+    year, month_zero = divmod(total, 12)
+    month = month_zero + 1
+    day = min(base.day, calendar.monthrange(year, month)[1])
+    return base.replace(year=year, month=month, day=day)
+
+
+def _next_boundary(value: dt.datetime, snap: str) -> dt.datetime:
+    """首个 ≥ value 的日历边界（value 恰在边界上时返回 value 本身）。
+
+    边界取日历日零点（年/月对齐 ``snap`` 步长），时区跟随输入。
+    """
+    boundary = value.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
+    step = SNAP_STEPS_MONTHS[snap]
+    while boundary < value:
+        boundary = _add_months(boundary, step)
+    return boundary
+
+
+def _grid_points(start: dt.datetime, end: dt.datetime, snap: str) -> list[dt.datetime]:
+    """[start, end) 内的日历边界点（升序；start 恰为边界时含 start）。"""
+    points: list[dt.datetime] = []
+    boundary = _next_boundary(start, snap)
+    while boundary < end:
+        points.append(boundary)
+        boundary = _add_months(boundary, SNAP_STEPS_MONTHS[snap])
+    return points
 
 
 async def run_history_depth(
@@ -112,20 +151,23 @@ async def run_history_depth(
     latest: dt.datetime,
     era_step_years: int = 5,
     max_calls: int = 24,
-    probe_span_days: int = PROBE_SPAN_DAYS,
+    snap: str = DEFAULT_SNAP,
     on_step: Callable[[dict[str, Any]], None] | None = None,
 ) -> HistoryDepthResult:
-    """纪元回溯 + 二分搜索最早可用窗口。
+    """纪元回溯 + 日历边界网格二分搜索最早可用窗口。
 
     前提假设（结果标注 approx）：数据从最早可用点起大体连续。
 
     1. 按 ``era_step_years`` 年一档自新向旧回溯，扫到第一个**空档**为止；
-       最后一个非空档起点记为锚点；
-    2. 在「空档起点 ↔ 锚点档终点」之间以 ``probe_span_days`` 天为窗口二分，
-       收敛到「窗口非空」的最小起点（谓词单调性依赖连续性假设）；
-    3. 报告 ``earliest_estimate = 二分收敛点 + 窗口宽度``，误差约为窗口粒度；
-       二分收敛到窗口粒度即止（估算精度由窗口宽度决定，收敛到天只是浪费预算），
-       收敛点已被探测验证时不再重复验证。
+       最后一个非空档起点记为锚点；空档纪元窗口实测为空，恰好覆盖
+       「锚点纪元起点之前」的全部网格窗口；
+    2. 在锚点纪元内的**日历边界网格**上二分（``snap`` 粒度），谓词为
+       「边界起点窗口非空」（单调性依赖连续性假设），收敛到最小非空边界
+       B*——B* 之前全部边界窗逐窗实测无数据（确证无数据），B* 窗口实测
+       有数据（确证有数据）→ 首根 ∈ [B*, B*+步长)；
+    3. 声明值 ``earliest_estimate`` = 首个 ≥ 首根实测的日历边界（保守上界；
+       首根恰落在 B* 边界上时即 B* 本身）；``first_bar`` 为 B* 验证窗返回
+       首根。声明值与首根实测一并报告，回填时以声明值为准。
 
     ``on_step`` 为可选的逐步回调（runner 侧用于实时子步骤日志）：每轮探测
     完成后收到与 ``probes`` 记录同一条目（含 ``phase`` 阶段标签）的引用；
@@ -134,7 +176,9 @@ async def run_history_depth(
     probes: list[dict[str, Any]] = []
     calls = 0
 
-    async def probe(start: dt.datetime, end: dt.datetime, phase: str) -> bool:
+    async def probe(
+        start: dt.datetime, end: dt.datetime, phase: str
+    ) -> tuple[bool, dt.datetime | None]:
         nonlocal calls
         if calls >= max_calls:
             raise BudgetExhausted()
@@ -149,65 +193,88 @@ async def run_history_depth(
         probes.append(entry)
         if on_step is not None:
             on_step(entry)
-        return len(bars) > 0
+        return len(bars) > 0, (bars[0].timestamp if bars else None)
 
-    span = dt.timedelta(days=probe_span_days)
     eras = _era_windows(earliest, latest, era_step_years)
 
     first_empty: dt.datetime | None = None
     anchor: tuple[dt.datetime, dt.datetime] | None = None
     try:
         for era_start, era_end in reversed(eras):
-            if await probe(era_start, min(era_end, latest), "era"):
+            if (await probe(era_start, min(era_end, latest), "era"))[0]:
                 anchor = (era_start, min(era_end, latest))  # 持续更新：最终为最旧的非空档
             else:
                 first_empty = era_start
                 break
     except BudgetExhausted:
         return HistoryDepthResult(
-            earliest_estimate=None, approx=True, granularity_days=None,
+            earliest_estimate=None, first_bar=None, approx=True, snap=snap,
             probes=probes, calls_used=calls, complete=False,
         )
 
     if anchor is None:
         # 最新档也为空：整个回溯区间无数据
         return HistoryDepthResult(
-            earliest_estimate=None, approx=True, granularity_days=None,
+            earliest_estimate=None, first_bar=None, approx=True, snap=snap,
             probes=probes, calls_used=calls, complete=True,
         )
     if first_empty is None:
-        # 所有档都有数据：最早可用点不晚于 earliest（已触底）
+        # 所有档都有数据：最早可用点不晚于 earliest（已触底，下限不回填）
         return HistoryDepthResult(
-            earliest_estimate=earliest, approx=True, granularity_days=None,
+            earliest_estimate=earliest, first_bar=None, approx=True, snap=snap,
             probes=probes, calls_used=calls, complete=True,
         )
 
-    # 二分区间：lo 已验证为空窗口，hi 初值取锚点档终点前一个窗口（连续性假设下非空）
-    lo = first_empty
-    hi = anchor[1] - span
+    grid = _grid_points(anchor[0], anchor[1], snap)
+    if not grid:
+        # 锚点纪元内无网格点（earliest 非日历整点等配置边缘）：如实报告未收敛
+        return HistoryDepthResult(
+            earliest_estimate=None, first_bar=None, approx=True, snap=snap,
+            probes=probes, calls_used=calls, complete=True,
+        )
+
+    step_months = SNAP_STEPS_MONTHS[snap]
+
+    def window_end(boundary: dt.datetime) -> dt.datetime:
+        return min(_add_months(boundary, step_months), latest)
+
+    # 网格二分：lo=-1 表示 anchor_start 之前全部边界窗已被空档纪元覆盖实测为空；
+    # hi 初值取网格末点（锚点纪元实测有数据，连续性假设下尾部窗口非空，未验证）
+    lo = -1
+    hi = len(grid) - 1
     hi_verified = False
+    first_bar: dt.datetime | None = None
     try:
-        while (hi - lo) > span:
-            mid = lo + (hi - lo) / 2
-            if await probe(mid, min(mid + span, latest), "bisect"):
+        while hi - lo > 1:
+            mid = (lo + hi) // 2
+            hit, bar_ts = await probe(grid[mid], window_end(grid[mid]), "bisect")
+            if hit:
                 hi = mid
                 hi_verified = True
+                first_bar = bar_ts
             else:
                 lo = mid
-        if not hi_verified and not await probe(hi, min(hi + span, latest), "verify"):
-            # 连续性假设被打破（如窗口落在长空档内）：如实报告未收敛
-            return HistoryDepthResult(
-                earliest_estimate=None, approx=True, granularity_days=probe_span_days,
-                probes=probes, calls_used=calls, complete=True,
-            )
+        if not hi_verified:
+            hit, bar_ts = await probe(grid[hi], window_end(grid[hi]), "verify")
+            if not hit:
+                # 连续性假设被打破（锚点纪元有数据但尾部网格窗全空）：如实报告未收敛
+                return HistoryDepthResult(
+                    earliest_estimate=None, first_bar=None, approx=True, snap=snap,
+                    probes=probes, calls_used=calls, complete=True,
+                )
+            first_bar = bar_ts
     except BudgetExhausted:
+        # 预算中断：已验证非空边界的声明候选照常产出（约定不回填）
+        declared = _next_boundary(first_bar, snap) if first_bar is not None else None
         return HistoryDepthResult(
-            earliest_estimate=hi + span, approx=True, granularity_days=probe_span_days,
+            earliest_estimate=declared, first_bar=first_bar, approx=True, snap=snap,
             probes=probes, calls_used=calls, complete=False,
         )
+
+    # first_bar ∈ [B*, B*+步长) → 声明值 = B*（首根恰在边界）或 B*+步长
     return HistoryDepthResult(
-        earliest_estimate=hi + span, approx=True, granularity_days=probe_span_days,
-        probes=probes, calls_used=calls, complete=True,
+        earliest_estimate=_next_boundary(first_bar, snap), first_bar=first_bar,
+        approx=True, snap=snap, probes=probes, calls_used=calls, complete=True,
     )
 
 
@@ -216,14 +283,16 @@ async def run_history_depth_full(
     *,
     earliest: dt.datetime,
     latest: dt.datetime,
+    snap: str = DEFAULT_SNAP,
 ) -> HistoryDepthResult:
     """全量模式历史深度：单次全窗口调用直接读取最早 bar。
 
     适用前提（由探针文件以 ``full_history_targets`` 声明）：上游无法按日期
     过滤（如新浪期货接口每次返回全量历史，由适配器内存过滤）或全量拉取
     代价可忽略——此时纪元回溯与二分只是重复下载同一份全量数据，而单次
-    调用即可得到**精确**最早时间戳（``approx=False``，无窗口粒度误差）；
-    「区间内无数据」的结论同样由单次全量覆盖直接证实。
+    调用即可得到**精确**最早时间戳（``approx=False``，``first_bar`` 为精确
+    最早 bar，全区间覆盖直接证实）；「区间内无数据」的结论同样由单次全量
+    覆盖直接证实。声明值与二分模式同口径：首个 ≥ 首根实测的日历边界。
     """
     probes: list[dict[str, Any]] = [
         {"phase": "full", "start": earliest.isoformat(), "end": latest.isoformat()}
@@ -232,14 +301,16 @@ async def run_history_depth_full(
         bars = await fetch(earliest, latest)
     except BudgetExhausted:
         return HistoryDepthResult(
-            earliest_estimate=None, approx=False, granularity_days=None,
+            earliest_estimate=None, first_bar=None, approx=False, snap=snap,
             probes=probes, calls_used=0, complete=False,
         )
     probes[0]["count"] = len(bars)
+    first_bar = bars[0].timestamp if bars else None
     return HistoryDepthResult(
-        earliest_estimate=bars[0].timestamp if bars else None,
+        earliest_estimate=_next_boundary(first_bar, snap) if first_bar else None,
+        first_bar=first_bar,
         approx=False,
-        granularity_days=None,
+        snap=snap,
         probes=probes,
         calls_used=1,
         complete=True,

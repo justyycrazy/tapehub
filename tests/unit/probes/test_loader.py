@@ -19,7 +19,7 @@ def _manifest() -> object:
 def _probe(**chain: object) -> ProbeFile:
     data = {
         "probe": "fake-provider",
-        "version": 1,
+        "version": 2,
         "targets": {
             "stock": {
                 "instrument": "CN-SSE-600000",
@@ -148,26 +148,26 @@ def test_history_depth_case_generated() -> None:
     }
     assert all(c.window_start.year == 2000 for c in cases)
     assert all(c.expected_calls == 8 for c in cases)
-    # era/二分粒度参数透传到 case（runner 据此调用分析函数）
-    assert all(c.era_step_years == 5 and c.probe_span_days == 90 for c in cases)
+    # era/网格粒度参数透传到 case（runner 据此调用分析函数）
+    assert all(c.era_step_years == 5 and c.snap == "month" for c in cases)
 
 
-def test_history_depth_probe_span_days_threaded() -> None:
-    """probe_span_days / era_step_years 从配置透传到展开 case。"""
+def test_history_depth_snap_threaded() -> None:
+    """snap / era_step_years 从配置透传到展开 case。"""
     probe = _probe(
         history_depth={
             "targets": ["stock"],
             "earliest": "2000-01-01",
             "max_calls": 8,
             "era_step_years": 1,
-            "probe_span_days": 5,
+            "snap": "quarter",
         }
     )
     expanded = expand_probe(probe, _manifest())  # type: ignore[arg-type]
     cases = [c for c in expanded.chain_cases if c.kind == "history_depth"]
     assert cases
     assert all(c.era_step_years == 1 for c in cases)
-    assert all(c.probe_span_days == 5 for c in cases)
+    assert all(c.snap == "quarter" for c in cases)
 
     # intervals 显式收敛：只保留声明中存在的指定周期
     filtered = expand_probe(
@@ -240,7 +240,7 @@ def test_full_matrix_expansion_multi_variant() -> None:
     probe = ProbeFile.model_validate(
         {
             "probe": "multi-var",
-            "version": 1,
+            "version": 2,
             "targets": {
                 "stock": {
                     "instrument": "CN-SSE-600000",
@@ -292,7 +292,7 @@ def test_full_matrix_expansion_multi_variant() -> None:
 def test_load_probe_files_validates_names(tmp_path: Path) -> None:
     # 场景一：probe 名不是内置 Provider → 加载即拒绝
     (tmp_path / "unknown.yaml").write_text(
-        "probe: fake-provider\nversion: 1\ntargets: {stock: {instrument: CN-SSE-600000, "
+        "probe: fake-provider\nversion: 2\ntargets: {stock: {instrument: CN-SSE-600000, "
         "window: {start: 2025-01-01, end: 2025-03-31}}}\n"
         "chain: {include_declared: true}\n",
         encoding="utf-8",
@@ -303,7 +303,7 @@ def test_load_probe_files_validates_names(tmp_path: Path) -> None:
     # 场景二：文件名与内置 Provider 不对应（即使内容合法）→ 拒绝
     (tmp_path / "unknown.yaml").unlink()
     (tmp_path / "extra-file.yaml").write_text(
-        "probe: akshare\nversion: 1\ntargets: {stock: {instrument: CN-SSE-600000, "
+        "probe: akshare\nversion: 2\ntargets: {stock: {instrument: CN-SSE-600000, "
         "window: {start: 2025-01-01, end: 2025-03-31}}}\n"
         "chain: {include_declared: true}\n",
         encoding="utf-8",
@@ -314,7 +314,7 @@ def test_load_probe_files_validates_names(tmp_path: Path) -> None:
     # 场景三：文件名合法但其余 Provider 缺失 → FileNotFoundError
     (tmp_path / "extra-file.yaml").unlink()
     (tmp_path / "akshare.yaml").write_text(
-        "probe: akshare\nversion: 1\ntargets: {stock: {instrument: CN-SSE-600000, "
+        "probe: akshare\nversion: 2\ntargets: {stock: {instrument: CN-SSE-600000, "
         "window: {start: 2025-01-01, end: 2025-03-31}}}\n"
         "chain: {include_declared: true}\n",
         encoding="utf-8",
@@ -351,7 +351,7 @@ def _multi_market_manifest() -> object:
 def _multi_market_probe(**chain: object) -> ProbeFile:
     data = {
         "probe": "multi-market-provider",
-        "version": 1,
+        "version": 2,
         "targets": {
             "stock@CN": {
                 "instrument": "CN-SSE-600000",
