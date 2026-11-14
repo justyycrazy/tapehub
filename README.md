@@ -985,7 +985,7 @@ rate-limit、stock-quote、history-kline 五页）：
 | --- | --- | --- | --- | --- | --- | --- |
 | stock（bars） | CN | futunn（默认） | `GET /api/v1.0/quote/{code}/history-kline` | PT1M~PT1H/P1D/P1W/P1M | none/qfq/hfq | 全部 |
 | index（bars） | CN | futunn（默认） | 同上 | 同上 | none（指数无复权语义） | 全部 |
-| etf（bars） | CN | futunn（默认） | 同上 | 同上 | none（autype 对 ETF 生效性未实证） | 全部 |
+| etf（bars） | CN | futunn（默认） | 同上 | 同上 | none/qfq/hfq（autype 生效性探针实证 2026-11-14） | 全部 |
 | stock（bars） | HK | futunn（默认） | 同上 | 同上 | none/qfq/hfq | 全部 |
 | stock（bars） | US | futunn（默认） | 同上 | 同上 | none/qfq/hfq | 全部 |
 | stock/index/etf（quotes） | CN/HK/US | futunn | `POST /api/v1.0/quote/stock-quote` | —（快照无周期） | —（快照无复权） | timestamp/last_price/volume/amount（extensions 见下） |
@@ -1026,7 +1026,8 @@ rate-limit、stock-quote、history-kline 五页）：
   待探针实证后回填；年/季线不进能力目录——周期上界月线）；
 - 复权映射（autype）：`none→0`、`qfq→1`、`hfq→2`（上游缺省 1=前复权，适配器
   始终显式传参）；stock 三值声明；指数无复权语义仅 none（与 ths 惯例一致）；
-  ETF autype 是否生效**未实证**（先声明 none，探针复权生效性观察后回填）；
+  **ETF autype 生效**（2026-11-14 探针实证：510300 日线 2024 全年 none/qfq
+  与 none/hfq 各 242/242 close 全差异，扩三值声明）；
 - 边界与分页：`start`/`end` 为标的市场时区日期（CN=Asia/Shanghai、
   HK=Asia/Hong_Kong、US=America/New_York；北京时间边界先转标的市场墙钟取
   日历日期）；**分钟 K 线 `end` 以该日 00:00 为截止、不含当日**——适配器对
@@ -1059,9 +1060,15 @@ rate-limit、stock-quote、history-kline 五页）：
   `QUOTE_NOT_READY`（与 ths/alphafeed/tickflow 一致）；WS 行情推送专区
   （`wss://webapi-quote.futunn.com/ws`）本期不接入——**第一版不做流式**
   （用户拍板 2026-11-14），流式请求返回 `UNSUPPORTED_CAPABILITY`；
-- **历史覆盖范围：全部周期 history 保持 null（未核实）**——官方文档未标注
-  最早可取时间，且历史额度池（每标的 7×24h 占用、容量未公布）使 depth 探针
-  成本高，回填待额度核实后单独立项（探针流水见 probes/cases/futunn.yaml）。
+- **历史覆盖范围（2026-11-14 depth 探针实证回填，人工确认，报告
+  20261114T121154+0800）**：CN stock 已回填——日/周/月线
+  `history.start ≈ 1990-12-19`（基准标的 600602 老八股上市日：P1W/P1M
+  独立实证 era#7 count=208/49 与上市日精确吻合、P1D 同库互证 floor-hit，
+  approx 标注）、分钟族（PT1M~PT1H）`≈ 2014-01-21T09:45`（五周期各自
+  独立二分一致收敛，90 天粒度 approx，跨周期互证）；**其余组合
+  （index/etf/HK/US）未单独 depth，history 保持 null 未核实**（capability
+  级声明以基准标的库底为准，SZSE/BSE 交易所未单独探测）；单查询行数
+  上限与截断语义见「单查询行数上限与隐式截断」bullet。
 
 十个内置 Provider（akshare、alphafeed、baostock、tickflow、ths、tiingo、tushare、tqsdk、twelvedata、futunn）均已接入，接口签名与数据口径按各自官方文档核实（tiingo 的 WS 消息形态细节、futunn 的各周期历史覆盖与 K 线时间口径待数据探针实证回填，已在上述章节如实标注）；未配置凭据或未安装 SDK 时数据请求返回 `PROVIDER_NOT_IMPLEMENTED`，`provider=auto` 在无可用候选时返回 `NO_PROVIDER_AVAILABLE`，也**绝不返回写死的模拟行情**。
 

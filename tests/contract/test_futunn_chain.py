@@ -139,18 +139,35 @@ def test_capability_catalog(futunn_client: TestClient) -> None:
     assert markets == {"stock": "US", "index": "CN", "etf": "CN"}  # US/HK stock 覆盖
     for cap in bars_caps:
         assert cap["variants"] == ["futunn"]
-        # 8 核心周期全量声明，history 全 null（历史覆盖未探针实证，额度池
-        # 7×24h/标的约束回填成本——诚实边界保持未核实状态）
+        # 8 核心周期全量声明
         assert [i["code"] for i in cap["intervals"]] == [
             "PT1M", "PT5M", "PT15M", "PT30M", "PT1H", "P1D", "P1W", "P1M",
         ]
-        for interval_entry in cap["intervals"]:
+        assert cap["fields"] == ["open", "high", "low", "close", "volume", "amount"]
+
+    # history.start（2026-11-14 depth 探针实证回填）：CN stock 日/周/月
+    # ≈1990-12-19（上市日锚）、分钟族 ≈2014-01-21（approx 90 天粒度）；
+    # 其余组合（index/etf/HK/US）未单独 depth，保持 null 未核实
+    by_key = {
+        (tuple(cap["markets"])[0], tuple(cap["asset_types"])[0]): cap
+        for cap in bars_caps
+    }
+    stock_history = {
+        i["code"]: i["history"] for i in by_key[("CN", "stock")]["intervals"]
+    }
+    for code in ("PT1M", "PT5M", "PT15M", "PT30M", "PT1H"):
+        assert stock_history[code]["start"] == "2014-01-21T09:45:00+08:00"
+        assert stock_history[code]["end"] is None
+        assert stock_history[code]["retention_days"] is None
+    for code in ("P1D", "P1W", "P1M"):
+        assert stock_history[code]["start"] == "1990-12-19T00:00:00+08:00"
+    for key in (("CN", "index"), ("CN", "etf"), ("HK", "stock"), ("US", "stock")):
+        for interval_entry in by_key[key]["intervals"]:
             assert interval_entry["history"] == {
                 "start": None,
                 "end": None,
                 "retention_days": None,
             }
-        assert cap["fields"] == ["open", "high", "low", "close", "volume", "amount"]
 
     adjustments = {
         (tuple(cap["markets"])[0], tuple(cap["asset_types"])[0]): cap["adjustments"]
@@ -160,7 +177,9 @@ def test_capability_catalog(futunn_client: TestClient) -> None:
     assert adjustments[("HK", "stock")] == ["none", "qfq", "hfq"]
     assert adjustments[("US", "stock")] == ["none", "qfq", "hfq"]
     assert adjustments[("CN", "index")] == ["none"]  # 指数无复权语义
-    assert adjustments[("CN", "etf")] == ["none"]  # autype 对 ETF 生效性未实证
+    # ETF autype 生效性探针实证（2026-11-14：510300 日线 2024 全年三值
+    # 242/242 close 全差异，人工确认扩三值）
+    assert adjustments[("CN", "etf")] == ["none", "qfq", "hfq"]
 
     # 实时快照：无周期/复权维度（显式空），无盘口五档
     quote_caps = [c for c in entry["capabilities"] if c["data_type"] == "quotes"]

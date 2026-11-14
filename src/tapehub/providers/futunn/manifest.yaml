@@ -35,12 +35,14 @@
 # - 周期面（ktype 文档明示 1/3/5/10/15/30/60/120/180/240 分与日/周/月/季/
 #   年，本适配器取 8 个核心周期）：PT1M→1、PT5M→6、PT15M→7、PT30M→8、
 #   PT1H→9（60 分）、P1D→2、P1W→3、P1M→4；PT3M/PT2H/PT4H 等低频周期
-#   不声明（探针后再议）；**各周期历史覆盖（最早可取）文档未标注，且
-#   探针回填受历史额度池约束（每标的占用 7×24h），history 全部保持
-#   null 未核实状态，回填待单独立项**；
+#   不声明（探针后再议）；历史覆盖（2026-11-14 depth 探针实证回填，人工
+#   确认，报告 20261114T121154+0800）：**CN stock 已回填**（日/周/月
+#   ≈1990-12-19 上市日锚、分钟族 ≈2014-01-21，均 approx 标注）——index/
+#   etf/HK/US 未单独 depth，history 保持 null 未核实状态；
 # - 复权面（autype 0/1/2 文档明示）：stock [none, qfq, hfq] 直映；
-#   index [none]（指数无复权语义，与 ths 惯例一致）；etf [none]——autype
-#   对 ETF 是否生效未实证，探针后回填；
+#   index [none]（指数无复权语义，与 ths 惯例一致）；etf [none, qfq, hfq]
+#   ——autype 对 ETF 生效性探针实证（2026-11-14，报告 20261114T121154
+#   +0800：510300 日线 2024 全年三值 242/242 close 全差异，人工确认扩三值）；
 # - 分页与边界：请求 start/end 为标的市场时区日期（CN=Asia/Shanghai、
 #   HK=Asia/Hong_Kong、US=America/New_York），分钟 K 线 end 以该日 00:00
 #   为截止、不含当日（查闭区间需 end 日期 +1 天，request_mapper 处理），
@@ -69,21 +71,27 @@ default_variant: futunn
 
 capabilities:
   # —— 历史 K 线（8 核心周期，history 全 null 未核实）——
-  # A 股个股：唯一有复权语义的 CN 资产类型（autype 0/1/2 直映）
+  # A 股个股：唯一有复权语义的 CN 资产类型（autype 0/1/2 直映）；
+  # history.start（2026-11-14 depth 探针实证回填，人工确认，报告
+  # 20261114T121154+0800）：日/周/月线 ≈1990-12-19——基准标的 600602
+  # 老八股（1990-12-19 上市），P1W/P1M 独立实证 era#7 count=208/49 与
+  # 上市日精确吻合、P1D 同库互证 floor-hit；SZSE/BSE 未单独 depth，
+  # capability 级声明以基准标的库底为准；分钟族五周期各自独立二分
+  # 一致收敛 ≈2014-01-21T09:45（90 天粒度 approx，跨周期互证）
   - data_type: bars
     markets: [CN]
     asset_types: [stock]
     delivery: [rest]
     variants: [futunn]
     intervals:
-      - {code: PT1M, history: {start: null, end: null}}
-      - {code: PT5M, history: {start: null, end: null}}
-      - {code: PT15M, history: {start: null, end: null}}
-      - {code: PT30M, history: {start: null, end: null}}
-      - {code: PT1H, history: {start: null, end: null}}
-      - {code: P1D, history: {start: null, end: null}}
-      - {code: P1W, history: {start: null, end: null}}
-      - {code: P1M, history: {start: null, end: null}}
+      - {code: PT1M, history: {start: 2014-01-21T09:45:00+08:00, end: null}}
+      - {code: PT5M, history: {start: 2014-01-21T09:45:00+08:00, end: null}}
+      - {code: PT15M, history: {start: 2014-01-21T09:45:00+08:00, end: null}}
+      - {code: PT30M, history: {start: 2014-01-21T09:45:00+08:00, end: null}}
+      - {code: PT1H, history: {start: 2014-01-21T09:45:00+08:00, end: null}}
+      - {code: P1D, history: {start: 1990-12-19T00:00:00+08:00, end: null}}
+      - {code: P1W, history: {start: 1990-12-19T00:00:00+08:00, end: null}}
+      - {code: P1M, history: {start: 1990-12-19T00:00:00+08:00, end: null}}
     adjustments: [none, qfq, hfq]
     fields: [open, high, low, close, volume, amount]
 
@@ -105,7 +113,10 @@ capabilities:
     adjustments: [none]
     fields: [open, high, low, close, volume, amount]
 
-  # 场内基金（仅 ETF；autype 对 ETF 是否生效未实证，先声明 none）
+  # 场内基金（仅 ETF）：autype 三值复权生效性探针实证（2026-11-14，报告
+  # 20261114T121154+0800：510300 日线 2024 全年 none vs qfq、none vs hfq
+  # 各 242/242 close 全差异 → 扩 [none, qfq, hfq]，人工确认）；
+  # history.start 保持 null（etf 未单独 depth）
   - data_type: bars
     markets: [CN]
     asset_types: [etf]
@@ -120,7 +131,7 @@ capabilities:
       - {code: P1D, history: {start: null, end: null}}
       - {code: P1W, history: {start: null, end: null}}
       - {code: P1M, history: {start: null, end: null}}
-    adjustments: [none]
+    adjustments: [none, qfq, hfq]
     fields: [open, high, low, close, volume, amount]
 
   # 港股个股（正股；境内认证客户免费 LV2）
@@ -273,22 +284,54 @@ operations:
   - match: {data_type: bars, market: CN, asset_type: index, interval: P1M, adjust: none, variant: futunn}
     operation: history_kline
 
-  # CN etf：8 周期 × none
+  # CN etf：8 周期 × 3 复权（autype 生效性探针实证 2026-11-14 扩三值）
   - match: {data_type: bars, market: CN, asset_type: etf, interval: PT1M, adjust: none, variant: futunn}
+    operation: history_kline
+  - match: {data_type: bars, market: CN, asset_type: etf, interval: PT1M, adjust: qfq, variant: futunn}
+    operation: history_kline
+  - match: {data_type: bars, market: CN, asset_type: etf, interval: PT1M, adjust: hfq, variant: futunn}
     operation: history_kline
   - match: {data_type: bars, market: CN, asset_type: etf, interval: PT5M, adjust: none, variant: futunn}
     operation: history_kline
+  - match: {data_type: bars, market: CN, asset_type: etf, interval: PT5M, adjust: qfq, variant: futunn}
+    operation: history_kline
+  - match: {data_type: bars, market: CN, asset_type: etf, interval: PT5M, adjust: hfq, variant: futunn}
+    operation: history_kline
   - match: {data_type: bars, market: CN, asset_type: etf, interval: PT15M, adjust: none, variant: futunn}
+    operation: history_kline
+  - match: {data_type: bars, market: CN, asset_type: etf, interval: PT15M, adjust: qfq, variant: futunn}
+    operation: history_kline
+  - match: {data_type: bars, market: CN, asset_type: etf, interval: PT15M, adjust: hfq, variant: futunn}
     operation: history_kline
   - match: {data_type: bars, market: CN, asset_type: etf, interval: PT30M, adjust: none, variant: futunn}
     operation: history_kline
+  - match: {data_type: bars, market: CN, asset_type: etf, interval: PT30M, adjust: qfq, variant: futunn}
+    operation: history_kline
+  - match: {data_type: bars, market: CN, asset_type: etf, interval: PT30M, adjust: hfq, variant: futunn}
+    operation: history_kline
   - match: {data_type: bars, market: CN, asset_type: etf, interval: PT1H, adjust: none, variant: futunn}
+    operation: history_kline
+  - match: {data_type: bars, market: CN, asset_type: etf, interval: PT1H, adjust: qfq, variant: futunn}
+    operation: history_kline
+  - match: {data_type: bars, market: CN, asset_type: etf, interval: PT1H, adjust: hfq, variant: futunn}
     operation: history_kline
   - match: {data_type: bars, market: CN, asset_type: etf, interval: P1D, adjust: none, variant: futunn}
     operation: history_kline
+  - match: {data_type: bars, market: CN, asset_type: etf, interval: P1D, adjust: qfq, variant: futunn}
+    operation: history_kline
+  - match: {data_type: bars, market: CN, asset_type: etf, interval: P1D, adjust: hfq, variant: futunn}
+    operation: history_kline
   - match: {data_type: bars, market: CN, asset_type: etf, interval: P1W, adjust: none, variant: futunn}
     operation: history_kline
+  - match: {data_type: bars, market: CN, asset_type: etf, interval: P1W, adjust: qfq, variant: futunn}
+    operation: history_kline
+  - match: {data_type: bars, market: CN, asset_type: etf, interval: P1W, adjust: hfq, variant: futunn}
+    operation: history_kline
   - match: {data_type: bars, market: CN, asset_type: etf, interval: P1M, adjust: none, variant: futunn}
+    operation: history_kline
+  - match: {data_type: bars, market: CN, asset_type: etf, interval: P1M, adjust: qfq, variant: futunn}
+    operation: history_kline
+  - match: {data_type: bars, market: CN, asset_type: etf, interval: P1M, adjust: hfq, variant: futunn}
     operation: history_kline
 
   # HK stock：8 周期 × 3 复权

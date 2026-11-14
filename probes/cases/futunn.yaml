@@ -1,13 +1,12 @@
-# 富途 OpenAPI（futunn）数据探针：三市场全声明维度可用性、复权生效性、
-# 无签名错误指纹采集。
+# 富途 OpenAPI（futunn）数据探针：三市场全声明维度可用性、逐所细分
+# （SZSE/BSE）、复权生效性、历史深度（逐周期 era 二分）、无签名错误指纹采集。
 #
 # 限频与额度（官方口径 2026-11-14）：IP 入口层行情类 100 次/分钟；业务限流
 # 走 HTTP 200 + ret_code=-11。**历史 K 线独立额度池：每标的首次成功返回
-# 非空即占用一个额度（默认 7×24 小时后释放，重复读取不延期）**——targets
-# 固定 5 个基准标的（同标的多周期 availability 共享一次额度占用），额度池
-# 容量数值未公布、保守不启用 history_depth（深度探测留待额度核实后单独立项）。
-# pacing 2 秒（任意 60 秒窗口 ≤30 次 < 100 次，留 3 倍余量）；预算 120
-# 覆盖单轮全量（约 3.5 分钟）。
+# 非空即占用一个额度（默认 7×24 小时后释放，重复读取不延期）**——首轮已
+# 占 5 个基准标的额度，depth 专项复用同标的（重复读取不新增占用）；逐所
+# 细分新增 SZ.000001/BJ.920000 两个标的占用（容量数值未公布，保守 +2）。
+# pacing 2 秒（任意 60 秒窗口 ≤30 次 < 100 次，留 3 倍余量）。
 probe: futunn
 version: 1
 
@@ -21,14 +20,14 @@ requires:
 pacing:
   # IP 入口层行情类 100 次/分钟：2 秒间隔 ≈ 30 次/分钟，留 3 倍余量；
   # 历史额度池按标的计量（同标的重复读取不延期），分页续读用 page_token
-  # 免计「首请求」（next_time 分页仍计入——适配器已按 page_token 实现）
+  # 免计「首请求」（实测上游未签发 token，分页循环保留为防御）
   call_interval_s: 2.0
   timeout_s: 60
-  # 本轮构成：availability 93（bars 88：CN stock/index/etf + HK/US stock ×
-  # 8 周期 × 各自复权面全枚举；quotes 5：CN stock/index/etf + HK/US stock）
-  # + adjust_diff 12（stock@CN/@HK/@US × P1D × 2 pair × 2 调）+ raw 1 ≈
-  # 106，预算 120 留余量
-  max_calls: 120
+  # 本轮构成（2026-11-14 第二轮，逐所细分 + depth 专项启用）：availability
+  # 144（首轮 88 + 逐所 SZSE/BSE stock 各 24 + BSE index 8）+ adjust_diff
+  # 12（6 case × 2 调）+ history_depth 8 case × ≤16 = 128 最坏 + raw 3 ≈
+  # 287 最坏，预算 300 留余量（约 12 分钟）
+  max_calls: 300
 
 # 跨三市场（CN/HK/US）声明能力：用市场限定目标（stock@MARKET）为每个市场
 # 提供独立基准标的；case id 以限定键为前缀（如 stock@HK-P1D-...）。
@@ -58,6 +57,27 @@ targets:
     window: {start: 2025-01-01, end: 2025-12-31}
     min_bars: 10
     required_fields: [open, high, low, close, volume]
+  stock@CN-SZSE:
+    instrument: CN-SZSE-000001
+    # 平安银行（深市主板，alphafeed 逐所细分同款目标）：.SZ 前缀此前仅
+    # 品类表核实、价格端点零实证——本轮 chain 级实证（2026-11-14 第二轮）
+    window: {start: 2025-01-01, end: 2025-12-31}
+    min_bars: 10
+    required_fields: [open, high, low, close, volume]
+  stock@CN-BSE:
+    instrument: CN-BSE-920000
+    # 安徽凤凰（北交所 920 段，alphafeed 逐所细分同款目标）：品类表明示
+    # BJ 支持正股，价格端点此前零实证——本轮 chain 级实证，不通过则收窄
+    # exchange 白名单（ths「BJ 仅元信息域实证不收」先例对照）
+    window: {start: 2025-01-01, end: 2025-12-31}
+    min_bars: 10
+    required_fields: [open, high, low, close, volume]
+  index@CN-BSE:
+    instrument: CN-BSE-899050
+    # 北证 50 指数：品类表 BJ 支持指数，价格端点零实证——同上
+    window: {start: 2025-01-01, end: 2025-12-31}
+    min_bars: 10
+    required_fields: [open, high, low, close, volume]
   stock@HK:
     instrument: HK-HKEX-00002
     # 中电控股，港股最古老上市标的之一（alphafeed 探针同款基准）
@@ -83,9 +103,17 @@ chain:
     intervals: [P1D]
     pairs: [[none, qfq], [none, hfq]]
     fields: [close]
-  # history_depth 不启用：历史额度池按标的计量（7×24h/标的）且容量数值
-  # 未公布——availability 已固定 5 个基准标的占 5 个额度；深度二分探测
-  # 留待额度池核实后单独立项（notes 流水记录）
+  # history_depth 启用（2026-11-14 第二轮，人工确认）：额度池约束解除——
+  # depth 复用已占额度的基准标的（重复读取不新增占用），成本仅 IP 频率；
+  # tiingo 裁决「逐周期独立探测，机制边界外推不作为逐周期证据」→ 8 周期
+  # 全跑；targets 收敛 CN 老八股 600602（1990-12-19 上市，深度收敛点为
+  # 真实库底而非上市日伪影），earliest 1990-01-01
+  history_depth:
+    targets: [stock@CN]
+    earliest: 1990-01-01
+    era_step_years: 5
+    max_calls: 16
+    intervals: [PT1M, PT5M, PT15M, PT30M, PT1H, P1D, P1W, P1M]
 
 raw:
   # 错误指纹仅观察：采集无签名请求的 401 报文形态（ret_code/code 封装、
@@ -143,3 +171,41 @@ notes: >
   先例）——上游无截断信号（has_more 恒 False、行数上限 ≈1000 且 US 个案
   低于 1000 使行数阈值判定漏判），适配器分页循环与触顶防御判定保留；
   README/manifest/adapter docstring 三处注释同步，不动能力声明面。
+  2026-11-14 分页约定页核对（官方 quote/pagination，用户提示）：契约确认——
+  分页信息在响应顶层 pagination、以 has_more=false 停止、续页优先
+  page_token 没有令牌时回传 data.next_time——适配器读法与停止语义对齐
+  官方契约（实现无误）；补取证：PT1M 月窗信封 data 顶层仅
+  kline_list+volume_precision，next_page_token 与 data.next_time 两种
+  续页游标均未签发——「单查询 ≈1000 行截断、分页不可用」定案维持，
+  裁决不变；待查线索：history-kline 页称 page_token 与「历史额度保护」
+  绑定，当前账号两种游标均未出现，可能为账号/服务端层行数上限或待开通
+  配置——下轮探针核对，若 token 开始签发适配器分页循环自动生效。
+  2026-11-14 第二轮（报告 20261114T121154+0800，confirmed 150 / observe 9 /
+  **failed 0**，预算 225/300）：逐所 SZSE/BSE availability 全 confirmed
+  （SZ.000001 正股、BJ.920000 正股、BJ.899050 北证50 指数价格端点真实
+  可用，行数/首末根与 SSE 完全同构——exchange 白名单维持无需收窄）；
+  depth 专项 CN stock（600602 老八股，1990-12-19 上市）8 周期全 observe
+  收敛——**分钟族 5 周期各自独立二分一致收敛 ≈2014-01-21T09:45+08:00**
+  （90 天粒度 approx，跨周期互证）；P1D/P1W/P1M 全 era 满到 earliest
+  边界 1990-01-01（P1D 1000 行截断 floor-hit；P1W/P1M 无截断，era#7
+  [1990-1995] count=208/49 与上市日 1990-12-19 精确吻合——缺口恰为
+  1990 年前 50 周/11 个月）。目录外实证（同日）：ETF autype 三值复权
+  证据链完成——510300 日线 2024 全年 242/242 close 全差异（none vs qfq）
+  + hfq vs none 242/242 差异 → autype 对 ETF 生效；错误指纹
+  -7 invalid symbol（HK.99999）/ -8 unsupported market（UK.00700）落袋；
+  US.GE 盘前/盘后/夜盘段全有真实数据（上周五盘后 60.3 万股）——
+  extensions 扩容候选；NASDAQ 消歧 OK（US.AAPL 直通），time_key 夏令
+  再证（6 月日线 12:00+08=美东零点 EDT、1 月 13:00+08=EST）。额度占用
+  累计 8 个标的（首轮 5 + 逐所 2 + 消歧 1）。待人工确认回填清单：
+  ①CN stock history.start（P1W/P1M 独立实证库底 ≈1990-12-19 上市日锚、
+  P1D 同库互证、SZSE/BSE 未单独 depth）；②分钟族 5 周期 history.start
+  ≈2014-01-21（approx 90 天粒度）；③etf adjustments 扩 [none,qfq,hfq]；
+  ④extensions 盘前盘后段扩容与否。
+  2026-11-14 回填落地（人工确认）：①CN stock 日/周/月线 history.start =
+  1990-12-19T00:00:00+08:00（上市日锚：P1W/P1M era#7 count 缺口精确
+  吻合、P1D 同库互证 floor-hit；SZSE/BSE 未单独 depth，capability 级
+  声明以基准标的库底为准，README 注明）；②分钟族 PT1M~PT1H
+  history.start = 2014-01-21T09:45:00+08:00（五周期独立二分一致收敛，
+  90 天粒度 approx）；③etf adjustments 扩 [none, qfq, hfq]（operations
+  8→24 条，manifest/README/契约测试断言同步）；④extensions 盘前盘后段
+  扩容搁置（本轮不落地，证据保留于本 notes，字段选型设计待后续立项）。
