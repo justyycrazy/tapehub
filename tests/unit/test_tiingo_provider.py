@@ -143,12 +143,7 @@ def test_crypto_request_tickers_and_volume(monkeypatch: pytest.MonkeyPatch) -> N
 @pytest.mark.parametrize(
     ("interval", "expected"),
     [
-        ("PT1M", "1min"),
-        ("PT5M", "5min"),
-        ("PT15M", "15min"),
-        ("PT30M", "30min"),
         ("PT1H", "1hour"),
-        ("PT2H", "2hour"),
         ("PT4H", "4hour"),
         ("P1D", "1day"),
     ],
@@ -218,26 +213,29 @@ def test_cn_market_stock_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
         asyncio.run(adapter.fetch_bars(query))
 
 
-@pytest.mark.parametrize("interval", ["P1W", "P1M", "P3D"])
+@pytest.mark.parametrize(
+    "interval", ["P1W", "P1M", "P3D", "PT1M", "PT5M", "PT15M", "PT30M", "PT2H"]
+)
 def test_unsupported_intervals_rejected_by_operation_routing(
     interval: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """上游 resampleFreq 无周/月线：能力目录即不声明。"""
+    """上游 resampleFreq 无周/月线；PT1M/PT5M/PT15M/PT30M/PT2H 随
+    2026-11-14 周期面收窄裁决退出声明——能力目录即不声明。"""
     install(monkeypatch)
     adapter = _adapter()
     with pytest.raises(UnsupportedCapabilityError):
         adapter.resolve_operation(_query(interval=Interval.parse(interval)))
 
 
-def test_crypto_intraday_minute_family_restored(
+def test_crypto_declared_intervals_narrowed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """crypto 日内分钟族（PT1M~PT1H）恢复声明（2026-11-13 人工确认：密度
-    误判纠正后原收窄裁决作废），与 PT2H/PT4H/P1D 同端点同 operation。"""
+    """crypto 声明周期面收窄（2026-11-14 裁决）：仅 PT1H/PT4H/P1D，与
+    fx 同端点同 operation。"""
     install(monkeypatch)
     preset_payload(monkeypatch, [])
     adapter = _adapter()
-    for interval in ("PT1M", "PT5M", "PT15M", "PT30M", "PT1H", "PT2H", "PT4H", "P1D"):
+    for interval in ("PT1H", "PT4H", "P1D"):
         query = _query(
             asset_type=AssetType.CRYPTO,
             instrument=Instrument.parse("GLOBAL-CRYPTO-BTC/USD"),
@@ -247,8 +245,8 @@ def test_crypto_intraday_minute_family_restored(
 
 
 def test_crypto_segment_row_cap_partial(monkeypatch: pytest.MonkeyPatch) -> None:
-    """crypto 段上限按行数 ≈5001（limit 专项实证三次一致）：返回行数触顶
-    即标记 partial=true（保头截尾）；未触顶维持 false。"""
+    """crypto 段上限按行数 ≈5001（limit 专项实证三次一致，判定不限周期）：
+    返回行数触顶即标记 partial=true（保头截尾）；未触顶维持 false。"""
     from datetime import timedelta
 
     install(monkeypatch)
@@ -263,7 +261,7 @@ def test_crypto_segment_row_cap_partial(monkeypatch: pytest.MonkeyPatch) -> None
     query = _query(
         asset_type=AssetType.CRYPTO,
         instrument=Instrument.parse("GLOBAL-CRYPTO-BTC/USD"),
-        interval=Interval.parse("PT1M"),
+        interval=Interval.parse("PT1H"),
         start=datetime(2025, 6, 1, tzinfo=CN_TIMEZONE),
         end=datetime(2025, 12, 1, tzinfo=CN_TIMEZONE),
     )
@@ -388,49 +386,9 @@ def test_fx_window_entirely_before_archive_empty(monkeypatch: pytest.MonkeyPatch
     assert StubClient.instances == []  # 早退路径不构造 HTTP 客户端
 
 
-def test_fx_one_min_segment_partial(monkeypatch: pytest.MonkeyPatch) -> None:
-    """fx PT1M 分段语义（2026-11-13 limit 专项实证）：长窗口只返回窗口
-    起点的第一个连续段（≈6 自然日，保头截尾）——末根距 end 超 7 天
-    （段长 + 周末/假日余量）标记 partial=true 提示尾部截断。"""
-    install(monkeypatch)
-    preset_payload(
-        monkeypatch,
-        forex_rows([f"2026-01-{day:02d}T00:00:00.000Z" for day in range(1, 7)]),
-    )
-    adapter = _adapter()
-    query = _query(
-        interval=Interval.parse("PT1M"),
-        start=datetime(2026, 1, 1, tzinfo=CN_TIMEZONE),
-        end=datetime(2026, 3, 1, tzinfo=CN_TIMEZONE),
-    )
-    batch = asyncio.run(adapter.fetch_bars(query))
-
-    assert batch.count == 6  # 段 [01-01, 01-06]（UTC）
-    assert batch.partial is True  # 末根距 end ≈54 天 > 7 天容差
-
-
-def test_fx_one_min_short_window_not_partial(monkeypatch: pytest.MonkeyPatch) -> None:
-    """fx PT1M 短窗（≤7 天）：段长覆盖整窗，周末/假日尾部间隙在容差内
-    不误报 partial。"""
-    install(monkeypatch)
-    preset_payload(
-        monkeypatch,
-        forex_rows(["2026-01-01T00:00:00.000Z", "2026-01-05T00:00:00.000Z"]),
-    )
-    adapter = _adapter()
-    query = _query(
-        interval=Interval.parse("PT1M"),
-        start=datetime(2026, 1, 1, tzinfo=CN_TIMEZONE),
-        end=datetime(2026, 1, 7, tzinfo=CN_TIMEZONE),
-    )
-    batch = asyncio.run(adapter.fetch_bars(query))
-
-    assert batch.count == 2
-    assert batch.partial is False  # 末根距 end ≈1.7 天 < 7 天容差
-
-
 def test_fx_other_intervals_no_segment_partial(monkeypatch: pytest.MonkeyPatch) -> None:
-    """分段限制仅 fx PT1M：PT5M 一月窗完整实证（E10），partial 恒 false。"""
+    """分段判定仅 fx PT1M 门控（PT1M 已随 2026-11-14 周期面收窄退出声明，
+    判定保留为防御）：PT1H 不适用，partial 恒 false。"""
     install(monkeypatch)
     preset_payload(
         monkeypatch,
@@ -438,14 +396,14 @@ def test_fx_other_intervals_no_segment_partial(monkeypatch: pytest.MonkeyPatch) 
     )
     adapter = _adapter()
     query = _query(
-        interval=Interval.parse("PT5M"),
+        interval=Interval.parse("PT1H"),
         start=datetime(2025, 6, 1, tzinfo=CN_TIMEZONE),
         end=datetime(2025, 7, 2, 8, tzinfo=CN_TIMEZONE),
     )
     batch = asyncio.run(adapter.fetch_bars(query))
 
     assert batch.count == 2
-    assert batch.partial is False  # 非 PT1M 不适用分段判定
+    assert batch.partial is False  # 分段判定仅 PT1M（已收窄不声明）
 
 
 def test_other_bad_request_still_raises(monkeypatch: pytest.MonkeyPatch) -> None:

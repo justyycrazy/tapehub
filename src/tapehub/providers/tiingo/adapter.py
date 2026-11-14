@@ -15,7 +15,8 @@
   **fx PT1M 分段语义**（2026-11-13 limit 专项实证，报告
   limit-truncation-20261113T2130+0800）：单次请求仅返回窗口起点首个
   连续段（≈6 自然日，保头截尾、静默缺失）——末根距请求 end 超 7 天
-  标记 partial=true；其余周期维持 partial=false（段容量远超实用窗长）；
+  标记 partial=true；其余周期维持 partial=false（段容量远超实用窗长）。
+  PT1M 已随 2026-11-14 周期面收窄裁决退出声明，该判定保留为防御；
 - 实时快照（M2）与快照流（M3）共用按资产类型分流的 WS 共享运行时
   （crypto/fx 各自端点单连接，``websockets`` 为可选依赖延迟导入）。
   WS 协议细节已按 2026-11-13 行为探针实证（报告
@@ -303,9 +304,10 @@ class ProviderAdapter(BaseProviderAdapter):
         # limit-truncation-20261113T2130+0800）：单次请求仅返回窗口起点的
         # 第一个连续数据段（≈6 自然日，保头截尾、静默缺失，段后分段查询
         # 可行）——末根距请求 end 超 7 天（段长 + 周末/假日余量）即判定
-        # 尾部截断。其余周期不适用：fx PT5M+ 一月窗完整实证、crypto 已
-        # 声明周期（PT2H/PT4H/P1D）段上限 5001 行远超实用窗长，均维持
-        # partial=false（行数上限官方未标注，不编造截断结论）
+        # 尾部截断。判定保留为防御：PT1M 已于 2026-11-14 周期面收窄裁决
+        # 退出声明（当前不可达）；crypto 段上限按行数（≈5001）不限周期，
+        # PT1H 实用窗长 ≈208 天内无影响、PT4H ≈416 天、P1D 远超
+        # （行数上限官方未标注，不编造截断结论）
         partial = False
         if query.asset_type is AssetType.FOREX and query.interval == _FX_ONE_MIN and window:
             partial = (query.end - max(bar.timestamp for bar in window)) > _FX_SEGMENT_TOLERANCE

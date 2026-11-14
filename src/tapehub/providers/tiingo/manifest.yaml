@@ -16,36 +16,37 @@
 # - 历史 K 线端点：加密 GET /tiingo/crypto/prices?tickers=&startDate=&
 #   endDate=&resampleFreq=；外汇 GET /tiingo/fx/<ticker>/prices?startDate=&
 #   endDate=&resampleFreq=（每 ticker 独立端点）；resampleFreq 合法格式
-#   <n>min|hour|day、最小 1min，**无周/月线**——声明
-#   1min/5min/15min/30min/1hour/2hour/4hour/1day（fx 全量；crypto 日内
-#   分钟族经密度实证裁决不声明，见 capabilities 注释；2hour/4hour 经
-#   2026-11-13 两轮探针实证可用、报告 20261113T163754/173648+0800 后经
-#   人工确认扩容；10min/6hour/12hour/24hour 等其余格式人工裁决不声明
-#   （2026-11-14 拍板，非待实证项））；
+#   <n>min|hour|day、最小 1min，**无周/月线**。周期面收窄裁决（2026-11-14
+#   人工拍板）：仅声明 PT1H/PT4H/P1D——PT1M/PT5M/PT15M/PT30M/PT2H 与
+#   10min/6hour/12hour/24hour 等其余格式收窄不声明（2hour/4hour 曾经
+#   2026-11-13 两轮探针实证可用后扩容，随收窄一并退出声明）；
 # - **响应形状（2026-11-13 探针实证，官方文档未如实反映）**：crypto 端点
 #   返回按 ticker 分组的嵌套结构 {"ticker", "baseCurrency", "quoteCurrency",
 #   "priceData": [...]}（bar 行在 priceData 内，字段 date/open/high/low/
 #   close/volume/volumeNotional/tradesDone）；forex 端点为扁平行（仅 OHLC，
 #   无 volume）。适配器按形状统一拍平；
-# - 历史覆盖范围（history.start）已按 2026-11-13 四轮探针回填（人工确认）：
-#   fx 全周期 = 上游档案硬边界 2020-01-01（UTC 墙钟）换算北京时间
-#   2020-01-01T08:00（受控复现实证：越界窗口 400 拒绝，钳制后 depth 收敛
-#   ≈2020-02-15 与边界相符）；crypto 全周期 = depth 二分收敛 ≈2011-08-25
-#   （窗口右端零点，90 天粒度 approx、真值可能更早，三轮一致，报告
-#   20261113T163754/173648/183740/194428+0800）；
+# - 历史覆盖范围（history.start）：P1D 两资产各有自身 depth 证据——fx P1D =
+#   上游档案硬边界 2020-01-01（UTC 墙钟）换算北京时间 2020-01-01T08:00
+#   （受控复现实证：越界窗口 400 拒绝，钳制后 depth 收敛 ≈2020-02-15 与
+#   边界相符）；crypto P1D = depth 二分收敛 ≈2011-08-25（窗口右端零点，
+#   90 天粒度 approx、真值可能更早，三轮一致，报告
+#   20261113T163754/173648/183740/194428+0800）。**日内周期（PT1H/PT4H）
+#   history.start 保持 null 待逐周期探测**——2026-11-14 裁决：机制边界
+#   外推/P1D 继承值不作为逐周期证据，必须逐周期探测；
 # - **日内数据密度与分段（2026-11-13 受控调用 + limit 专项实证，纠正
 #   首轮「crypto 1min 稀疏 ≈14 根/天」误判——年窗 5001 根系分段截断，
 #   实际密集 ≈1440 根/天）**：fx 1min 单日 2811 根（充足）且单次请求
 #   仅返回窗口起点首个连续段 ≈6 自然日（保头截尾，segment 后分段查询
 #   可行）；crypto 1min 密集但段上限 ≈5001 行（≈3.5 天/段）。crypto 日内
-#   分钟族（PT1M~PT1H）于同日恢复声明（人工确认：前提纠正后原收窄
-#   裁决作废；分段语义如实告知，长窗调用方分段查询）；
+#   分钟族的 2026-11-13 恢复声明已于次日（2026-11-14 周期面收窄裁决）
+#   再次退出声明——分段语义作为上游行为事实保留记录；
 # - **日内周期单次请求分段（limit 专项实证，partial 判定已落地）**：
-#   fx PT1M 段长按时间 ≈6 自然日 → 末根距请求 end >7 天标 partial；
-#   crypto 段上限按行数 ≈5001 行（返回行数触顶即标 partial；PT1H 实用
-#   窗长 ≈208 天内无影响、PT2H ≈416 天、PT4H/P1D 远超）；fx 其余周期
-#   一月窗完整实证不受影响；网关侧不做多段聚合（fx PT1M 一年 ≈61 段
-#   请求会打满小时配额），长窗调用方分段查询；
+#   fx PT1M 段长按时间 ≈6 自然日 → 末根距请求 end >7 天标 partial
+#   （PT1M 已收窄不声明——判定保留为防御，适配器按 PT1M 门控）；
+#   crypto 段上限按行数 ≈5001 行（返回行数触顶即标 partial，逐行数
+#   判定不限周期；PT1H 实用窗长 ≈208 天内无影响、PT4H ≈416 天、P1D
+#   远超）；fx 其余周期一月窗完整实证不受影响；网关侧不做多段聚合
+#   （fx PT1M 一年 ≈61 段请求会打满小时配额），长窗调用方分段查询；
 # - 单次返回行数上限：官方文档未标注（受 1GB/月带宽配额约束），
 #   partial 恒 false，上限与隐式截断行为待探针核实；
 # - interval/时间边界口径（2026-11-13 探针实证）：两端点均为 UTC
@@ -88,46 +89,44 @@ default_variant: tiingo
 
 capabilities:
   # 外汇（聚合 top-of-book 报价）：仅 OHLC，无 volume/成交额。
-  # history.start = 上游档案硬边界 2020-01-01（UTC 墙钟，2026-11-13 受控
-  # 复现实证：越界窗口 400 拒绝）换算北京时间 08:00，全周期同端点同值
+  # 周期面收窄裁决（2026-11-14）：仅声明 PT1H/PT4H/P1D——PT1M/PT5M/
+  # PT15M/PT30M/PT2H 收窄不声明（日内逐周期 depth 探测成本/噪声高，
+  # 机制边界外推不作为逐周期证据）；P1W/P1M 上游 resampleFreq 无
+  # week/month 格式，周期本身不存在。
+  # history.start：P1D = 上游档案硬边界 2020-01-01（UTC 墙钟，2026-11-13
+  # 受控复现实证：越界窗口 400 拒绝）换算北京时间 08:00——P1D 有自身
+  # depth 收敛互证（≈2020-02-15 与边界相符）；PT1H/PT4H 保持 null 待
+  # 逐周期探测（2026-11-14 裁决：机制边界外推不作为逐周期证据）
   - data_type: bars
     markets: [GLOBAL]
     asset_types: [forex]
     delivery: [rest]
     variants: [tiingo]
     intervals:
-      - {code: PT1M, history: {start: 2020-01-01T08:00:00+08:00, end: null}}
-      - {code: PT5M, history: {start: 2020-01-01T08:00:00+08:00, end: null}}
-      - {code: PT15M, history: {start: 2020-01-01T08:00:00+08:00, end: null}}
-      - {code: PT30M, history: {start: 2020-01-01T08:00:00+08:00, end: null}}
-      - {code: PT1H, history: {start: 2020-01-01T08:00:00+08:00, end: null}}
-      - {code: PT2H, history: {start: 2020-01-01T08:00:00+08:00, end: null}}
-      - {code: PT4H, history: {start: 2020-01-01T08:00:00+08:00, end: null}}
+      - {code: PT1H, history: {start: null, end: null}}
+      - {code: PT4H, history: {start: null, end: null}}
       - {code: P1D, history: {start: 2020-01-01T08:00:00+08:00, end: null}}
     adjustments: [none]
     fields: [open, high, low, close]
 
   # 加密货币（聚合对）：volume 有值（base 币计）。
-  # 日内分钟族（PT1M~PT1H）于 2026-11-13 恢复声明（人工确认）：首轮
-  # 「1min 稀疏 ≈14 根/天」系分段行为误读，limit 专项实证实际密集
-  # ≈1440 根/天；分段语义同 fx PT1M（段上限 ≈5001 行 ≈3.5 天/段，保头
-  # 截尾）。PT2H/PT4H 经两轮探针实证可用。history.start：P1D/PT2H/PT4H =
-  # depth 二分收敛 ≈2011-08-25（窗口右端零点，90 天粒度 approx，真值
-  # 可能更早）；日内分钟族保持 null（depth 仅探 P1D，日内 depth 待扩探
-  # ——分段行为下日窗粒度探针噪声大，暂不声明覆盖范围）
+  # 周期面收窄裁决（2026-11-14，推翻 2026-11-13「分钟族恢复声明」）：仅
+  # 声明 PT1H/PT4H/P1D——PT1M/PT5M/PT15M/PT30M/PT2H 收窄不声明（日内
+  # 逐周期 depth 探测成本/噪声高：分段 ≈5001 行/段下探针噪声大）；P1W/
+  # P1M 上游 resampleFreq 无 week/month 格式，周期本身不存在。
+  # history.start：P1D = depth 二分收敛 ≈2011-08-25（窗口右端零点，90 天
+  # 粒度 approx、真值可能更早，三轮一致，显著深于 twelvedata crypto
+  # ≈2017-08）；PT1H/PT4H 保持 null 待逐周期探测（2026-11-14 裁决：原
+  # P1D 继承值不作为逐周期证据；段上限 ≈5001 行对 PT1H 实用窗长 ≈208
+  # 天内无影响、PT4H ≈416 天）
   - data_type: bars
     markets: [GLOBAL]
     asset_types: [crypto]
     delivery: [rest]
     variants: [tiingo]
     intervals:
-      - {code: PT1M, history: {start: null, end: null}}
-      - {code: PT5M, history: {start: null, end: null}}
-      - {code: PT15M, history: {start: null, end: null}}
-      - {code: PT30M, history: {start: null, end: null}}
       - {code: PT1H, history: {start: null, end: null}}
-      - {code: PT2H, history: {start: 2011-08-25T00:00:00+08:00, end: null}}
-      - {code: PT4H, history: {start: 2011-08-25T00:00:00+08:00, end: null}}
+      - {code: PT4H, history: {start: null, end: null}}
       - {code: P1D, history: {start: 2011-08-25T00:00:00+08:00, end: null}}
     adjustments: [none]
     fields: [open, high, low, close, volume]
@@ -148,37 +147,17 @@ capabilities:
     fields: [timestamp, last_price, bid_price1, ask_price1, bid_volume1, ask_volume1]
 
 operations:
-  # 外汇历史K线：显式枚举全部声明组合 → 同一上游端点
-  # GET /tiingo/fx/<ticker>/prices
-  - match: {data_type: bars, market: GLOBAL, asset_type: forex, interval: PT1M, adjust: none, variant: tiingo}
-    operation: fx_prices
-  - match: {data_type: bars, market: GLOBAL, asset_type: forex, interval: PT5M, adjust: none, variant: tiingo}
-    operation: fx_prices
-  - match: {data_type: bars, market: GLOBAL, asset_type: forex, interval: PT15M, adjust: none, variant: tiingo}
-    operation: fx_prices
-  - match: {data_type: bars, market: GLOBAL, asset_type: forex, interval: PT30M, adjust: none, variant: tiingo}
-    operation: fx_prices
+  # 外汇历史K线：显式枚举全部声明组合（2026-11-14 周期面收窄裁决，
+  # 仅 PT1H/PT4H/P1D）→ 同一上游端点 GET /tiingo/fx/<ticker>/prices
   - match: {data_type: bars, market: GLOBAL, asset_type: forex, interval: PT1H, adjust: none, variant: tiingo}
-    operation: fx_prices
-  - match: {data_type: bars, market: GLOBAL, asset_type: forex, interval: PT2H, adjust: none, variant: tiingo}
     operation: fx_prices
   - match: {data_type: bars, market: GLOBAL, asset_type: forex, interval: PT4H, adjust: none, variant: tiingo}
     operation: fx_prices
   - match: {data_type: bars, market: GLOBAL, asset_type: forex, interval: P1D, adjust: none, variant: tiingo}
     operation: fx_prices
-  # 加密货币历史K线：GET /tiingo/crypto/prices（日内分钟族 2026-11-13
-  # 恢复声明，见 capabilities 注释——密度纠正后裁决变更）
-  - match: {data_type: bars, market: GLOBAL, asset_type: crypto, interval: PT1M, adjust: none, variant: tiingo}
-    operation: crypto_prices
-  - match: {data_type: bars, market: GLOBAL, asset_type: crypto, interval: PT5M, adjust: none, variant: tiingo}
-    operation: crypto_prices
-  - match: {data_type: bars, market: GLOBAL, asset_type: crypto, interval: PT15M, adjust: none, variant: tiingo}
-    operation: crypto_prices
-  - match: {data_type: bars, market: GLOBAL, asset_type: crypto, interval: PT30M, adjust: none, variant: tiingo}
-    operation: crypto_prices
+  # 加密货币历史K线：GET /tiingo/crypto/prices（2026-11-14 周期面收窄
+  # 裁决，仅 PT1H/PT4H/P1D，见 capabilities 注释）
   - match: {data_type: bars, market: GLOBAL, asset_type: crypto, interval: PT1H, adjust: none, variant: tiingo}
-    operation: crypto_prices
-  - match: {data_type: bars, market: GLOBAL, asset_type: crypto, interval: PT2H, adjust: none, variant: tiingo}
     operation: crypto_prices
   - match: {data_type: bars, market: GLOBAL, asset_type: crypto, interval: PT4H, adjust: none, variant: tiingo}
     operation: crypto_prices

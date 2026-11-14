@@ -98,7 +98,8 @@ defaults:
   # GLOBAL 外汇 / 加密货币：twelvedata 优先，tiingo 回退（2026-11-13 接入：
   # 免费档配额紧——50 请求/时、1000 请求/天、500 唯一品种/月、1GB 带宽/月，
   # 且仅声明 twelvedata 全周期矩阵的子集，置回退位不改变缺省行为；
-  # 周期子集的回退在路由选择阶段按六维逐个解析）
+  # 周期面收窄裁决 2026-11-14：tiingo 仅 PT1H/PT4H/P1D——周期子集的回退
+  # 在路由选择阶段按六维逐个解析）
   - match: {data_type: bars, market: GLOBAL, asset_type: forex}
     order: [twelvedata, tiingo]
   - match: {data_type: bars, market: GLOBAL, asset_type: crypto}

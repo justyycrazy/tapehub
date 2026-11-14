@@ -110,30 +110,21 @@ def test_capability_catalog(tiingo_client: TestClient) -> None:
     caps_by_asset = {tuple(cap["asset_types"])[0]: cap for cap in bars_caps}
     forex_cap = caps_by_asset["forex"]
     crypto_cap = caps_by_asset["crypto"]
-    # forex 全周期声明（含 PT2H/PT4H 扩容）；crypto 日内分钟族收窄不声明
-    assert [i["code"] for i in forex_cap["intervals"]] == [
-        "PT1M", "PT5M", "PT15M", "PT30M", "PT1H", "PT2H", "PT4H", "P1D",
-    ]
-    assert [i["code"] for i in crypto_cap["intervals"]] == [
-        "PT1M", "PT5M", "PT15M", "PT30M", "PT1H", "PT2H", "PT4H", "P1D",
-    ]
+    # 周期面收窄裁决（2026-11-14）：两资产均仅 PT1H/PT4H/P1D
+    assert [i["code"] for i in forex_cap["intervals"]] == ["PT1H", "PT4H", "P1D"]
+    assert [i["code"] for i in crypto_cap["intervals"]] == ["PT1H", "PT4H", "P1D"]
     for cap in bars_caps:
         assert cap["variants"] == ["tiingo"]
         assert cap["adjustments"] == ["none"]
-    # history 已按 2026-11-13 四轮探针回填（人工确认）：fx 全周期 = 上游
-    # 档案硬边界（UTC 2020-01-01 → 北京 08:00，同端点同值）；crypto 粗周期
-    # （P1D/PT2H/PT4H）= depth 二分收敛窗口右端零点（90 天粒度 approx），
-    # 日内分钟族（2026-11-13 恢复声明）保持 null（depth 仅探 P1D，日内
-    # depth 待扩探）
+    # history：P1D 各有自身 depth 证据（fx = 档案硬边界锚 + depth 收敛互证、
+    # crypto = 二分收敛 ≈2011-08-25）；日内周期（PT1H/PT4H）null 待逐周期
+    # 探测（2026-11-14 裁决：机制边界外推/P1D 继承值不作为逐周期证据）
     for interval in forex_cap["intervals"]:
-        assert interval["history"]["start"] == "2020-01-01T08:00:00+08:00"
+        expected = "2020-01-01T08:00:00+08:00" if interval["code"] == "P1D" else None
+        assert interval["history"]["start"] == expected
         assert interval["history"]["end"] is None
     for interval in crypto_cap["intervals"]:
-        expected = (
-            "2011-08-25T00:00:00+08:00"
-            if interval["code"] in ("PT2H", "PT4H", "P1D")
-            else None
-        )
+        expected = "2011-08-25T00:00:00+08:00" if interval["code"] == "P1D" else None
         assert interval["history"]["start"] == expected
         assert interval["history"]["end"] is None
 

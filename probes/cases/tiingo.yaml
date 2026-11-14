@@ -3,7 +3,7 @@
 #
 # 免费档限额（官方口径）：50 请求/小时、1000 请求/天、500 个唯一品种/月、
 # 1GB 带宽/月。pacing 90 秒（任意 60 分钟窗口 ≤40 次 < 50 次，留 ~20% 余量）；
-# 预算 80 覆盖单轮全量（约 2 小时，框架对截断如实记录、次日续跑）。
+# 预算 120 覆盖单轮全量（约 2.5~3 小时，框架对截断如实记录、次日续跑）。
 probe: tiingo
 version: 1
 
@@ -17,10 +17,11 @@ requires:
 pacing:
   call_interval_s: 90.0
   timeout_s: 60
-  # 本轮构成：availability 12（forex/crypto × 6 周期）+ history_depth
-  # 2 case × 16 最坏 + limit 2 + raw 4 case × 2 调用 ≈ 40 典型、56 最坏，
-  # 预算 80 留余量
-  max_calls: 80
+  # 本轮构成：availability 6（forex/crypto × 3 声明周期，2026-11-14 周期面
+  # 收窄）+ history_depth 6 case（forex/crypto × PT1H/PT4H/P1D，2026-11-14
+  # 裁决逐周期探测）× 16 最坏 + raw 4 case × 2 调用 ≈ 80 典型、110 最坏，
+  # 预算 120 留余量
+  max_calls: 120
 
 targets:
   forex:
@@ -40,25 +41,22 @@ chain:
   # 无 adjust_diff：外汇/加密货币无复权概念（能力目录仅声明 none，
   # 无多复权可对比）
   history_depth:
-    # history.start 已按 2026-11-13 四轮探针回填（人工确认）——本探针
-    # 转为常态回归复验：fx 预期 ≈2020-01-01（上游硬边界钳制后精确收敛）、
-    # crypto 预期 ≈2011-08-25（90 天粒度 approx）；漂移超粒度即需排查
+    # 2026-11-14 双裁决后逐周期探测：①「机制边界外推不作为逐周期证据，
+    # 必须逐周期探测」——fx PT1H/PT4H 的边界锚值回撤 null（fx P1D 有
+    # 自身 depth 证据，回归复验）；②周期面收窄至 PT1H/PT4H/P1D。P1D 预期
+    # ≈2020-01/02-15（fx 边界锚）/≈2011-08-25（crypto 二分既证）作漂移
+    # 对照；PT1H/PT4H 为首次独立探测、无预期锚——同业先例日内库常显著
+    # 浅于日线库（twelvedata crypto 日线 ≈2017-08 vs 1min ≈2020-04），
+    # 结果人工确认后回填
     targets: [forex, crypto]
     earliest: 2000-01-01
     era_step_years: 5
     max_calls: 16
-    intervals: [P1D]
-  limit_truncation:
-    # fx PT1M 分段语义回归（2026-11-13 limit 专项实证，报告
-    # limit-truncation-20261113T2130+0800）：单次请求仅返回窗口起点首个
-    # 连续段（≈6 自然日，保头截尾、静默缺失）——7 天窗应完整（≈7k 根），
-    # 截断即 suspect；适配器已按「末根距 end >7 天」补 partial 判定。
-    # crypto 日内分钟族已恢复声明（2026-11-13 裁决变更），其段上限按行数
-    # ≈5001 行已入适配器 partial 判定（count>=5001），常态探针不必设
-    # （PT1M 段 ≈3.5 天、PT1H ≈208 天、PT2H ≈416 天）；targets 仅 forex
-    targets: [forex]
-    interval: PT1M
-    max_range: P7D
+    intervals: [PT1H, PT4H, P1D]
+  # limit_truncation 撤下（2026-11-14）：fx PT1M 已随周期面收窄退出声明，
+  # 分段语义（≈6 自然日/段）不再影响任何声明周期（PT1H 一月窗完整实证、
+  # PT4H/P1D 段容量远超实用窗长）；crypto 行数上限（≈5001）partial 判定
+  # 不限周期、由单测守护（test_crypto_segment_row_cap_partial）
 
 raw:
   # 错误指纹仅观察：采集无效 API Token 的原始报错，供 UPSTREAM 细分错误码
@@ -228,3 +226,18 @@ notes: >
   limit P7D 回归：7 天窗完整 5626 根 partial=false（分段边界回归口径
   生效）。tiingo 探针至此收敛：REST 四轮 + WS 两轮 + limit 专项 +
   恢复验证轮，全部结论已回填 manifest/README 并经人工确认。
+  2026-11-14 双裁决（人工拍板）：
+  ①「机制边界外推违反诚实边界，必须逐周期探测」——fx PT1H/PT4H 的
+  「同端点同值」外推（2020-01-01T08:00）不作为逐周期证据，回撤 null
+  （fx P1D 有自身 depth 收敛互证 ≈2020-02-15，保留边界锚值）；crypto
+  PT2H/PT4H 的 P1D 继承值同理回撤 null（P1D 自身二分证据保留）；
+  ②周期面收窄：仅声明 PT1H/PT4H/P1D（PT1M/PT5M/PT15M/PT30M/PT2H 收窄
+  不声明——日内逐周期 depth 探测成本/噪声高；P1W/P1M 上游 resampleFreq
+  无 week/month 格式，周期本身不存在；2hour/4hour 的实证可用性随收窄
+  退出声明，证据保留于本 notes）。随裁决：history_depth 扩为逐周期
+  （forex/crypto × PT1H/PT4H/P1D 共 6 case，PT1H/PT4H 为首次独立探测）；
+  limit_truncation 撤下（PT1M 不声明，分段语义不影响任何声明周期；
+  crypto 行数上限 partial 判定不限周期、由单测守护）；fx PT1M 分段
+  partial 判定保留为防御（适配器 PT1M 门控，声明重新扩容时生效）；
+  预算 80→120（约 2.5~3 小时）。待回填项：fx/crypto PT1H/PT4H 的
+  history.start（本轮 depth 结果 → 人工确认 → 单独提交）。

@@ -771,33 +771,33 @@ websockets/forex 五页）：
 - 标的代码映射：外汇 `GLOBAL-OTC-EUR/USD → eurusd`、加密货币
   `GLOBAL-CRYPTO-BTC/USD → btcusd`（官方 ticker 均为小写连写，适配器去斜杠
   统一小写；exchange 段白名单 forex=`OTC`、crypto=`CRYPTO`）；
-- 周期映射（`resampleFreq` 合法格式 `<n>min|hour|day`、最小 `1min`，上游
-  **无周/月线**）：`PT1M→1min`、`PT5M→5min`、`PT15M→15min`、`PT30M→30min`、
-  `PT1H→1hour`、`PT2H→2hour`、`PT4H→4hour`、`P1D→1day`——`2hour`/`4hour`
-  经 2026-11-13 两轮探针实证后人工确认扩容（`10min/6hour/12hour/24hour`
-  等其余格式人工裁决不声明——2026-11-14 拍板，非待实证项）；
+- **周期面收窄（2026-11-14 人工拍板）**：仅声明 `PT1H/PT4H/P1D`——
+  `PT1M/PT5M/PT15M/PT30M/PT2H` 与 `10min/6hour/12hour/24hour` 等其余格式
+  收窄不声明（`2hour`/`4hour` 曾经 2026-11-13 两轮探针实证可用后扩容，
+  随收窄一并退出声明）；`P1W/P1M` 上游 `resampleFreq` 合法格式
+  `<n>min|hour|day` **无 week/month**，周期本身不存在、无法声明；
   `startDate`/`endDate`/`resampleFreq` 显式
   传参（不依赖上游默认值：上游缺省返回原始频度而非声明周期口径）；
-- **crypto 日内分钟族恢复声明（2026-11-13 裁决变更）**：原「不声明」
-  裁决基于「1min 稀疏 ≈14 根/天」误判（见下「纠正密度误判」），前提
-  纠正后恢复 PT1M~PT1H 声明；分段语义如实告知（见下「日内周期单次
-  请求分段」），日内 history.start 保持 null（depth 仅探 P1D，日内
-  depth 待扩探）；
+- **crypto 日内分钟族收窄（2026-11-14 裁决，推翻 2026-11-13「恢复
+  声明」）**：原恢复基于「1min 稀疏 ≈14 根/天」误判纠正（limit 专项
+  实证实际密集 ≈1440 根/天），但日内逐周期 depth 探测成本/噪声高
+  （分段 ≈5001 行/段），与周期面收窄裁决合并处理——分钟族退出声明；
+  分段语义作为上游行为事实保留记录（见下「日内周期单次请求分段」）；
 - **响应形状（2026-11-13 探针实证，官方文档未如实反映）**：crypto 端点
   返回按 ticker 分组的嵌套结构 `{"ticker", "baseCurrency", "quoteCurrency",
   "priceData": [...]}`（bar 行在 `priceData` 内，字段 date/open/high/low/
   close/volume/volumeNotional/tradesDone）；forex 端点为扁平行（仅 OHLC，
   无 volume）。适配器按形状统一拍平（嵌套/扁平防御兼容）；
-- **历史覆盖范围（history.start）已按 2026-11-13 四轮探针回填（人工
-  确认）**：fx 全周期 = 上游档案硬边界 2020-01-01（UTC 墙钟）换算北京
+- **历史覆盖范围（history.start）：P1D 各有自身 depth 证据；日内周期
+  （PT1H/PT4H）保持 null 待逐周期探测（2026-11-14 裁决：机制边界外推/
+  P1D 继承值不作为逐周期证据，必须逐周期探测）**——fx P1D = 上游档案
+  硬边界 2020-01-01（UTC 墙钟）换算北京
   时间 `2020-01-01T08:00:00+08:00`（受控复现实证：越界窗口 400 拒绝
   而非裁剪，两种变体 `End date` / `Start date must be >= …`；适配器对 fx
   请求钳制到档案起点、完全越界窗口直接空批；钳制后 depth 收敛
-  ≈2020-02-15 与边界相符）；crypto P1D/PT2H/PT4H = depth 二分收敛
+  ≈2020-02-15 与边界相符）；crypto P1D = depth 二分收敛
   `2011-08-25T00:00:00+08:00`（窗口右端零点，90 天粒度 approx、真值可能
-  更早，三轮一致，显著深于 twelvedata crypto ≈2017-08）；**crypto 日内
-  分钟族（2026-11-13 恢复声明）history.start 保持 null**（depth 仅探
-  P1D，日内 depth 待扩探——分段行为下日窗粒度探针噪声大）；单次返回
+  更早，三轮一致，显著深于 twelvedata crypto ≈2017-08）；单次返回
   行数上限官方未标注（受 1GB/月带宽配额约束）；
 - 时间边界口径（2026-11-13 探针实证）：`startDate`/`endDate` 统一传 UTC
   墙钟 `YYYY-MM-DDTHH:MM:SS`——两端点均为 UTC（crypto `date` 带 `+00:00`、
