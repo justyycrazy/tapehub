@@ -1,5 +1,7 @@
 # 同花顺金融数据 API（ths）数据探针：历史 K 线可用性、复权生效性、历史深度
-# 收敛，及快照/分时形态观察（量额口径核实）。
+# 收敛，快照/分时形态观察（量额口径核实），及 ETF 复权口径实证（2026-11-14
+# 加入：fund historical 无 adjust 参数但文档称「价格数据采用前复权口径」，
+# 与现声明 [none] 的口径一致性待受控对比实证，见 raw 段注释）。
 #
 # 上游限频为「约定 QPS」（超限信封 code=4001），具体 QPS 未公布：pacing 2 秒
 # （≤0.5 QPS）保守起步，探针报告中观察 4001 出现情况后收紧。
@@ -21,9 +23,9 @@ pacing:
   timeout_s: 60
   # 本轮构成：availability 7（stock 三复权 + index + etf + contract +
   # option 各 P1D）+ adjust_diff 4（stock 1 目标 × 2 pair × 2 调）+
-  # history_depth 3 case × 最坏 12 + raw 3 case × 2 调，最坏约 53，
-  # 预算 60 留余量
-  max_calls: 60
+  # history_depth 3 case × 最坏 12 + raw 5 case 各 3 调（client + get +
+  # json），最坏约 62，预算 80 留余量
+  max_calls: 80
 
 targets:
   stock:
@@ -137,6 +139,45 @@ raw:
     expect: {status: ok, min_rows: 1}
     close: {method: close, kwargs: {}}
 
+  # ETF 复权口径实证（2026-11-14 加入并已实证，观察）：fund historical 端点
+  # 无 adjust 请求参数（复权方式不可选），官方文档明示「adjust null 当前固定
+  # 为 null；价格数据仍采用前复权口径」——**受控对比已实证文档属实**（目录
+  # 外脚本 probes/results/ths/etf-adjust-20261114T080423+0800：510880 红利
+  # ETF 2023-2025 窗口，除息日 2023-01-16/2024-01-23/2025-01-21；调整生效段
+  # ths vs baostock none 中位偏差 9.01%、vs qfq 仅 0.34%，事件日样本 2.8840
+  # ≈qfq 2.8924 远离 none 3.0270）——**ths ETF 日线为固定前复权，现声明
+  # [none] 系口径错标**，声明形态回填（qfq 单值 / none+口径注记）人工裁决后
+  # 单独提交。参照序列（baostock none/qfq，复权生效性已实证）经目录外脚本
+  # 对比（baostock ResultData 非 JSON 形态、模块级 login/logout 模型不适配
+  # 声明式 client/close）。本 case 常态留存 ths 侧证据：窗口钉在 2025-01-21
+  # 除息日 ±7 自然日（跨除息口径差异肉眼可核）。框架 kwargs 统一关键字传参
+  # （dict.get 不接受关键字），无法链式抽取 item——链止于整信封、以
+  # min_fields 判定，样本随窄窗口限量。
+  - id: ths-etf-dividend-window
+    purpose: ETF 跨除息窗口日线可得性与复权口径证据留存（2025-01-21 除息日
+      ±7 自然日；结论见目录外对比报告 etf-adjust-20261114T080423+0800）
+    assert: false
+    module: httpx
+    client: {attr: Client, kwargs: {}}
+    call:
+      - {method: get, kwargs: {url: "https://fuyao.aicubes.cn/api/fund/market/historical", params: {thscode: "510880.SH", interval: "1d", start: 1736784000000, end: 1737993599000}, headers: {"X-api-key": "$TAPEHUB_THS_API_KEY"}}}
+      - {method: json, kwargs: {}, target: result}
+    expect: {status: ok, min_fields: [code, message, data]}
+    close: {method: close, kwargs: {}}
+
+  # data.adjust 字段实证（观察）：近期短窗口整信封留存，核对 ETF 响应
+  # data.adjust 是否如文档固定 null、item 行形态（date_ms/OHLC/量额键名）
+  - id: ths-etf-adjust-field-shape
+    purpose: ETF fund historical 响应 data.adjust 字段取值与 item 行形态观察
+    assert: false
+    module: httpx
+    client: {attr: Client, kwargs: {}}
+    call:
+      - {method: get, kwargs: {url: "https://fuyao.aicubes.cn/api/fund/market/historical", params: {thscode: "510880.SH", interval: "1d", start: 1766505600000, end: 1767196799000}, headers: {"X-api-key": "$TAPEHUB_THS_API_KEY"}}}
+      - {method: json, kwargs: {}, target: result}
+    expect: {status: ok, min_fields: [code, message, data]}
+    close: {method: close, kwargs: {}}
+
 notes: >
   2026-11-13 接入首轮 case 设计（真实跑前占位）：上游限频为「约定 QPS」
   （超限信封 code=4001）但未公布数值，pacing 2 秒保守起步，首轮报告观察
@@ -216,6 +257,31 @@ notes: >
   两端点全链路（bars 五资产 + quotes 五资产经 raw 观察）实证无缺陷**；
   depth 三目标复验一致（[2022,2025] 各 969 行）。两轮三报告存档：
   20261113T212034 / 213321 / 214147+0800。
+  2026-11-14 ETF 复权口径实证立项（人工提出「ths 的 etf 没有复权吗」后
+  核对文档发现口径矛盾）：fund historical 端点无 adjust 请求参数（复权
+  方式不可选），但文档明示「adjust null 当前固定为 null；价格数据仍采用
+  前复权口径」——现声明 [none] 与之存在错标风险（分红除息时前复权与不复权
+  有实质差异，twelvedata SPY 先例 ~2.9%）。加入 ths-etf-dividend-window
+  （510880 红利ETF，2023-01-01→2025-12-31 跨除息窗口）与
+  ths-etf-adjust-field-shape（短窗口 data.adjust 字段观察）两个 observe
+  case；参照序列（baostock sh.510880 none/qfq，ETF 复权生效性已实证）经
+  目录外受控对比脚本实证（报告 probes/results/ths/etf-adjust-<ts>.md，
+  baostock ResultData 非 JSON 形态、模块级 login/logout 模型不适配声明式
+  client/close），结论人工裁决后回填声明（qfq 单值 / 维持 none+口径注记
+  二选一），探针不自改 manifest。max_calls 60→80。
+  2026-11-14 受控对比实证（报告 etf-adjust-20261114T080423+0800，脚本
+  probes/results/etf_adjust_semantics.py）：**ths ETF 日线为固定前复权，
+  文档口径属实、现声明 [none] 系错标**——510880（红利ETF）2023-01-01→
+  2025-12-31 窗口，除息日估计 2023-01-16/2024-01-23/2025-01-21（年度分红
+  与基金公告一致口径）；调整生效段（对齐 727 交易日全覆盖，baostock 涨跌
+  幅复权法 qfq 全程偏离 none）ths vs none 相对偏差中位数 9.01%、vs qfq 仅
+  0.34%（方法性残差），事件日样本（2025-01-21）ths 2.8840 ≈ qfq 2.8924、
+  远离 none 3.0270；响应 data.adjust=null 实测（与文档一致）。
+  首轮 case 设计（链式 get 抽取 item）踩框架限制：raw kwargs 统一关键字
+  传参、dict.get 不接受关键字——链止于整信封 + min_fields 判定，窗口钉
+  2025-01-21 除息日 ±7 自然日控样本量。声明形态回填（qfq 单值 / none+口径
+  注记）待人工裁决：qfq 单值语义最贴上游真实口径但改变 etf 默认 none 的
+  auto 路由（routing yaml 需同步），none+注记保持路由不动但标签不实。
 
 
 
