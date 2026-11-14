@@ -36,10 +36,15 @@
 #   快照无独立行情时间字段，按文档「最新上游有效时间」口径透出；
 # - 单位：A 股快照/历史 K 线 volume=股、turnover=元（官方文档明示）；
 #   ETF/期货/期权 volume/turnover 单位上游未明示，原值透出（不编造换算）；
-# - 标的代码映射（只收文档实证条目，其余 exchange 明确拒绝，探针后回填）：
-#   stock/index/etf {SSE→SH, SZSE→SZ}（BSE→BJ 仅元信息域实证、价格端点未
-#   实证，不收）；contract {SHFE→SHF}（CU2601.SHF 示例）；option {CFFEX→CFE}
-#   （IO2601-C-4000.CFE 示例）；contract/option symbol 段原样透传
+# - 标的代码映射（只收实证条目——文档示例 + 探针价格端点实证，其余
+#   exchange 明确拒绝）：stock/index {SSE→SH, SZSE→SZ, BSE→BJ}（BSE→BJ
+#   2026-11-14 探针第三轮价格端点实证后收编：920000.BJ a-share historical
+#   与 899050.BJ a-share-index historical 各 243 行完整，报告
+#   20261114T135118+0800）；etf {SSE→SH, SZSE→SZ}（北交所无 ETF）；
+#   contract {SHFE→SHF}（CU2706.SHF 文档示例 + chain 常态复验；ZCE/DCE/
+#   INE/GFEX 四所 2026-11-14 探针 3001 未通过——负对照 ZZ9999.SHF 同指纹
+#   定案「标的不在 ths 目录」，不收）；option {CFFEX→CFE}（IO2612-C-4000
+#   chain 复验）；contract/option symbol 段原样透传
 #   （CN-CFFEX-IO2601-C-4000 → IO2601-C-4000.CFE）；
 # - adjust 映射（A 股历史 K 线三值语义）：none→none、qfq→forward
 #   （前复权）、hfq→backward（后复权）；ETF 无 adjust 参数、数据固定前复权
@@ -47,13 +52,26 @@
 #   vs baostock none 偏差中位 9.01% / vs qfq 0.34%）后声明 [qfq]（2026-11-14
 #   人工裁决）；指数无复权语义（响应 data.adjust 固定 null）、期货/期权仅
 #   声明 none；
-# - 单次返回行数上限：官方文档未标注（historical 的 offset 分页参数行为
-#   未核实，不启用），partial 恒 false，隐式截断行为待探针核实；
-# - 历史覆盖（2026-11-13 探针实证回填，人工确认，报告见上）：个股日线
-#   start ≈2005-02-14（二分 90 天粒度 approx，真实最早可能更早）；指数/ETF
-#   为滚动窗口语义，按 retention_days=1825 声明（指数错误消息自述
-#   'recent five years only'、ETF 文档 5 自然年；可达性实证 2022-01-01
-#   起 969 行完整，边界粗粒度）；
+# - 单次返回行数上限与分页（2026-11-14 第三轮探针定案，报告
+#   20261114T135118+0800）：**historical 的 offset 参数被上游静默忽略**
+#   （2025 全年窗 offset=100 实测 243 行不变、首根不变——适配器不启用
+#   定案维持）；**a-share historical 窗口跨度 ≤10 年**（>10 年窗 1003
+#   拒绝，message 自述 'must span at most 10 years'；首轮「A 股无滚动
+#   上限」系仅验证起点可早于 10 年前，跨度语义本轮定案补充）；10 年窗内
+#   2183~2417 行完整返回无触顶信号 → 行数上限未观测到（≥2417），
+#   **partial 恒 false 定案维持**（触顶判定无观测基础）；
+# - 合约类边界（2026-11-14 探针定案）：**已摘牌合约移出上游目录、仅现活
+#   合约可查**（文档示例已到期 CU2601.SHF / IO2601-C-4000.CFE 存续期窗口
+#   3001 'Target not found'，与现活 CU2706.SHF 同后缀 code=0 干净对照；
+#   负对照 ZZ9999.SHF 同 3001 定案指纹语义）——contract/option 的
+#   history.start 保持 null（「最早可用」随合约轮换漂移，已摘牌全量锚定
+#   的 tushare 先例不适用于 ths）；
+# - 历史覆盖（探针实证回填，人工确认，报告 20261113T212034 三轮 +
+#   20261114T140107 聚焦精化）：个股日线 start ≈2005-01-15（聚焦二分
+#   ±30 天粒度 approx，替代首轮 ≈2005-02-14 ±90 天，真实最早可能更早）；
+#   指数/ETF 为滚动窗口语义，按 retention_days=1825 声明（指数错误消息
+#   自述 'recent five years only'、ETF 文档 5 自然年；可达性实证
+#   2022-01-01 起 969 行完整，边界粗粒度）；
 # - 单体系 Provider：变体与 default_variant 均为 ths（数据源即上游服务自身）；
 #   缺省请求经 provider_routing.yaml 回退链裁决（ths 为付费凭据 API，置于
 #   各组合回退位末位），也可显式传 variant=ths。
@@ -63,14 +81,15 @@ default_variant: ths
 capabilities:
   # —— 历史 K 线（日线）——
   # A 股个股：唯一有复权语义的资产类型（none/forward/backward 直映）；
-  # start ≈2005-02-14（探针二分 90 天粒度 approx，真实最早可能更早）
+  # start ≈2005-01-15（探针聚焦二分 ±30 天粒度 approx，替代首轮 ≈2005-02-14
+  # ±90 天，真实最早可能更早——报告 20261114T140107+0800）
   - data_type: bars
     markets: [CN]
     asset_types: [stock]
     delivery: [rest]
     variants: [ths]
     intervals:
-      - {code: P1D, history: {start: 2005-02-14T00:00:00+08:00, end: null}}
+      - {code: P1D, history: {start: 2005-01-15T00:00:00+08:00, end: null}}
     adjustments: [none, qfq, hfq]
     fields: [open, high, low, close, volume, amount]
 

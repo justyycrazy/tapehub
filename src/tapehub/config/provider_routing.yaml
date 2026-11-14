@@ -56,7 +56,7 @@ defaults:
   # 接入：付费凭据 API、仅日线、窗口上限 5 自然年；仅 qfq——上游固定前复权
   # 口径，2026-11-14 探针实证裁决，etf 默认 none 的 auto 请求不落 ths）；
   # futunn 最末位回退（2026-11-14 接入：AppKey 凭据 API、8 周期面、复权
-  # 生效性未实证仅声明 none、历史覆盖未探针实证）
+  # 三值探针实证生效、历史覆盖已探针回填 2026-11-14）
   - match: {data_type: bars, market: CN, asset_type: etf}
     order: [tqsdk, baostock, akshare, ths, futunn]
 

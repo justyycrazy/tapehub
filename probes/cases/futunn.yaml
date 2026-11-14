@@ -252,3 +252,63 @@ notes: >
   docstring 遗留项）。max_calls 300→1200（最坏 ≈1138：availability 160 +
   adjust 12 + depth 40 case × 单 case 子预算 24 + raw 6；era 10 年步长下
   单 case 实测约 8~15 调）。
+  2026-11-14 第三轮（报告 20261114T135118+0800，confirmed 165 / observe 42 /
+  **failed 1（孤立）**，预算 602/1200；目录外取证 futunn_observe_round3.py
+  7 调 + round3b 跟进 3 调 + ktype 15/16 补探 2 调）：
+  - **depth 扩围五目标 × 8 周期完成**。日/周/月族干净收敛（era 窗对日线
+    族有效；est = 最小非空 90 天窗终点，过冲 ≤90 天）：**CN index 日/周/
+    月 est ≈1991-01-18T16:52**（最终窗 [1990-10-20, 1991-01-18] count=23
+    吻合 ≈1990-12-19 回溯发布锚起算，与 CN stock 同库界；[1990-06-29,
+    1990-09-27] 空）；**CN etf 日/周/月 est ≈2012-06-09**（最终窗
+    [2012-03-11, 2012-06-09] count=10 与 510300 上市日 2012-05-28→06-09
+    交易日数精确吻合——上市日锚，count-exact）；**HK stock 日/周/月 est
+    ≈1991-01-18T16:52**（count=13 → 底 ∈ (1990-11-23, 1991-01-18]，与 CN
+    同窗但 HK 独立探测；alphafeed/tickflow HK 库底 1980-02-15 对照——
+    futunn HK 日线库显著更浅，差异如实记录）；**US stock 日/周/月 est
+    ≈1997-01-25T00:33**（count=17 → 底 ∈ (1996-11-29, 1997-01-25]，
+    ≈1996-12；GE 1892 上市，收敛点为真实库底而非上市日伪影）；
+  - **分钟族分化（重要方法论发现）**：index/etf/US 分钟族干净收敛（探测
+    计数 0-or-cap 两态、五周期同值互证）——**index 分钟 5 周期 est
+    ≈2015-05-15T23:37**（底 ∈ (2015-03-20, 2015-05-15]）、**US 分钟 5
+    周期 est ≈2015-05-15T23:37**（同窗独立收敛）、**etf 分钟 5 周期 est
+    ≈2015-07-11T08:26**（底 ∈ (2015-05-15, 2015-07-11]）；**CN/HK stock
+    分钟族碎片区失效**——era 10 年宽窗对分钟族触发上游静默返空（era
+    [2000,2010] PT1M 返 0 而其内部 90 天子窗返回 241/120/1 根碎片数据，
+    连续性假设不成立），估计值为算术伪影（CN/HK 同值 2007-01-14T03:45
+    复现证明）→ 不可回填：CN stock 分钟维持二轮 2014-01-21（连续可查
+    起点；更早存在稀疏碎片如实注记）、**HK stock 分钟保持 null**（连续
+    可查起点未定案，碎片区二分失效待专项方法——窄窗逐窗扫描类——重探）；
+  - **etf@CN-P1D-hfq 孤立失败**：同组 23 case（含 P1W/P1M/分钟族 hfq）全
+    confirmed、二轮 adjust_diff 已证 510300 P1D hfq 生效（242/242 差异）
+    ——单请求上游瞬时错误，不动声明面，下轮复验；
+  - **page_token 复核定案维持**：num=370 仍返回 1000 行（num 被忽略复验）、
+    pagination={"has_more": false}、无 next_page_token/data.next_time、
+    data 顶层键 [kline_list, volume_precision]——分页不可用第三轮复核
+    一致（「下轮核对」待办闭合）；
+  - **ktype 候选定案（「探针后再议」收口）**：ktype=10 = **PT3M**（相邻
+    间距 180s、80 根/交易日）、ktype=14 = **PT2H**（11:30/15:00 两根、
+    间距 3.5h）真实可用且与文档「3 分/120 分」枚举吻合；ktype=15 = 180
+    分（PT3H）返回与 PT2H 完全相同形态（CN 上午盘仅 2h 会话退化）；
+    ktype=16 → -3 invalid（**PT4H 无可用映射**）；ktype=11 接受但返空
+    （不定案）。PT3M/PT2H 扩容候选：端点可用已实证但历史深度未探 + 行
+    字段集更宽（含 name/change_rate/pe_ratio 等，标准 OHLCV 字段齐备）
+    ——扩容与否人工裁决（成本：manifest intervals/operations 扩容 +
+    depth 专项另探）；
+  - **校时端点免签可用定案**：GET /api/v1.0/server-time 免签 HTTP 200
+    （X-Futu-Methodname=GetServerTime），信封
+    {"server_time_ms": "1794636908538"}（**字符串类型**）——自动校时可行
+    （adapter docstring 待核实项收口；落地与否按需立项）；
+  - **extensions 盘前盘后不声明定案**（用户拍板本轮）：白名单维持 7 键、
+    盘前盘后段数据不透出（证据 US.GE 盘后 60.3 万股保留二轮 notes），
+    待办项④闭合。
+  待人工确认回填清单：①CN index 日/周/月 history.start ②CN etf 日/周/
+  月（2012-05-28 上市日锚）③HK stock 日/周/月 ④US stock 日/周/月
+  ⑤index/etf/US 分钟族 5 周期 ⑥HK stock 分钟保持 null（定案记录）
+  ⑦PT3M/PT2H 扩容与否 ⑧自动校时立项与否。
+  2026-11-14 回填落地（人工确认三项拍板：①history.start 按建议回填——
+  etf 日/周/月锚定 2012-05-28（count-exact）、index/HK/US 日/周/月与
+  index/etf/US 分钟族按 est 原值 approx、HK stock 分钟保持 null（碎片区
+  定案）；②PT3M/PT2H 维持不声明（可用性证据保留本 notes）；③自动校时
+  只记录不落地）——manifest 四组合 intervals 32 值、契约测试 history
+  断言改写、adapter docstring 校时定案、README（历史覆盖改写/周期收口/
+  校时端点/time_key 墙钟口径 stale 注记清理）、routing stale 注释同步。

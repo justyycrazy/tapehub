@@ -271,16 +271,11 @@ def test_unsupported_intervals_rejected_by_operation_routing(
 
 
 def test_unverified_exchange_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
-    """还原表只收文档实证条目：BJ（北交所）价格端点未实证、DCE 期货后缀
-    未实证，明确拒绝而非透传上游（写错比透传更隐蔽）。"""
+    """还原表只收实证条目：DCE 期货后缀探针未通过（3001 标的不在 ths 目录，
+    2026-11-14），明确拒绝而非透传上游（写错比透传更隐蔽）；BJ（北交所）
+    价格端点 2026-11-14 探针实证后已收编（见正向断言）。"""
     install(monkeypatch)
     adapter = _adapter()
-    with pytest.raises(UnsupportedCapabilityError):
-        asyncio.run(
-            adapter.fetch_bars(
-                _query(instrument=Instrument.parse("CN-BSE-430047"))
-            )
-        )
     with pytest.raises(UnsupportedCapabilityError):
         asyncio.run(
             adapter.fetch_bars(
@@ -290,6 +285,24 @@ def test_unverified_exchange_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
                 )
             )
         )
+
+
+def test_bse_exchange_mapped(monkeypatch: pytest.MonkeyPatch) -> None:
+    """BSE→BJ 收编（2026-11-14 探针价格端点实证：920000.BJ a-share
+    historical 243 行完整，报告 20261114T135118+0800）。"""
+    install(monkeypatch)
+    preset_payload(
+        monkeypatch,
+        envelope({"item": bar_rows("date_ms", [START_MS, START_MS + 86_400_000, END_MS])}),
+    )
+    adapter = _adapter(make_settings(ths_api_key="test-key"))
+    batch = asyncio.run(
+        adapter.fetch_bars(_query(instrument=Instrument.parse("CN-BSE-920000")))
+    )
+    call = _last_call()
+    assert call["params"]["thscode"] == "920000.BJ"
+    assert batch.provider == "ths"
+    assert batch.count == 3
 
 
 def test_unsupported_asset_type(monkeypatch: pytest.MonkeyPatch) -> None:

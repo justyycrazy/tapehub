@@ -33,7 +33,9 @@
   （流式请求返回 UNSUPPORTED_CAPABILITY）；
 - X-Timestamp 与服务端偏差 >5s 报 -12006（HTTP 401 鉴权失败）：第一版
   不做自动校时（依赖宿主机时钟）；校时端点 GET /api/v1.0/server-time
-  待探针实证后按需补充；
+  免签可用已探针实证（2026-11-14 报告 20261114T135118+0800：HTTP 200，
+  信封 {"server_time_ms": "1794636908538"} 为字符串类型）——自动校时
+  实现按需立项（人工拍板 2026-11-14 只记录不落地）；
 - 单标的快照 code 匹配：上游对 code_list 中非法 code 静默丢弃（ret_code
   仍 0），匹配行缺失属无有效行情（UPSTREAM_ERROR）；
 - 统一分页由共享 ``paginate_bars`` 完成，bars/quotes 时间戳统一北京时间

@@ -127,13 +127,14 @@ def test_capability_catalog(ths_client: TestClient) -> None:
         assert [i["code"] for i in cap["intervals"]] == ["P1D"]
         assert cap["fields"] == ["open", "high", "low", "close", "volume", "amount"]
 
-    # 历史覆盖（2026-11-13 探针实证回填）：stock 固定起点 ≈2005-02-14
-    #（二分 90 天粒度 approx，真实最早可能更早）；index/etf 为滚动窗口
-    # 语义（retention_days，指数端点实测 'recent five years only'）
+    # 历史覆盖（探针实证回填）：stock 固定起点 ≈2005-01-15（聚焦二分
+    # ±30 天粒度 approx，2026-11-14 精化替代首轮 ≈2005-02-14 ±90 天）；
+    # index/etf 为滚动窗口语义（retention_days，指数端点实测
+    # 'recent five years only'）
     hist_by_asset = {
         tuple(cap["asset_types"])[0]: cap["intervals"][0]["history"] for cap in bars_caps
     }
-    assert hist_by_asset["stock"]["start"] == "2005-02-14T00:00:00+08:00"
+    assert hist_by_asset["stock"]["start"] == "2005-01-15T00:00:00+08:00"
     assert hist_by_asset["stock"]["end"] is None
     assert hist_by_asset["stock"]["retention_days"] is None
     for asset in ("index", "etf"):
@@ -174,12 +175,22 @@ def test_unsupported_interval_p1w_422(ths_client: TestClient) -> None:
     assert response.json()["error"]["code"] == "UNSUPPORTED_CAPABILITY"
 
 
-def test_unverified_exchange_namespace_422(ths_client: TestClient) -> None:
-    """还原表只收文档实证条目：BJ 价格端点未实证，明确拒绝而非透传上游。"""
+def test_bse_exchange_namespace_mapped(
+    ths_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """BSE→BJ 收编（2026-11-14 探针价格端点实证，报告 20261114T135118
+    +0800）：北交所个股请求正常路由（原「未实证 422 拒绝」断言随收编
+    反转）。"""
+    preset_payload(
+        monkeypatch,
+        envelope({"item": bar_rows("date_ms", [1767196800000, 1767283200000])}),
+    )
     params = {**STOCK_PARAMS, "instrument": "CN-BSE-430047"}
     response = ths_client.get("/v1/market/bars", params=params)
-    assert response.status_code == 422
-    assert response.json()["error"]["code"] == "UNSUPPORTED_CAPABILITY"
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["instrument"] == "CN-BSE-430047"
+    assert len(data["bars"]) == 2
 
 
 def test_upstream_business_error_wrapped(

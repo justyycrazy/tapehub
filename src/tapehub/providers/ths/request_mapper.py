@@ -45,11 +45,15 @@ _ADJUST_CODES: dict[Adjust, str] = {
     Adjust.HFQ: "backward",
 }
 
-# 标准 exchange 段 → thscode 后缀（只收文档实证条目，探针后回填；
-# 见 manifest 头注释的诚实边界说明）
+# 标准 exchange 段 → thscode 后缀（只收实证条目——文档示例 + 探针价格
+# 端点实证；见 manifest 头注释的诚实边界说明）：
+# - 2026-11-14 探针第三轮实证 BSE→BJ 价格端点（920000.BJ a-share
+#   historical / 899050.BJ a-share-index historical 各 243 行完整，报告
+#   20261114T135118+0800）后收编；期货 ZCE/DCE/INE/GFEX 四所 3001 未通过
+#   （负对照 ZZ9999.SHF 同指纹——标的不在 ths 目录），维持不收
 _SUFFIXES: dict[str, dict[str, str]] = {
-    "stock": {"SSE": "SH", "SZSE": "SZ"},
-    "index": {"SSE": "SH", "SZSE": "SZ"},
+    "stock": {"SSE": "SH", "SZSE": "SZ", "BSE": "BJ"},
+    "index": {"SSE": "SH", "SZSE": "SZ", "BSE": "BJ"},
     "etf": {"SSE": "SH", "SZSE": "SZ"},
     "contract": {"SHFE": "SHF"},
     "option": {"CFFEX": "CFE"},

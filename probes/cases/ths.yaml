@@ -23,11 +23,12 @@ pacing:
   # 4001 限频两轮 + 目录外诊断均未复现
   call_interval_s: 2.0
   timeout_s: 60
-  # 本轮构成（2026-11-14 第三轮立项后）：availability 12（bars 7：stock
-  # 三复权 + index + etf + contract + option，quotes 5）+ adjust_diff 4
-  # （stock 1 目标 × 2 pair × 2 调）+ history_depth 3 case × 最坏 12 +
-  # limit_truncation ≈2 + raw 15 case 各 3 调（client + get + json），
-  # 最坏约 100，预算 130 留余量（约 6 分钟）
+  # 本轮构成（2026-11-14 第三轮立项 + BSE 收编后）：availability 14
+  # （bars 9：stock 三复权 + index + etf + contract + option + BSE 逐所
+  # stock/index）+ adjust_diff 4（stock 1 目标 × 2 pair × 2 调）+
+  # history_depth 3 case × 最坏 12 + limit_truncation ≈2 + raw 15 case
+  # 各 3 调（client + get + json），最坏约 102，预算 130 留余量（约 6
+  # 分钟）
   max_calls: 130
 
 targets:
@@ -40,6 +41,20 @@ targets:
   index:
     instrument: CN-SSE-000001
     # 上证综指（标准交易所指数；同花顺板块/行业 TI 类指数不在本期声明）
+    window: {start: 2025-01-01, end: 2025-12-31}
+    min_bars: 10
+    required_fields: [open, high, low, close, volume, amount]
+  stock@CN-BSE:
+    instrument: CN-BSE-920000
+    # 北交所个股（920 段）：BSE→BJ 价格端点 2026-11-14 探针实证后收编
+    # （_SUFFIXES 扩容，报告 20261114T135118+0800：243 行完整），本键为
+    # chain 常态复验目标（alphafeed/tickflow/futunn 逐所细分同款先例）
+    window: {start: 2025-01-01, end: 2025-12-31}
+    min_bars: 10
+    required_fields: [open, high, low, close, volume, amount]
+  index@CN-BSE:
+    instrument: CN-BSE-899050
+    # 北证 50 指数：a-share-index 价格端点同轮实证（243 行完整），同上
     window: {start: 2025-01-01, end: 2025-12-31}
     min_bars: 10
     required_fields: [open, high, low, close, volume, amount]
@@ -489,6 +504,15 @@ notes: >
     probe_span_days=30，报告 20261114T140107+0800）收敛 earliest
     ≈2005-01-15（±30 天粒度 approx）——替代首轮 ≈2005-02-14（±90 天），
     manifest 回填候选 2005-01-15T00:00:00+08:00（人工确认）。
+  2026-11-14 回填落地（探针实证人工确认）：BSE→BJ 收编——request_mapper
+  _SUFFIXES 扩 {stock/index: BSE→BJ}、manifest 头注释与 README 标的映射
+  bullet 同步、契约/单测「BJ 未实证 422 拒绝」断言反转为正向映射断言
+  （test_bse_exchange_namespace_mapped / test_bse_exchange_mapped）、
+  targets 增 stock@CN-BSE / index@CN-BSE 常态复验键；stock 深度精化回填
+  2005-01-15（±30 天粒度替代 2005-02-14）；offset 静默忽略 / 窗口跨度
+  ≤10 年 / 行数上限未观测（≥2417，partial 恒 false 维持）/ 已摘牌仅现活
+  可查（contract/option history.start 保持 null 定案，tushare 已摘牌全量
+  锚定先例不适用）四处定案记入 manifest 头注释与 README。
 
 
 

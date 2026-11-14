@@ -919,22 +919,33 @@ fund-market、futures-prices、options-prices 六页）：
   `upstream_message`）；非 2xx 与 JSON 解析失败为防御性 `UPSTREAM_ERROR`
   （官方约定业务错误走信封，HTTP 恒 200）；时间戳统一毫秒 Unix、
   Asia/Shanghai，适配器负责北京时间归一化；
-- 标的代码映射（只收文档实证条目，其余 exchange 明确拒绝、探针后回填）：
-  stock/index/etf `CN-SSE-600519 → 600519.SH`、`CN-SZSE-000001 → 000001.SZ`
-  （BSE→BJ 仅元信息域实证、价格端点未实证，不收）；contract
-  `CN-SHFE-CU2601 → CU2601.SHF`（仅 SHFE 后缀文档实证）；option
-  `CN-CFFEX-IO2601-C-4000 → IO2601-C-4000.CFE`（仅 CFFEX 后缀文档实证），
+- 标的代码映射（只收实证条目——文档示例 + 探针价格端点实证，其余 exchange
+  明确拒绝）：stock/index `CN-SSE-600519 → 600519.SH`、
+  `CN-SZSE-000001 → 000001.SZ`、`CN-BSE-920000 → 920000.BJ`（BSE→BJ
+  2026-11-14 探针价格端点实证后收编：920000.BJ a-share historical 与
+  899050.BJ a-share-index historical 各 243 行完整，报告
+  20261114T135118+0800；北交所无 ETF）；contract `CN-SHFE-CU2706 →
+  CU2706.SHF`（仅 SHFE 后缀实证；ZCE/DCE/INE/GFEX 四所 2026-11-14 探针
+  3001 未通过——负对照 ZZ9999.SHF 同指纹定案「标的不在 ths 目录」，不收）；
+  option `CN-CFFEX-IO2612-C-4000 → IO2612-C-4000.CFE`（仅 CFFEX 后缀实证），
   期货/期权 symbol 段原样透传（不做行权价等结构改写）；
 - **上游能力边界（端外，文档明示 + 2026-11-13 三轮探针实证）**：历史 K 线仅
   日线 `1d`；**窗口口径实测与文档不符**——指数文档写「≤10 年」实测仅支持
   **最近约 5 年滚动窗口**（越界 `code=1003 'recent five years only'` 拒绝）、
-  A 股个股实测无滚动上限（越界软返空）、ETF ≤5 自然年吻合（越界**返空不报
-  错**）；期货/期权日 K 端外仅 `time_period=day_1`（显式传参）；已知上游缺陷：
-  期权日 K `start=2026-10-01`（单一日期）触发 `code=5003 'daily quote
-  unavailable'`（邻近起点均正常，与调用频率无关——窗口避开即可，适配器照常
-  上抛 `UPSTREAM_ERROR` 不归一化：单点缺陷而非稳定边界）；同花顺板块/行业
-  指数（`88xxxx.TI`）与商品指数（`850002.TI`）属同花顺特有 TI 类指数，本期
-  不纳入；ETF 行情仅支持 ETF（LOF/场外/REITs 上游返回 `code=3004`）；
+  A 股个股**窗口跨度 ≤10 年**（>10 年窗 `code=1003 'must span at most 10
+  years'` 拒绝——首轮「无滚动上限」系仅验证起点可早于 10 年前，2026-11-14
+  第三轮跨度语义定案补充）、ETF ≤5 自然年吻合（越界**返空不报
+  错**）；期货/期权日 K 端外仅 `time_period=day_1`（显式传参）；**已摘牌
+  合约移出上游目录、仅现活合约可查**（2026-11-14 定案：文档示例已到期
+  CU2601.SHF / IO2601-C-4000.CFE 存续期窗口 3001 'Target not found'，与
+  现活 CU2706.SHF 同后缀 code=0 干净对照；负对照 ZZ9999.SHF 同 3001 定案
+  指纹语义——contract/option `history.start` 保持 null 的裁决依据）；已知
+  上游缺陷：期权日 K `start=2026-10-01`（单一日期）触发 `code=5003 'daily
+  quote unavailable'`（邻近起点均正常，与调用频率无关——窗口避开即可，
+  适配器照常上抛 `UPSTREAM_ERROR` 不归一化：单点缺陷而非稳定边界）；
+  同花顺板块/行业指数（`88xxxx.TI`）与商品指数（`850002.TI`）属同花顺特有
+  TI 类指数，本期不纳入；ETF 行情仅支持 ETF（LOF/场外/REITs 上游返回
+  `code=3004`）；
 - 复权映射（A 股历史 K 线三值语义）：`none→none`、`qfq→forward`
   （前复权）、`hfq→backward`（后复权）；指数无复权语义（响应 `data.adjust`
   固定 null）、期货/期权仅声明 none；**ETF 上游无 adjust 参数、数据固定
@@ -963,14 +974,17 @@ fund-market、futures-prices、options-prices 六页）：
   price_change/price_change_ratio_pct`（ETF 另有
   `price_amplitude_ratio_pct`/`turnover_ratio_pct`）；快照不返回中文名
   `name`（上游约定，经元信息域端点解析，网关不透出）；
-- **历史覆盖范围（2026-11-13 探针实证回填，报告 20261113T212034/213321/
-  214147+0800）**：个股日线 `history.start ≈ 2005-02-14`（二分 90 天粒度
-  approx，真实最早可能更早，[2005,2010] era 1153 行完整）；指数/ETF 为
-  **滚动窗口语义**，按 `retention_days=1825` 声明（指数错误消息自述
-  'recent five years only'、ETF 文档 5 自然年吻合；[2022-01-01] 起可达性
-  实证 969 行，边界粗粒度）；单次返回行数上限官方未标注（`offset`
-  分页参数行为未核实、适配器未启用），`meta.partial` 恒 false（隐式截断
-  行为待探针核实后补充覆盖判定）；
+- **历史覆盖范围（探针实证回填，报告 20261113T212034 三轮 +
+  20261114T135118 / 20261114T140107 精化）**：个股日线
+  `history.start ≈ 2005-01-15`（聚焦二分 ±30 天粒度 approx，替代首轮
+  ≈2005-02-14 ±90 天，真实最早可能更早）；指数/ETF 为**滚动窗口语义**，
+  按 `retention_days=1825` 声明（指数错误消息自述 'recent five years
+  only'、ETF 文档 5 自然年吻合；[2022-01-01] 起可达性实证 969 行，边界
+  粗粒度）；分页与截断（2026-11-14 第三轮定案）：`offset` 参数被上游
+  **静默忽略**（2025 全年窗 offset=100 实测 243 行不变、首根不变——适配器
+  不启用定案维持）、10 年窗内 2183~2417 行完整返回无触顶信号 → 行数上限
+  未观测到（≥2417），`meta.partial` 恒 false 定案维持（触顶判定无观测
+  基础）；
 - 快照为纯 REST 单次调用语义：无首包超时/`QUOTE_NOT_READY`（与
   alphafeed/tickflow 一致），上游无推送接口，不实现快照流（流式请求返回
   `UNSUPPORTED_CAPABILITY`）。
@@ -998,10 +1012,11 @@ rate-limit、stock-quote、history-kline 五页）：
   以 `\n` 连接，签名 Base64 后经 `X-Api-Key`/`Authorization`（无 Bearer 前缀）/
   `X-Timestamp`/`X-Nonce` 四头注入），算法按私钥 PEM 类型自动检测；
   X-Timestamp 与服务端偏差超过默认 5 秒报 -12006（HTTP 401）——第一版不做
-  自动校时，依赖宿主机时钟（校时端点 `GET /api/v1.0/server-time` 待探针实证
-  后按需补充）；AppKey/私钥不落 URL、日志、manifest 或异常响应；缺省路由置
-  各组合回退链最末位（2026-11-14 接入拍板：AppKey 凭据 API、历史覆盖未探针
-  实证），显式 `provider/variant=futunn` 亦可选用；
+  自动校时，依赖宿主机时钟（校时端点 `GET /api/v1.0/server-time` 免签可用
+  已探针实证 2026-11-14：HTTP 200，信封 `server_time_ms` 为字符串类型；
+  自动校时实现按需立项，人工拍板只记录不落地）；AppKey/私钥不落 URL、
+  日志、manifest 或异常响应；缺省路由置各组合回退链最末位（2026-11-14
+  接入拍板：AppKey 凭据 API），显式 `provider/variant=futunn` 亦可选用；
 - 行情权限（api-authority 页）：A 股境内认证客户免费 LV1（国际客户暂不支持）、
   港股股票境内认证客户免费 LV2、美股股票推广期免费 LV3——未开通对应市场权限
   时上游报 invalid_symbol/quota 类错误，适配器原样上抛 `UPSTREAM_ERROR`；
@@ -1021,9 +1036,12 @@ rate-limit、stock-quote、history-kline 五页）：
   统一 US；**OTC 上游不支持获取**，exchange 白名单拒绝）；上游品类表 BJ 无
   ETF（仅正股/指数），ETF×BSE 组合在映射层拒绝；
 - 周期映射（ktype 数字枚举）：`PT1M→1`、`PT5M→6`、`PT15M→7`、`PT30M→8`、
-  `PT1H→9`（上游 60 分）、`P1D→2`、`P1W→3`、`P1M→4`；上游另有 3/10/120/180/240
-  分与季/年线（文档明示），对应 ISO 周期不在声明面（PT3M/PT2H/PT4H 与季/年线
-  待探针实证后回填；年/季线不进能力目录——周期上界月线）；
+  `PT1H→9`（上游 60 分）、`P1D→2`、`P1W→3`、`P1M→4`；未声明周期探针收口
+  （2026-11-14 目录外实证）：ktype=10 = 3 分（PT3M）、ktype=14 = 120 分
+  （PT2H）端点真实可用、ktype=15 = 180 分（PT3H）与 PT2H 同形态（CN 上午
+  盘 2h 会话退化）、PT4H 无可用 ktype 映射——**PT3M/PT2H 维持不声明**
+  （可用性证据保留探针 notes，扩容需 manifest/operations 扩容 + 深度专项
+  另探，人工拍板 2026-11-14）；年/季线不进能力目录（周期上界月线）；
 - 复权映射（autype）：`none→0`、`qfq→1`、`hfq→2`（上游缺省 1=前复权，适配器
   始终显式传参）；stock 三值声明；指数无复权语义仅 none（与 ths 惯例一致）；
   **ETF autype 生效**（2026-11-14 探针实证：510300 日线 2024 全年 none/qfq
@@ -1046,9 +1064,10 @@ rate-limit、stock-quote、history-kline 五页）：
 - 单位与时间戳：`volume`=股（按信封 `data.volume_precision` 还原——上游已放大
   10^n 倍，股票一般 n=0）、`turnover→amount`=成交额（各市场原币，官方未标注
   币种折算不编造换算）；行 `time_key` 为毫秒 Unix 时间戳（绝对时刻）→ 统一
-  北京时间归一化（行内 `time_zone` 为显示用本地时区偏移，相对 UTC 分钟数，
-  不参与标准化）；日/周/月 K 线 `time_key` 墙钟口径（市场零点还是北京零点）
-  待探针核实；
+  北京时间归一化（行内 `time_zone` 实测为小时口径（CN 行 =8）而非文档的
+  分钟偏移——文档失真，不参与标准化）；日/周/月 K 线 `time_key` 墙钟口径
+  已探针定案（2026-11-14：CN/HK 北京零点、US 美东零点——13:00+08 冬令/
+  12:00+08 夏令，绝对时刻口径与现实现一致）；
 - 快照（`POST /api/v1.0/quote/stock-quote`，`code_list` 单次最多 400、本网关
   单标的传 1 个）：`data_time`（毫秒 Unix）→ 行情时间、`last_price`/OHLC/
   `prev_close_price`/`volume`/`turnover→amount` 直映，**无盘口五档**（bid/ask
@@ -1060,17 +1079,28 @@ rate-limit、stock-quote、history-kline 五页）：
   `QUOTE_NOT_READY`（与 ths/alphafeed/tickflow 一致）；WS 行情推送专区
   （`wss://webapi-quote.futunn.com/ws`）本期不接入——**第一版不做流式**
   （用户拍板 2026-11-14），流式请求返回 `UNSUPPORTED_CAPABILITY`；
-- **历史覆盖范围（2026-11-14 depth 探针实证回填，人工确认，报告
-  20261114T121154+0800）**：CN stock 已回填——日/周/月线
+- **历史覆盖范围（2026-11-14 depth 探针实证回填，两轮人工确认，报告
+  20261114T121154 / 20261114T135118+0800）**：CN stock——日/周/月线
   `history.start ≈ 1990-12-19`（基准标的 600602 老八股上市日：P1W/P1M
-  独立实证 era#7 count=208/49 与上市日精确吻合、P1D 同库互证 floor-hit，
-  approx 标注）、分钟族（PT1M~PT1H）`≈ 2014-01-21T09:45`（五周期各自
-  独立二分一致收敛，90 天粒度 approx，跨周期互证）；**其余组合
-  （index/etf/HK/US）未单独 depth，history 保持 null 未核实**（capability
-  级声明以基准标的库底为准，SZSE/BSE 交易所未单独探测）；单查询行数
-  上限与截断语义见「单查询行数上限与隐式截断」bullet。
+  独立实证 era#7 count=208/49 与上市日精确吻合、P1D 同库互证 floor-hit）、
+  分钟族（PT1M~PT1H）`≈ 2014-01-21T09:45`（五周期独立二分一致收敛、跨
+  周期互证；第三轮发现更早存在稀疏碎片数据——era 宽窗静默返空 + 碎片区
+  使连续性假设失效，2014-01-21 语义为连续可查起点）；CN index——日/周/
+  月 `≈ 1991-01-18`（est 上界，最终窗 count=23 吻合 ≈1990-12-19 回溯发布
+  锚起算，与 CN stock 同库界）、分钟族 `≈ 2015-05-15`；CN etf——日/周/月
+  `2012-05-28`（510300 上市日锚：最终窗 count=10 与上市日→窗末交易日数
+  精确吻合）、分钟族 `≈ 2015-07-11`；HK stock——日/周/月 `≈ 1991-01-18`
+  （count=13 → 底 ∈ (1990-11-23, 1991-01-18]；与 alphafeed/tickflow HK
+  库底 1980-02-15 对照显著更浅，差异如实记录）、**分钟族保持 null**
+  （碎片区二分不可定案，待专项方法重探）；US stock——日/周/月
+  `≈ 1997-01-25`（count=17 → 底 ∈ (1996-11-29, 1997-01-25] ≈1996-12；
+  GE 1892 上市，收敛点为真实库底而非上市日伪影）、分钟族 `≈ 2015-05-15`；
+  index/etf/US 分钟族为 0-or-cap 干净收敛、五周期同值互证；除锚定值外均
+  approx 90 天粒度（capability 级声明以基准标的库底为准，SZSE/BSE 交易所
+  未单独探测）；单查询行数上限与截断语义见「单查询行数上限与隐式截断」
+  bullet。
 
-十个内置 Provider（akshare、alphafeed、baostock、tickflow、ths、tiingo、tushare、tqsdk、twelvedata、futunn）均已接入，接口签名与数据口径按各自官方文档核实（tiingo 的 WS 消息形态细节、futunn 的各周期历史覆盖与 K 线时间口径待数据探针实证回填，已在上述章节如实标注）；未配置凭据或未安装 SDK 时数据请求返回 `PROVIDER_NOT_IMPLEMENTED`，`provider=auto` 在无可用候选时返回 `NO_PROVIDER_AVAILABLE`，也**绝不返回写死的模拟行情**。
+十个内置 Provider（akshare、alphafeed、baostock、tickflow、ths、tiingo、tushare、tqsdk、twelvedata、futunn）均已接入，接口签名与数据口径按各自官方文档核实（tiingo 的 WS 消息形态细节为目录外探针结论，已在上述章节如实标注）；未配置凭据或未安装 SDK 时数据请求返回 `PROVIDER_NOT_IMPLEMENTED`，`provider=auto` 在无可用候选时返回 `NO_PROVIDER_AVAILABLE`，也**绝不返回写死的模拟行情**。
 
 ### 新增 / 接入 Provider
 

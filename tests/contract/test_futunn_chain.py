@@ -145,9 +145,13 @@ def test_capability_catalog(futunn_client: TestClient) -> None:
         ]
         assert cap["fields"] == ["open", "high", "low", "close", "volume", "amount"]
 
-    # history.start（2026-11-14 depth 探针实证回填）：CN stock 日/周/月
-    # ≈1990-12-19（上市日锚）、分钟族 ≈2014-01-21（approx 90 天粒度）；
-    # 其余组合（index/etf/HK/US）未单独 depth，保持 null 未核实
+    # history.start（2026-11-14 depth 探针实证回填，两轮人工确认，报告
+    # 20261114T121154 / 20261114T135118+0800）：CN stock 日/周/月 1990-12-19
+    # （上市日锚）、分钟族 2014-01-21（连续可查起点）；CN index 日/周/月
+    # ≈1991-01-18、分钟族 ≈2015-05-15；CN etf 日/周/月 2012-05-28（上市日
+    # 锚 count-exact）、分钟族 ≈2015-07-11；HK stock 日/周/月 ≈1991-01-18、
+    # 分钟族碎片区保持 null；US stock 日/周/月 ≈1997-01-25、分钟族
+    # ≈2015-05-15（除锚定值外均 approx 90 天粒度）
     by_key = {
         (tuple(cap["markets"])[0], tuple(cap["asset_types"])[0]): cap
         for cap in bars_caps
@@ -161,13 +165,36 @@ def test_capability_catalog(futunn_client: TestClient) -> None:
         assert stock_history[code]["retention_days"] is None
     for code in ("P1D", "P1W", "P1M"):
         assert stock_history[code]["start"] == "1990-12-19T00:00:00+08:00"
-    for key in (("CN", "index"), ("CN", "etf"), ("HK", "stock"), ("US", "stock")):
-        for interval_entry in by_key[key]["intervals"]:
-            assert interval_entry["history"] == {
-                "start": None,
-                "end": None,
-                "retention_days": None,
-            }
+    index_history = {
+        i["code"]: i["history"] for i in by_key[("CN", "index")]["intervals"]
+    }
+    for code in ("PT1M", "PT5M", "PT15M", "PT30M", "PT1H"):
+        assert index_history[code]["start"] == "2015-05-15T23:37:30+08:00"
+    for code in ("P1D", "P1W", "P1M"):
+        assert index_history[code]["start"] == "1991-01-18T16:52:30+08:00"
+    etf_history = {
+        i["code"]: i["history"] for i in by_key[("CN", "etf")]["intervals"]
+    }
+    for code in ("PT1M", "PT5M", "PT15M", "PT30M", "PT1H"):
+        assert etf_history[code]["start"] == "2015-07-11T08:26:15+08:00"
+    for code in ("P1D", "P1W", "P1M"):
+        assert etf_history[code]["start"] == "2012-05-28T00:00:00+08:00"
+    hk_history = {
+        i["code"]: i["history"] for i in by_key[("HK", "stock")]["intervals"]
+    }
+    for code in ("PT1M", "PT5M", "PT15M", "PT30M", "PT1H"):
+        # 碎片区（era 宽窗静默返空 + 稀疏碎片数据使连续性假设失效）：
+        # 二分法不可定案，保持 null 待专项方法重探
+        assert hk_history[code]["start"] is None
+    for code in ("P1D", "P1W", "P1M"):
+        assert hk_history[code]["start"] == "1991-01-18T16:52:30+08:00"
+    us_history = {
+        i["code"]: i["history"] for i in by_key[("US", "stock")]["intervals"]
+    }
+    for code in ("PT1M", "PT5M", "PT15M", "PT30M", "PT1H"):
+        assert us_history[code]["start"] == "2015-05-15T23:37:30+08:00"
+    for code in ("P1D", "P1W", "P1M"):
+        assert us_history[code]["start"] == "1997-01-25T00:33:45+08:00"
 
     adjustments = {
         (tuple(cap["markets"])[0], tuple(cap["asset_types"])[0]): cap["adjustments"]
