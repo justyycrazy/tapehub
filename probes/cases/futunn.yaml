@@ -1,5 +1,6 @@
 # 富途 OpenAPI（futunn）数据探针：三市场全声明维度可用性、逐所细分
-# （SZSE/BSE）、复权生效性、历史深度（逐周期 era 二分）、无签名错误指纹采集。
+# （SZSE/BSE）、复权生效性、历史深度（逐周期 era 二分，第三轮扩围五目标）、
+# 无签名错误指纹与校时端点形态采集。
 #
 # 限频与额度（官方口径 2026-11-14）：IP 入口层行情类 100 次/分钟；业务限流
 # 走 HTTP 200 + ret_code=-11。**历史 K 线独立额度池：每标的首次成功返回
@@ -23,11 +24,15 @@ pacing:
   # 免计「首请求」（实测上游未签发 token，分页循环保留为防御）
   call_interval_s: 2.0
   timeout_s: 60
-  # 本轮构成（2026-11-14 第二轮，逐所细分 + depth 专项启用）：availability
-  # 144（首轮 88 + 逐所 SZSE/BSE stock 各 24 + BSE index 8）+ adjust_diff
-  # 12（6 case × 2 调）+ history_depth 8 case × ≤16 = 128 最坏 + raw 3 ≈
-  # 287 最坏，预算 300 留余量（约 12 分钟）
-  max_calls: 300
+  # 本轮构成（2026-11-14 第三轮，depth 扩围立项）：availability 160
+  # （8 目标键 × 8 周期 × 各自复权面；quotes 快照不经 chain——框架 chain
+  # 仅覆盖 fetch_bars，快照经目录外取证与单测覆盖）+ adjust_diff 12
+  # （6 case × 2 调）+ history_depth 40 case（5 目标 × 8 周期）× 最坏 24
+  # = 960 最坏 + raw 6（2 case 各 3 调）≈ 1138 最坏，预算 1200 留余量
+  # （era 10 年步长下单 case 实测约 8~15 调，实测全程 ≈600 调约 30 分钟，
+  # 后台运行）；额度池不新增占用——depth 四新目标复用 availability 已占
+  # 额度的基准标的
+  max_calls: 1200
 
 # 跨三市场（CN/HK/US）声明能力：用市场限定目标（stock@MARKET）为每个市场
 # 提供独立基准标的；case id 以限定键为前缀（如 stock@HK-P1D-...）。
@@ -103,16 +108,23 @@ chain:
     intervals: [P1D]
     pairs: [[none, qfq], [none, hfq]]
     fields: [close]
-  # history_depth 启用（2026-11-14 第二轮，人工确认）：额度池约束解除——
-  # depth 复用已占额度的基准标的（重复读取不新增占用），成本仅 IP 频率；
-  # tiingo 裁决「逐周期独立探测，机制边界外推不作为逐周期证据」→ 8 周期
-  # 全跑；targets 收敛 CN 老八股 600602（1990-12-19 上市，深度收敛点为
-  # 真实库底而非上市日伪影），earliest 1990-01-01
+  # history_depth 扩围（2026-11-14 第三轮立项，人工确认）：CN stock 已收敛
+  # 回填（日/周/月 1990-12-19 上市日锚 + 分钟族 2014-01-21），本轮扩
+  # index/etf/HK/US 四组合共 32 个周期组合——四新目标复用 availability 已
+  # 占额度标的（SH.000001/SH.510300/HK.00002/US-NYSE-GE），不新增历史额度
+  # 占用，成本仅 IP 频率；tiingo 裁决「逐周期独立探测，机制边界外推不作为
+  # 逐周期证据」→ 8 周期全跑；era_step 10 年减半深库回溯调用（HK.00002/
+  # US GE 为深库候选，二分精度仍由 bisect 收敛到 probe_span_days=90 天）；
+  # earliest 1890-01-01（GE 1892 上市，深库下界；触底分支
+  # estimate=earliest 一律不回填——twelvedata 教训）；SZSE/BSE 维持
+  # capability 级以基准标的库底为准、不单独 depth（README 注明）
   history_depth:
-    targets: [stock@CN]
-    earliest: 1990-01-01
-    era_step_years: 5
-    max_calls: 16
+    targets: [stock@CN, index@CN, etf@CN, stock@HK, stock@US]
+    earliest: 1890-01-01
+    era_step_years: 10
+    # 单 case（目标×周期）子预算：era 10 年回溯 + 二分至 90 天粒度，
+    # 最坏 ≈24 调（深库 candidates：HK.00002/US GE）
+    max_calls: 24
     intervals: [PT1M, PT5M, PT15M, PT30M, PT1H, P1D, P1W, P1M]
 
 raw:
@@ -128,6 +140,22 @@ raw:
       - {method: get, kwargs: {url: "https://webapi.futunn.com/api/v1.0/quote/HK.00700/history-kline?start=2025-01-01&end=2025-01-02&ktype=2&autype=0&num=10", headers: {"X-Api-Key": "probe-invalid-key-not-a-credential"}}}
       - {method: json, kwargs: {}, target: result}
     expect: {status: error, error_contains: ""}
+    close: {method: close, kwargs: {}}
+
+  # 校时端点观察（adapter docstring 遗留待核实项）：X-Timestamp 与服务端
+  # 偏差 >5s 报 -12006（HTTP 401），第一版不做自动校时（依赖宿主机时钟）
+  # ——server-time 免签可用性与响应形态观察是后续「按需补充自动校时」的
+  # 判定依据；若 401 则指纹落袋（免签性结论即观察所得）
+  - id: futunn-server-time-endpoint
+    purpose: GET /api/v1.0/server-time 免签可用性与响应形态观察（时钟漂移
+      防御依据）
+    assert: false
+    module: httpx
+    client: {attr: Client, kwargs: {}}
+    call:
+      - {method: get, kwargs: {url: "https://webapi.futunn.com/api/v1.0/server-time"}}
+      - {method: json, kwargs: {}, target: result}
+    expect: {status: ok, min_fields: [ret_code]}
     close: {method: close, kwargs: {}}
 
 notes: >
@@ -209,3 +237,18 @@ notes: >
   90 天粒度 approx）；③etf adjustments 扩 [none, qfq, hfq]（operations
   8→24 条，manifest/README/契约测试断言同步）；④extensions 盘前盘后段
   扩容搁置（本轮不落地，证据保留于本 notes，字段选型设计待后续立项）。
+  2026-11-14 第三轮立项（人工确认，case 改动随本轮提交）：①depth 扩围——
+  targets 扩 [stock@CN, index@CN, etf@CN, stock@HK, stock@US] × 8 周期
+  全跑（era 10 年步长、earliest 1890-01-01、逐周期独立探测），四新目标
+  复用 availability 已占额度标的零新增占用，收敛值经 P1W/P1M era count
+  缺口判定真库底 vs 上市日伪影后呈人工确认回填；②page_token 复核（目录
+  外脚本）：pagination.has_more / next_page_token / data.next_time /
+  num 回显 / 单页行数 / data 顶层键集合——若 token 开始签发适配器分页
+  循环自动生效；③PT2H/PT4H ktype 候选观察（目录外脚本，manifest 注释
+  「探针后再议」收口）；④**extensions 盘前盘后段扩容——用户拍板不声明**
+  （现有证据 US.GE 盘后 60.3 万股已支撑裁决：白名单维持 7 键、盘前盘后
+  段数据不透出，待办项④闭合，回填时仅同步 manifest/README 注记）；
+  ⑤校时端点 GET /api/v1.0/server-time 免签观察 raw case（adapter
+  docstring 遗留项）。max_calls 300→1200（最坏 ≈1138：availability 160 +
+  adjust 12 + depth 40 case × 单 case 子预算 24 + raw 6；era 10 年步长下
+  单 case 实测约 8~15 调）。
