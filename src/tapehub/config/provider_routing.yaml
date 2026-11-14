@@ -16,62 +16,71 @@ version: 1
 defaults:
   # —— bars · 历史 K 线 ——
   - match: {data_type: bars, market: CN, asset_type: stock}
-    order: [baostock, alphafeed, tickflow, tushare, akshare, ths, futunn]
+    order: [baostock, ths, alphafeed, tickflow, tushare, futunn, akshare]
 
   - match: {data_type: bars, market: CN, asset_type: index}
-    order: [akshare, baostock, ths, futunn]
+    order: [baostock, ths, futunn, akshare]
 
   - match: {data_type: bars, market: CN, asset_type: etf}
-    order: [tqsdk, baostock, akshare, ths, futunn]
+    order: [baostock, ths, futunn, akshare]
 
   - match: {data_type: bars, market: CN, asset_type: contract}
-    order: [tqsdk, akshare, ths]
-
-  - match: {data_type: bars, market: CN, asset_type: option}
-    order: [ths]
+    order: [tqsdk, ths, akshare]
 
   - match: {data_type: bars, market: CN, asset_type: continuous}
-    order: [tqsdk, akshare]
+    order: [tqsdk]
 
   - match: {data_type: bars, market: CN, asset_type: weighted-index}
     order: [tqsdk]
 
-  - match: {data_type: bars, market: US, asset_type: stock}
-    order: [twelvedata, alphafeed, tickflow, akshare, futunn]
+  - match: {data_type: bars, market: CN, asset_type: option}
+    order: [ths]
 
   - match: {data_type: bars, market: HK, asset_type: stock}
-    order: [alphafeed, tickflow, akshare, futunn]
+    order: [alphafeed, tickflow, futunn, akshare]
+
+  - match: {data_type: bars, market: US, asset_type: stock}
+    order: [alphafeed, tickflow, twelvedata, futunn, akshare]
 
   - match: {data_type: bars, market: US, asset_type: etf}
     order: [twelvedata]
 
   - match: {data_type: bars, market: GLOBAL, asset_type: forex}
     order: [twelvedata, tiingo]
+
   - match: {data_type: bars, market: GLOBAL, asset_type: crypto}
     order: [twelvedata, tiingo]
 
   # —— quotes · 实时快照 ——
   - match: {data_type: quotes, market: CN, asset_type: stock}
-    order: [tqsdk, alphafeed, tickflow, ths, futunn]
+    order: [ths, alphafeed, tickflow, futunn, tqsdk]
+
   - match: {data_type: quotes, market: CN, asset_type: index}
-    order: [tqsdk, ths, futunn]
+    order: [ths, futunn, tqsdk]
+
   - match: {data_type: quotes, market: CN, asset_type: etf}
-    order: [tqsdk, ths, futunn]
+    order: [ths, futunn, tqsdk]
+
   - match: {data_type: quotes, market: CN, asset_type: contract}
     order: [tqsdk, ths]
+
   - match: {data_type: quotes, market: CN, asset_type: continuous}
     order: [tqsdk]
+
   - match: {data_type: quotes, market: CN, asset_type: weighted-index}
     order: [tqsdk]
+
   - match: {data_type: quotes, market: CN, asset_type: option}
     order: [ths]
 
   - match: {data_type: quotes, market: HK, asset_type: stock}
     order: [alphafeed, tickflow, futunn]
+
   - match: {data_type: quotes, market: US, asset_type: stock}
     order: [alphafeed, tickflow, futunn]
 
   - match: {data_type: quotes, market: GLOBAL, asset_type: forex}
     order: [twelvedata, tiingo]
+
   - match: {data_type: quotes, market: GLOBAL, asset_type: crypto}
     order: [twelvedata, tiingo]

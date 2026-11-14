@@ -1,13 +1,11 @@
 """TickFlow 完整 HTTP 链路契约测试（SDK 用桩 Mock，无真实网络）。"""
 
-from datetime import datetime
 from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
 
 from tapehub.api.app import create_app
-from tapehub.domain.models import CN_TIMEZONE
 from tapehub.providers.registry import build_default_registry
 from tests.conftest import make_settings
 from tests.fixtures.providers.stub_tickflow import (
@@ -296,98 +294,6 @@ def test_quote_contract_violation_is_upstream_error(
     assert response.json()["error"]["code"] == "UPSTREAM_ERROR"
 
 
-# ---------------------------------------------------------------------------
-# auto 路由优先级：tickflow 不抢占既有默认路由（注册序末位）
-# ---------------------------------------------------------------------------
-
-
-def test_auto_routing_precedence(tickflow_client: TestClient) -> None:
-    """重叠能力归既有 Provider（tqsdk / twelvedata），独占能力归 tickflow。"""
-    from tapehub.application.provider_router import ProviderRouter
-    from tapehub.domain.models import AssetType, Instrument, QuoteQuery
-
-    settings = make_settings(
-        tickflow_api_key="test-key",
-        tqsdk_auth_user="user@example.com",
-        tqsdk_auth_password="secret",
-        twelvedata_api_key="test-twelvedata-key",
-    )
-    router = ProviderRouter(build_default_registry(settings))
-
-    def _quote(instrument: str) -> str:
-        selection = router.select_quote(
-            QuoteQuery(
-                asset_type=AssetType.STOCK, instrument=Instrument.parse(instrument)
-            )
-        )
-        return selection.record.name
-
-    def _bars(instrument: str) -> str:
-        from tapehub.domain.intervals import Interval
-        from tapehub.domain.models import Adjust, BarQuery
-
-        selection = router.select(
-            BarQuery(
-                asset_type=AssetType.STOCK,
-                instrument=Instrument.parse(instrument),
-                interval=Interval.parse("P1D"),
-                start=datetime(2026, 1, 1, tzinfo=CN_TIMEZONE),
-                end=datetime(2026, 1, 31, tzinfo=CN_TIMEZONE),
-                adjust=Adjust.NONE,
-                offset=0,
-                limit=10,
-            )
-        )
-        return selection.record.name
-
-    # CN stock 快照与 US stock K 线：既有默认（tqsdk / twelvedata）不受影响
-    assert _quote("CN-SSE-600000") == "tqsdk"
-    assert _bars("US-NASDAQ-AAPL") == "twelvedata"
-    # tickflow 独占能力（HK 两类、US 快照）自动路由
-    assert _quote("HK-HKEX-00700") == "tickflow"
-    assert _quote("US-NASDAQ-AAPL") == "tickflow"
-    assert _bars("HK-HKEX-00700") == "tickflow"
-
-    # alphafeed 启用时：接管 HK 日线缺省，US/CN 缺省不变
-    af_settings = make_settings(
-        alphafeed_api_key="test-alphafeed-key",
-        tickflow_api_key="test-key",
-        tqsdk_auth_user="user@example.com",
-        tqsdk_auth_password="secret",
-        twelvedata_api_key="test-twelvedata-key",
-    )
-    af_router = ProviderRouter(build_default_registry(af_settings))
-
-    def _bars_af(instrument: str) -> str:
-        from tapehub.domain.intervals import Interval
-        from tapehub.domain.models import Adjust, BarQuery
-
-        selection = af_router.select(
-            BarQuery(
-                asset_type=AssetType.STOCK,
-                instrument=Instrument.parse(instrument),
-                interval=Interval.parse("P1D"),
-                start=datetime(2026, 1, 1, tzinfo=CN_TIMEZONE),
-                end=datetime(2026, 1, 31, tzinfo=CN_TIMEZONE),
-                adjust=Adjust.NONE,
-                offset=0,
-                limit=10,
-            )
-        )
-        return selection.record.name
-
-    assert _bars_af("HK-HKEX-00700") == "alphafeed"
-    assert _bars_af("US-NASDAQ-AAPL") == "twelvedata"
-
-    # alphafeed 启用时同时接管 HK/US 快照缺省；CN 快照缺省仍 tqsdk
-    def _quote_af(instrument: str) -> str:
-        selection = af_router.select_quote(
-            QuoteQuery(
-                asset_type=AssetType.STOCK, instrument=Instrument.parse(instrument)
-            )
-        )
-        return selection.record.name
-
-    assert _quote_af("HK-HKEX-00700") == "alphafeed"
-    assert _quote_af("US-NASDAQ-AAPL") == "alphafeed"
-    assert _quote_af("CN-SSE-600000") == "tqsdk"
+# 注：auto 路由优先级（重叠能力归谁、停用者跳过）由回退链序裁决——顺序是可调
+# 配置，契约面不断言具体胜者；机制测试在 tests/unit/test_registry_routing.py
+# （合成置换配置验证「按链序裁决、停用者跳过」）。

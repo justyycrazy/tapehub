@@ -1,10 +1,12 @@
 """baostock 完整 HTTP 链路契约测试（SDK 用桩 Mock，无真实网络）。
 
 覆盖点：
-- CN stock bars 缺省路由命中 baostock（回退链首位，免费无凭据恒启用），
+- CN stock bars 经显式 provider 走 baostock（免费无凭据恒启用），
   未传递 adjust → 股票默认 qfq → adjustflag "2"；
-- CN index bars 缺省仍为 akshare（库底更深），baostock 末位补位；
-- CN ETF：tqsdk 凭据/SDK 缺失时自动跳过 → baostock 生效；
+- CN index / CN ETF 经显式 provider 覆盖指数与 ETF 映射（ETF 默认 none）；
+- auto 路由按回退链序裁决、停用者跳过的**机制**在
+  tests/unit/test_registry_routing.py 用合成配置验证——契约面不绑定
+  内置链序（顺序是可调配置）；
 - 无凭据 Provider 无 PROVIDER_DISABLED 路径（对比 alphafeed）；
 - 能力目录三块结构与 history 未核实（start 为 null）口径。
 """
@@ -18,7 +20,6 @@ from fastapi.testclient import TestClient
 from tapehub.api.app import create_app
 from tapehub.providers.registry import build_default_registry
 from tests.conftest import make_settings
-from tests.fixtures.providers.stub_akshare import StubAkshare
 from tests.fixtures.providers.stub_baostock import (
     StubBaostock,
     StubResultData,
@@ -99,36 +100,16 @@ def test_full_chain_default_adjust_is_qfq(
     assert meta["request_id"].startswith("req_")
 
 
-def test_default_route_hits_baostock_for_cn_stock(
+def test_index_explicit_provider(
     baostock_client: TestClient, baostock_stub: StubBaostock
 ) -> None:
-    """CN 个股缺省路由：回退链首位 baostock（免费无凭据恒启用）。"""
-    baostock_stub.result = daily_stock_rows(["2026-01-05"])
-
-    params = {k: v for k, v in BASE_PARAMS.items() if k != "provider"}
-    response = baostock_client.get("/v1/market/bars", params=params)
-    assert response.status_code == 200
-    assert response.json()["meta"]["provider"] == "baostock"
-
-
-def test_index_default_routes_akshare(
-    baostock_client: TestClient,
-    baostock_stub: StubBaostock,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """CN 指数缺省仍为 akshare（库底更深），baostock 末位补位。"""
-    akshare_stub = StubAkshare()
-    monkeypatch.setitem(sys.modules, "akshare", akshare_stub)
-    akshare_stub.set_rows("index_zh_a_hist", [
-        {"日期": "2026-01-05", "开盘": 3105.3, "收盘": 3135.9, "最高": 3136.4,
-         "最低": 3105.3, "成交量": 14156718592, "成交额": 159887138816.0,
-         "振幅": 1.0, "涨跌幅": 1.04, "涨跌额": 32.3, "换手率": 0.0},
-    ])
+    """CN 指数经显式 provider 走 baostock：sh.000001 映射 + 日频参数。"""
     baostock_stub.result = daily_stock_rows(["2026-01-05"])
 
     response = baostock_client.get(
         "/v1/market/bars",
         params={
+            "provider": "baostock",
             "asset_type": "index",
             "instrument": "CN-SSE-000001",
             "interval": "P1D",
@@ -137,20 +118,22 @@ def test_index_default_routes_akshare(
         },
     )
     assert response.status_code == 200
-    assert response.json()["meta"]["provider"] == "akshare"
-    # baostock 未被触达（仅在 akshare 不可用/不支持时回退）
-    assert baostock_stub.calls == []
+    assert response.json()["meta"]["provider"] == "baostock"
+    kwargs = _first_query_kwargs(baostock_stub)
+    assert kwargs["code"] == "sh.000001"
+    assert kwargs["frequency"] == "d"
 
 
-def test_etf_default_falls_back_to_baostock(
+def test_etf_explicit_provider(
     baostock_client: TestClient, baostock_stub: StubBaostock
 ) -> None:
-    """CN ETF：tqsdk SDK 未安装（记录隔离、不启用）→ auto 跳过 → baostock 生效。"""
+    """CN ETF 经显式 provider 走 baostock：sh.510050 映射 + 默认 adjust none。"""
     baostock_stub.result = daily_stock_rows(["2026-01-05"])
 
     response = baostock_client.get(
         "/v1/market/bars",
         params={
+            "provider": "baostock",
             "asset_type": "etf",
             "instrument": "CN-SSE-510050",
             "interval": "P1D",

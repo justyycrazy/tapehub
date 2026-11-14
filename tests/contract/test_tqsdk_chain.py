@@ -213,10 +213,11 @@ def test_stock_chain_with_qfq_adjust(
     assert data["bars"][0]["amount"] is None
 
 
-def test_etf_auto_routes_via_routing_config(
+def test_etf_explicit_provider_chain(
     tqsdk_client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """ETF 是 tqsdk 声明的缺省资产类型：auto 路由命中并回显 meta.variant。"""
+    """ETF 已移出 CN auto 回退链（重排后 baostock 链首承接）：
+    tqsdk ETF 映射经显式 provider 覆盖。"""
     preset_rows(monkeypatch, klines_rows(["2026-01-02"]))
 
     params = {
@@ -224,7 +225,6 @@ def test_etf_auto_routes_via_routing_config(
         "asset_type": "etf",
         "instrument": "CN-SSE-510050",
     }
-    params.pop("provider")
     response = tqsdk_client.get("/v1/market/bars", params=params)
     assert response.status_code == 200
     meta = response.json()["meta"]

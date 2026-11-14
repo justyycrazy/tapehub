@@ -41,6 +41,20 @@ def akshare_client(akshare_stub: StubAkshare) -> TestClient:
         yield client
 
 
+@pytest.fixture()
+def akshare_fallback_client(akshare_stub: StubAkshare) -> TestClient:
+    """CN 指数链内免凭据恒启用的 baostock 显式停用 → auto 落到链内下一可用者 akshare。"""
+    settings = make_settings(
+        max_limit=1000,
+        catalog_version="test",
+        provider_enabled_overrides={"baostock": False},
+    )
+    with TestClient(
+        create_app(settings=settings, registry=build_default_registry(settings))
+    ) as client:
+        yield client
+
+
 BASE_PARAMS = {
     "provider": "akshare",
     "asset_type": "stock",
@@ -123,10 +137,11 @@ def test_index_chain(akshare_client: TestClient, akshare_stub: StubAkshare) -> N
     assert bar["volume"] == 1.0
 
 
-def test_index_em_chain_default_variant_weekly(
-    akshare_client: TestClient, akshare_stub: StubAkshare
+def test_index_falls_back_to_akshare_when_baostock_disabled(
+    akshare_fallback_client: TestClient, akshare_stub: StubAkshare
 ) -> None:
-    # CN 指数缺省路由走 akshare（eastmoney，index_zh_a_hist）；周/月线已声明
+    # 回退机制（不绑定链中相对位置）：baostock 停用后 CN 指数 auto 落到
+    # 链内下一可用者 akshare（eastmoney，index_zh_a_hist）；周/月线已声明
     akshare_stub.set_rows("index_zh_a_hist", em_index_rows(["2026-01-09"]))
     params = {
         "asset_type": "index",
@@ -135,7 +150,7 @@ def test_index_em_chain_default_variant_weekly(
         "start": "2026-01-01T00:00:00+08:00",
         "end": "2026-01-10T00:00:00+08:00",
     }
-    response = akshare_client.get("/v1/market/bars", params=params)
+    response = akshare_fallback_client.get("/v1/market/bars", params=params)
     assert response.status_code == 200
     body = response.json()
 

@@ -237,24 +237,6 @@ def test_us_stock_hfq_422(twelvedata_client: TestClient) -> None:  # type: ignor
     assert response.json()["error"]["code"] == "UNSUPPORTED_CAPABILITY"
 
 
-def test_us_stock_auto_routes(
-    twelvedata_client: TestClient, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """缺省 provider：US 市场股票 bars 唯一候选是 twelvedata，auto 自然路由。"""
-    preset_values(monkeypatch, values_rows(["2026-01-05"]))
-
-    params = {k: v for k, v in US_STOCK_PARAMS.items() if k != "provider"}
-    response = twelvedata_client.get("/v1/market/bars", params=params)
-    assert response.status_code == 200
-    meta = response.json()["meta"]
-    assert meta["provider"] == "twelvedata"
-    assert meta["variant"] == "twelvedata"
-    # 缺省按 stock → qfq 具体化：由上游收到的 adjust="all" 间接证明
-    from tests.fixtures.providers.stub_twelvedata import StubTDClient
-
-    assert StubTDClient.instances[-1].calls[0]["adjust"] == "all"
-
-
 def test_us_etf_chain_default_none(
     twelvedata_client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:

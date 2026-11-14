@@ -7,7 +7,6 @@ from tapehub.api.app import create_app
 from tapehub.providers.registry import build_default_registry
 from tests.conftest import make_settings
 from tests.fixtures.providers import fake_tiingo_ws as fake_ws
-from tests.fixtures.providers import fake_websockets as fake_td_ws
 from tests.fixtures.providers.stub_tiingo import (
     StubClient,
     crypto_rows,
@@ -15,8 +14,6 @@ from tests.fixtures.providers.stub_tiingo import (
     install,
     preset_payload,
 )
-from tests.fixtures.providers.stub_twelvedata import install as install_twelvedata
-from tests.fixtures.providers.stub_twelvedata import preset_values
 
 FOREX_PARAMS = {
     "provider": "tiingo",
@@ -181,26 +178,9 @@ def test_default_variant_routes_to_declared_default(
     assert response.json()["meta"]["variant"] == "tiingo"
 
 
-def test_auto_routes_favor_twelvedata(monkeypatch: pytest.MonkeyPatch) -> None:
-    """缺省路由（两 Provider 均启用）：GLOBAL forex bars 仍缺省 twelvedata
-    （tiingo 为回退位，配额紧不改变既有缺省行为）。"""
-    install(monkeypatch)
-    install_twelvedata(monkeypatch)
-    preset_values(monkeypatch, [{"datetime": "2026-01-02", "open": "1", "high": "1",
-                                 "low": "1", "close": "1"}])
-    settings = make_settings(max_limit=1000, tiingo_api_key="t", twelvedata_api_key="td")
-    with TestClient(
-        create_app(settings=settings, registry=build_default_registry(settings))
-    ) as client:
-        # 全缺省（provider/variant 均不传）：回退链首位 twelvedata 命中
-        params = {
-            k: v for k, v in FOREX_PARAMS.items() if k not in ("provider", "variant")
-        }
-        response = client.get("/v1/market/bars", params=params)
-        assert response.status_code == 200
-        meta = response.json()["meta"]
-        assert meta["provider"] == "twelvedata"
-        assert meta["variant"] == "twelvedata"
+# 注：两 Provider 均启用时 GLOBAL forex 的 auto 胜者由回退链序裁决（可调
+# 配置），不在此断言具体胜者——机制测试见 tests/unit/test_registry_routing.py
+# （合成置换配置）。本文件只覆盖 tiingo 自身的显式链路与变体语义。
 
 
 def test_missing_api_key_returns_clear_error(default_client) -> None:  # type: ignore[no-untyped-def]
@@ -282,21 +262,8 @@ def test_quote_chain_crypto(tiingo_client: TestClient) -> None:
     assert response.json()["meta"]["provider"] == "tiingo"
 
 
-def test_quote_auto_routes_to_twelvedata_first(monkeypatch: pytest.MonkeyPatch) -> None:
-    """快照缺省路由（两 Provider 均启用）：GLOBAL forex 快照仍缺省 twelvedata。"""
-    install(monkeypatch)
-    install_twelvedata(monkeypatch)
-    fake_td_ws.install(monkeypatch)
-    settings = make_settings(tiingo_api_key="t", twelvedata_api_key="td")
-    with TestClient(
-        create_app(settings=settings, registry=build_default_registry(settings))
-    ) as client:
-        params = {k: v for k, v in QUOTE_PARAMS.items() if k not in ("provider", "variant")}
-        response = client.get("/v1/market/quotes", params=params)
-        assert response.status_code == 200
-        meta = response.json()["meta"]
-        assert meta["provider"] == "twelvedata"
-        assert meta["variant"] == "twelvedata"
+# 注：快照面的 GLOBAL forex auto 胜者同样由回退链序裁决（可调配置），
+# 不在此断言具体胜者——机制测试见 tests/unit/test_registry_routing.py。
 
 
 def test_quote_missing_api_key_returns_clear_error(default_client) -> None:  # type: ignore[no-untyped-def]
