@@ -151,7 +151,8 @@ Accept: text/event-stream
 
 - `market`、`exchange` 由服务端解析，调用方无需重复传递；
 - **不接受** `CN.SSE.600000`、`600000` 等非标准格式；Provider 专用代码由适配器转换；
-- 第一版只校验标准格式，不通过标的元数据验证真实资产类型。
+- **market/exchange 组合一致性**：exchange 段必须属于 market 段的规范词汇（CN：SSE/SZSE/BSE/SHFE/DCE/CZCE/INE/GFEX/CFFEX/CSI；HK：HKEX；US：NYSE/NASDAQ/CBOE/AMEX/OTC/IEX；GLOBAL：OTC/CRYPTO），矛盾组合（如 `CN-NYSE-…`）在参数校验期拒绝（`INVALID_REQUEST`），不会透传到 Provider 映射层；各 Provider 的接入范围是词汇表的更窄子集，由映射层白名单自行收窄；
+- 第一版不通过标的元数据验证真实资产类型（「解析 ≠ 验证存在」：标的是否真实存在由 bars/quotes 请求经上游验证）。
 
 ### 标的解析（模糊查询）
 

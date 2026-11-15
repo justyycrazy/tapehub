@@ -159,8 +159,9 @@ def test_unsupported_interval_p1w_422(tiingo_client: TestClient) -> None:
 
 
 def test_wrong_exchange_namespace_422(tiingo_client: TestClient) -> None:
-    """外汇必须使用 OTC 命名空间：exchange 段不符明确拒绝而非透传上游。"""
-    params = {**FOREX_PARAMS, "instrument": "GLOBAL-NYSE-EUR/USD"}
+    """外汇必须使用 OTC 命名空间：GLOBAL-CRYPTO 为合法标准代码，外汇
+    路径不接受，明确拒绝而非透传上游。"""
+    params = {**FOREX_PARAMS, "instrument": "GLOBAL-CRYPTO-EUR/USD"}
     response = tiingo_client.get("/v1/market/bars", params=params)
     assert response.status_code == 422
     assert response.json()["error"]["code"] == "UNSUPPORTED_CAPABILITY"

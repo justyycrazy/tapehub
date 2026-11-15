@@ -169,6 +169,18 @@ def test_us_etf_chain(
     assert body["meta"]["variant"] == "alphafeed"
 
 
+def test_contradictory_instrument_invalid_request(alphafeed_client: TestClient) -> None:
+    """market/exchange 矛盾的标准代码（CN-NYSE-…）被域层词汇表在参数
+    校验期拒绝：INVALID_REQUEST，不进入路由与适配器。"""
+    response = alphafeed_client.get(
+        "/v1/market/bars", params={**BASE_PARAMS, "instrument": "CN-NYSE-SPY"}
+    )
+    assert response.status_code == 422
+    error = response.json()["error"]
+    assert error["code"] == "INVALID_REQUEST"
+    assert error["details"]["param"] == "instrument"
+
+
 def test_missing_api_key_returns_clear_error(default_client) -> None:  # type: ignore[no-untyped-def]
     """未配置 API Key 时：Provider 不启用（能力目录可见），显式请求返回明确错误。"""
     caps = default_client.get("/v1/providers/alphafeed/capabilities")

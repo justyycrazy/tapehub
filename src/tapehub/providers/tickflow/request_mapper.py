@@ -23,30 +23,37 @@ _PERIOD_CODES: dict[Interval, str] = {
 
 _ADJUST_CODES = {Adjust.NONE: "none", Adjust.QFQ: "forward", Adjust.HFQ: "backward"}
 
-# 已核实的市场后缀：A 股 / 港股 / 美股（美股 exchange 段仅作代码规范）
-_EXCHANGE_SUFFIXES = {
-    "SSE": "SH",
-    "SZSE": "SZ",
-    "BSE": "BJ",
-    "HKEX": "HK",
-    "NYSE": "US",
-    "NASDAQ": "US",
-    "CBOE": "US",
-}
+# 市场级后缀（HK/US 后缀与 exchange 段无关，市场段即后缀）；CN 按交易所
+# 消歧（SH/SZ/BJ）。market/exchange 一致性由域层词汇表校验，此处只按
+# 接入范围收窄（docs/providers/tickflow.md「标的代码映射」）。
+_MARKET_SUFFIXES = {"HK": "HK", "US": "US"}
+_CN_EXCHANGE_SUFFIXES = {"SSE": "SH", "SZSE": "SZ", "BSE": "BJ"}
 
 
 def symbol_code(instrument: Instrument) -> str:
-    """标准标的 → TickFlow 代码，如 CN-SSE-600000 → 600000.SH、
-    HK-HKEX-00700 → 00700.HK、US-NASDAQ-AAPL → AAPL.US。"""
-    suffix = _EXCHANGE_SUFFIXES.get(instrument.exchange)
-    if suffix is None:
-        raise UnsupportedCapabilityError(
-            f"TickFlow does not support exchange {instrument.exchange!r}.",
-            details={
-                "provider": "tickflow",
-                "instrument": instrument.code,
-            },
-        )
+    """标准标的 → TickFlow 代码：US/HK 按市场段、CN 按交易所段消歧
+    （CN-SSE-600000 → 600000.SH、HK-HKEX-00700 → 00700.HK、
+    US-NASDAQ-AAPL → AAPL.US）。"""
+    if instrument.market == "CN":
+        suffix = _CN_EXCHANGE_SUFFIXES.get(instrument.exchange)
+        if suffix is None:
+            raise UnsupportedCapabilityError(
+                f"TickFlow does not support CN exchange {instrument.exchange!r}.",
+                details={
+                    "provider": "tickflow",
+                    "instrument": instrument.code,
+                },
+            )
+    else:
+        suffix = _MARKET_SUFFIXES.get(instrument.market)
+        if suffix is None:
+            raise UnsupportedCapabilityError(
+                f"TickFlow does not support market {instrument.market!r}.",
+                details={
+                    "provider": "tickflow",
+                    "instrument": instrument.code,
+                },
+            )
     return f"{instrument.symbol}.{suffix}"
 
 

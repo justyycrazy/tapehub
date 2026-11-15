@@ -198,6 +198,12 @@ class TestStandardCodeEcho:
         result = resolve_instrument("CN-SSE-600000", asset_type=AssetType.STOCK)
         assert codes(result) == ["CN-SSE-600000"]
 
+    def test_contradictory_market_exchange_empty(self) -> None:
+        """market/exchange 矛盾的标准代码（如 CN-NYSE-…）被域层词汇表
+        在构造期拒绝：R0 不命中、其余规则不适用 → 如实空候选。"""
+        assert codes(resolve_instrument("CN-NYSE-SPY")) == []
+        assert codes(resolve_instrument("US-SSE-600000")) == []
+
 
 class TestPrefixSuffixStyles:
     """R3/R4 常见市场前后缀写法。"""

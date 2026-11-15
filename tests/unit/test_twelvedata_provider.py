@@ -388,10 +388,11 @@ def test_other_bad_request_still_raises(monkeypatch: pytest.MonkeyPatch) -> None
 
 
 def test_wrong_exchange_namespace_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
-    """外汇必须使用 OTC 命名空间：exchange 段不符时映射层明确拒绝。"""
+    """外汇必须使用 OTC 命名空间：exchange 段不符时映射层明确拒绝
+    （GLOBAL-CRYPTO 为合法标准代码，外汇路径不接受）。"""
     install(monkeypatch)
     adapter = _adapter()
-    query = _query(instrument=Instrument.parse("GLOBAL-NYSE-EUR/USD"))
+    query = _query(instrument=Instrument.parse("GLOBAL-CRYPTO-EUR/USD"))
     with pytest.raises(UnsupportedCapabilityError):
         asyncio.run(adapter.fetch_bars(query))
 

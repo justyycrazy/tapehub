@@ -412,9 +412,11 @@ def test_czce_irregular_symbol_passthrough(monkeypatch: pytest.MonkeyPatch) -> N
 
 
 def test_unsupported_stock_exchange(monkeypatch: pytest.MonkeyPatch) -> None:
+    # CN 股票接口不接港股（HKEX 不在交易所白名单内）：合法标准代码由
+    # 映射层拒绝（market/exchange 矛盾组合由域层词汇表拦截）
     install(monkeypatch)
     adapter = _adapter()
-    query = _query(instrument=Instrument.parse("CN-HKEX-00700"))
+    query = _query(instrument=Instrument.parse("HK-HKEX-00700"))
     with pytest.raises(UnsupportedCapabilityError):
         asyncio.run(adapter.fetch_bars(query))
 

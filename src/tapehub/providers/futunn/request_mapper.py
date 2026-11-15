@@ -50,19 +50,15 @@ _ADJUST_AUTYPES: dict[Adjust, int] = {
     Adjust.HFQ: 2,
 }
 
-# 标准 exchange 段 → 上游市场前缀（按资产类型查表，只收文档实证条目：
-# 上游品类表 SH/SZ/BJ 支持正股/指数、ETF 仅 SH/SZ；美股前缀不区分交易所，
-# NASDAQ/NYSE/AMEX 统一 US；OTC 上游不支持获取，不在白名单即拒绝）
-_EXCHANGE_PREFIXES: dict[str, dict[str, str]] = {
-    "stock": {
-        "SSE": "SH",
-        "SZSE": "SZ",
-        "BSE": "BJ",
-        "HKEX": "HK",
-        "NASDAQ": "US",
-        "NYSE": "US",
-        "AMEX": "US",
-    },
+# 上游市场前缀：HK/US 为市场级（美股前缀不区分交易所，NASDAQ/NYSE/AMEX
+# 统一 US）；CN 按资产类型 × 交易所收窄（上游品类表 SH/SZ/BJ 支持正股/
+# 指数、ETF 仅 SH/SZ——BJ 无 ETF 实证）。美股仅接上市交易所（OTC/IEX
+# 上游不支持获取，白名单外拒绝）。market/exchange 一致性由域层词汇表
+# 校验，此处只按接入范围收窄（docs/providers/futunn.md「标的代码映射」）。
+_MARKET_PREFIXES = {"HK": "HK", "US": "US"}
+_US_LISTED_EXCHANGES = frozenset({"NYSE", "NASDAQ", "AMEX"})
+_CN_PREFIXES_BY_ASSET_TYPE: dict[str, dict[str, str]] = {
+    "stock": {"SSE": "SH", "SZSE": "SZ", "BSE": "BJ"},
     "index": {"SSE": "SH", "SZSE": "SZ", "BSE": "BJ"},
     "etf": {"SSE": "SH", "SZSE": "SZ"},
 }
@@ -99,27 +95,50 @@ def futu_code(query: BarQuery | QuoteQuery) -> str:
     """标准标的 → 上游前缀代码（如 HK-HKEX-00700 → "HK.00700"、
     CN-SSE-600000 → "SH.600000"、US-NASDAQ-AAPL → "US.AAPL"）。
 
-    exchange 段按资产类型查前缀表（白名单外明确拒绝，不透传上游猜错更
-    隐蔽）；数字代码原样透传、港股短码零填充 5 位（上游写法 00700）、
-    美股 ticker 原样（域层已大写归一）。
+    US/HK 按市场段取前缀（美股仍校验上市交易所白名单——OTC 柜台上游
+    不支持获取）；CN 按资产类型 × 交易所查子表（品类语义真实：ETF 仅
+    SH/SZ）。白名单外明确拒绝，不透传上游猜错更隐蔽；数字代码原样
+    透传、港股短码零填充 5 位（上游写法 00700）、美股 ticker 原样
+    （域层已大写归一）。
     """
-    asset_type = query.asset_type.value
-    prefixes = _EXCHANGE_PREFIXES.get(asset_type)
-    if prefixes is None:
+    market = query.instrument.market
+    if market == "CN":
+        asset_type = query.asset_type.value
+        prefixes = _CN_PREFIXES_BY_ASSET_TYPE.get(asset_type)
+        if prefixes is None:
+            raise UnsupportedCapabilityError(
+                f"futunn does not support asset type {asset_type}.",
+                details={
+                    "provider": "futunn",
+                    "instrument": query.instrument.code,
+                    "asset_type": asset_type,
+                },
+            )
+        prefix = prefixes.get(query.instrument.exchange)
+        if prefix is None:
+            expected = "/".join(sorted(prefixes))
+            raise UnsupportedCapabilityError(
+                f"futunn expects exchange segment to be one of [{expected}] "
+                f"for asset type {asset_type}, got {query.instrument.exchange!r}.",
+                details={
+                    "provider": "futunn",
+                    "instrument": query.instrument.code,
+                },
+            )
+    elif market in _MARKET_PREFIXES:
+        if market == "US" and query.instrument.exchange not in _US_LISTED_EXCHANGES:
+            raise UnsupportedCapabilityError(
+                f"futunn does not support US exchange {query.instrument.exchange!r} "
+                "(OTC 柜台上游不支持获取).",
+                details={
+                    "provider": "futunn",
+                    "instrument": query.instrument.code,
+                },
+            )
+        prefix = _MARKET_PREFIXES[market]
+    else:
         raise UnsupportedCapabilityError(
-            f"futunn does not support asset type {asset_type}.",
-            details={
-                "provider": "futunn",
-                "instrument": query.instrument.code,
-                "asset_type": asset_type,
-            },
-        )
-    prefix = prefixes.get(query.instrument.exchange)
-    if prefix is None:
-        expected = "/".join(sorted(prefixes))
-        raise UnsupportedCapabilityError(
-            f"futunn expects exchange segment to be one of [{expected}] "
-            f"for asset type {asset_type}, got {query.instrument.exchange!r}.",
+            f"futunn does not support market {market!r}.",
             details={
                 "provider": "futunn",
                 "instrument": query.instrument.code,

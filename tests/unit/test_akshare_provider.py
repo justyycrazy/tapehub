@@ -501,7 +501,8 @@ def test_missing_sdk_returns_not_implemented(
 
 
 def test_unsupported_exchange_rejected(akshare_adapter: Any) -> None:
-    # 证券代码不在已核实的交易所集合内
-    query = _query(instrument=Instrument.parse("CN-HKEX-00700"))
+    # CN 股票东财接口仅收 SSE/SZSE（CSI 属合法标准代码词汇，但不在股票
+    # 接口范围内）：映射层拒绝；market/exchange 矛盾组合由域层拦截
+    query = _query(instrument=Instrument.parse("CN-CSI-000905"))
     with pytest.raises(UnsupportedCapabilityError):
         asyncio.run(akshare_adapter.fetch_bars(query))

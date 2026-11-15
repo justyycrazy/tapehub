@@ -197,8 +197,9 @@ def test_stock_default_adjust_is_qfq_via_capability(
 def test_unsupported_instrument_error_mapping(
     akshare_client: TestClient, akshare_stub: StubAkshare
 ) -> None:
-    # HKEX 不在已核实映射内：二级路由之后由适配器返回 UNSUPPORTED_CAPABILITY
-    params = {**BASE_PARAMS, "instrument": "CN-HKEX-00700"}
+    # CN 股票东财接口仅收 SSE/SZSE（CSI 为合法标准代码但不在股票接口
+    # 范围内）：二级路由之后由适配器返回 UNSUPPORTED_CAPABILITY
+    params = {**BASE_PARAMS, "instrument": "CN-CSI-000905"}
     response = akshare_client.get("/v1/market/bars", params=params)
     assert response.status_code == 422
     assert response.json()["error"]["code"] == "UNSUPPORTED_CAPABILITY"

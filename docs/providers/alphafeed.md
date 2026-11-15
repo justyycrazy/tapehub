@@ -33,17 +33,17 @@ quotes 为快照能力：interval/adjust 维度无意义，capabilities 与 oper
 
 ## 标的代码映射
 
-标准代码 `{market}-{exchange}-{symbol}` → 上游 `代码.市场后缀`（示例均已按官方文档核实）：
+标准代码 `{market}-{exchange}-{symbol}` → 上游 `代码.市场后缀`。后缀按市场段取：HK/US 为市场级（美股多交易所统一 US 后缀，exchange 段不参与上游语义），CN 按交易所段消歧。market/exchange 组合一致性由域层标准代码词汇表校验（矛盾组合如 `CN-NYSE-…` 在参数校验期即拒绝，见 ../api.md「instrument 标准代码」）：
 
-| exchange 段 | 后缀 | 示例 |
-| --- | --- | --- |
-| SSE | SH | CN-SSE-600519 → 600519.SH |
-| SZSE | SZ | CN-SZSE-000001 → 000001.SZ |
-| BSE | BJ | CN-BSE-920047 → 920047.BJ |
-| HKEX | HK | HK-HKEX-00700 → 00700.HK |
-| NYSE / NASDAQ / CBOE | US（美股多交易所统一后缀） | US-NASDAQ-AAPL → AAPL.US |
+| 市场 | exchange 段 | 后缀 | 示例 |
+| --- | --- | --- | --- |
+| CN | SSE | SH | CN-SSE-600519 → 600519.SH |
+| CN | SZSE | SZ | CN-SZSE-000001 → 000001.SZ |
+| CN | BSE | BJ | CN-BSE-920047 → 920047.BJ |
+| HK | —（市场段即后缀） | HK | HK-HKEX-00700 → 00700.HK |
+| US | —（市场段即后缀） | US | US-NASDAQ-AAPL → AAPL.US |
 
-查表无果的 exchange 明确拒绝（`UnsupportedCapabilityError`），不透传上游。
+词汇表内但本 Provider 未接入的组合（如 CN 的 CSI/期货交易所段）与未支持市场明确拒绝（`UnsupportedCapabilityError`），不透传上游。
 
 ## 周期 / 复权 / 单位映射
 

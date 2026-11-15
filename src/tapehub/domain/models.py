@@ -34,6 +34,20 @@ _INSTRUMENT_RE = re.compile(
     r"^([A-Za-z][A-Za-z0-9]{0,7})-([A-Za-z][A-Za-z0-9]{0,15})-([A-Za-z0-9/][A-Za-z0-9/._-]{0,31})$"
 )
 
+# 标准代码命名空间：market 段 → 合法 exchange 段词汇表（规范契约级，
+# 出处 docs/api.md「instrument 标准代码」；期货/指数/柜台段一并收录）。
+# 校验职责只拦「market 与 exchange 矛盾的组合」（如 CN-NYSE-…、US-SSE-…），
+# 各 Provider 的接入范围是词汇表的更窄子集，由映射层白名单自行收窄——
+# 两层分开：词汇表管标准代码合法性，白名单管该 Provider 是否服务。
+_MARKET_EXCHANGES: dict[str, frozenset[str]] = {
+    "CN": frozenset(
+        {"SSE", "SZSE", "BSE", "SHFE", "DCE", "CZCE", "INE", "GFEX", "CFFEX", "CSI"}
+    ),
+    "HK": frozenset({"HKEX"}),
+    "US": frozenset({"NYSE", "NASDAQ", "CBOE", "AMEX", "OTC", "IEX"}),
+    "GLOBAL": frozenset({"OTC", "CRYPTO"}),
+}
+
 
 class AssetType(StrEnum):
     """资产类型。请求必须显式传递，不做默认推断。
@@ -145,6 +159,22 @@ class Instrument(BaseModel):
                     normalized[field] = item.upper()
             return normalized
         return value
+
+    @model_validator(mode="after")
+    def _exchange_matches_market(self) -> "Instrument":
+        """exchange 段必须属于 market 段的规范词汇（矛盾组合构造期即拒绝）。
+
+        ``CN-NYSE-…``/``US-SSE-…`` 类矛盾代码不再透传到映射层（此前会被
+        按交易所查表静默产出错误上游标的）；词汇表见 docs/api.md
+        「instrument 标准代码」，Provider 接入范围由映射层另行收窄。
+        """
+        allowed = _MARKET_EXCHANGES.get(self.market)
+        if allowed is None or self.exchange not in allowed:
+            raise ValueError(
+                f"invalid instrument {self.code!r}: exchange {self.exchange!r} "
+                f"is not a valid {self.market}-market segment"
+            )
+        return self
 
     @property
     def code(self) -> str:

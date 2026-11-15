@@ -45,15 +45,15 @@ history.start 历史覆盖声明（逐所/逐周期，均北京时间）：
 
 ## 标的代码映射
 
-标准代码 → 上游前缀代码，exchange 段按资产类型查前缀表（只收文档实证条目，白名单外明确拒绝——不透传上游猜错更隐蔽）：
+标准代码 → 上游前缀代码。前缀按市场段取：HK/US 为市场级（美股前缀不区分交易所、exchange 段仅作上市所白名单——OTC/IEX 上游不支持获取，白名单外拒绝），CN 按资产类型 × 交易所查子表（品类语义真实，只收文档实证条目，白名单外明确拒绝——不透传上游猜错更隐蔽）。market/exchange 组合一致性由域层标准代码词汇表校验（矛盾组合如 `CN-NYSE-…` 在参数校验期即拒绝）：
 
-| asset_type | 前缀映射 | 示例 |
+| 市场/资产类型 | 前缀映射 | 示例 |
 | --- | --- | --- |
-| stock | SSE→SH、SZSE→SZ、BSE→BJ、HKEX→HK、NASDAQ/NYSE/AMEX→US | `CN-SSE-600000 → SH.600000`、`CN-SZSE-000001 → SZ.000001`、`CN-BSE-430047 → BJ.430047`、`HK-HKEX-00700 → HK.00700`、`US-NASDAQ-AAPL → US.AAPL` |
-| index | SSE→SH、SZSE→SZ、BSE→BJ | |
-| etf | SSE→SH、SZSE→SZ（上游品类表 BJ 无 ETF） | |
+| CN stock/index | SSE→SH、SZSE→SZ、BSE→BJ | `CN-SSE-600000 → SH.600000`、`CN-SZSE-000001 → SZ.000001`、`CN-BSE-430047 → BJ.430047` |
+| CN etf | SSE→SH、SZSE→SZ（上游品类表 BJ 无 ETF） | |
+| HK / US | 市场段即前缀（US 限 NYSE/NASDAQ/AMEX） | `HK-HKEX-00700 → HK.00700`、`US-NASDAQ-AAPL → US.AAPL` |
 
-- symbol 段：CN 6 位证券代码原样透传（要求纯数字，非数字拒绝）；港股短码零填充 5 位（`700`→`00700`）；美股 ticker 已由域层大写归一、原样透传（上游美股前缀不区分交易所）；OTC 不在白名单即拒绝；
+- symbol 段：CN 6 位证券代码原样透传（要求纯数字，非数字拒绝）；港股短码零填充 5 位（`700`→`00700`）；美股 ticker 已由域层大写归一、原样透传（上游美股前缀不区分交易所）；
 - 资产类型层面：futunn 仅支持 stock/index/etf 三类，其余 asset_type（contract/option/forex/crypto 等）在映射层直接拒绝（`UnsupportedCapabilityError`），不透传上游。
 
 ## 周期 / 复权 / 单位映射

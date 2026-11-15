@@ -257,10 +257,12 @@ def test_ambiguous_batch_payload_rejected(
 
 
 def test_unsupported_exchange_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
-    """未映射交易所（如东证 TSE）拒绝；HKEX/US 交易所已支持，不得误判。"""
+    """Provider 范围外的 CN 交易所（如中证 CSI）映射层拒绝；market/exchange
+    矛盾组合（如 JP-TSE-…、CN-NYSE-…）由域层词汇表在构造期拦截
+    （见 test_models），不再到达映射层。CN 三交易所已支持，不得误判。"""
     install(monkeypatch)
     adapter = _adapter()
-    query = _query(instrument=Instrument.parse("JP-TSE-7203"))
+    query = _query(instrument=Instrument.parse("CN-CSI-000905"))
     with pytest.raises(UnsupportedCapabilityError):
         asyncio.run(adapter.fetch_bars(query))
 

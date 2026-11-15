@@ -52,6 +52,40 @@ class TestInstrument:
         with pytest.raises(ValueError):
             Instrument.parse(raw)
 
+    @pytest.mark.parametrize(
+        "raw",
+        [
+            "CN-SSE-600000",
+            "CN-SHFE-CU2607",  # 期货交易所段
+            "CN-CFFEX-IO2601-C-4000",  # 中金所期权
+            "CN-CSI-000905",  # 中证指数段
+            "HK-HKEX-00700",
+            "US-NYSE-SPY",
+            "US-OTC-PINK",  # OTC/IEX 属合法词汇，接入与否由 Provider 收窄
+            "GLOBAL-OTC-EUR/USD",
+            "GLOBAL-CRYPTO-BTCUSD",
+        ],
+    )
+    def test_vocabulary_valid_combinations(self, raw: str) -> None:
+        """market/exchange 组合在标准代码词汇表内：正常构造。"""
+        assert Instrument.parse(raw).code == raw
+
+    @pytest.mark.parametrize(
+        "raw",
+        [
+            "CN-NYSE-SPY",  # NYSE 不属 CN 词汇
+            "US-SSE-600000",  # SSE 不属 US 词汇
+            "HK-NYSE-00700",
+            "CN-HKEX-00700",
+            "GLOBAL-NYSE-EUR/USD",
+            "XX-FOO-BAR",  # market 段不在词汇表
+        ],
+    )
+    def test_reject_contradictory_market_exchange(self, raw: str) -> None:
+        """market/exchange 矛盾组合构造期即拒绝，不透传映射层。"""
+        with pytest.raises(ValueError, match="is not a valid"):
+            Instrument.parse(raw)
+
 
 class TestBar:
     def test_missing_values_stay_null(self) -> None:
