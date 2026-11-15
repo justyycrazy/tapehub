@@ -249,8 +249,10 @@ GET /v1/instruments/resolve?q=AAPL&exchange=NASDAQ
 | 资产类型 | 默认 adjust |
 | --- | --- |
 | `stock` | **`qfq`（前复权）** |
-| `etf` | **`qfq`（前复权）**（2026-11-15 起，与 stock 同——场内基金分红除权与个股一致；仅声明 none 的 Provider 在缺省请求下被能力过滤，显式 `adjust=none` 可达） |
+| `etf` | **`qfq`（前复权）** |
 | 其余（index、contract 等） | `none` |
+
+> **决策记录（2026-11-15）——ETF 缺省复权调整为 qfq**：ETF 原与 index/contract 同组缺省 `none`；调整为与 stock 同组缺省 `qfq`。动机：场内基金与个股同样存在分红除权，ETF 作为可复权场内证券，缺省「前复权」才能给出跨分红时点可比的价格序列（与个股缺省口径对齐）；指数是人为构造的点位序列、期货无复权概念，维持 `none`。影响面：仅声明 `none` 的 Provider（如 tushare/tqsdk 的 ETF 能力）在缺省请求下被能力过滤出候选集——显式传 `adjust=none` 仍可达；支持 `qfq` 的 Provider（baostock/ths/futunn/akshare/alphafeed/tickflow/twelvedata US）承接缺省请求。实现：`api/schemas/requests.py` 的 `effective_adjust` 按 `(stock, etf) → qfq` 填充声明默认值。
 
 各 Provider 的复权参数映射与上游生效性（含美股等特殊口径）见对应 Provider 文档。通用参数转换的原则是：**所有相关参数都显式传递给上游，不依赖上游默认值**——保证「接口默认行为」与「上游实际行为」一致。
 

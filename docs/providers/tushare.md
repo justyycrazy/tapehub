@@ -58,7 +58,7 @@ ETF ts_code 后缀（fund_daily 场内基金接口，doc_id=127，沪深同构�
 ## 周期 / 复权 / 单位映射
 
 - 周期映射：pro_bar freq `P1D→D`、`P1W→W`、`P1M→M`（股票与指数同表）；fut_daily/fund_daily/opt_daily 仅日线（上游接口本身无其他周期——ETF/期权无周/月线接口，SDK 分支与专题导航双证）。日期参数格式 `YYYYMMDD`。
-- 复权映射：pro_bar `adj` 枚举 None/qfq/hfq——`none` 时传 Python `None`（官方默认未复权），与网关股票声明默认 qfq 不同，适配器始终显式传参；文档注解「adj 仅日线复权」偏保守，探针实证周/月线复权真实生效。**指数复权不支持**（官方 adj「只针对股票」，上游 asset='I' 分支忽略 adj）、**ETF/期权无复权**（fund_daily/opt_daily 无 adj 参数；ETF 复权需上游 fund_adj 因子接口自算，不在 pro_bar 范围），均仅声明 none。fut_daily 无复权。
+- 复权映射：pro_bar `adj` 枚举 None/qfq/hfq——`none` 时传 Python `None`（官方默认未复权），与网关股票声明默认 qfq 不同，适配器始终显式传参；文档注解「adj 仅日线复权」偏保守，探针实证周/月线复权真实生效。**指数复权不支持**（官方 adj「只针对股票」，上游 asset='I' 分支忽略 adj）、**ETF/期权无复权**（fund_daily/opt_daily 无 adj 参数；ETF 复权需上游 fund_adj 因子接口自算，不在 pro_bar 范围），均仅声明 none——网关 ETF 缺省复权为 qfq（2026-11-15 起，见 ../api.md 默认值约定决策记录），tushare ETF 缺省请求会被能力过滤，显式 `adjust=none` 可达。fut_daily 无复权。
 - 单位换算按周期分支（同窗求和互证定案，探针 2026-11-15 第 13 轮，**股票与指数共用**）：**日线**上游 `vol` 手、`amount` 千元 → 换算股（×100）、元（×1000）；**周/月线**上游实数据已是股/元 → 如实透传（×1）——官方文档对周月线声明「手/千元」（doc_id=95/171/172）与实数据矛盾（文档错误），同周/同月日线求和 vs 周/月线单 bar 比率精确 ×100/×1000；期货 `vol` 保持手、`amount` 万元→元（×10000）；ETF 与股票日线同口径（doc_id=127：vol 手/amount 千元，量纲自洽实证）；期权 vol 保持手（张）、`amount` 万元→元（×10000，与期货同款口径，量纲自洽实证）。
 
 ## 上游行为定案

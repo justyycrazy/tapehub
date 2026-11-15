@@ -56,6 +56,11 @@ packages = ["src/tapehub"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+# 第三方弃用提示（.venv 内 fastapi→starlette testclient 的 import 期告警，
+# 基线既有、与本仓代码无关）：上游适配 httpx2 后移除本条
+filterwarnings = [
+  "ignore:Using `httpx` with `starlette.testclient` is deprecated",
+]
 
 [tool.ruff]
 line-length = 100

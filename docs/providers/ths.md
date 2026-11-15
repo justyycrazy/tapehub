@@ -49,7 +49,7 @@ bars 行字段两种形态统一映射（时间键不同、其余同构）：A �
 - 复权：
   - A 股个股（唯一三值语义）：`none→none`、`qfq→forward`（前复权）、`hfq→backward`（后复权）；上游 `forward` 缺省恰与网关个股声明默认 `qfq` 对齐，适配器仍始终显式传参；
   - 指数：无复权语义（响应 `data.adjust` 固定 null，不传 adjust 参数）；
-  - ETF：上游无 adjust 参数、数据固定前复权口径——受控对比实证（调整生效段 vs 未复权基准偏差中位 9.01%、vs 前复权基准 0.34%）后声明 `[qfq]`；`adjust=none` 的 auto ETF 请求按六维匹配不落 ths（回退链末位，前序 Provider 全失败时诚实返回 `NO_PROVIDER_AVAILABLE`）；
+  - ETF：上游无 adjust 参数、数据固定前复权口径——受控对比实证（调整生效段 vs 未复权基准偏差中位 9.01%、vs 前复权基准 0.34%）后声明 `[qfq]`；网关 ETF 缺省复权已调整为 qfq（2026-11-15，见 ../api.md 默认值约定决策记录），与 ths ETF 声明恰对齐；`adjust=none` 的 ETF 请求按六维匹配不落 ths；
   - 期货/期权：仅声明 none（不传 adjust）。
 - 单位：A 股快照/历史 K 线 `volume`=股、`turnover`→amount=元（官方文档明示）；ETF/期货/期权 volume/turnover 单位上游未明示，原值透出（不编造换算）。
 
