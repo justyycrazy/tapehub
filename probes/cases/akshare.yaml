@@ -9,14 +9,19 @@ requires:
 pacing:
   call_interval_s: 5.0   # 东方财富 push2 对高频断连限流：首次约 5 分钟恢复，
   timeout_s: 60          # 反复触发需 40 分钟以上；实测 2s 节流即被限流
-  max_calls: 340         # availability 50（CN stock 15 + index 5 + etf 9 +
-                         # 期货 3（含 contract@CN-CZCE）+ HK/US stock 各 9）+
+  max_calls: 355         # availability 59（CN stock 15 + index 5 + etf 9 +
+                         # 期货 12：contract 基准/CZCE + continuous 基准
+                         # + 六所扩容 contract@CN-DCE/INE/GFEX/CFFEX 与
+                         # continuous@CN-CZCE/DCE/INE/GFEX/CFFEX——新浪源
+                         # 不受东财限流影响 + HK/US stock 各 9）+
                          # adjust_diff 24（P1D 限定）+
                          # history_depth 9 条 × ≤24 + variant_consistency 29
                          # + raw 1（bse-stock-fingerprint；
                          # sina-futures-czce-4digit/3digit 均已退役——4 位
                          # 直通由 chain contract@CN-CZCE 常态复验，3 位全空
-                         # 负对照结论已与 tushare 侧同日互证定案）
+                         # 负对照结论已与 tushare 侧同日互证定案；
+                         # history_depth 不随逐所扩容——深度是资产类级结论，
+                         # 基准目标承载）
   # ⚠ 东财限流恢复态脆弱：封禁期后单次零星调用「预检通过」不代表恢复——
   # 探针恢复 5s 节流访问模式后首个调用即再触发，且限流期内每轮失败调用
   # 都会延长封禁（越试越封）。重试规程：数小时零调用长冷却 → 单次预检 →
@@ -63,8 +68,59 @@ targets:
     instrument: CN-CZCE-RM2701
     window: {start: 2026-07-01, end: 2026-12-31}
     min_bars: 20
+  contract@CN-DCE:
+    # 大商所合约（豆粕为全市场持仓前列品种）：新浪按品种+4位年月符号路由
+    #（M2705），大商所收录性未实证，本目标 availability 即实证。合约会到期：
+    # 运行前按大商所挂牌信息核对，失败如实记录，到期轮换为当时的现活合约
+    instrument: CN-DCE-M2705
+    window: {start: 2026-07-01, end: 2026-12-31}
+    min_bars: 20
+  contract@CN-INE:
+    # 上期能源合约（原油为该所绝对主力）：新浪收录性未实证（SC2706），
+    # 本目标 availability 即实证。合约会到期：同上轮换
+    instrument: CN-INE-SC2706
+    window: {start: 2026-07-01, end: 2026-12-31}
+    min_bars: 20
+  contract@CN-GFEX:
+    # 广期所合约（碳酸锂为该所上市以来活跃度第一品种）：新浪对广期所的
+    # 收录性未知（LC2706），本目标 availability 即实证。合约会到期：同上轮换
+    instrument: CN-GFEX-LC2706
+    window: {start: 2026-07-01, end: 2026-12-31}
+    min_bars: 20
+  contract@CN-CFFEX:
+    # 中金所合约（沪深300 历史最久、代表性强）：新浪股指期货符号形态未实证
+    #（IF2706 季月），本目标 availability 即实证。合约会到期：同上轮换
+    instrument: CN-CFFEX-IF2706
+    window: {start: 2026-07-01, end: 2026-12-31}
+    min_bars: 20
   continuous:
     instrument: CN-SHFE-RB
+    window: {start: 2025-01-01, end: 2025-06-30}
+    min_bars: 60
+  continuous@CN-CZCE:
+    # 郑商所主连（甲醇为郑商所持仓王）：「品种+0」形态（MA0）仅 SHFE RB0
+    # 实证过，其余所未实证，本目标 availability 即实证
+    instrument: CN-CZCE-MA
+    window: {start: 2025-01-01, end: 2025-06-30}
+    min_bars: 60
+  continuous@CN-DCE:
+    # 大商所主连（豆粕）：M0 形态未实证，本目标 availability 即实证
+    instrument: CN-DCE-M
+    window: {start: 2025-01-01, end: 2025-06-30}
+    min_bars: 60
+  continuous@CN-INE:
+    # 上期能源主连（原油）：SC0 形态未实证，本目标 availability 即实证
+    instrument: CN-INE-SC
+    window: {start: 2025-01-01, end: 2025-06-30}
+    min_bars: 60
+  continuous@CN-GFEX:
+    # 广期所主连（碳酸锂）：LC0 形态与新浪广期所收录性均未知，失败如实记录
+    instrument: CN-GFEX-LC
+    window: {start: 2025-01-01, end: 2025-06-30}
+    min_bars: 60
+  continuous@CN-CFFEX:
+    # 中金所主连（沪深300）：IF0 形态未实证，失败如实记录
+    instrument: CN-CFFEX-IF
     window: {start: 2025-01-01, end: 2025-06-30}
     min_bars: 60
 

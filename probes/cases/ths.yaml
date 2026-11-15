@@ -28,10 +28,11 @@ pacing:
   # 目标 × 2 pair × 2 调）+ history_depth 3 case × 最坏 12 +
   # limit_truncation ≈2 + quote_availability 11×1 调（quotes 声明随
   # include_declared 自动展开：stock/index/etf 基准 + BSE 逐所 stock/index
-  # + contract 基准/期货逐所 CZCE/DCE/INE/GFEX + option）+ raw 3 case 各 3 调
-  #（client + get + json：错误指纹 / ETF 复权口径留存 / 郑商所 4 位负对照；
-  # 快照形态与分时量额 2 条 raw 已随 quotes 入链退役，见 raw 段注释），
-  # 最坏约 75，预算 100 留余量（约 5 分钟）
+  # + contract 基准/期货逐所 CZCE/DCE/INE/GFEX + option）+ raw 4 case
+  #（错误指纹 / ETF 复权口径留存 / 郑商所 4 位负对照 各 3 调：client +
+  # get + json；CFFEX 期货后缀探测 5 调：client + 2×（get + json）双候选
+  # 形态；快照形态与分时量额 2 条 raw 已随 quotes 入链退役，见 raw 段注释），
+  # 最坏约 80，预算 100 留余量（约 5 分钟）
   max_calls: 100
 
 targets:
@@ -222,6 +223,28 @@ raw:
     client: {attr: Client, kwargs: {}}
     call:
       - {method: get, kwargs: {url: "https://fuyao.aicubes.cn/api/futures/prices/daily", params: {thscode: "MA2701.CZC", start: 1785715200000, end: 1794614399000, time_period: "day_1"}, headers: {"X-api-key": "$TAPEHUB_THS_API_KEY"}}}
+      - {method: json, kwargs: {}, target: result}
+    expect: {status: ok, min_fields: [code, message, data]}
+    close: {method: close, kwargs: {}}
+
+  # ── CFFEX 期货后缀探测（未定案，期货六所扩容 2026-11-15）：ths 合约后缀
+  #    表仅五所实证（SHF/CZC/DCE/INE/GFE），中金所期货形态未核实（该所仅
+  #    期权后缀 CFE 有文档实证；tushare 侧期货实证为 CFX，与本所期权 CFE
+  #    不一致，两候选均有可能）。第 7 轮「后缀形态错导致误判」教训：双候选
+  #    一次测齐，形态定案前不声明、不扩 _SUFFIXES；实证后人工确认回填
+  #    request_mapper 与 manifest，再议 contract@CN-CFFEX chain 目标与本
+  #    raw 退役。窗口近月有数据（2026-11-09~11-13，UTC 日界近似与既有 case
+  #    同口径）；IF 为沪深300（中金所历史最久、代表性强品种）
+  - id: ths-futures-suffix-cffex-futures
+    purpose: 中金所股指期货后缀形态探测（IF2706.CFE / IF2706.CFX 双候选，
+      观察不判定——形态定案前不声明，实证后人工确认回填）
+    assert: false
+    module: httpx
+    client: {attr: Client, kwargs: {}}
+    call:
+      - {method: get, kwargs: {url: "https://fuyao.aicubes.cn/api/futures/prices/daily", params: {thscode: "IF2706.CFE", start: 1794182400000, end: 1794614399000, time_period: "day_1"}, headers: {"X-api-key": "$TAPEHUB_THS_API_KEY"}}}
+      - {method: json, kwargs: {}, target: result}
+      - {method: get, kwargs: {url: "https://fuyao.aicubes.cn/api/futures/prices/daily", params: {thscode: "IF2706.CFX", start: 1794182400000, end: 1794614399000, time_period: "day_1"}, headers: {"X-api-key": "$TAPEHUB_THS_API_KEY"}}, target: client}
       - {method: json, kwargs: {}, target: result}
     expect: {status: ok, min_fields: [code, message, data]}
     close: {method: close, kwargs: {}}
