@@ -17,6 +17,35 @@ capabilities:
       - {code: P1M, history: {start: 1991-01-18T00:00:00+08:00, end: null}}
     adjustments: [none, qfq, hfq]
     fields: [open, high, low, close, volume, amount]
+  # 指数：与 stock 共用统一 klines 端点（探针 2026-11-15 第 7/8 轮直测
+  # 000001.SH 日/周/月均有数）；复权对指数无意义仅声明 none（baostock/
+  # tushare/alphafeed 先例同口径）；history 未核实保持 null（chain 二分后回填）
+  - data_type: bars
+    markets: [CN]
+    asset_types: [index]
+    delivery: [rest]
+    variants: [tickflow]
+    intervals:
+      - {code: P1D, history: {start: null, end: null}}
+      - {code: P1W, history: {start: null, end: null}}
+      - {code: P1M, history: {start: null, end: null}}
+    adjustments: [none]
+    fields: [open, high, low, close, volume, amount]
+  # ETF：与 stock 共用统一 klines 端点（探针直测 510050.SH 日/周/月均有数）；
+  # 复权生效经目录外诊断实证（forward vs none 全窗差异，与 alphafeed 侧互证）；
+  # 量额与股票日线同口径原值透出（与 tushare 同窗互证：vol 手/amount 元）；
+  # history 未核实保持 null
+  - data_type: bars
+    markets: [CN]
+    asset_types: [etf]
+    delivery: [rest]
+    variants: [tickflow]
+    intervals:
+      - {code: P1D, history: {start: null, end: null}}
+      - {code: P1W, history: {start: null, end: null}}
+      - {code: P1M, history: {start: null, end: null}}
+    adjustments: [none, qfq, hfq]
+    fields: [open, high, low, close, volume, amount]
   - data_type: bars
     markets: [HK]
     asset_types: [stock]
@@ -68,6 +97,32 @@ operations:
   - match: {data_type: bars, market: CN, asset_type: stock, interval: P1M, adjust: qfq, variant: tickflow}
     operation: klines
   - match: {data_type: bars, market: CN, asset_type: stock, interval: P1M, adjust: hfq, variant: tickflow}
+    operation: klines
+  # —— CN 指数：三周期 × 仅 none（指数无复权）——
+  - match: {data_type: bars, market: CN, asset_type: index, interval: P1D, adjust: none, variant: tickflow}
+    operation: klines
+  - match: {data_type: bars, market: CN, asset_type: index, interval: P1W, adjust: none, variant: tickflow}
+    operation: klines
+  - match: {data_type: bars, market: CN, asset_type: index, interval: P1M, adjust: none, variant: tickflow}
+    operation: klines
+  # —— CN ETF：三周期 × 三复权（复权生效经目录外诊断实证）——
+  - match: {data_type: bars, market: CN, asset_type: etf, interval: P1D, adjust: none, variant: tickflow}
+    operation: klines
+  - match: {data_type: bars, market: CN, asset_type: etf, interval: P1D, adjust: qfq, variant: tickflow}
+    operation: klines
+  - match: {data_type: bars, market: CN, asset_type: etf, interval: P1D, adjust: hfq, variant: tickflow}
+    operation: klines
+  - match: {data_type: bars, market: CN, asset_type: etf, interval: P1W, adjust: none, variant: tickflow}
+    operation: klines
+  - match: {data_type: bars, market: CN, asset_type: etf, interval: P1W, adjust: qfq, variant: tickflow}
+    operation: klines
+  - match: {data_type: bars, market: CN, asset_type: etf, interval: P1W, adjust: hfq, variant: tickflow}
+    operation: klines
+  - match: {data_type: bars, market: CN, asset_type: etf, interval: P1M, adjust: none, variant: tickflow}
+    operation: klines
+  - match: {data_type: bars, market: CN, asset_type: etf, interval: P1M, adjust: qfq, variant: tickflow}
+    operation: klines
+  - match: {data_type: bars, market: CN, asset_type: etf, interval: P1M, adjust: hfq, variant: tickflow}
     operation: klines
   - match: {data_type: bars, market: HK, asset_type: stock, interval: P1D, adjust: none, variant: tickflow}
     operation: klines

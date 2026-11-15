@@ -114,11 +114,12 @@ def test_capability_catalog(tickflow_client: TestClient) -> None:  # type: ignor
     assert entry["provider"] == "tickflow"
     assert entry["enabled"] is True
     caps = entry["capabilities"]
-    # bars 三块逐市场声明（history 已按 20261107T145801 探针报告回填：早上市
-    # 基准标的二分 90 天粒度收敛、三市场深度不同——原合并块取跨市场最早
-    # US 值对 CN 过度声明 29 年，已拆块；分钟族免费档无分钟权限（403 三轮
-    # 实证）无法核实，保持 null）+ quotes 快照能力三市场合并
+    # bars 六块（CN stock/index/etf + HK/US stock 逐块声明：history 依据见
+    # 20261107T145801 探针报告与 2026-11-15 扩容注释；分钟族免费档无分钟
+    # 权限（403 三轮实证）无法核实，保持 null）+ quotes 快照能力三市场合并
     assert [(cap["data_type"], cap["markets"]) for cap in caps] == [
+        ("bars", ["CN"]),
+        ("bars", ["CN"]),
         ("bars", ["CN"]),
         ("bars", ["HK"]),
         ("bars", ["US"]),
@@ -129,20 +130,66 @@ def test_capability_catalog(tickflow_client: TestClient) -> None:  # type: ignor
         "HK": "1980-02-15T00:00:00+08:00",
         "US": "1962-02-17T00:00:00+08:00",
     }
-    for cap in caps[:3]:
+    assert [cap["asset_types"] for cap in caps[:3]] == [["stock"], ["index"], ["etf"]]
+    # CN stock history 逐市场回填；指数/ETF history 未核实保持 null（chain 二分后回填）
+    starts = {i["code"]: i["history"]["start"] for i in caps[0]["intervals"]}
+    assert starts["P1D"] == starts["P1W"] == starts["P1M"] == expected_starts["CN"]
+    assert all(i["history"]["start"] is None for i in caps[1]["intervals"])
+    assert all(i["history"]["start"] is None for i in caps[2]["intervals"])
+    assert caps[1]["adjustments"] == ["none"]  # 指数无复权
+    assert caps[2]["adjustments"] == ["none", "qfq", "hfq"]  # ETF 复权生效（诊断实证）
+    for cap in caps[3:5]:
         assert cap["asset_types"] == ["stock"]
         assert cap["variants"] == ["tickflow"]
         # 分钟族不声明（免费档无权限，与 alphafeed 同口径）
         assert [i["code"] for i in cap["intervals"]] == ["P1D", "P1W", "P1M"]
         assert cap["adjustments"] == ["none", "qfq", "hfq"]
-        starts = {i["code"]: i["history"]["start"] for i in cap["intervals"]}
-        assert starts["P1D"] == starts["P1W"] == starts["P1M"] == expected_starts[cap["markets"][0]]
+        cap_starts = {i["code"]: i["history"]["start"] for i in cap["intervals"]}
+        expected = expected_starts[cap["markets"][0]]
+        assert cap_starts["P1D"] == cap_starts["P1W"] == cap_starts["P1M"] == expected
     # quotes 快照能力：无 interval/adjust 维度，三市场 stock
-    quotes_cap = caps[3]
+    quotes_cap = caps[5]
     assert quotes_cap["data_type"] == "quotes"
     assert quotes_cap["markets"] == ["CN", "HK", "US"]
     assert quotes_cap["intervals"] == []
     assert quotes_cap["adjustments"] == []
+
+
+@pytest.mark.parametrize(
+    ("asset_type", "instrument", "expected_symbol"),
+    [
+        # 指数/ETF 与 stock 共用统一 klines 端点与后缀表（探针 2026-11-15
+        # 第 7/8 轮实证：上游不做证券类型路由拒绝，映射层零分支）
+        ("index", "CN-SSE-000001", "000001.SH"),
+        ("etf", "CN-SSE-510050", "510050.SH"),
+    ],
+)
+def test_index_etf_chain(
+    asset_type: str,
+    instrument: str,
+    expected_symbol: str,
+    tickflow_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """CN 指数/ETF 贯穿全链路：指数无复权（显式传 none）、ETF 默认 qfq。"""
+    preset_payload(monkeypatch, klines_payload(["2026-01-02"]))
+
+    params = {
+        **{k: v for k, v in BASE_PARAMS.items() if k != "variant"},
+        "asset_type": asset_type,
+        "instrument": instrument,
+    }
+    response = tickflow_client.get("/v1/market/bars", params=params)
+    assert response.status_code == 200
+    body = response.json()
+
+    kwargs = StubTickFlow.instances[-1].calls[0]
+    assert kwargs["symbol"] == expected_symbol
+    # 缺省 adjust 仅 stock 为 qfq，index/etf 均为 none（docs/api.md 默认值约定）
+    assert kwargs["adjust"] == "none"
+    assert kwargs["period"] == "1d"
+    assert body["data"]["instrument"] == instrument
+    assert body["meta"]["variant"] == "tickflow"
 
 
 def test_unsupported_interval(tickflow_client: TestClient) -> None:  # type: ignore[no-untyped-def]

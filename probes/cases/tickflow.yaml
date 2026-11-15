@@ -13,9 +13,10 @@ pacing:
   # 分钟 K 线 403）按上游错误如实记录，不做跳过——这正是账户档位边界的证据。
   call_interval_s: 6.5
   timeout_s: 60
-  # 预算：availability 45（三市场基准 27 + CN 交易所追加 SZSE/BSE 各 9）+
-  # adjust_diff 20（5 目标 × P1D × 2 pair × 2 调）+ history_depth 9 条 × ≤24 +
-  # limit_truncation 3 + raw 8 = 最坏 292，期望约 170。
+  # 预算：availability 57（三市场基准 27 + CN 交易所追加 SZSE/BSE 各 9
+  # + index 三周期 3 + etf 三周期三复权 9）+ adjust_diff 24（6 目标 × P1D
+  # × 2 pair × 2 调，etf 为 ETF 分红复权复验）+ history_depth 9 条 × ≤24 +
+  # limit_truncation 3 + raw 8（快照 4）= 最坏 310，期望约 190。
   max_calls: 320
 
 # 同一 asset_type（stock）跨三市场声明能力：用市场限定目标（stock@MARKET）
@@ -65,6 +66,22 @@ targets:
     # 会产生周/月假阳性（探针实证：P1W 实际 52-53 根、P1M 11-12 根均正常）
     min_bars: 10
     required_fields: [open, high, low, close, volume]
+  index:
+    instrument: CN-SSE-000001
+    # 上证指数：指数能力 chain 常态复验基准目标——指数/ETF 代码域探测
+    #（tf-index-daily-shape 等 7 条 raw，2026-11-15 第 7/8 轮：日线 118 根、
+    # W/M 有数、复权参数框架级判定）实证扩容声明后收敛入链退役，
+    # availability 全声明矩阵展开（3 周期 × none）
+    window: {start: 2025-01-01, end: 2025-12-31}
+    min_bars: 10
+    required_fields: [open, high, low, close, volume, amount]
+  etf:
+    instrument: CN-SSE-510050
+    # 华夏上证 50ETF：ETF 能力 chain 常态复验基准目标（探测 7 条 raw 收敛，
+    # 出处同 index 注释）；availability 全声明矩阵展开（3 周期 × 三复权）
+    window: {start: 2025-01-01, end: 2025-12-31}
+    min_bars: 10
+    required_fields: [open, high, low, close, volume, amount]
 
 chain:
   include_declared: true
@@ -72,8 +89,10 @@ chain:
   adjust_diff:
     # 三市场复权生效性（forward/backward 是否生效、基准为何）：三市场均
     # 实证真实生效（首分歧落在分红除权期）；日线足以判定生效性，收敛
-    # interval 控制预算。stock@CN-SZSE/CN-BSE 为逐所细分复验
-    targets: [stock@CN, stock@CN-SZSE, stock@CN-BSE, stock@HK, stock@US]
+    # interval 控制预算。stock@CN-SZSE/CN-BSE 为逐所细分复验；etf 为 ETF
+    # 分红复权复验（窗口整体处于最近除息前，forward 全窗差异 → confirmed，
+    # 目录外诊断同窗互证与 alphafeed 侧一致）
+    targets: [stock@CN, stock@CN-SZSE, stock@CN-BSE, stock@HK, stock@US, etf]
     window: {start: 2024-06-01, end: 2024-08-31}   # 分红除权高发窗口
     intervals: [P1D]
     pairs: [[none, qfq], [none, hfq]]

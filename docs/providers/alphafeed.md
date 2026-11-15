@@ -1,6 +1,6 @@
 # AlphaFeed（alphafeed）
 
-海外市场行情 REST API 接入：CN/HK/US 三市场个股日/周/月 K 线与实时快照，HK 个股 K 线与 HK/US 个股快照的缺省源。
+海外市场行情 REST API 接入：CN/HK/US 三市场个股日/周/月 K 线 + CN 指数/ETF 日/周/月 K 线（2026-11-15 扩容）+ 实时快照，HK 个股 K 线与 HK/US 个股快照的缺省源。
 
 ## 概要
 
@@ -16,6 +16,8 @@
 | data_type | 市场 | asset_type | 变体 | 上游接口 | 周期 | adjust | 标准字段 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | bars | CN/HK/US | stock | alphafeed | `af.klines.get` | P1D/P1W/P1M | none/qfq/hfq | open/high/low/close/volume/amount |
+| bars | CN | index | alphafeed | `af.klines.get` | P1D/P1W/P1M | none | open/high/low/close/volume/amount |
+| bars | CN | etf | alphafeed | `af.klines.get` | P1D/P1W/P1M | none/qfq/hfq | open/high/low/close/volume/amount |
 | quotes | CN/HK/US | stock | alphafeed | `af.quotes.get(symbols=[...])` | —（快照无周期） | —（快照无复权） | timestamp/last_price/volume/amount |
 
 历史覆盖（history.start，探针二分收敛，取估计窗口右端零点，approx ±90 天、真实最早可能更早；三市场周期集相同但历史深度不同，故 bars 能力拆 CN/HK/US 三块逐市场声明，operations 不受块拆分影响）：
@@ -49,14 +51,15 @@ quotes 为快照能力：interval/adjust 维度无意义，capabilities 与 oper
   - 分钟族（上游枚举 1m~60m）：需上游套餐单独开通「分钟K线权限」，账户套餐未包含；且 alphafeed 是 CN stock bars 的缺省 Provider，路由执行失败不回退，声明无权限的周期会 403 打断本可由其他 Provider 服务的请求；
   - `10m`：官方文档周期枚举无 10m，但上游实测接受并返回数据（文档与实测不符，以实测为准），仍维持不声明；
   - 季线 `1Q`：无法用 ISO 8601 Duration 表达；年线 `1Y`：超出项目「最大支持到月线」的周期上界。均不声明。
-- 复权映射：`qfq→forward`（前复权）、`hfq→backward`（后复权）、`none→none`；上游另有 `forward_additive`/`backward_additive` 差值加法变体，不对外暴露。上游自身默认 forward、period 默认 1d，均与网关声明默认值无关，适配器始终显式传参。港股/美股复权语义尚未探针实证（美股复权口径可能与 A 股不同）。
-- 单位：无换算，上游 volume/amount 原值透出。
+- 复权映射：`qfq→forward`（前复权）、`hfq→backward`（后复权）、`none→none`；上游另有 `forward_additive`/`backward_additive` 差值加法变体，不对外暴露。上游自身默认 forward、period 默认 1d，均与网关声明默认值无关，适配器始终显式传参。**ETF 复权生效**（探针 2026-11-15 目录外诊断：forward vs none 全窗 360 根差异、与 tickflow 侧逐根一致；chain adjust_diff 常态复验）；**指数无复权**仅声明 none（复权对指数无意义，与 baostock/tushare 先例同口径）。港股/美股复权语义尚未探针实证（美股复权口径可能与 A 股不同）。
+- 单位：无换算，上游 volume/amount 原值透出。CN 指数/ETF 与 tushare 同窗互证定案口径：`vol` 手、`amount` 元（与 CN stock 日线一致，探针 2026-11-15 第 7/8 轮）。
 
 ## 上游行为定案
 
 - 时间戳口径：K 线 `timestamp` 为毫秒；CN/HK 日线为北京时间零点，US 日线为美东零点（归一化北京时间随夏令时在 12:00/13:00 漂移）；输出统一北京时间 `+08:00`。
 - HK/US 日线 `amount` 上游原值 0（无成交额数据，按原值透出、非缺失 null），与 tickflow 口径一致。
 - K 线响应为列式结构（各数组等长、同下标对应同一根 K 线）；缺失值与 NaN 统一映射 null（不用 0 冒充）。
+- CN 指数/ETF 扩容定案（探针 2026-11-15 第 7/8 轮）：统一 klines 端点对指数/ETF 代码不做证券类型路由拒绝——000001.SH/510050.SH 日线 118 根、周/月线均有数；代码映射与 stock 完全共用（后缀表零改动），映射层/适配器零分支。指数/ETF history 未核实保持 null（chain 二分后回填）。
 - 截断/分页：上游单次上限 10000 根，达到上限时无法确认是否被截断，诚实标记 `meta.partial=true` 并经 warnings 提示可能截断；统一分页由共享 `paginate_bars` 完成，闭区间 `[start, end]` 在标准化后精确复核（上游按毫秒时间过滤，网关再做区间复核）。
 - 错误指纹：
   - 上游 429（限频，响应含 `retry_after_ms`）→ `UPSTREAM_RATE_LIMITED`（HTTP 429，`retry_after_ms` 可得时透传 details）；SDK 对 429/5xx 自带最多 3 次退避重试，映射发生在重试耗尽后；
@@ -76,6 +79,7 @@ quotes 为快照能力：interval/adjust 维度无意义，capabilities 与 oper
 当前回退链顺序以 `src/tapehub/config/provider_routing.yaml` 为准，本文不复述 order 列表。参与组合与角色：
 
 - bars CN stock：回退位（免费无凭据的 baostock 居首）；
+- bars CN index / bars CN etf：参与（2026-11-15 扩容，位次与 CN stock 链同序——凭据型源居免费无凭据源之后）；
 - bars HK stock：缺省（官方文档核实港股日/周/月线后接管）；
 - bars US stock：回退位（twelvedata 居首）；
 - quotes CN stock：回退位（tqsdk 居首）；

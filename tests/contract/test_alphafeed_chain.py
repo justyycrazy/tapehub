@@ -96,6 +96,43 @@ def test_truncation_warning_when_upstream_limit_reached(
     assert body["meta"]["count"] == 500  # 统一分页默认 limit
 
 
+@pytest.mark.parametrize(
+    ("asset_type", "instrument", "expected_symbol"),
+    [
+        # 指数/ETF 与 stock 共用统一 klines 端点与后缀表（探针 2026-11-15
+        # 第 7/8 轮实证：上游不做证券类型路由拒绝，映射层零分支）
+        ("index", "CN-SSE-000001", "000001.SH"),
+        ("etf", "CN-SSE-510050", "510050.SH"),
+    ],
+)
+def test_index_etf_chain(
+    asset_type: str,
+    instrument: str,
+    expected_symbol: str,
+    alphafeed_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """CN 指数/ETF 贯穿全链路：指数无复权（显式传 none）、ETF 默认 qfq。"""
+    preset_payload(monkeypatch, klines_payload(["2026-01-02"]))
+
+    params = {
+        **{k: v for k, v in BASE_PARAMS.items() if k != "variant"},
+        "asset_type": asset_type,
+        "instrument": instrument,
+    }
+    response = alphafeed_client.get("/v1/market/bars", params=params)
+    assert response.status_code == 200
+    body = response.json()
+
+    kwargs = StubAlphaFeed.instances[-1].calls[0]
+    assert kwargs["symbol"] == expected_symbol
+    # 缺省 adjust 仅 stock 为 qfq，index/etf 均为 none（docs/api.md 默认值约定）
+    assert kwargs["adjust"] == "none"
+    assert kwargs["period"] == "1d"
+    assert body["data"]["instrument"] == instrument
+    assert body["meta"]["variant"] == "alphafeed"
+
+
 def test_missing_api_key_returns_clear_error(default_client) -> None:  # type: ignore[no-untyped-def]
     """未配置 API Key 时：Provider 不启用（能力目录可见），显式请求返回明确错误。"""
     caps = default_client.get("/v1/providers/alphafeed/capabilities")
@@ -118,27 +155,35 @@ def test_capability_catalog(alphafeed_client: TestClient) -> None:  # type: igno
     assert entry["provider"] == "alphafeed"
     assert entry["enabled"] is True
     caps = entry["capabilities"]
-    # bars 三块（CN/HK/US 逐市场声明：历史深度经探针二分收敛确认不同，
-    # 合并声明会对 HK 过度声明；分钟族不声明、周期枚举无 10m）+ quotes 一块
+    # bars 六块（CN stock/index/etf + HK/US stock 逐块声明：三市场 history
+    # 深度不同拆块；index/etf history 未核实与 stock 不同亦独立成块——
+    # 2026-11-15 扩容；分钟族不声明、周期枚举无 10m）+ quotes 一块
     assert [(cap["data_type"], cap["markets"]) for cap in caps] == [
+        ("bars", ["CN"]),
+        ("bars", ["CN"]),
         ("bars", ["CN"]),
         ("bars", ["HK"]),
         ("bars", ["US"]),
         ("quotes", ["CN", "HK", "US"]),
     ]
-    for cap in caps:
+    assert [cap["asset_types"] for cap in caps[:3]] == [["stock"], ["index"], ["etf"]]
+    # CN stock history 逐市场回填（二分收敛估计窗口右端零点，approx ±90 天）；
+    # 指数/ETF history 未核实保持 null（chain 二分后回填）
+    assert caps[0]["intervals"][0]["history"]["start"] == "1991-01-14T00:00:00+08:00"
+    assert all(i["history"]["start"] is None for i in caps[1]["intervals"])
+    assert all(i["history"]["start"] is None for i in caps[2]["intervals"])
+    assert caps[1]["adjustments"] == ["none"]  # 指数无复权
+    assert caps[2]["adjustments"] == ["none", "qfq", "hfq"]  # ETF 复权生效（诊断实证）
+    for cap in caps[3:5]:
         assert cap["asset_types"] == ["stock"]
         assert cap["variants"] == ["alphafeed"]
-    for cap in caps[:3]:
         assert [i["code"] for i in cap["intervals"]] == ["P1D", "P1W", "P1M"]
         assert cap["adjustments"] == ["none", "qfq", "hfq"]
-    # history.start 逐市场回填（二分收敛估计窗口右端零点，approx ±90 天）
-    assert [cap["intervals"][0]["history"]["start"] for cap in caps[:3]] == [
-        "1991-01-14T00:00:00+08:00",
+    assert [cap["intervals"][0]["history"]["start"] for cap in caps[3:5]] == [
         "1980-02-15T00:00:00+08:00",
         "1962-02-17T00:00:00+08:00",
     ]
-    quotes_cap = caps[3]
+    quotes_cap = caps[5]
     # 快照无周期/复权维度，显式空
     assert quotes_cap["intervals"] == []
     assert quotes_cap["adjustments"] == []

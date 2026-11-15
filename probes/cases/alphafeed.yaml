@@ -13,9 +13,10 @@ pacing:
   # 自带最多 3 次退避重试（_base_client.py），pacing 过密会掩盖限频真相。
   call_interval_s: 6.5
   timeout_s: 60
-  # 预算：availability 45（CN/HK/US 基准 27 + CN 交易所追加 SZSE/BSE 各 9）+
-  # adjust_diff 20（5 目标 × P1D × 2 pair × 2 调）+ history_depth 3 条
-  # （US × 三周期）× ≤24 + raw 12 = 最坏 149，期望约 130。
+  # 预算：availability 57（CN/HK/US 基准 27 + CN 交易所追加 SZSE/BSE 各 9
+  # + index 三周期 3 + etf 三周期三复权 9）+ adjust_diff 24（6 目标 × P1D
+  # × 2 pair × 2 调，etf 为 ETF 分红复权复验）+ history_depth 3 条
+  # （US × 三周期）× ≤24 + raw 12（指纹 3 + 快照 3）= 最坏 159，期望约 110。
   max_calls: 180
 
 # 同一 asset_type（stock）跨三市场声明能力：用市场限定目标（stock@MARKET）
@@ -60,6 +61,22 @@ targets:
     window: {start: 2025-01-01, end: 2025-12-31}
     min_bars: 10
     required_fields: [open, high, low, close, volume]
+  index:
+    instrument: CN-SSE-000001
+    # 上证指数：指数能力 chain 常态复验基准目标——指数/ETF 代码域探测
+    #（af-index-daily-shape 等 7 条 raw，2026-11-15 第 7/8 轮：日线 118 根、
+    # W/M 有数、复权参数框架级判定）实证扩容声明后收敛入链退役，
+    # availability 全声明矩阵展开（3 周期 × none）
+    window: {start: 2025-01-01, end: 2025-12-31}
+    min_bars: 10
+    required_fields: [open, high, low, close, volume, amount]
+  etf:
+    instrument: CN-SSE-510050
+    # 华夏上证 50ETF：ETF 能力 chain 常态复验基准目标（探测 7 条 raw 收敛，
+    # 出处同 index 注释）；availability 全声明矩阵展开（3 周期 × 三复权）
+    window: {start: 2025-01-01, end: 2025-12-31}
+    min_bars: 10
+    required_fields: [open, high, low, close, volume, amount]
 
 chain:
   include_declared: true
@@ -67,8 +84,9 @@ chain:
   adjust_diff:
     # 三市场复权生效性（forward/backward 是否生效、基准为何）：日线足以判定，
     # 收敛 interval 控制预算（参照 tickflow 先例）。stock@CN-SZSE/CN-BSE 为
-    # 逐所细分复验
-    targets: [stock@CN, stock@CN-SZSE, stock@CN-BSE, stock@HK, stock@US]
+    # 逐所细分复验；etf 为 ETF 分红复权复验（窗口整体处于最近除息前，
+    # forward 全窗差异 → confirmed，目录外诊断同窗互证与 tickflow 侧一致）
+    targets: [stock@CN, stock@CN-SZSE, stock@CN-BSE, stock@HK, stock@US, etf]
     window: {start: 2024-06-01, end: 2024-08-31}   # 分红除权高发窗口
     intervals: [P1D]
     pairs: [[none, qfq], [none, hfq]]
@@ -141,5 +159,4 @@ raw:
       - {method: quotes.get, kwargs: {symbols: ["AAPL.US"]}}
     expect: {status: ok, min_rows: 1}
     assert: true
-
 notes: 各轮运行记录见 probes/results/PROBE_LOG.md（不入库）；探针框架规范见 probes/README.md。
