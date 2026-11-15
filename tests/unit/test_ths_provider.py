@@ -278,6 +278,9 @@ def test_unsupported_intervals_rejected_by_operation_routing(
         ("CN-DCE-EG2701", "EG2701.DCE"),
         ("CN-INE-BC2612", "BC2612.INE"),
         ("CN-GFEX-LC2701", "LC2701.GFE"),
+        # CFFEX：与该所期权同后缀 CFE（2026-11-16 探针实证 IF2706.CFE
+        # code=0 真实日线；IF2706.CFX 3001 'Target not found'）
+        ("CN-CFFEX-IF2706", "IF2706.CFE"),
     ],
 )
 def test_contract_suffix_mapping(
@@ -285,7 +288,7 @@ def test_contract_suffix_mapping(
     expected_thscode: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """期货五所后缀探针实证收编；CZCE 年月码 4→3 还原与 tqsdk 同构。"""
+    """期货六所后缀探针实证收编；CZCE 年月码 4→3 还原与 tqsdk 同构。"""
     install(monkeypatch)
     preset_payload(
         monkeypatch,
@@ -307,9 +310,9 @@ def test_contract_suffix_mapping(
 
 
 def test_unverified_exchange_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
-    """还原表只收实证条目：CFFEX 后缀仅适用于 option，contract 请求明确
-    拒绝而非透传上游（写错比透传更隐蔽）；BSE/DCE/CZCE/INE/GFEX 已探针
-    实证收编（见正向断言）。"""
+    """还原表只收实证条目：六所期货交易所（SHFE/CZCE/DCE/INE/GFEX/CFFEX）
+    之外的 exchange 段（如股票交易所）contract 请求明确拒绝而非透传上游
+    （写错比透传更隐蔽）。"""
     install(monkeypatch)
     adapter = _adapter()
     with pytest.raises(UnsupportedCapabilityError):
@@ -317,7 +320,7 @@ def test_unverified_exchange_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
             adapter.fetch_bars(
                 _query(
                     asset_type=AssetType.CONTRACT,
-                    instrument=Instrument.parse("CN-CFFEX-CU2706"),
+                    instrument=Instrument.parse("CN-SSE-CU2706"),
                 )
             )
         )

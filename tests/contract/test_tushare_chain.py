@@ -102,8 +102,9 @@ def test_futures_chain(
     [
         # CZCE 与统一标准码同为 4 位年月，直通（探针实证 4 位可用、3 位旧写法全空）
         ("CN-CZCE-RM2701", "RM2701.ZCE"),
-        # 其余四所后缀直拼（探针实证）
+        # 其余五所后缀直拼（GFEX .GFE 2026-11-16 探针实证）
         ("CN-DCE-V2601", "V2601.DCE"),
+        ("CN-GFEX-LC2706", "LC2706.GFE"),
     ],
 )
 def test_futures_chain_exchange_suffixes(

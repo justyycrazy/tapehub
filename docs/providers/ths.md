@@ -36,8 +36,8 @@ bars 行字段两种形态统一映射（时间键不同、其余同构）：A �
 | --- | --- | --- |
 | stock / index | SSE→SH、SZSE→SZ、BSE→BJ | `CN-SSE-600519 → 600519.SH`、`CN-SZSE-000001 → 000001.SZ`、`CN-BSE-920000 → 920000.BJ` |
 | etf | SSE→SH、SZSE→SZ（北交所无 ETF） | |
-| contract | SHFE→SHF、CZCE→CZC、DCE→DCE、INE→INE、GFEX→GFE（五所实证：MA612.CZC / MA701.CZC / EG2701.DCE / BC2612.INE / LC2701.GFE 均 code=0 正常返回） | `CN-SHFE-CU2706 → CU2706.SHF` |
-| option | CFFEX→CFE（chain 复验） | `CN-CFFEX-IO2612-C-4000 → IO2612-C-4000.CFE` |
+| contract | SHFE→SHF、CZCE→CZC、DCE→DCE、INE→INE、GFEX→GFE、CFFEX→CFE（六所实证：MA612.CZC / MA701.CZC / EG2701.DCE / BC2612.INE / LC2701.GFE 均 code=0 正常返回；CFFEX 2026-11-16 探针实证 IF2706.CFE code=0 真实日线、IF2706.CFX 3001 'Target not found'——**与该所期权同后缀 CFE**，与 tushare 侧该所期货 .CFX 不同） | `CN-SHFE-CU2706 → CU2706.SHF`、`CN-CFFEX-IF2706 → IF2706.CFE` |
+| option | CFFEX→CFE（chain 复验；与该所期货同后缀，2026-11-16 实证） | `CN-CFFEX-IO2612-C-4000 → IO2612-C-4000.CFE` |
 
 - CZCE 年月码 4→3 还原：`CN-CZCE-MA2701 → MA701.CZC`（去年份十位，与 tqsdk 同构；4 位码 MA2701.CZC 上游 3001 不识别、3 位 MA701.CZC 可用）；仅匹配「品种 + 2 位年 + 2 位月」形态——主连/加权品种码（无年月段）、3 位旧写法与不规则代码原样透传；
 - contract/option 的 symbol 段除 CZCE 还原外原样透传（期权行权价等结构不做改写）；

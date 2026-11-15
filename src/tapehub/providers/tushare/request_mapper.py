@@ -55,11 +55,12 @@ _FUTURES_SUFFIXES = {
     "INE": "INE",
     "CFFEX": "CFX",
     "CZCE": "ZCE",
+    "GFEX": "GFE",
 }
 
 # 主力连续 ts_code 规则：多数交易所主连 = 品种 + "L"（CUL.SHF/SRL.ZCE/
-# ML.DCE/SCL.INE）；CFFEX 主力直拼品种（IF.CFX，该所连续后缀 IFL/IFL1-3
-# 为当月/次月/当季/下季月份系列）
+# ML.DCE/SCL.INE/LCL.GFE）；CFFEX 主力直拼品种（IF.CFX，该所连续后缀
+# IFL/IFL1-3 为当月/次月/当季/下季月份系列）
 _CONTINUOUS_PRODUCT_SUFFIX = "L"
 _CONTINUOUS_DIRECT_EXCHANGES = frozenset({"CFFEX"})
 
@@ -103,9 +104,9 @@ def option_ts_code(query: BarQuery) -> str:
 def futures_ts_code(query: BarQuery) -> str:
     """期货 ts_code：单一合约原样（CN-SHFE-CU2401 → CU2401.SHF；CZCE 与统一
     标准码同为 4 位年月，CN-CZCE-SR2601 → SR2601.ZCE 直通）；主力连续
-    多数交易所品种+L（CN-SHFE-CU → CUL.SHF）、CFFEX 直拼（CN-CFFEX-IF →
-    IF.CFX）。非 4 位年月的 CZCE 合约输入（3 位旧写法等）如实透传给上游，
-    查空/报错如实表现，不做静默年份猜测。"""
+    多数交易所品种+L（CN-SHFE-CU → CUL.SHF、CN-GFEX-LC → LCL.GFE）、
+    CFFEX 直拼（CN-CFFEX-IF → IF.CFX）。非 4 位年月的 CZCE 合约输入
+    （3 位旧写法等）如实透传给上游，查空/报错如实表现，不做静默年份猜测。"""
     suffix = _suffix(query, _FUTURES_SUFFIXES)
     symbol = query.instrument.symbol
     if (

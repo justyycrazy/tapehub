@@ -1,4 +1,4 @@
-# tushare 数据探针：周/月线复权生效性、期货五所合约/主连与单次上限常态复验
+# tushare 数据探针：周/月线复权生效性、期货六所合约/主连与单次上限常态复验
 #（交易所限定 chain 目标）、北交所接入复验，及错误指纹采集。
 probe: tushare
 version: 2
@@ -10,15 +10,16 @@ requires:
 pacing:
   call_interval_s: 1.5
   timeout_s: 60
-  # chain 展开（ETF/期权扩容收敛后）：availability 51（stock/SZSE/BSE 基准 29
-  # + 期货交易所限定目标 8：contract@CN-CZCE/DCE/INE/CFFEX +
-  # continuous@CN-DCE/CZCE/INE/CFFEX 各 1 + index 基准/SZSE 限定 6
+  # chain 展开（ETF/期权扩容收敛后）：availability 53（stock/SZSE/BSE 基准 29
+  # + 期货交易所限定目标 10：contract@CN-CZCE/DCE/INE/CFFEX/GFEX +
+  # continuous@CN-CZCE/DCE/INE/CFFEX/GFEX 各 1 + index 基准/SZSE 限定 6
   # + etf 基准/SZSE 限定 2 + option 六所 6）+ adjust_diff 36（3 目标 × 3 周期
   # × 2 pair × 2 调）+ history_depth（stock 三周期 + contract 全量 +
   # continuous + index 三周期 + etf 日线，逐 case 二分实测约 14 调、自预算
   # 20）+ limit 2（contract 结构性 suspect 如实保留 + continuous P16Y）+
-  # raw 3 case 8 调（目录 2 + 错误指纹 2 + GFEX 探测 4），预计约 185
-  #（第 15 轮 7 个二分 case 口径实测 166），留余量
+  # raw 2 case 4 调（目录 2 + 错误指纹 2；GFEX 探测 1 条随 chain
+  # contract@CN-GFEX/continuous@CN-GFEX 收编同轮退役，见 raw 段注释），
+  # 预计约 179（第 15 轮 7 个二分 case 口径实测 166），留余量
   max_calls: 210
 
 targets:
@@ -161,6 +162,15 @@ targets:
     instrument: CN-CZCE-RM2701
     window: {start: 2026-09-01, end: 2026-12-31}
     min_bars: 20
+  contract@CN-GFEX:
+    # 广期所合约（碳酸锂为该所上市以来活跃度第一品种）：后缀直拼
+    #（CN-GFEX-LC2706 → LC2706.GFE）。后缀与数据面 2026-11-16 探针实证
+    #（fut_basic exchange=GFEX 在市 154 行、LC2706.GFE 一周 5 行真实数据）
+    #——原「.GFE 未核实不声明」空档回填收编。合约会到期：运行前按广期所
+    # 挂牌信息核对，失败如实记录，到期轮换为当时的现活合约
+    instrument: CN-GFEX-LC2706
+    window: {start: 2026-09-01, end: 2026-12-31}
+    min_bars: 20
   continuous:
     instrument: CN-SHFE-CU
     window: {start: 2025-01-01, end: 2025-12-31}
@@ -187,6 +197,13 @@ targets:
     # IFL1-3 为次月/当季/下季，均非主连）；原 fut-cffex-main-if 与
     # fut-shfe-main-cu（SHFE 主力/主连对照）raw 退役
     instrument: CN-CFFEX-IF
+    window: {start: 2025-01-01, end: 2025-12-31}
+    min_bars: 10
+  continuous@CN-GFEX:
+    # GFEX 主连：品种+L 由适配器映射（CN-GFEX-LC → LCL.GFE；与五所主连
+    # 体系同构，2026-11-16 探针实证 LCL.GFE 一周 5 行 × 15 列真实数据）
+    # ——instrument 写品种码不带 L；fut-gfex-directory-probe raw 收编退役
+    instrument: CN-GFEX-LC
     window: {start: 2025-01-01, end: 2025-12-31}
     min_bars: 10
 
@@ -240,7 +257,12 @@ raw:
   #    目录外诊断另定案 fund_daily 量纲自洽与 opt_daily amount 万元口径）
 #    实证扩容声明后由 chain etf 基准/SZSE 限定、option 六所目标与
 #    history_depth（etf）常态复验，同轮退役。
-#    保留三条：目录（标的轮换证据来源）、错误指纹与 GFEX 探测（未定案）
+#    GFEX 探测 1 条（fut-gfex-directory-probe，2026-11-16 第 16 轮实证：
+#    fut_basic exchange=GFEX 在市 154 行、LC2706.GFE / LCL.GFE 各 5 行真实
+#    数据——.GFE 后缀与主连品种+L 形态定案）随 manifest/映射层回填收敛，
+#    由 chain contract@CN-GFEX / continuous@CN-GFEX 目标常态复验，同轮退役
+#    （目录外复探另 1 调核实 fut_basic ts_code 形态，样本留存见框架证据）。
+#    保留两条：目录（标的轮换证据来源）与错误指纹
   - id: bj-stock-directory-probe
     purpose: 北交所目录核实（stock_basic exchange=BSE 在市列表）：确认 .BJ 标的
       真实存在并记录代码段构成。首轮结论（20261112T172236）：全市场统一 920
@@ -261,27 +283,5 @@ raw:
     call:
       - {method: query, kwargs: {api_name: "probe_nonexistent_api_for_fingerprint"}}
     expect: {status: error, error_contains: ""}
-  # ── GFEX 探测（未定案，期货六所扩容 2026-11-15）：广期所 .GFE 后缀与
-  #    主连形态「未核实不声明」（tushare.md 拒绝范围明确排除 GFEX）。
-  #    ① fut_basic(exchange=GFEX) 目录核实：在市列表即 ts_code 真实形态的
-  #      证据来源（bj-stock-directory-probe 同款「目录先行」设计）；② ③
-  #      fut_daily 猜测形态直测（合约 LC2706.GFE / 主连品种+L LCL.GFE——
-  #      五所商品所主连均为品种+L 体系）。实证后人工确认回填 _SUFFIXES 与
-  #      manifest（contract/continuous 扩 GFEX），再议 chain 目标
-  #      contract@CN-GFEX / continuous@CN-GFEX 收编与本 raw 退役（第 7 轮
-  #      ths「后缀形态错导致误判」教训：形态以目录结果为准，猜测形态失败
-  #      不代表上游不支持）
-  - id: fut-gfex-directory-probe
-    purpose: 广期所目录与数据面探测（观察不判定）：fut_basic 在市列表核实
-      ts_code 形态，fut_daily 合约/主连猜测形态直测；形态定案前不声明、
-      不扩 _SUFFIXES
-    assert: false
-    module: tushare
-    client: {attr: pro_api, kwargs: {token: "$TAPEHUB_TUSHARE_TOKEN"}}
-    call:
-      - {method: query, kwargs: {api_name: "fut_basic", exchange: "GFEX", list_status: "L"}}
-      - {method: query, kwargs: {api_name: "fut_daily", ts_code: "LC2706.GFE", start_date: "20261109", end_date: "20261113"}, target: client}
-      - {method: query, kwargs: {api_name: "fut_daily", ts_code: "LCL.GFE", start_date: "20261109", end_date: "20261113"}, target: client}
-    expect: {status: ok, min_rows: 1}
 
 notes: 各轮运行记录见 probes/results/PROBE_LOG.md（不入库）；探针框架规范见 probes/README.md。

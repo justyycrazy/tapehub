@@ -43,9 +43,9 @@ Tushare Pro 官方数据源接入：CN 个股日/周/月三复权 K 线 + CN 指
 
 BSE 说明：文档 doc_id=14 后缀表列明 `.BJ`，且经探针双证（全市场目录在市标的全部 920 段；920000.BJ 的 daily/adj_factor 均可用）；83/87/43 段老代码已被 920 段替换、不再有效；history.start 沿用 CN stock 库级声明（BSE 标的均 2020 年后上市，各标的数据以自身上市日起）。
 
-期货单一合约 ts_code 后缀（五所探针实证）：SHFE→SHF、DCE→DCE、INE→INE、CFFEX→CFX、CZCE→ZCE。示例：`CN-SHFE-CU2401 → CU2401.SHF`、`CN-DCE-V2601 → V2601.DCE`、`CN-INE-SC2409 → SC2409.INE`、`CN-CFFEX-IF2409 → IF2409.CFX`。CZCE 在 tushare 为 4 位年月码，与统一标准码同形直通（`CN-CZCE-RM2701 → RM2701.ZCE`；实证 4 位可用、3 位旧写法全空）——非 4 位年月的 CZCE 输入如实透传给上游，查空/报错如实表现，不做静默年份猜测。广期所 `.GFE` 未核实，不声明。
+期货单一合约 ts_code 后缀（六所探针实证）：SHFE→SHF、DCE→DCE、INE→INE、CFFEX→CFX、CZCE→ZCE、GFEX→GFE。示例：`CN-SHFE-CU2401 → CU2401.SHF`、`CN-DCE-V2601 → V2601.DCE`、`CN-INE-SC2409 → SC2409.INE`、`CN-CFFEX-IF2409 → IF2409.CFX`、`CN-GFEX-LC2706 → LC2706.GFE`。CZCE 在 tushare 为 4 位年月码，与统一标准码同形直通（`CN-CZCE-RM2701 → RM2701.ZCE`；实证 4 位可用、3 位旧写法全空）——非 4 位年月的 CZCE 输入如实透传给上游，查空/报错如实表现，不做静默年份猜测。GFEX 后缀 2026-11-16 探针实证（LC2706.GFE 一周 5 行真实数据；fut_basic exchange=GFEX 在市 154 行，品种 LC/LCL、PD/PDL、PS/PSL、PT/PTL、SI/SIL）。
 
-主力连续（continuous）映射（总览页连续合约格式 XX=主力 / XXL=主连；五所探针实证）：多数交易所映射**品种+L 主连**——`CN-SHFE-CU → CUL.SHF`、`CN-CZCE-SR → SRL.ZCE`、`CN-DCE-M → ML.DCE`、`CN-INE-SC → SCL.INE`；CFFEX 例外直拼主力——`CN-CFFEX-IF → IF.CFX`（该所连续后缀 IFL/IFL1-3 为当月/次月/当季/下季月份系列，非主连）。
+主力连续（continuous）映射（总览页连续合约格式 XX=主力 / XXL=主连；六所探针实证）：多数交易所映射**品种+L 主连**——`CN-SHFE-CU → CUL.SHF`、`CN-CZCE-SR → SRL.ZCE`、`CN-DCE-M → ML.DCE`、`CN-INE-SC → SCL.INE`、`CN-GFEX-LC → LCL.GFE`（GFEX 主连 2026-11-16 探针实证：LCL.GFE 一周 5 行 × 15 列字段齐全；在市目录中合约码与主连码并列）；CFFEX 例外直拼主力——`CN-CFFEX-IF → IF.CFX`（该所连续后缀 IFL/IFL1-3 为当月/次月/当季/下季月份系列，非主连）。
 
 指数 ts_code 后缀（doc_id=109 官方枚举「I=沪深指数」）：与股票同表——SSE→SH、SZSE→SZ。示例：`CN-SSE-000001 → 000001.SH`（上证指数）、`CN-SZSE-399001 → 399001.SZ`（深证成指）。拒绝范围 {SSE, SZSE}：BSE 指数（如北证 50）不在官方「沪深指数」枚举内，不声明、映射层明确拒绝；中证指数（.CSI 后缀）不在网关标准代码域内，不涉及。
 
@@ -53,7 +53,7 @@ ETF ts_code 后缀（fund_daily 场内基金接口，doc_id=127，沪深同构�
 
 期权 ts_code 后缀（opt_daily 六所，doc_id=159 交易所枚举 + 六所探针实证码格式）：合约符号**原样透传**（不做年份猜测与连字符改写）——SSE→SH（`CN-SSE-10012437 → 10012437.SH`）、SZSE→SZ（`90008083.SZ` 式）、CFFEX→CFX（`CN-CFFEX-IO2611-C-4150 → IO2611-C-4150.CFX`，带连字符中段「品种月-C/P-行权价」，**后缀 .CFX 与该所期货同**）、DCE→DCE（`M2612-C-3500.DCE` 式，4 位月）、SHFE→SHF（`FU2612C6100.SHF` 式，无连字符）、CZCE→ZCE（`SR701C5900.ZCE` 式，**3 位月码直通**，701=2027-01）。拒绝范围 {SSE, SZSE, CFFEX, DCE, SHFE, CZCE}；广期所期权不在上游交易所枚举内，不声明。
 
-拒绝范围：股票 {SSE, SZSE, BSE}、指数/ETF {SSE, SZSE}、期权 {SSE, SZSE, CFFEX, DCE, SHFE, CZCE}、期货 {SHFE, DCE, INE, CFFEX, CZCE} 之外的 exchange 明确拒绝（`UnsupportedCapabilityError`）；绝不预填未核实条目（证伪即移除）。
+拒绝范围：股票 {SSE, SZSE, BSE}、指数/ETF {SSE, SZSE}、期权 {SSE, SZSE, CFFEX, DCE, SHFE, CZCE}、期货六所 {SHFE, DCE, INE, CFFEX, CZCE, GFEX} 之外的 exchange 明确拒绝（`UnsupportedCapabilityError`）；绝不预填未核实条目（证伪即移除）。
 
 ## 周期 / 复权 / 单位映射
 

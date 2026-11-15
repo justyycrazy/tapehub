@@ -351,6 +351,9 @@ def test_futures_partial_on_row_limit(monkeypatch: pytest.MonkeyPatch) -> None:
         ("CN-DCE-V2601", AssetType.CONTRACT, "V2601.DCE"),
         ("CN-INE-SC2409", AssetType.CONTRACT, "SC2409.INE"),
         ("CN-CFFEX-IF2409", AssetType.CONTRACT, "IF2409.CFX"),
+        # GFEX：.GFE 后缀（2026-11-16 探针实证 LC2706.GFE 有数据、fut_basic
+        # GFEX 在市 154 行）
+        ("CN-GFEX-LC2706", AssetType.CONTRACT, "LC2706.GFE"),
         # CZCE 与统一标准码同为 4 位年月，直通（探针实证 SR2601.ZCE 有数据、
         # 3 位旧写法全空）
         ("CN-CZCE-RM2701", AssetType.CONTRACT, "RM2701.ZCE"),
@@ -362,6 +365,8 @@ def test_futures_partial_on_row_limit(monkeypatch: pytest.MonkeyPatch) -> None:
         ("CN-DCE-M", AssetType.CONTINUOUS, "ML.DCE"),
         ("CN-INE-SC", AssetType.CONTINUOUS, "SCL.INE"),
         ("CN-CFFEX-IF", AssetType.CONTINUOUS, "IF.CFX"),
+        # GFEX 主连品种+L 同构（2026-11-16 探针实证 LCL.GFE 5 行真实数据）
+        ("CN-GFEX-LC", AssetType.CONTINUOUS, "LCL.GFE"),
     ],
 )
 def test_futures_ts_code_mapping(
@@ -383,12 +388,13 @@ def test_futures_ts_code_mapping(
 
 
 def test_unsupported_futures_exchange(monkeypatch: pytest.MonkeyPatch) -> None:
-    """未接入的期货交易所在映射层明确拒绝（广期所 .GFE 未探针核实，证伪即移除）。"""
+    """六所期货交易所（SHFE/DCE/INE/CFFEX/CZCE/GFEX）之外的 exchange 段在
+    映射层明确拒绝（如股票交易所段），不透传上游（写错比透传更隐蔽）。"""
     install(monkeypatch)
     adapter = _adapter()
     query = _query(
         asset_type=AssetType.CONTRACT,
-        instrument=Instrument.parse("CN-GFEX-LC2601"),
+        instrument=Instrument.parse("CN-SSE-CU2401"),
         adjust=Adjust.NONE,
     )
     with pytest.raises(UnsupportedCapabilityError):

@@ -42,6 +42,7 @@ _SUFFIXES: dict[str, dict[str, str]] = {
         "DCE": "DCE",
         "INE": "INE",
         "GFEX": "GFE",
+        "CFFEX": "CFE",
     },
     "option": {"CFFEX": "CFE"},
 }

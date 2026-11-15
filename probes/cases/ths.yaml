@@ -1,10 +1,10 @@
 # 同花顺金融数据 API（ths）数据探针：历史 K 线可用性、复权生效性、历史深度
 # 收敛与隐式截断常态复验，快照/分时形态观察（量额口径核实），ETF 复权口径
 # 留存（fund historical 无 adjust 参数、文档称「价格数据采用前复权口径」，
-# 见 raw 段注释）。探索性 raw（期货五所后缀正面形态、BSE→BJ 价格端点、
-# offset 分页行为、已摘牌合约可查性、ETF adjust 字段形态）已随定案退役——
-# 正面形态由 chain contract@CN-* 与 stock@CN-BSE/index@CN-BSE 目标常态
-# 复验，结论与证据出处见 raw 段注释。
+# 见 raw 段注释）。探索性 raw（期货逐所后缀正面形态、CFFEX 期货后缀双候选、
+# BSE→BJ 价格端点、offset 分页行为、已摘牌合约可查性、ETF adjust 字段形态）
+# 已随定案退役——正面形态由 chain contract@CN-* 与 stock@CN-BSE/index@CN-BSE
+# 目标常态复验，结论与证据出处见 raw 段注释。
 #
 # 上游限频为「约定 QPS」（超限信封 code=4001），具体 QPS 未公布：pacing 2 秒
 # （≤0.5 QPS）保守起步，探针报告中观察 4001 出现情况后收紧。
@@ -22,17 +22,17 @@ pacing:
   # 日期触发上游 5003（邻近起点均正常，与调用频率无关）；4001 限频未复现
   call_interval_s: 2.0
   timeout_s: 60
-  # 本轮构成（BSE/期货五所收编后，探索性 raw 随定案退役）：availability
-  # 13（bars 13：stock 三复权 + index + etf + contract + option + BSE 逐所
-  # stock/index + 期货逐所 CZCE/DCE/INE/GFEX）+ adjust_diff 4（stock 1
+  # 本轮构成（BSE/期货六所收编后，探索性 raw 随定案退役）：availability
+  # 14（bars 14：stock 三复权 + index + etf + contract + option + BSE 逐所
+  # stock/index + 期货逐所 CZCE/DCE/INE/GFEX/CFFEX）+ adjust_diff 4（stock 1
   # 目标 × 2 pair × 2 调）+ history_depth 3 case × 最坏 12 +
-  # limit_truncation ≈2 + quote_availability 11×1 调（quotes 声明随
+  # limit_truncation ≈2 + quote_availability 12×1 调（quotes 声明随
   # include_declared 自动展开：stock/index/etf 基准 + BSE 逐所 stock/index
-  # + contract 基准/期货逐所 CZCE/DCE/INE/GFEX + option）+ raw 4 case
-  #（错误指纹 / ETF 复权口径留存 / 郑商所 4 位负对照 各 3 调：client +
-  # get + json；CFFEX 期货后缀探测 5 调：client + 2×（get + json）双候选
-  # 形态；快照形态与分时量额 2 条 raw 已随 quotes 入链退役，见 raw 段注释），
-  # 最坏约 80，预算 100 留余量（约 5 分钟）
+  # + contract 基准/期货逐所 CZCE/DCE/INE/GFEX/CFFEX + option）+ raw 3 case
+  # 各 3 调（client + get + json：错误指纹 / ETF 复权口径留存 / 郑商所 4 位
+  # 负对照；CFFEX 期货后缀探测 1 条随 chain contract@CN-CFFEX 收编同轮
+  # 退役；快照形态与分时量额 2 条 raw 已随 quotes 入链退役，见 raw 段注释），
+  # 最坏约 78，预算 100 留余量（约 5 分钟）
   max_calls: 100
 
 targets:
@@ -98,6 +98,17 @@ targets:
     instrument: CN-GFEX-LC2701
     # 碳酸锂 2701（后缀实为 GFE 非 GFEX）。合约会到期：同上轮换
     window: {start: 2026-08-03, end: 2026-11-13}
+    min_bars: 20
+    required_fields: [open, high, low, close, volume, amount]
+  contract@CN-CFFEX:
+    instrument: CN-CFFEX-IF2706
+    # 沪深300 股指期货（季月，2026-10-19 挂牌）：CFFEX→CFE 与该所期权同
+    # 后缀（2026-11-16 第 9 轮探针实证 IF2706.CFE code=0 真实日线、
+    # IF2706.CFX 3001 不存在——与 tushare 侧该所期货 .CFX 不同），原
+    # ths-futures-suffix-cffex-futures raw 收编退役。合约会到期：运行前按
+    # 中金所挂牌信息核对，失败如实记录，到期轮换为当时的现活合约。
+    # 窗口起点避开 2026-10-01（该单一日期触发上游 5003，邻近起点均正常）
+    window: {start: 2026-09-01, end: 2026-11-30}
     min_bars: 20
     required_fields: [open, high, low, close, volume, amount]
   option:
@@ -211,7 +222,10 @@ raw:
   #    ④ 已摘牌合约仅现活可查（CU2601/IO2601 3001 vs CU2706 code=0）——
   #      contract/option history.start 保持 null 定案；
   #    ⑤ ETF data.adjust=null 字段形态——与 dividend-window 口径留存同源，
-  #      [qfq] 声明已回填。
+  #      [qfq] 声明已回填；
+  #    ⑥ CFFEX 期货后缀双候选（IF2706.CFE code=0 真实日线、IF2706.CFX
+  #      3001 'Target not found'，2026-11-16 第 9 轮定案回填）——chain
+  #      contract@CN-CFFEX 目标常态复验同一端点同一代码形态。
   #
   # 仅存负对照：郑商所四位年月码——适配器 4→3 还原后链路永远发不出 4 位
   # 形态，无法入链，常态留存（与 tqsdk kline-czce-4digit 同款设计）。
@@ -223,28 +237,6 @@ raw:
     client: {attr: Client, kwargs: {}}
     call:
       - {method: get, kwargs: {url: "https://fuyao.aicubes.cn/api/futures/prices/daily", params: {thscode: "MA2701.CZC", start: 1785715200000, end: 1794614399000, time_period: "day_1"}, headers: {"X-api-key": "$TAPEHUB_THS_API_KEY"}}}
-      - {method: json, kwargs: {}, target: result}
-    expect: {status: ok, min_fields: [code, message, data]}
-    close: {method: close, kwargs: {}}
-
-  # ── CFFEX 期货后缀探测（未定案，期货六所扩容 2026-11-15）：ths 合约后缀
-  #    表仅五所实证（SHF/CZC/DCE/INE/GFE），中金所期货形态未核实（该所仅
-  #    期权后缀 CFE 有文档实证；tushare 侧期货实证为 CFX，与本所期权 CFE
-  #    不一致，两候选均有可能）。第 7 轮「后缀形态错导致误判」教训：双候选
-  #    一次测齐，形态定案前不声明、不扩 _SUFFIXES；实证后人工确认回填
-  #    request_mapper 与 manifest，再议 contract@CN-CFFEX chain 目标与本
-  #    raw 退役。窗口近月有数据（2026-11-09~11-13，UTC 日界近似与既有 case
-  #    同口径）；IF 为沪深300（中金所历史最久、代表性强品种）
-  - id: ths-futures-suffix-cffex-futures
-    purpose: 中金所股指期货后缀形态探测（IF2706.CFE / IF2706.CFX 双候选，
-      观察不判定——形态定案前不声明，实证后人工确认回填）
-    assert: false
-    module: httpx
-    client: {attr: Client, kwargs: {}}
-    call:
-      - {method: get, kwargs: {url: "https://fuyao.aicubes.cn/api/futures/prices/daily", params: {thscode: "IF2706.CFE", start: 1794182400000, end: 1794614399000, time_period: "day_1"}, headers: {"X-api-key": "$TAPEHUB_THS_API_KEY"}}}
-      - {method: json, kwargs: {}, target: result}
-      - {method: get, kwargs: {url: "https://fuyao.aicubes.cn/api/futures/prices/daily", params: {thscode: "IF2706.CFX", start: 1794182400000, end: 1794614399000, time_period: "day_1"}, headers: {"X-api-key": "$TAPEHUB_THS_API_KEY"}}, target: client}
       - {method: json, kwargs: {}, target: result}
     expect: {status: ok, min_fields: [code, message, data]}
     close: {method: close, kwargs: {}}
