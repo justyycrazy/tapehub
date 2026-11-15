@@ -13,11 +13,12 @@ pacing:
   # 分钟 K 线 403）按上游错误如实记录，不做跳过——这正是账户档位边界的证据。
   call_interval_s: 6.5
   timeout_s: 60
-  # 预算：availability 57（三市场基准 27 + CN 交易所追加 SZSE/BSE 各 9
-  # + index 三周期 3 + etf 三周期三复权 9）+ adjust_diff 24（6 目标 × P1D
-  # × 2 pair × 2 调，etf 为 ETF 分红复权复验）+ history_depth 9 条 × ≤24 +
-  # limit_truncation 3 + raw 8（快照 4）= 最坏 310，期望约 190。
-  max_calls: 320
+  # 预算：availability 66（三市场基准 27 + CN 交易所追加 SZSE/BSE 各 9
+  # + index 三周期 3 + etf 三周期三复权 9 + etf@US 三周期三复权 9）+
+  # adjust_diff 28（7 目标 × P1D × 2 pair × 2 调，etf/etf@US 为 ETF 分红
+  # 复权复验）+ history_depth 9 条 × ≤24 + raw 8（快照 4）= 最坏 320，
+  # 期望约 240。（2026-11-15 起 chain 移除 limit_truncation 维度，原 3 调预算作废）
+  max_calls: 360
 
 # 同一 asset_type（stock）跨三市场声明能力：用市场限定目标（stock@MARKET）
 # 为每个市场提供独立基准标的；case id 以限定键为前缀（如 stock@HK-P1D-...）。
@@ -82,6 +83,16 @@ targets:
     window: {start: 2025-01-01, end: 2025-12-31}
     min_bars: 10
     required_fields: [open, high, low, close, volume, amount]
+  etf@US:
+    instrument: US-NYSE-SPY
+    # SPY：US ETF 能力 chain 常态复验基准目标——目录外诊断（2026-11-15
+    # 第 9 轮：SPY.US/QQQ.US none/qfq/hfq 直测 250 根、与 alphafeed 侧逐位
+    # 互证、复权锚定为上游全序列端点）实证扩容声明后收敛入链；availability
+    # 全声明矩阵展开（3 周期 × 三复权）
+    window: {start: 2025-01-01, end: 2025-12-31}
+    min_bars: 10
+    # amount 不预设必填：US 日线成交额上游原值 0（与 stock@US 同口径）
+    required_fields: [open, high, low, close, volume]
 
 chain:
   include_declared: true
@@ -89,10 +100,11 @@ chain:
   adjust_diff:
     # 三市场复权生效性（forward/backward 是否生效、基准为何）：三市场均
     # 实证真实生效（首分歧落在分红除权期）；日线足以判定生效性，收敛
-    # interval 控制预算。stock@CN-SZSE/CN-BSE 为逐所细分复验；etf 为 ETF
-    # 分红复权复验（窗口整体处于最近除息前，forward 全窗差异 → confirmed，
-    # 目录外诊断同窗互证与 alphafeed 侧一致）
-    targets: [stock@CN, stock@CN-SZSE, stock@CN-BSE, stock@HK, stock@US, etf]
+    # interval 控制预算。stock@CN-SZSE/CN-BSE 为逐所细分复验；etf/etf@US
+    # 为 ETF 分红复权复验（窗口整体处于最近除息前，forward 全窗差异 →
+    # confirmed，目录外诊断同窗互证与 alphafeed 侧一致；etf@US hfq 生效
+    # 与锚定语义见第 9 轮目录外诊断）
+    targets: [stock@CN, stock@CN-SZSE, stock@CN-BSE, stock@HK, stock@US, etf, etf@US]
     window: {start: 2024-06-01, end: 2024-08-31}   # 分红除权高发窗口
     intervals: [P1D]
     pairs: [[none, qfq], [none, hfq]]

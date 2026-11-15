@@ -114,14 +114,16 @@ def test_capability_catalog(tickflow_client: TestClient) -> None:  # type: ignor
     assert entry["provider"] == "tickflow"
     assert entry["enabled"] is True
     caps = entry["capabilities"]
-    # bars 六块（CN stock/index/etf + HK/US stock 逐块声明：history 依据见
-    # 20261107T145801 探针报告与 2026-11-15 扩容注释；分钟族免费档无分钟
-    # 权限（403 三轮实证）无法核实，保持 null）+ quotes 快照能力三市场合并
+    # bars 七块（CN stock/index/etf + HK/US stock + US etf 逐块声明：history
+    # 依据见 20261107T145801 探针报告与 2026-11-15 两轮扩容注释；分钟族免费
+    # 档无分钟权限（403 三轮实证）无法核实，保持 null）+ quotes 快照能力
+    # 三市场合并
     assert [(cap["data_type"], cap["markets"]) for cap in caps] == [
         ("bars", ["CN"]),
         ("bars", ["CN"]),
         ("bars", ["CN"]),
         ("bars", ["HK"]),
+        ("bars", ["US"]),
         ("bars", ["US"]),
         ("quotes", ["CN", "HK", "US"]),
     ]
@@ -147,8 +149,14 @@ def test_capability_catalog(tickflow_client: TestClient) -> None:  # type: ignor
         cap_starts = {i["code"]: i["history"]["start"] for i in cap["intervals"]}
         expected = expected_starts[cap["markets"][0]]
         assert cap_starts["P1D"] == cap_starts["P1W"] == cap_starts["P1M"] == expected
+    # US etf（2026-11-15 扩容）：三复权（目录外诊断实证），history 未核实保持 null
+    assert caps[5]["asset_types"] == ["etf"]
+    assert caps[5]["variants"] == ["tickflow"]
+    assert [i["code"] for i in caps[5]["intervals"]] == ["P1D", "P1W", "P1M"]
+    assert all(i["history"]["start"] is None for i in caps[5]["intervals"])
+    assert caps[5]["adjustments"] == ["none", "qfq", "hfq"]
     # quotes 快照能力：无 interval/adjust 维度，三市场 stock
-    quotes_cap = caps[5]
+    quotes_cap = caps[6]
     assert quotes_cap["data_type"] == "quotes"
     assert quotes_cap["markets"] == ["CN", "HK", "US"]
     assert quotes_cap["intervals"] == []
@@ -188,6 +196,41 @@ def test_index_etf_chain(
     # 缺省 adjust：stock/etf 为 qfq→forward，index 为 none（docs/api.md 默认值约定）
     expected_adjust = "none" if asset_type == "index" else "forward"
     assert kwargs["adjust"] == expected_adjust
+    assert kwargs["period"] == "1d"
+    assert body["data"]["instrument"] == instrument
+    assert body["meta"]["variant"] == "tickflow"
+
+
+@pytest.mark.parametrize(
+    ("instrument", "expected_symbol"),
+    [
+        # US ETF 与 stock 共用统一 klines 端点与后缀表（目录外诊断 2026-11-15
+        # 第 9 轮实证：SPY.US/QQQ.US 直测放行、三复权生效、映射层零分支）
+        ("US-NYSE-SPY", "SPY.US"),
+        ("US-NASDAQ-QQQ", "QQQ.US"),
+    ],
+)
+def test_us_etf_chain(
+    instrument: str,
+    expected_symbol: str,
+    tickflow_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """US ETF 贯穿全链路：ETF 缺省 qfq（docs/api.md 默认值约定）。"""
+    preset_payload(monkeypatch, klines_payload(["2026-01-02"]))
+
+    params = {
+        **{k: v for k, v in BASE_PARAMS.items() if k != "variant"},
+        "asset_type": "etf",
+        "instrument": instrument,
+    }
+    response = tickflow_client.get("/v1/market/bars", params=params)
+    assert response.status_code == 200
+    body = response.json()
+
+    kwargs = StubTickFlow.instances[-1].calls[0]
+    assert kwargs["symbol"] == expected_symbol
+    assert kwargs["adjust"] == "forward"
     assert kwargs["period"] == "1d"
     assert body["data"]["instrument"] == instrument
     assert body["meta"]["variant"] == "tickflow"

@@ -134,6 +134,41 @@ def test_index_etf_chain(
     assert body["meta"]["variant"] == "alphafeed"
 
 
+@pytest.mark.parametrize(
+    ("instrument", "expected_symbol"),
+    [
+        # US ETF 与 stock 共用统一 klines 端点与后缀表（目录外诊断 2026-11-15
+        # 第 9 轮实证：SPY.US/QQQ.US 直测放行、三复权生效、映射层零分支）
+        ("US-NYSE-SPY", "SPY.US"),
+        ("US-NASDAQ-QQQ", "QQQ.US"),
+    ],
+)
+def test_us_etf_chain(
+    instrument: str,
+    expected_symbol: str,
+    alphafeed_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """US ETF 贯穿全链路：ETF 缺省 qfq（docs/api.md 默认值约定）。"""
+    preset_payload(monkeypatch, klines_payload(["2026-01-02"]))
+
+    params = {
+        **{k: v for k, v in BASE_PARAMS.items() if k != "variant"},
+        "asset_type": "etf",
+        "instrument": instrument,
+    }
+    response = alphafeed_client.get("/v1/market/bars", params=params)
+    assert response.status_code == 200
+    body = response.json()
+
+    kwargs = StubAlphaFeed.instances[-1].calls[0]
+    assert kwargs["symbol"] == expected_symbol
+    assert kwargs["adjust"] == "forward"
+    assert kwargs["period"] == "1d"
+    assert body["data"]["instrument"] == instrument
+    assert body["meta"]["variant"] == "alphafeed"
+
+
 def test_missing_api_key_returns_clear_error(default_client) -> None:  # type: ignore[no-untyped-def]
     """未配置 API Key 时：Provider 不启用（能力目录可见），显式请求返回明确错误。"""
     caps = default_client.get("/v1/providers/alphafeed/capabilities")
@@ -156,14 +191,15 @@ def test_capability_catalog(alphafeed_client: TestClient) -> None:  # type: igno
     assert entry["provider"] == "alphafeed"
     assert entry["enabled"] is True
     caps = entry["capabilities"]
-    # bars 六块（CN stock/index/etf + HK/US stock 逐块声明：三市场 history
-    # 深度不同拆块；index/etf history 未核实与 stock 不同亦独立成块——
-    # 2026-11-15 扩容；分钟族不声明、周期枚举无 10m）+ quotes 一块
+    # bars 七块（CN stock/index/etf + HK/US stock + US etf 逐块声明：三市场
+    # history 深度不同拆块；index/etf history 未核实与 stock 不同亦独立成块
+    # ——2026-11-15 两轮扩容；分钟族不声明、周期枚举无 10m）+ quotes 一块
     assert [(cap["data_type"], cap["markets"]) for cap in caps] == [
         ("bars", ["CN"]),
         ("bars", ["CN"]),
         ("bars", ["CN"]),
         ("bars", ["HK"]),
+        ("bars", ["US"]),
         ("bars", ["US"]),
         ("quotes", ["CN", "HK", "US"]),
     ]
@@ -184,7 +220,13 @@ def test_capability_catalog(alphafeed_client: TestClient) -> None:  # type: igno
         "1980-02-15T00:00:00+08:00",
         "1962-02-17T00:00:00+08:00",
     ]
-    quotes_cap = caps[5]
+    # US etf（2026-11-15 扩容）：三复权（目录外诊断实证），history 未核实保持 null
+    assert caps[5]["asset_types"] == ["etf"]
+    assert caps[5]["variants"] == ["alphafeed"]
+    assert [i["code"] for i in caps[5]["intervals"]] == ["P1D", "P1W", "P1M"]
+    assert all(i["history"]["start"] is None for i in caps[5]["intervals"])
+    assert caps[5]["adjustments"] == ["none", "qfq", "hfq"]
+    quotes_cap = caps[6]
     # 快照无周期/复权维度，显式空
     assert quotes_cap["intervals"] == []
     assert quotes_cap["adjustments"] == []

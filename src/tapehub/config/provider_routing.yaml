@@ -42,8 +42,11 @@ defaults:
   - match: {data_type: bars, market: US, asset_type: stock}
     order: [alphafeed, tickflow, twelvedata, futunn, akshare]
 
+  # US ETF：2026-11-15 扩容 alphafeed/tickflow 入链（目录外诊断实证统一
+  # klines 端点对美股 ETF 放行、三复权生效）；位次与 US stock 链同序，
+  # 分钟级（两家不声明）经能力过滤自动落到 twelvedata
   - match: {data_type: bars, market: US, asset_type: etf}
-    order: [twelvedata]
+    order: [alphafeed, tickflow, twelvedata]
 
   - match: {data_type: bars, market: GLOBAL, asset_type: forex}
     order: [twelvedata, tiingo]

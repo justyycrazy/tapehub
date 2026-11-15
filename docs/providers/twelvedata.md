@@ -94,7 +94,7 @@
 
 ## 缺省路由参与
 
-- bars：GLOBAL `forex`/`crypto` 承担缺省（tiingo 回退）；US `etf` 独占；US `stock` 承担缺省（优先位）；
+- bars：GLOBAL `forex`/`crypto` 承担缺省（tiingo 回退）；US `etf` 回退位（2026-11-15 起 alphafeed/tickflow 居前——仅日/周/月线；本源独有分钟级，US etf 分钟级请求经能力过滤落到本源）；US `stock` 承担缺省（优先位）；
 - quotes：GLOBAL `forex`/`crypto` 承担缺省（tiingo 回退，快照/流走 WS 订阅、不占 tiingo REST 配额）；
 - 位次依据（一句话）：GLOBAL 外汇/加密货币与美股是该 Provider 的原生能力面（12 周期全量矩阵 + WS 实时），CN/HK 不声明不参与；
 - 当前回退链顺序与组合覆盖以 `src/tapehub/config/provider_routing.yaml` 为准，本文不复述 order 列表；凭据未配置时本 Provider 自动跳过，由回退链下一位生效。

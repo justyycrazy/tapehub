@@ -1,6 +1,6 @@
 # TickFlow（tickflow）
 
-三市场行情 REST API 接入：CN/HK/US 个股日/周/月 K 线 + CN 指数/ETF 日/周/月 K 线（2026-11-15 扩容）+ 实时快照（无状态 REST 单次调用），凭据型回退源。
+三市场行情 REST API 接入：CN/HK/US 个股 + CN 指数/ETF 与 US ETF 日/周/月 K 线（2026-11-15 扩容）+ 实时快照（无状态 REST 单次调用），凭据型回退源。
 
 ## 概要
 
@@ -18,6 +18,7 @@
 | bars | CN/HK/US | stock | tickflow | `tf.klines.get` | P1D/P1W/P1M | none/qfq/hfq | open/high/low/close/volume/amount |
 | bars | CN | index | tickflow | `tf.klines.get` | P1D/P1W/P1M | none | open/high/low/close/volume/amount |
 | bars | CN | etf | tickflow | `tf.klines.get` | P1D/P1W/P1M | none/qfq/hfq | open/high/low/close/volume/amount |
+| bars | US | etf | tickflow | `tf.klines.get` | P1D/P1W/P1M | none/qfq/hfq | open/high/low/close/volume/amount |
 | quotes | CN/HK/US | stock | tickflow | `tf.quotes.get(symbols=[...])` | —（快照无周期） | —（快照无复权） | timestamp/last_price/volume/amount |
 
 - bars 能力按 CN/HK/US **三市场拆块逐市场声明**（三市场周期集与复权相同、历史深度不同，合并声明会以跨市场最早值对历史较浅的市场过度声明；capabilities 与 history.start 一一对应，operations 本就按市场枚举、不受块拆分影响）；
@@ -53,7 +54,7 @@ history.start（历史覆盖声明，探针二分收敛，早上市基准标的�
 - 不声明的周期及原因：
   - 分钟族（上游枚举 `1m/5m/10m/15m/30m/60m`）：免费档无分钟 K 线权限；tickflow 是 CN stock bars 的回退候选，声明无权限的周期会 403 打断本可由其他 Provider 服务的请求——去掉声明后 US 分钟 K 由 twelvedata 服务，CN/HK 分钟 K 无人声明、auto 路由诚实返回 `NO_PROVIDER_AVAILABLE`；升档后按探针流程实测再回填；
   - 季线 `1Q`：无法用 ISO 8601 Duration 表达；年线 `1Y`：超出项目「最大支持到月线」的周期上界。均不声明；
-- 复权映射：`qfq→forward`（比例前复权）、`hfq→backward`（后复权）、`none→none`；上游另有 `forward_additive`/`backward_additive` 差值加法变体，不对外暴露；SDK 自身默认 forward，适配器始终显式传参；**ETF 复权生效**（探针 2026-11-15 目录外诊断：forward vs none 全窗 360 根差异、与 alphafeed 侧逐根一致；chain adjust_diff 常态复验）；**指数无复权**仅声明 none（复权对指数无意义，与 baostock/tushare/alphafeed 先例同口径）；港股/美股复权语义未经探针实证（美股复权口径可能与 A 股不同），生效性以探针实证为准；
+- 复权映射：`qfq→forward`（比例前复权）、`hfq→backward`（后复权）、`none→none`；上游另有 `forward_additive`/`backward_additive` 差值加法变体，不对外暴露；SDK 自身默认 forward，适配器始终显式传参；**ETF 复权生效**（探针 2026-11-15 目录外诊断：forward vs none 全窗 360 根差异、与 alphafeed 侧逐根一致；chain adjust_diff 常态复验）；**US ETF 三复权生效**（目录外诊断 2026-11-15：none/qfq/hfq 两两全窗差异、与 alphafeed 侧逐位一致，见「上游行为定案」）；**指数无复权**仅声明 none（复权对指数无意义，与 baostock/tushare/alphafeed 先例同口径）；港股/美股**个股**复权语义未经探针实证，生效性以探针实证为准；
 - 单位：无换算，volume/amount 原值透出；HK/US 日线 `amount` 上游原值 0（无成交额数据，按原值透出、非缺失 null）。CN 指数/ETF 与 tushare 同窗互证定案口径：`vol` 手、`amount` 元（与 CN stock 日线一致，探针 2026-11-15 第 7/8 轮）。
 
 ## 上游行为定案
@@ -61,6 +62,7 @@ history.start（历史覆盖声明，探针二分收敛，早上市基准标的�
 - 时间戳口径：K 线与快照 `timestamp` 均为毫秒，输出统一北京时间 `+08:00`；CN/HK 日线为**北京时间零点**，US 日线为**美东零点**（归一化北京时间随夏令时在 12:00/13:00 漂移）；
 - K 线响应为列式结构（CompactKlineData，各数组等长、同下标对应同一根 K 线）；缺失值与 NaN 统一映射 null（不用 0 冒充）；
 - CN 指数/ETF 扩容定案（探针 2026-11-15 第 7/8 轮）：统一 klines 端点对指数/ETF 代码不做证券类型路由拒绝——000001.SH/510050.SH 日线 118 根、周/月线均有数（与 alphafeed 侧同日同窗互证，两家历史库大概率同源）；代码映射与 stock 完全共用（后缀表零改动），映射层/适配器零分支。指数/ETF history 未核实保持 null（chain 二分后回填）；
+- US ETF 扩容定案（目录外诊断 2026-11-15 第 9 轮）：统一 klines 端点对美股 ETF 标的（SPY.US/QQQ.US，交易所段无关）不做证券类型路由拒绝——P1D 2025 全窗 250 根直测放行；none/qfq/hfq 三复权生效且与 alphafeed 侧逐位一致（同源引擎再证）；**复权锚定为上游全序列端点而非查询窗口端点**（hfq 与 qfq 差常数比例 ≈0.5476，同一套分红因子两种锚定，窗口内末根可 ≠ 原始价）；量额同 US stock 日线口径（`amount` 上游原值 0）。history 未核实保持 null（chain 二分后回填）；
 - 截断/分页：上游单次上限 **10000 根**，达到上限时无法确认是否被截断，诚实标记 `meta.partial=true` 并经 warnings 提示可能截断；统一分页由共享 `paginate_bars` 完成（跨 Provider 通用分页语义见 ../api.md）；上游按毫秒时间过滤的边界由适配器在标准化后按闭区间 `[start, end]` 精确复核；
 - 错误指纹（探针实证）：免费档分钟线无权限为 SDK `PermissionError`「无分钟K线查询权限」（统一包装 `UPSTREAM_ERROR`）；限频实测以 6.5s 间隔（≈9 次/分钟）全程未触发；`RateLimitError` 类型存在于 SDK，429 指纹待更高频场景核实；限频/无权限等 SDK 异常统一包装 `UPSTREAM_ERROR`，不穿透 API；
 - 快照响应实测（SDK 0.1.25）：返回 `list[dict]`——文档与实测不符（以实测为准，文档描述为 data 包装结构）；实测未观察到 `session` 字段（文档声明存在；防御性映射，存在才透出）；比例字段为**小数比例（1% = 0.01**，如 change_pct 0.0162 = 1.62%）；上游支持逗号分隔批量（本项目为单标的快照，单标的单次调用）；
@@ -78,9 +80,10 @@ history.start（历史覆盖声明，探针二分收敛，早上市基准标的�
 
 - bars CN stock / HK stock / US stock：回退位；
 - bars CN index / bars CN etf：参与（2026-11-15 扩容，位次与 CN stock 链同序——凭据型源居免费无凭据源之后）；
+- bars US etf：回退位（2026-11-15 扩容，位次与 US stock 链同序——目录外诊断实证后入链，alphafeed 居首）；
 - quotes CN stock / HK stock / US stock：回退位。
 
-位次依据一句话：凭据型 REST 源，免费无凭据源与先接入源居前；其三市场日/周/月 K 线与快照能力覆盖广、历史库底深（HK/US 深于东财源），居凭据源前列。
+位次依据一句话：凭据型 REST 源，免费无凭据源与先接入源居前；其三市场日/周/月 K 线与快照能力覆盖广、历史库底深（HK/US 深于东财源），居凭据源前列；US ETF 位次与 US stock 链同序（目录外诊断实证后入链）。
 
 ## extensions 白名单
 
