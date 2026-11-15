@@ -132,6 +132,76 @@ def test_stock_weekly_monthly_units_passthrough(
     assert bar.amount == 12345.0  # 上游 amount 已是元，透传
 
 
+def test_index_request_and_response_mapping(monkeypatch: pytest.MonkeyPatch) -> None:
+    """指数经 pro_bar(asset='I')：ts_code/asset 按资产类型显式传递，量额
+    换算与股票日线同口径（指数日线 vol 手/amount 千元，doc_id=95 定案）。"""
+    stub = install(monkeypatch)
+    stub.pro_bar_rows = stock_rows(["2026-01-05"])
+    adapter = _adapter()
+    batch = asyncio.run(
+        adapter.fetch_bars(
+            _query(
+                asset_type=AssetType.INDEX,
+                instrument=Instrument.parse("CN-SSE-000001"),
+                adjust=Adjust.NONE,
+            )
+        )
+    )
+    kwargs = dict(stub.pro_bar_calls[0])
+    passed_api = kwargs.pop("api")
+    assert passed_api is stub.last_pro  # pro 客户端经 api 参数显式传入
+    assert kwargs == {
+        "ts_code": "000001.SH",
+        "asset": "I",
+        "freq": "D",
+        "adj": None,  # 指数无复权（官方 adj「只针对股票」）
+        "start_date": "20260101",
+        "end_date": "20260110",
+    }
+    bar = batch.bars[0]
+    assert bar.close == 10.2
+    # 日线口径：vol 手→股（×100）、amount 千元→元（×1000）
+    assert bar.volume == 1234500.0
+    assert bar.amount == 12345000.0
+    extensions = bar.extensions
+    assert extensions is not None
+    assert extensions["pre_close"] == 10.1
+    assert extensions["pct_chg"] == 1.0
+
+
+def test_index_szse_ts_code(monkeypatch: pytest.MonkeyPatch) -> None:
+    """深市指数 SZ→SZ 后缀（399 段在 resolver 直接定型 INDEX）。"""
+    stub = install(monkeypatch)
+    stub.pro_bar_rows = stock_rows(["2026-01-05"])
+    adapter = _adapter()
+    asyncio.run(
+        adapter.fetch_bars(
+            _query(
+                asset_type=AssetType.INDEX,
+                instrument=Instrument.parse("CN-SZSE-399001"),
+                adjust=Adjust.NONE,
+            )
+        )
+    )
+    kwargs = stub.pro_bar_calls[0]
+    assert kwargs["ts_code"] == "399001.SZ"
+    assert kwargs["asset"] == "I"
+
+
+def test_unsupported_index_exchange(monkeypatch: pytest.MonkeyPatch) -> None:
+    """指数拒绝范围 {SSE, SZSE}：BSE 指数不在官方「沪深指数」枚举内
+    （doc_id=109），不声明、映射层明确拒绝。"""
+    install(monkeypatch)
+    adapter = _adapter()
+    query = _query(
+        asset_type=AssetType.INDEX,
+        instrument=Instrument.parse("CN-BSE-899050"),
+        adjust=Adjust.NONE,
+    )
+    with pytest.raises(UnsupportedCapabilityError):
+        asyncio.run(adapter.fetch_bars(query))
+
+
 def test_futures_request_and_response_mapping(monkeypatch: pytest.MonkeyPatch) -> None:
     stub = install(monkeypatch)
     stub.set_rows("fut_daily", futures_rows(["2026-01-05"]))

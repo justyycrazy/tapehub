@@ -19,7 +19,7 @@ defaults:
     order: [baostock, ths, alphafeed, tickflow, tushare, futunn, akshare]
 
   - match: {data_type: bars, market: CN, asset_type: index}
-    order: [baostock, ths, futunn, akshare]
+    order: [baostock, ths, futunn, akshare, tushare]
 
   - match: {data_type: bars, market: CN, asset_type: etf}
     order: [baostock, ths, futunn, akshare]

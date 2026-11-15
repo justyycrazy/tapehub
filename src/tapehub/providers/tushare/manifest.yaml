@@ -19,6 +19,26 @@ capabilities:
     adjustments: [none, qfq, hfq]
     fields: [open, high, low, close, volume, amount]
 
+  # 指数：ts.pro_bar（asset='I'，官方枚举 I=沪深指数），日/周/月三周期
+  # （SDK 薄封装直传 index_daily/index_weekly/index_monthly），无复权
+  # （官方 adj「只针对股票」，上游 asset='I' 分支忽略 adj）
+  - data_type: bars
+    markets: [CN]
+    asset_types: [index]
+    delivery: [rest]
+    variants: [tushare]
+    intervals:
+      # P1D：1991 全年窗口 255 行实证（探针 2026-11-15 第 13 轮），1991-01-01
+      # 为实证下界声明（真实最早 bar ≈1991-01-18，与 baostock 互证，chain
+      # history_depth 二分精化后回填）
+      - {code: P1D, history: {start: 1991-01-01T00:00:00+08:00, end: null}}
+      # P1W/P1M：周期可用性已实证，历史深度未单独核实，保持 null
+      # （chain history_depth 二分后回填）
+      - {code: P1W, history: {start: null, end: null}}
+      - {code: P1M, history: {start: null, end: null}}
+    adjustments: [none]
+    fields: [open, high, low, close, volume, amount]
+
   # 期货单一合约：pro.fut_daily，仅日线、无复权
   - data_type: bars
     markets: [CN]
@@ -69,3 +89,11 @@ operations:
   # 期货主力连续：pro.fut_daily（品种+L 主连 / CFFEX 主力直拼）
   - match: {data_type: bars, market: CN, asset_type: continuous, interval: P1D, adjust: none, variant: tushare}
     operation: fut_daily
+
+  # 指数：ts.pro_bar(asset='I')，三周期 × 仅 none（指数无复权）
+  - match: {data_type: bars, market: CN, asset_type: index, interval: P1D, adjust: none, variant: tushare}
+    operation: pro_bar
+  - match: {data_type: bars, market: CN, asset_type: index, interval: P1W, adjust: none, variant: tushare}
+    operation: pro_bar
+  - match: {data_type: bars, market: CN, asset_type: index, interval: P1M, adjust: none, variant: tushare}
+    operation: pro_bar

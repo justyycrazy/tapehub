@@ -30,6 +30,9 @@ _ADJUST_CODES: dict[Adjust, str | None] = {
 # 股票/期货 ts_code 后缀（标准代码 exchange 段 → tushare 后缀）：实证条目表
 # （收录依据见 docs/providers/tushare.md）；证伪即移除，绝不预填未核实条目
 _STOCK_SUFFIXES = {"SSE": "SH", "SZSE": "SZ", "BSE": "BJ"}
+# 指数后缀：pro_bar asset='I' 官方枚举仅「沪深指数」（doc_id=109），BSE 指数
+# 不声明、映射层明确拒绝
+_INDEX_SUFFIXES = {"SSE": "SH", "SZSE": "SZ"}
 _FUTURES_SUFFIXES = {
     "SHFE": "SHF",
     "DCE": "DCE",
@@ -62,6 +65,11 @@ def _suffix(query: BarQuery, table: dict[str, str]) -> str:
 def stock_ts_code(query: BarQuery) -> str:
     """股票 ts_code：CN-SSE-600000 → 600000.SH。"""
     return f"{query.instrument.symbol}.{_suffix(query, _STOCK_SUFFIXES)}"
+
+
+def index_ts_code(query: BarQuery) -> str:
+    """指数 ts_code：CN-SSE-000001 → 000001.SH、CN-SZSE-399001 → 399001.SZ。"""
+    return f"{query.instrument.symbol}.{_suffix(query, _INDEX_SUFFIXES)}"
 
 
 def futures_ts_code(query: BarQuery) -> str:
@@ -97,9 +105,12 @@ def _date_code(value: object) -> str:
 def build_request(operation: str, query: BarQuery) -> dict[str, Any]:
     """按内部 operation 构造调用参数；所有相关参数显式传递。"""
     if operation == "pro_bar":
+        # asset 官方枚举（doc_id=109）：E=股票、I=沪深指数，按资产类型显式传递；
+        # adj 官方语义「只针对股票」，指数能力仅声明 none（上游忽略 adj），恒 None
+        is_index = query.asset_type is AssetType.INDEX
         return {
-            "ts_code": stock_ts_code(query),
-            "asset": "E",  # E=股票（官方枚举，默认 E，显式传递）
+            "ts_code": index_ts_code(query) if is_index else stock_ts_code(query),
+            "asset": "I" if is_index else "E",
             "freq": freq_code(query.interval),
             "adj": _ADJUST_CODES[query.adjust],
             "start_date": _date_code(query.start),
@@ -121,5 +132,6 @@ __all__ = [
     "FUT_DAILY_MAX_ROWS",
     "build_request",
     "futures_ts_code",
+    "index_ts_code",
     "stock_ts_code",
 ]

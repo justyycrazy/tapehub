@@ -137,6 +137,28 @@ def test_continuous_chain(
     assert body["data"]["bars"][0]["volume"] == 54321.0  # 期货保持手
 
 
+def test_index_chain(
+    monkeypatch: pytest.MonkeyPatch, tushare_client: tuple[TestClient, Any]
+) -> None:
+    """指数贯穿全链路：pro_bar(asset='I')，日线量额换算口径与股票一致。"""
+    http, stub = tushare_client
+    preset_rows(stub, stock_rows(["2026-01-02"]))
+
+    params = {**BASE_PARAMS, "asset_type": "index", "instrument": "CN-SSE-000001"}
+    response = http.get("/v1/market/bars", params=params)
+    assert response.status_code == 200
+    body = response.json()
+    kwargs = stub.pro_bar_calls[0]
+    assert kwargs["ts_code"] == "000001.SH"
+    assert kwargs["asset"] == "I"
+    assert kwargs["adj"] is None  # 指数无复权
+    bar = body["data"]["bars"][0]
+    assert bar["volume"] == 1234500.0  # 日线手→股
+    assert bar["amount"] == 12345000.0  # 日线千元→元
+    assert bar["extensions"]["pre_close"] == 10.1
+    assert body["data"]["instrument"] == "CN-SSE-000001"
+
+
 def test_missing_token_returns_clear_error(default_client) -> None:  # type: ignore[no-untyped-def]
     """未配置 Token 时：Provider 不启用（能力目录可见），显式请求返回明确错误。"""
     caps = default_client.get("/v1/providers/tushare/capabilities")
@@ -157,11 +179,16 @@ def test_capability_catalog(tushare_client: tuple[TestClient, Any]) -> None:  # 
     entry = response.json()["data"][0]
     assert entry["provider"] == "tushare"
     assert entry["enabled"] is True
-    assert len(entry["capabilities"]) == 3
+    assert len(entry["capabilities"]) == 4
     stock_cap = next(cap for cap in entry["capabilities"] if cap["asset_types"] == ["stock"])
     assert stock_cap["variants"] == ["tushare"]
     assert [i["code"] for i in stock_cap["intervals"]] == ["P1D", "P1W", "P1M"]
     assert stock_cap["adjustments"] == ["none", "qfq", "hfq"]
+    index_cap = next(cap for cap in entry["capabilities"] if cap["asset_types"] == ["index"])
+    assert [i["code"] for i in index_cap["intervals"]] == ["P1D", "P1W", "P1M"]
+    assert index_cap["adjustments"] == ["none"]
+    # 指数日线历史深度：探针实证下界声明（真实最早 ≈1991-01-18，chain 二分精化后回填）
+    assert index_cap["intervals"][0]["history"]["start"] == "1991-01-01T00:00:00+08:00"
     contract_cap = next(cap for cap in entry["capabilities"] if cap["asset_types"] == ["contract"])
     assert [i["code"] for i in contract_cap["intervals"]] == ["P1D"]
     assert contract_cap["adjustments"] == ["none"]

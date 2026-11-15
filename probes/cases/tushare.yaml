@@ -10,13 +10,15 @@ requires:
 pacing:
   call_interval_s: 1.5
   timeout_s: 60
-  # chain 展开（raw→chain 收敛后）：availability 36（stock/SZSE/BSE
-  # 基准 29 + 期货交易所限定目标 7：contract@CN-DCE/INE/CFFEX +
-  # continuous@CN-DCE/CZCE/INE/CFFEX 各 1）+ adjust_diff 36（3 目标 × 3 周期
-  # × 2 pair × 2 调）+ history_depth（stock 三周期 + contract 全量 +
-  # continuous）+ limit 2（contract 结构性 suspect 如实保留 + continuous
-  # P16Y）+ raw 2×2（目录 + 错误指纹），最坏约 160，留余量
-  max_calls: 180
+  # chain 展开（指数扩容收敛后）：availability 42（stock/SZSE/BSE 基准 29
+  # + 期货交易所限定目标 7：contract@CN-DCE/INE/CFFEX +
+  # continuous@CN-DCE/CZCE/INE/CFFEX 各 1 + index 基准/SZSE 限定 6）
+  # + adjust_diff 36（3 目标 × 3 周期 × 2 pair × 2 调）+ history_depth
+  # （stock 三周期 + contract 全量 + continuous + index 三周期，逐 case
+  # 二分实测约 14 调、自预算 20）+ limit 2（contract 结构性 suspect 如实
+  # 保留 + continuous P16Y）+ raw 2×2（目录 + 错误指纹），预计约 175
+  # （第 13 轮 4 个二分 case 口径实测 133），留余量
+  max_calls: 200
 
 targets:
   stock:
@@ -46,6 +48,22 @@ targets:
   # 北交所不设独立 chain 目标：探针框架 chain 为市场级粒度（capability 每
   # 市场恰取一个基准标的），BSE 是 CN 内交易所段，适配器链路与 SSE/SZSE
   # 完全同构（仅 _STOCK_SUFFIXES 一个查表值，单测确定性覆盖）
+  index:
+    instrument: CN-SSE-000001
+    # 上证指数：指数能力 chain 常态复验基准目标——指数扩容探针先行 4 条
+    # raw 直测（2026-11-15 第 13 轮：index_daily/index_weekly/index_monthly
+    # 三周期有数 117/26/6 行、1991 全年窗口 255 行下界、字段与股票同列集）
+    # 实证扩容声明后收敛入链退役，availability 全声明矩阵展开（3 周期 × none）
+    window: {start: 2025-01-01, end: 2025-12-31}
+    min_bars: 10
+    required_fields: [open, high, low, close, volume, amount]
+  index@CN-SZSE:
+    instrument: CN-SZSE-399001
+    # 深证成指：SZ→SZ 后缀 chain 级常态复验（指数拒绝范围 {SSE,SZSE} 的
+    # SZSE 侧），参照 stock@CN-SZSE 逐所细分先例
+    window: {start: 2025-01-01, end: 2025-12-31}
+    min_bars: 10
+    required_fields: [open, high, low, close, volume, amount]
   contract:
     instrument: CN-SHFE-CU2401
     window: {start: 2023-09-01, end: 2023-12-29}
@@ -110,8 +128,8 @@ chain:
     fields: [close]
   history_depth:
     # contract 走全量模式（已摘牌 CU2401 全量拉取直读最早 bar = 精确上市日，
-    # approx=False）；continuous（CUL.SHF 主连）与 stock 走二分估计
-    targets: [stock, contract, continuous]
+    # approx=False）；continuous（CUL.SHF 主连）与 stock/index 走二分估计
+    targets: [stock, contract, continuous, index]
     full_history_targets: [contract]
     earliest: 1991-01-01
     era_step_years: 5
@@ -131,7 +149,14 @@ raw:
   #    合约五所代码（品种+L 主连、CFFEX 主力直拼）、fut_daily 2000 条上限、
   #    BSE daily/adj_factor 直测共 12 条 raw 直测 case 退役——均已实证扩容
   #    声明，由 chain 交易所限定目标、limit_truncation（continuous, P16Y）
-  #    与 adjust_diff 常态复验（targets 注释与 notes 记录原始证据出处）。
+  #    与 adjust_diff 常态复验（targets 注释与 notes 记录原始证据出处）；
+  #    指数扩容探针先行 4 条（index-daily-shape / index-weekly-availability /
+  #    index-monthly-availability / index-early-history-lower-bound，
+  #    2026-11-15 第 13 轮实证：asset='I' 三周期有数 117/26/6 行、1991 全年
+  #    窗口 255 行下界、字段与股票同列集，目录外诊断另定案周月线量额单位
+  #    口径矛盾）扩容声明后由 chain index 基准/SZSE 限定目标与
+  #    history_depth 常态复验，同轮退役（证据指针见
+  #    probes/results/PROBE_LOG.md，本地不入库）。
   #    保留两条：目录（标的轮换证据来源）与错误指纹
   - id: bj-stock-directory-probe
     purpose: 北交所目录核实（stock_basic exchange=BSE 在市列表）：确认 .BJ 标的
