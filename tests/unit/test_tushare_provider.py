@@ -114,6 +114,24 @@ def test_adjust_none_maps_to_python_none(monkeypatch: pytest.MonkeyPatch) -> Non
     assert stub.pro_bar_calls[0]["adj"] is None  # 上游枚举：None=未复权
 
 
+@pytest.mark.parametrize("interval", ["P1W", "P1M"])
+def test_stock_weekly_monthly_units_passthrough(
+    interval: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """周/月线上游实数据已是股/元（同窗求和互证：官方文档声明「手/千元」
+    与实数据矛盾，比率精确 ×100/×1000），如实透传不再换算——此前统一
+    ×100/×1000 为 100/1000 倍错误，本用例锁定回归。"""
+    stub = install(monkeypatch)
+    stub.pro_bar_rows = stock_rows(["2026-01-05"])
+    adapter = _adapter()
+    batch = asyncio.run(
+        adapter.fetch_bars(_query(interval=Interval.parse(interval), adjust=Adjust.NONE))
+    )
+    bar = batch.bars[0]
+    assert bar.volume == 12345.0  # 上游 vol 已是股，透传
+    assert bar.amount == 12345.0  # 上游 amount 已是元，透传
+
+
 def test_futures_request_and_response_mapping(monkeypatch: pytest.MonkeyPatch) -> None:
     stub = install(monkeypatch)
     stub.set_rows("fut_daily", futures_rows(["2026-01-05"]))

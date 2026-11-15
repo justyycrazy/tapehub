@@ -51,7 +51,7 @@ class ProviderAdapter(BaseProviderAdapter):
         rows = self._to_rows(frame)
         row_limit = _ROW_LIMITS.get(operation)
         partial = row_limit is not None and len(rows) >= row_limit
-        bars = to_standard_bars(operation, rows)
+        bars = to_standard_bars(operation, query.interval, rows)
         # 上游按日期过滤，这里按闭区间 [start, end] 精确复核统一时间语义
         window = [bar for bar in bars if query.start <= bar.timestamp <= query.end]
         page = paginate_bars(window, query.offset, query.limit)

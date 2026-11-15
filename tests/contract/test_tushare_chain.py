@@ -184,6 +184,10 @@ def test_weekly_interval(
     response = http.get("/v1/market/bars", params=params)
     assert response.status_code == 200
     assert stub.pro_bar_calls[0]["freq"] == "W"
+    # 周线上游实数据已是股/元，如实透传（不再 ×100/×1000）
+    body = response.json()
+    assert body["data"]["bars"][0]["volume"] == 12345.0
+    assert body["data"]["bars"][0]["amount"] == 12345.0
 
 
 def test_default_variant_routes_to_declared_default(
