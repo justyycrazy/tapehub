@@ -84,6 +84,27 @@ capabilities:
     adjustments: [none, qfq, hfq]
     fields: [open, high, low, close, volume, amount]
 
+  # 港股 ETF：与 stock 共用统一端点（目录外诊断 2026-11-15 第 6/7 轮：
+  # HK-HKEX-02800 P1D 三复权两两 246/246 根差异、W/M/分钟直测放行、快照
+  # 完整）；量额上游真实成交额（非 alphafeed/tickflow HK 口径原值 0）；
+  # history 未核实保持 null（chain 二分后回填）
+  - data_type: bars
+    markets: [HK]
+    asset_types: [etf]
+    delivery: [rest]
+    variants: [futunn]
+    intervals:
+      - {code: PT1M, history: {start: null, end: null}}
+      - {code: PT5M, history: {start: null, end: null}}
+      - {code: PT15M, history: {start: null, end: null}}
+      - {code: PT30M, history: {start: null, end: null}}
+      - {code: PT1H, history: {start: null, end: null}}
+      - {code: P1D, history: {start: null, end: null}}
+      - {code: P1W, history: {start: null, end: null}}
+      - {code: P1M, history: {start: null, end: null}}
+    adjustments: [none, qfq, hfq]
+    fields: [open, high, low, close, volume, amount]
+
   # 美股个股（OTC 不接入，exchange 白名单拒绝）
   - data_type: bars
     markets: [US]
@@ -152,6 +173,16 @@ capabilities:
   - data_type: quotes
     markets: [HK]
     asset_types: [stock]
+    delivery: [rest]
+    variants: [futunn]
+    intervals: []
+    adjustments: []
+    fields: [timestamp, last_price, volume, amount]
+  # 港股 ETF 快照（目录外诊断 2026-11-15 第 6 轮：HK.02800 端到端放行，
+  # 行结构与 stock 快照同形）
+  - data_type: quotes
+    markets: [HK]
+    asset_types: [etf]
     delivery: [rest]
     variants: [futunn]
     intervals: []
@@ -344,6 +375,56 @@ operations:
   - match: {data_type: bars, market: HK, asset_type: stock, interval: P1M, adjust: hfq, variant: futunn}
     operation: history_kline
 
+  # HK etf：8 周期 × 3 复权（目录外诊断 2026-11-15 第 6/7 轮实证）
+  - match: {data_type: bars, market: HK, asset_type: etf, interval: PT1M, adjust: none, variant: futunn}
+    operation: history_kline
+  - match: {data_type: bars, market: HK, asset_type: etf, interval: PT1M, adjust: qfq, variant: futunn}
+    operation: history_kline
+  - match: {data_type: bars, market: HK, asset_type: etf, interval: PT1M, adjust: hfq, variant: futunn}
+    operation: history_kline
+  - match: {data_type: bars, market: HK, asset_type: etf, interval: PT5M, adjust: none, variant: futunn}
+    operation: history_kline
+  - match: {data_type: bars, market: HK, asset_type: etf, interval: PT5M, adjust: qfq, variant: futunn}
+    operation: history_kline
+  - match: {data_type: bars, market: HK, asset_type: etf, interval: PT5M, adjust: hfq, variant: futunn}
+    operation: history_kline
+  - match: {data_type: bars, market: HK, asset_type: etf, interval: PT15M, adjust: none, variant: futunn}
+    operation: history_kline
+  - match: {data_type: bars, market: HK, asset_type: etf, interval: PT15M, adjust: qfq, variant: futunn}
+    operation: history_kline
+  - match: {data_type: bars, market: HK, asset_type: etf, interval: PT15M, adjust: hfq, variant: futunn}
+    operation: history_kline
+  - match: {data_type: bars, market: HK, asset_type: etf, interval: PT30M, adjust: none, variant: futunn}
+    operation: history_kline
+  - match: {data_type: bars, market: HK, asset_type: etf, interval: PT30M, adjust: qfq, variant: futunn}
+    operation: history_kline
+  - match: {data_type: bars, market: HK, asset_type: etf, interval: PT30M, adjust: hfq, variant: futunn}
+    operation: history_kline
+  - match: {data_type: bars, market: HK, asset_type: etf, interval: PT1H, adjust: none, variant: futunn}
+    operation: history_kline
+  - match: {data_type: bars, market: HK, asset_type: etf, interval: PT1H, adjust: qfq, variant: futunn}
+    operation: history_kline
+  - match: {data_type: bars, market: HK, asset_type: etf, interval: PT1H, adjust: hfq, variant: futunn}
+    operation: history_kline
+  - match: {data_type: bars, market: HK, asset_type: etf, interval: P1D, adjust: none, variant: futunn}
+    operation: history_kline
+  - match: {data_type: bars, market: HK, asset_type: etf, interval: P1D, adjust: qfq, variant: futunn}
+    operation: history_kline
+  - match: {data_type: bars, market: HK, asset_type: etf, interval: P1D, adjust: hfq, variant: futunn}
+    operation: history_kline
+  - match: {data_type: bars, market: HK, asset_type: etf, interval: P1W, adjust: none, variant: futunn}
+    operation: history_kline
+  - match: {data_type: bars, market: HK, asset_type: etf, interval: P1W, adjust: qfq, variant: futunn}
+    operation: history_kline
+  - match: {data_type: bars, market: HK, asset_type: etf, interval: P1W, adjust: hfq, variant: futunn}
+    operation: history_kline
+  - match: {data_type: bars, market: HK, asset_type: etf, interval: P1M, adjust: none, variant: futunn}
+    operation: history_kline
+  - match: {data_type: bars, market: HK, asset_type: etf, interval: P1M, adjust: qfq, variant: futunn}
+    operation: history_kline
+  - match: {data_type: bars, market: HK, asset_type: etf, interval: P1M, adjust: hfq, variant: futunn}
+    operation: history_kline
+
   # US stock：8 周期 × 3 复权
   - match: {data_type: bars, market: US, asset_type: stock, interval: PT1M, adjust: none, variant: futunn}
     operation: history_kline
@@ -452,6 +533,8 @@ operations:
   - match: {data_type: quotes, market: CN, asset_type: etf, interval: null, adjust: null, variant: futunn}
     operation: stock_quote
   - match: {data_type: quotes, market: HK, asset_type: stock, interval: null, adjust: null, variant: futunn}
+    operation: stock_quote
+  - match: {data_type: quotes, market: HK, asset_type: etf, interval: null, adjust: null, variant: futunn}
     operation: stock_quote
   - match: {data_type: quotes, market: US, asset_type: stock, interval: null, adjust: null, variant: futunn}
     operation: stock_quote

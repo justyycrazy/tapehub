@@ -39,6 +39,12 @@ defaults:
   - match: {data_type: bars, market: HK, asset_type: stock}
     order: [alphafeed, tickflow, futunn, akshare]
 
+  # HK ETF：2026-11-15 扩容填补空白（目录外诊断第 6/7 轮：02800 P1D 三复权
+  # 两两全窗差异、W/M/分钟放行、快照完整；alphafeed/tickflow 无覆盖维持
+  # 不声明），futunn 独占
+  - match: {data_type: bars, market: HK, asset_type: etf}
+    order: [futunn]
+
   - match: {data_type: bars, market: US, asset_type: stock}
     order: [alphafeed, tickflow, twelvedata, futunn, akshare]
 
@@ -82,6 +88,12 @@ defaults:
 
   - match: {data_type: quotes, market: HK, asset_type: stock}
     order: [alphafeed, tickflow, futunn]
+
+  # HK ETF 快照：2026-11-15 扩容填补空白（目录外诊断第 6 轮：HK.02800
+  # 端到端放行、行结构与 stock 快照同形；alphafeed/tickflow 无覆盖维持
+  # 不声明），futunn 独占
+  - match: {data_type: quotes, market: HK, asset_type: etf}
+    order: [futunn]
 
   - match: {data_type: quotes, market: US, asset_type: stock}
     order: [alphafeed, tickflow, futunn]

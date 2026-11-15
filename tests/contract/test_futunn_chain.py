@@ -130,7 +130,8 @@ def test_capability_catalog(futunn_client: TestClient) -> None:
     assert entry["enabled"] is True
     # 单体系 Provider：标量声明 → 覆盖全部声明资产类型
     assert entry["default_variant"] == {"stock": "futunn", "index": "futunn", "etf": "futunn"}
-    assert len(entry["capabilities"]) == 12  # bars 6 块 + quotes 6 块（US etf 2026-11-15 扩容）
+    # bars 7 块 + quotes 7 块（US etf 与 HK etf 2026-11-15 扩容）
+    assert len(entry["capabilities"]) == 14
 
     bars_caps = [c for c in entry["capabilities"] if c["data_type"] == "bars"]
     bars_keys = {
@@ -141,6 +142,7 @@ def test_capability_catalog(futunn_client: TestClient) -> None:
         ("CN", "index"),
         ("CN", "etf"),
         ("HK", "stock"),
+        ("HK", "etf"),
         ("US", "stock"),
         ("US", "etf"),
     }
@@ -208,6 +210,12 @@ def test_capability_catalog(futunn_client: TestClient) -> None:
     # US etf（2026-11-15 扩容）：history 未核实保持 null（chain 二分后回填）
     for code in ("PT1M", "PT5M", "PT15M", "PT30M", "PT1H", "P1D", "P1W", "P1M"):
         assert us_etf_history[code]["start"] is None
+    hk_etf_history = {
+        i["code"]: i["history"] for i in by_key[("HK", "etf")]["intervals"]
+    }
+    # HK etf（2026-11-15 扩容）：history 未核实保持 null（chain 二分后回填）
+    for code in ("PT1M", "PT5M", "PT15M", "PT30M", "PT1H", "P1D", "P1W", "P1M"):
+        assert hk_etf_history[code]["start"] is None
 
     adjustments = {
         (tuple(cap["markets"])[0], tuple(cap["asset_types"])[0]): cap["adjustments"]
@@ -223,6 +231,9 @@ def test_capability_catalog(futunn_client: TestClient) -> None:
     # US etf autype 生效性目录外诊断实证（2026-11-15 第 4 轮：SPY 日线
     # none/qfq/hfq 两两全窗 250/250 差异）
     assert adjustments[("US", "etf")] == ["none", "qfq", "hfq"]
+    # HK etf autype 生效性目录外诊断实证（2026-11-15 第 7 轮：02800 日线
+    # none/qfq/hfq 两两全窗 246/246 差异）
+    assert adjustments[("HK", "etf")] == ["none", "qfq", "hfq"]
 
     # 实时快照：无周期/复权维度（显式空），无盘口五档
     quote_caps = [c for c in entry["capabilities"] if c["data_type"] == "quotes"]
@@ -234,6 +245,7 @@ def test_capability_catalog(futunn_client: TestClient) -> None:
         ("CN", "index"),
         ("CN", "etf"),
         ("HK", "stock"),
+        ("HK", "etf"),  # 2026-11-15 扩容
         ("US", "stock"),
         ("US", "etf"),  # 2026-11-15 扩容
     }
@@ -324,6 +336,65 @@ def test_us_etf_quote_chain(
     call = StubClient.instances[-1].calls[0]
     assert call["method"] == "POST"
     assert b'"code_list":["US.SPY"]' in call["content"]
+
+
+@pytest.mark.parametrize(
+    ("instrument", "upstream_code"),
+    [
+        # HK ETF 与 stock 共用统一端点与市场级前缀（目录外诊断 2026-11-15
+        # 第 6/7 轮实证：02800/02828 直测放行、三复权生效——HK 数字代码
+        # 分支零读 asset_type，映射层零分支）
+        ("HK-HKEX-02800", "HK.02800"),
+        ("HK-HKEX-02828", "HK.02828"),
+    ],
+)
+def test_hk_etf_bars_chain(
+    instrument: str,
+    upstream_code: str,
+    futunn_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """HK ETF 贯穿全链路：ETF 缺省 qfq（docs/api.md 默认值约定）。"""
+    preset_payload(monkeypatch, kline_page([DAY1_MS, DAY2_MS]))
+
+    params = {
+        **{k: v for k, v in STOCK_PARAMS.items() if k not in ("adjust", "instrument")},
+        "asset_type": "etf",
+        "instrument": instrument,
+    }
+    response = futunn_client.get("/v1/market/bars", params=params)
+    assert response.status_code == 200
+    body = response.json()
+
+    data = body["data"]
+    assert data["instrument"] == instrument
+    assert data["asset_type"] == "etf"
+    assert data["interval"] == "P1D"
+    assert len(data["bars"]) == 2
+
+    # 上游路径含市场级前缀代码（港股 5 位零填充）；缺省 adjust：ETF 为 qfq
+    call_url = StubClient.instances[-1].calls[0]["url"]
+    assert f"/api/v1.0/quote/{upstream_code}/history-kline?" in call_url
+    assert "autype=1" in call_url
+    assert body["meta"]["variant"] == "futunn"
+
+
+def test_hk_etf_quote_chain(
+    futunn_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """HK ETF 快照贯穿链路：市场级前缀直达（2026-11-15 扩容填补空白）。"""
+    preset_payload(monkeypatch, quote_payload([quote_row("HK.02800", QUOTE_TIME_MS)]))
+
+    params = {**STOCK_QUOTE_PARAMS, "asset_type": "etf", "instrument": "HK-HKEX-02800"}
+    response = futunn_client.get("/v1/market/quotes", params=params)
+    assert response.status_code == 200
+    body = response.json()
+
+    assert body["data"]["instrument"] == "HK-HKEX-02800"
+    assert body["data"]["asset_type"] == "etf"
+    call = StubClient.instances[-1].calls[0]
+    assert call["method"] == "POST"
+    assert b'"code_list":["HK.02800"]' in call["content"]
 
 
 def test_upstream_business_error_wrapped(
