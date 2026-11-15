@@ -9,7 +9,7 @@
   （YYYY-MM-DD）或无时区的裸时间——不做隐式时区解释；
 - ``start`` 必须早于 ``end``；时间范围为闭区间 [start, end]；
 - ``limit`` 不超过服务配置上限；
-- ``adjust`` 未传递时：个股（stock）默认 ``qfq``（前复权），其余默认 ``none``；
+- ``adjust`` 未传递时：个股（stock）与 ETF（etf）默认 ``qfq``（前复权），其余默认 ``none``；
 - ``variant`` 未传递（None）表示不表达数据源偏好：该维度不参与能力过滤，
   由所选 Provider 声明的 ``default_variant`` 具体化，响应 meta 回显实际使用的变体。
 """
@@ -37,7 +37,7 @@ class BarsQueryParams(BaseModel):
     """``GET /v1/market/bars`` 查询参数。
 
     ``adjust`` 使用 None 作为「未传递」哨兵，由 ``to_bar_query`` 按
-    资产类型填充声明默认值（个股 qfq，其余 none）。
+    资产类型填充声明默认值（个股/ETF qfq，其余 none）。
     """
 
     provider: str = "auto"
@@ -53,10 +53,10 @@ class BarsQueryParams(BaseModel):
 
 
 def effective_adjust(params: BarsQueryParams) -> Adjust:
-    """未传递 adjust 时的声明默认值：个股前复权，其余不复权。"""
+    """未传递 adjust 时的声明默认值：个股/ETF 前复权，其余不复权。"""
     if params.adjust is not None:
         return params.adjust
-    if params.asset_type == AssetType.STOCK:
+    if params.asset_type in (AssetType.STOCK, AssetType.ETF):
         return Adjust.QFQ
     return Adjust.NONE
 

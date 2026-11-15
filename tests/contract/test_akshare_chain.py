@@ -208,7 +208,7 @@ def test_etf_chain_explicit_provider(
     akshare_client: TestClient, akshare_stub: StubAkshare
 ) -> None:
     # CN ETF 缺省路由走 baostock（链上 akshare 为末位兜底），本用例显式
-    # provider=akshare 走东财 ETF；未传 adjust → ETF 声明默认 none
+    # provider=akshare 走东财 ETF；未传 adjust → ETF 声明默认 qfq（2026-11-15 起）
     akshare_stub.set_rows("fund_etf_hist_em", em_etf_rows(["2026-01-02"]))
     params = {
         "provider": "akshare",
@@ -225,7 +225,7 @@ def test_etf_chain_explicit_provider(
     operation, kwargs = akshare_stub.calls[0]
     assert operation == "fund_etf_hist_em"
     assert kwargs["symbol"] == "510050"
-    assert kwargs["adjust"] == ""  # ETF 未传 adjust → 声明默认 none → 不复权
+    assert kwargs["adjust"] == "qfq"  # ETF 未传 adjust → 声明默认 qfq → 前复权
     assert kwargs["period"] == "daily"
 
     assert body["meta"]["provider"] == "akshare"

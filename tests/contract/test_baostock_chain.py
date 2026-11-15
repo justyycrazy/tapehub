@@ -127,7 +127,7 @@ def test_index_explicit_provider(
 def test_etf_explicit_provider(
     baostock_client: TestClient, baostock_stub: StubBaostock
 ) -> None:
-    """CN ETF 经显式 provider 走 baostock：sh.510050 映射 + 默认 adjust none。"""
+    """CN ETF 经显式 provider 走 baostock：sh.510050 映射 + 默认 adjust qfq。"""
     baostock_stub.result = daily_stock_rows(["2026-01-05"])
 
     response = baostock_client.get(
@@ -144,9 +144,9 @@ def test_etf_explicit_provider(
     assert response.status_code == 200
     body = response.json()
     assert body["meta"]["provider"] == "baostock"
-    # ETF 未传 adjust → 声明默认 none → adjustflag "3"
+    # ETF 未传 adjust → 声明默认 qfq（2026-11-15 起 ETF 与 stock 同缺省）→ adjustflag "2"
     kwargs = _first_query_kwargs(baostock_stub)
-    assert kwargs["adjustflag"] == "3"
+    assert kwargs["adjustflag"] == "2"
     assert kwargs["code"] == "sh.510050"
 
 

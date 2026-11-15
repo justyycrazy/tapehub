@@ -249,6 +249,7 @@ GET /v1/instruments/resolve?q=AAPL&exchange=NASDAQ
 | 资产类型 | 默认 adjust |
 | --- | --- |
 | `stock` | **`qfq`（前复权）** |
+| `etf` | **`qfq`（前复权）**（2026-11-15 起，与 stock 同——场内基金分红除权与个股一致；仅声明 none 的 Provider 在缺省请求下被能力过滤，显式 `adjust=none` 可达） |
 | 其余（index、contract 等） | `none` |
 
 各 Provider 的复权参数映射与上游生效性（含美股等特殊口径）见对应 Provider 文档。通用参数转换的原则是：**所有相关参数都显式传递给上游，不依赖上游默认值**——保证「接口默认行为」与「上游实际行为」一致。

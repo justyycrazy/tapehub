@@ -185,8 +185,9 @@ def test_index_etf_chain(
 
     kwargs = StubTickFlow.instances[-1].calls[0]
     assert kwargs["symbol"] == expected_symbol
-    # 缺省 adjust 仅 stock 为 qfq，index/etf 均为 none（docs/api.md 默认值约定）
-    assert kwargs["adjust"] == "none"
+    # 缺省 adjust：stock/etf 为 qfq→forward，index 为 none（docs/api.md 默认值约定）
+    expected_adjust = "none" if asset_type == "index" else "forward"
+    assert kwargs["adjust"] == expected_adjust
     assert kwargs["period"] == "1d"
     assert body["data"]["instrument"] == instrument
     assert body["meta"]["variant"] == "tickflow"

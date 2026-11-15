@@ -240,7 +240,8 @@ def test_us_stock_hfq_422(twelvedata_client: TestClient) -> None:  # type: ignor
 def test_us_etf_chain_default_none(
     twelvedata_client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """美股 ETF：缺省 adjust=none（etf 无 qfq 缺省），exchange 段白名单含 NYSE。"""
+    """美股 ETF：缺省 adjust=qfq（2026-11-15 起 ETF 与 stock 同缺省），exchange
+    段白名单含 NYSE；twelvedata US ETF 声明 [none, qfq] 支持缺省请求。"""
     preset_values(monkeypatch, values_rows(["2026-01-05"]))
 
     params = {
@@ -256,7 +257,8 @@ def test_us_etf_chain_default_none(
     kwargs = StubTDClient.instances[-1].calls[0]
     assert kwargs["symbol"] == "SPY"
     assert kwargs["exchange"] == "NYSE"
-    assert kwargs["adjust"] == "none"  # etf 缺省 adjust=none（无 qfq 缺省）
+    # etf 缺省 adjust=qfq（与 stock 同）；twelvedata 上游 qfq 映射为 "all"
+    assert kwargs["adjust"] == "all"
 
 
 def test_us_otc_exchange_rejected_422(twelvedata_client: TestClient) -> None:  # type: ignore[no-untyped-def]

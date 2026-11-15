@@ -224,6 +224,9 @@ def test_etf_explicit_provider_chain(
         **BASE_PARAMS,
         "asset_type": "etf",
         "instrument": "CN-SSE-510050",
+        # tqsdk ETF 仅声明 none；缺省 qfq（2026-11-15 起 ETF 与 stock 同缺省）
+        # 会被能力过滤，显式传 none 走通
+        "adjust": "none",
     }
     response = tqsdk_client.get("/v1/market/bars", params=params)
     assert response.status_code == 200
