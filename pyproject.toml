@@ -42,6 +42,10 @@ futunn = ["httpx>=0.27", "cryptography>=42"]
 [dependency-groups]
 dev = [
     "httpx>=0.27",
+    # starlette.testclient（fastapi TestClient 底座）1.x 已迁移 httpx2 引擎，
+    # 仅旧 httpx 时走兼容回退并每次 import 发弃用告警——测试期 TestClient
+    # 专用，与运行时 httpx（tiingo/ths/futunn REST 直连）并存不冲突
+    "httpx2>=2.16",
     "pytest>=8.2",
     "ruff>=0.5",
 ]
@@ -56,11 +60,6 @@ packages = ["src/tapehub"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
-# 第三方弃用提示（.venv 内 fastapi→starlette testclient 的 import 期告警，
-# 基线既有、与本仓代码无关）：上游适配 httpx2 后移除本条
-filterwarnings = [
-  "ignore:Using `httpx` with `starlette.testclient` is deprecated",
-]
 
 [tool.ruff]
 line-length = 100
