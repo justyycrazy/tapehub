@@ -4,8 +4,8 @@
 
 ## 概要
 
-- 接入方式：无官方 Python SDK——httpx 同步客户端直连 REST（GET `https://fuyao.aicubes.cn/...`），认证经 `X-api-key` 请求头（key 不落 URL）；接口签名按官方文档核实（overview、prices、a-share-index、fund-market、futures-prices、options-prices 六页，`https://fuyao.aicubes.cn/docs/api-reference/...`）；
-- 依赖：pyproject extras `ths` = `httpx>=0.27`（可选依赖，延迟导入；未安装返回 `PROVIDER_NOT_IMPLEMENTED`，不影响服务启动）；同步调用经 `call_in_thread` 隔离到线程池；
+- 接入方式：无官方 Python SDK——httpx2 同步客户端直连 REST（GET `https://fuyao.aicubes.cn/...`），认证经 `X-api-key` 请求头（key 不落 URL）；接口签名按官方文档核实（overview、prices、a-share-index、fund-market、futures-prices、options-prices 六页，`https://fuyao.aicubes.cn/docs/api-reference/...`）；
+- 依赖：pyproject extras `ths` = `httpx2>=2.16`（可选依赖，延迟导入；未安装返回 `PROVIDER_NOT_IMPLEMENTED`，不影响服务启动）；同步调用经 `call_in_thread` 隔离到线程池；
 - 凭据：`TAPEHUB_THS_API_KEY`（禁止写入代码/manifest/日志/异常响应）；未配置时不启用（能力目录仍可见 `enabled=false`），显式请求返回 `PROVIDER_DISABLED`；付费凭据 API，缺省路由置各组合回退位末位；环境变量全表见 ../operations.md；
 - 变体体系：单体系 Provider，变体与 `default_variant` 均为 `ths`（数据源即上游服务自身）；缺省请求经回退链裁决，也可显式传 `variant=ths`。
 

@@ -28,23 +28,21 @@ tqsdk = ["tqsdk"]
 # websockets：实时快照/快照流 WS 直连（td.websocket 封装不适配共享连接
 # 动态增删）；>=14 为新 asyncio 实现（websockets.connect 别名）
 twelvedata = ["twelvedata", "websockets>=14"]
-# Tiingo 无官方 Python SDK：REST 历史 K 线用 httpx 同步客户端直连
+# Tiingo 无官方 Python SDK：REST 历史 K 线用 httpx2 同步客户端直连
 # （call_in_thread 隔离），WS 快照/流复用 websockets 直连（同 twelvedata）
-tiingo = ["httpx>=0.27", "websockets>=14"]
-# 同花顺金融数据 API（ths）无官方 Python SDK：REST 用 httpx 同步客户端直连
+tiingo = ["httpx2>=2.16", "websockets>=14"]
+# 同花顺金融数据 API（ths）无官方 Python SDK：REST 用 httpx2 同步客户端直连
 # （call_in_thread 隔离），X-api-key 请求头认证
-ths = ["httpx>=0.27"]
-# 富途 OpenAPI HTTP 直连（futunn）无官方 Python SDK：REST 用 httpx 同步客户端
+ths = ["httpx2>=2.16"]
+# 富途 OpenAPI HTTP 直连（futunn）无官方 Python SDK：REST 用 httpx2 同步客户端
 # 直连（call_in_thread 隔离），AppKey 签名认证经 cryptography 做本地私钥
 # 签名（Ed25519 / RSA-SHA256 PKCS#1 v1.5，两种算法都由该库提供）
-futunn = ["httpx>=0.27", "cryptography>=42"]
+futunn = ["httpx2>=2.16", "cryptography>=42"]
 
 [dependency-groups]
 dev = [
-    "httpx>=0.27",
-    # starlette.testclient（fastapi TestClient 底座）1.x 已迁移 httpx2 引擎，
-    # 仅旧 httpx 时走兼容回退并每次 import 发弃用告警——测试期 TestClient
-    # 专用，与运行时 httpx（tiingo/ths/futunn REST 直连）并存不冲突
+    # httpx2：三 Provider REST 直连（extras 同名依赖）+ starlette.testclient
+    # （fastapi TestClient 底座，1.x 已迁移 httpx2 引擎）共用
     "httpx2>=2.16",
     "pytest>=8.2",
     "ruff>=0.5",

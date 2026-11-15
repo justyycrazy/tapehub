@@ -18,7 +18,7 @@ from tapehub.providers.pagination import paginate_bars
 from tapehub.providers.ths.request_mapper import build_quote_request, build_request
 from tapehub.providers.ths.response_mapper import to_standard_bars, to_standard_quote
 
-# httpx 客户端超时（秒）：应用层 upstream_timeout_seconds（默认 30s）为
+# httpx2 客户端超时（秒）：应用层 upstream_timeout_seconds（默认 30s）为
 # 整体兜底，客户端自身超时取更小的保守值，避免长挂线程占用 worker
 _HTTP_TIMEOUT_SECONDS = 20.0
 
@@ -81,20 +81,20 @@ class ProviderAdapter(BaseProviderAdapter):
         )
 
     def _call_upstream(self, api_key: str, operation: str, query: Any) -> dict[str, Any]:
-        """先完成参数映射，再延迟导入 httpx 直连 REST（GET，X-api-key 头），
+        """先完成参数映射，再延迟导入 httpx2 直连 REST（GET，X-api-key 头），
         解析统一 ApiResponse 信封并返回业务数据 ``data`` 容器。"""
         url, params = build_request(operation, query) if isinstance(
             query, BarQuery
         ) else build_quote_request(operation, query)
         try:
-            import httpx
+            import httpx2
         except ImportError as exc:
             raise ProviderNotImplementedError(
-                "Provider dependency 'httpx' is not installed.",
-                details={"provider": self.name, "sdk": "httpx"},
+                "Provider dependency 'httpx2' is not installed.",
+                details={"provider": self.name, "sdk": "httpx2"},
             ) from exc
         headers = {"X-api-key": api_key}
-        with httpx.Client(timeout=_HTTP_TIMEOUT_SECONDS) as client:
+        with httpx2.Client(timeout=_HTTP_TIMEOUT_SECONDS) as client:
             response = client.get(url, params=params, headers=headers)
         if response.status_code >= 400:
             # 官方约定业务错误走信封 code（HTTP 恒 200）；非 2xx 属契约外

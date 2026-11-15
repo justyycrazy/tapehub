@@ -25,7 +25,7 @@ from tapehub.providers.futunn.response_mapper import to_standard_bars, to_standa
 from tapehub.providers.futunn.signing import build_signed_headers, load_private_key_pem
 from tapehub.providers.pagination import paginate_bars
 
-# httpx 客户端超时（秒）：应用层 upstream_timeout_seconds（默认 30s）为
+# httpx2 客户端超时（秒）：应用层 upstream_timeout_seconds（默认 30s）为
 # 整体兜底，客户端自身超时取更小的保守值，避免长挂线程占用 worker
 _HTTP_TIMEOUT_SECONDS = 20.0
 
@@ -145,17 +145,17 @@ class ProviderAdapter(BaseProviderAdapter):
     def _call_upstream(
         self, app_key: str, pem: bytes, request: UpstreamRequest
     ) -> dict[str, Any]:
-        """延迟导入 httpx 直连 REST（签名请求头），解析统一信封并返回载荷。
+        """延迟导入 httpx2 直连 REST（签名请求头），解析统一信封并返回载荷。
 
         query_string 由 request_mapper 统一生成：URL 拼接与签名原文共用
         同一字符串（签名一致性单点保证）。
         """
         try:
-            import httpx
+            import httpx2
         except ImportError as exc:
             raise ProviderNotImplementedError(
-                "Provider dependency 'httpx' is not installed.",
-                details={"provider": self.name, "sdk": "httpx"},
+                "Provider dependency 'httpx2' is not installed.",
+                details={"provider": self.name, "sdk": "httpx2"},
             ) from exc
         headers = build_signed_headers(
             app_key,
@@ -165,7 +165,7 @@ class ProviderAdapter(BaseProviderAdapter):
             query_string=request.query_string,
             body=request.body,
         )
-        with httpx.Client(timeout=_HTTP_TIMEOUT_SECONDS) as client:
+        with httpx2.Client(timeout=_HTTP_TIMEOUT_SECONDS) as client:
             if request.method == "POST":
                 response = client.post(request.url, content=request.body, headers=headers)
             else:

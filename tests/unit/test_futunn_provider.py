@@ -656,14 +656,14 @@ def test_invalid_private_key_pem(tmp_path: Any) -> None:
         asyncio.run(adapter.fetch_bars(_query()))
 
 
-def test_missing_httpx(rsa_key: tuple[str, Any], monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setitem(sys.modules, "httpx", None)  # 模拟依赖未安装
+def test_missing_httpx2(rsa_key: tuple[str, Any], monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setitem(sys.modules, "httpx2", None)  # 模拟依赖未安装
     adapter = _adapter(
         make_settings(futunn_app_key="app-key", futunn_private_key_path=rsa_key[0])
     )
     with pytest.raises(ProviderNotImplementedError) as excinfo:
         asyncio.run(adapter.fetch_bars(_query()))
-    assert "httpx" in str(excinfo.value)
+    assert "httpx2" in str(excinfo.value)
 
 
 def test_missing_cryptography(
@@ -671,7 +671,7 @@ def test_missing_cryptography(
 ) -> None:
     # 模拟依赖未安装：签名延迟导入的是 cryptography 子模块路径，子模块可能
     # 已被本测试文件顶层导入缓存——全部置 None 哨兵才会触发 ImportError；
-    # 同时装 httpx 桩兜底保证零网络
+    # 同时装 httpx2 桩兜底保证零网络
     install(monkeypatch)
     for name in [
         module

@@ -42,7 +42,7 @@ from tapehub.providers.tiingo.runtime import TiingoWsRuntime
 if TYPE_CHECKING:
     from tapehub.settings import Settings
 
-# httpx 客户端超时（秒）：应用层 upstream_timeout_seconds（默认 30s）为
+# httpx2 客户端超时（秒）：应用层 upstream_timeout_seconds（默认 30s）为
 # 整体兜底，客户端自身超时取更小的保守值，避免长挂线程占用 worker
 _HTTP_TIMEOUT_SECONDS = 20.0
 
@@ -248,7 +248,7 @@ class ProviderAdapter(BaseProviderAdapter):
         return int(getattr(self.settings, "stream_queue_size", 64) or 64)
 
     # ------------------------------------------------------------------
-    # 历史 K 线（REST httpx 直连，线程池）
+    # 历史 K 线（REST httpx2 直连，线程池）
     # ------------------------------------------------------------------
 
     def _fetch_sync(self, api_key: str, operation: str, query: BarQuery) -> BarBatch:
@@ -279,7 +279,7 @@ class ProviderAdapter(BaseProviderAdapter):
         )
 
     def _fetch_rows(self, api_key: str, operation: str, query: BarQuery) -> list[dict[str, Any]]:
-        """先完成参数映射，再延迟导入 httpx 直连 REST（GET，Authorization 头）。"""
+        """先完成参数映射，再延迟导入 httpx2 直连 REST（GET，Authorization 头）。"""
         url, params = build_request(operation, query)
         if operation == "fx_prices" and params["endDate"] < FX_ARCHIVE_FLOOR:
             # fx 完全越界窗口（endDate 亦早于档案起点）：直接空批，不发请求
@@ -287,14 +287,14 @@ class ProviderAdapter(BaseProviderAdapter):
             # 跨边界窗口已在 build_request 钳制，闭区间复核兜底）
             return []
         try:
-            import httpx
+            import httpx2
         except ImportError as exc:
             raise ProviderNotImplementedError(
-                "Provider dependency 'httpx' is not installed.",
-                details={"provider": self.name, "sdk": "httpx"},
+                "Provider dependency 'httpx2' is not installed.",
+                details={"provider": self.name, "sdk": "httpx2"},
             ) from exc
         headers = {"Authorization": f"Token {api_key}"}
-        with httpx.Client(timeout=_HTTP_TIMEOUT_SECONDS) as client:
+        with httpx2.Client(timeout=_HTTP_TIMEOUT_SECONDS) as client:
             response = client.get(url, params=params, headers=headers)
         if response.status_code == 429:
             # 免费档限频（50 请求/时、1000 请求/天）：明确映射可重试限流

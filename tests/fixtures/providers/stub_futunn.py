@@ -1,7 +1,7 @@
-"""测试用 futunn HTTP 桩：模拟延迟导入的 ``httpx`` 同步客户端（零网络）。
+"""测试用 futunn HTTP 桩：模拟延迟导入的 ``httpx2`` 同步客户端（零网络）。
 
 只实现适配器使用的路径：
-- ``httpx.Client(timeout=...)`` 上下文管理器；
+- ``httpx2.Client(timeout=...)`` 上下文管理器；
 - ``client.get(url, headers=...)`` / ``client.post(url, content=..., headers=...)``：
   记录调用（url/headers/content）并返回 ``StubResponse``（``status_code`` +
   ``.json()`` + ``headers``，GET 无 params 参数——查询串已在 URL 内，
@@ -22,7 +22,7 @@ class StubResponse:
         self.status_code = status_code
         self._payload = payload
         self.headers: dict[str, str] = {}
-        # httpx.Response.text 等价物（防御路径不依赖，保留对称）
+        # httpx2.Response.text 等价物（防御路径不依赖，保留对称）
         if isinstance(payload, str):
             self.text = payload
         else:
@@ -38,7 +38,7 @@ class StubResponse:
 
 
 class StubClient:
-    """httpx.Client 桩；所有实例记录在 ``instances``。"""
+    """httpx2.Client 桩；所有实例记录在 ``instances``。"""
 
     instances: list["StubClient"] = []
 
@@ -86,9 +86,9 @@ def install(monkeypatch: Any) -> type[StubClient]:
     import sys
     import types
 
-    module = types.ModuleType("httpx")
+    module = types.ModuleType("httpx2")
     module.Client = StubClient  # type: ignore[attr-defined]
-    monkeypatch.setitem(sys.modules, "httpx", module)
+    monkeypatch.setitem(sys.modules, "httpx2", module)
     StubClient.instances.clear()
     _queue.clear()
     return StubClient

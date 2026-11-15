@@ -4,10 +4,10 @@
 
 ## 概要
 
-- 接入方式：HTTP 直连 REST（Base URL `https://webapi.futunn.com`），无官方 Python SDK——httpx 同步客户端在调用内延迟导入直连（未安装返回 `PROVIDER_NOT_IMPLEMENTED`，不影响服务启动），同步调用经 `call_in_thread` 隔离到线程池；接口签名按官方文档核实（getting-started、api-authority、rate-limit、stock-quote、history-kline 五页，`https://open.futunn.com/zh-cn/api/...`）；
+- 接入方式：HTTP 直连 REST（Base URL `https://webapi.futunn.com`），无官方 Python SDK——httpx2 同步客户端在调用内延迟导入直连（未安装返回 `PROVIDER_NOT_IMPLEMENTED`，不影响服务启动），同步调用经 `call_in_thread` 隔离到线程池；接口签名按官方文档核实（getting-started、api-authority、rate-limit、stock-quote、history-kline 五页，`https://open.futunn.com/zh-cn/api/...`）；
 - 认证：「方式二：传统 API Key」——open.futunn.com/dashboard 控制台「AppKey 管理」创建 AppKey 并上传公钥（Ed25519 或 RSA-SHA256 / PKCS#1 v1.5），本地私钥对签名原文签名后经 4 个请求头注入（见「上游行为定案」）；
 - 凭据：`TAPEHUB_FUTUNN_APP_KEY`（AppKey ID）+ `TAPEHUB_FUTUNN_PRIVATE_KEY_PATH`（与上传公钥配对的本地私钥 PEM 文件路径）双凭据，**两者全部非空才启用**；缺任一凭据不启用——能力目录仍可见、auto 路由跳过、显式请求返回 `PROVIDER_DISABLED`；凭据只经环境变量注入，AppKey/私钥不落 URL、代码、manifest、日志或异常响应；环境变量全表见 ../operations.md；
-- 依赖：pyproject extras `futunn` = `httpx>=0.27` + `cryptography>=42`（均延迟导入）；
+- 依赖：pyproject extras `futunn` = `httpx2>=2.16` + `cryptography>=42`（均延迟导入）；
 - 变体体系：单体系 Provider，变体与 `default_variant` 均为 `futunn`（数据源即上游服务自身）；缺省请求经缺省路由回退链裁决，也可显式传 `variant=futunn`。
 
 ## 能力与上游映射

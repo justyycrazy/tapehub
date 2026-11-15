@@ -5,7 +5,7 @@
 
 ## 概要
 
-- 接入方式：无官方 Python SDK——历史 K 线用 `httpx` 同步客户端直连
+- 接入方式：无官方 Python SDK——历史 K 线用 `httpx2` 同步客户端直连
   `https://api.tiingo.com`（模块内延迟导入，未安装返回 `PROVIDER_NOT_IMPLEMENTED`），
   同步调用经 `call_in_thread` 隔离到线程池；实时快照/快照流用 `websockets` 库直连
   WS 端点。接口签名按官方文档核实（general/connecting、crypto、forex、
@@ -15,7 +15,7 @@
   https://www.tiingo.com/documentation/forex 、
   https://www.tiingo.com/documentation/websockets/crypto 、
   https://www.tiingo.com/documentation/websockets/forex ；
-- SDK 包（pyproject 可选依赖 `tiingo` 组）：`httpx>=0.27`、`websockets>=14`；
+- SDK 包（pyproject 可选依赖 `tiingo` 组）：`httpx2>=2.16`、`websockets>=14`；
 - 凭据与启用条件：`TAPEHUB_TIINGO_API_KEY`（API Key 即账户凭据，经
   `Authorization: Token <key>` 请求头传上游——token 不落 URL，绝不写入代码、
   manifest、日志或异常响应）。变量未配置时不启用：能力目录仍可见（`enabled=false`），

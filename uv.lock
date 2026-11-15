@@ -2006,16 +2006,16 @@ baostock = [
 ]
 futunn = [
     { name = "cryptography" },
-    { name = "httpx" },
+    { name = "httpx2" },
 ]
 ths = [
-    { name = "httpx" },
+    { name = "httpx2" },
 ]
 tickflow = [
     { name = "tickflow" },
 ]
 tiingo = [
-    { name = "httpx" },
+    { name = "httpx2" },
     { name = "websockets" },
 ]
 tqsdk = [
@@ -2031,7 +2031,6 @@ twelvedata = [
 
 [package.dev-dependencies]
 dev = [
-    { name = "httpx" },
     { name = "httpx2" },
     { name = "pytest" },
     { name = "ruff" },
@@ -2044,9 +2043,9 @@ requires-dist = [
     { name = "baostock", marker = "extra == 'baostock'", specifier = ">=0.9.3" },
     { name = "cryptography", marker = "extra == 'futunn'", specifier = ">=42" },
     { name = "fastapi", specifier = ">=0.115" },
-    { name = "httpx", marker = "extra == 'futunn'", specifier = ">=0.27" },
-    { name = "httpx", marker = "extra == 'ths'", specifier = ">=0.27" },
-    { name = "httpx", marker = "extra == 'tiingo'", specifier = ">=0.27" },
+    { name = "httpx2", marker = "extra == 'futunn'", specifier = ">=2.16" },
+    { name = "httpx2", marker = "extra == 'ths'", specifier = ">=2.16" },
+    { name = "httpx2", marker = "extra == 'tiingo'", specifier = ">=2.16" },
     { name = "pydantic", specifier = ">=2.7" },
     { name = "pydantic-settings", specifier = ">=2.3" },
     { name = "pyyaml", specifier = ">=6.0.1" },
@@ -2063,7 +2062,6 @@ provides-extras = ["akshare", "tickflow", "alphafeed", "tushare", "baostock", "t
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "httpx", specifier = ">=0.27" },
     { name = "httpx2", specifier = ">=2.16" },
     { name = "pytest", specifier = ">=8.2" },
     { name = "ruff", specifier = ">=0.5" },

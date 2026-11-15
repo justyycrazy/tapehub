@@ -61,7 +61,7 @@ uv run uvicorn tapehub.api.app:app --reload   # 启动服务（默认 127.0.0.1:
 | `TAPEHUB_TUSHARE_TOKEN` | tushare | Token 即 Tushare 积分凭据 |
 | `TAPEHUB_TQSDK_AUTH_USER` | tqsdk | 快期账户（TqAuth）用户名/邮箱 |
 | `TAPEHUB_TQSDK_AUTH_PASSWORD` | tqsdk | 快期账户密码；与用户名必须同时配置 |
-| `TAPEHUB_TIINGO_API_KEY` | tiingo | REST + WS 直连（httpx + websockets） |
+| `TAPEHUB_TIINGO_API_KEY` | tiingo | REST + WS 直连（httpx2 + websockets） |
 | `TAPEHUB_TWELVEDATA_API_KEY` | twelvedata | 官方 Python 库 + websockets |
 | `TAPEHUB_THS_API_KEY` | ths | 同花顺金融数据 API，X-api-key 请求头 |
 | `TAPEHUB_FUTUNN_APP_KEY` | futunn | 富途「方式二：传统 API Key」AppKey ID |

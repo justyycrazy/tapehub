@@ -365,12 +365,12 @@ def test_missing_api_key() -> None:
     assert "API key" in str(excinfo.value)
 
 
-def test_missing_httpx(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setitem(sys.modules, "httpx", None)  # 模拟依赖未安装
+def test_missing_httpx2(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setitem(sys.modules, "httpx2", None)  # 模拟依赖未安装
     adapter = _adapter(make_settings(ths_api_key="k"))
     with pytest.raises(ProviderNotImplementedError) as excinfo:
         asyncio.run(adapter.fetch_bars(_query()))
-    assert "httpx" in str(excinfo.value)
+    assert "httpx2" in str(excinfo.value)
 
 
 def test_envelope_rate_limited_4001(monkeypatch: pytest.MonkeyPatch) -> None:
