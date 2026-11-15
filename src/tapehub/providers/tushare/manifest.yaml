@@ -28,14 +28,41 @@ capabilities:
     delivery: [rest]
     variants: [tushare]
     intervals:
-      # P1D：1991 全年窗口 255 行实证（探针 2026-11-15 第 13 轮），1991-01-01
-      # 为实证下界声明（真实最早 bar ≈1991-01-18，与 baostock 互证，chain
-      # history_depth 二分精化后回填）
+      # 三周期 history 均为实证下界声明（探针 2026-11-15 第 13/15 轮：P1D
+      # 1991 全年 255 行 raw 直测；P1W/P1M chain 二分 era 回溯至 1991 触底
+      # ——真实最早 bar ≈1991-01-18 与 baostock 互证，chain history_depth
+      # 常态复验）
       - {code: P1D, history: {start: 1991-01-01T00:00:00+08:00, end: null}}
-      # P1W/P1M：周期可用性已实证，历史深度未单独核实，保持 null
-      # （chain history_depth 二分后回填）
-      - {code: P1W, history: {start: null, end: null}}
-      - {code: P1M, history: {start: null, end: null}}
+      - {code: P1W, history: {start: 1991-01-01T00:00:00+08:00, end: null}}
+      - {code: P1M, history: {start: 1991-01-01T00:00:00+08:00, end: null}}
+    adjustments: [none]
+    fields: [open, high, low, close, volume, amount]
+
+  # ETF：pro.fund_daily（doc_id=127「ETF 日线」，亦含 LOF），仅日线
+  # （SDK FD 分支仅处理 D/min + ETF 专题无周/月线接口，源码定案）、
+  # 无复权（pro_bar FD 分支无 adj 处理，fund_adj 因子需自算不在范围）
+  - data_type: bars
+    markets: [CN]
+    asset_types: [etf]
+    delivery: [rest]
+    variants: [tushare]
+    intervals:
+      # P1D：2005-02-23 为实证下界声明（510050.SH 上市日，2005 全年 213 行；
+      # 官方口径 fund_daily 起始 2000-01-03——LOF/封闭式基金更早，未实证）
+      - {code: P1D, history: {start: 2005-02-23T00:00:00+08:00, end: null}}
+    adjustments: [none]
+    fields: [open, high, low, close, volume, amount]
+
+  # 期权单一合约：pro.opt_daily（doc_id=159），仅日线、无复权；六所后缀
+  # 实证（SSE/SZSE/CFFEX/DCE/SHFE/CZCE）；库级历史起点未核实（合约级数据
+  # 随上市起、随摘牌止）
+  - data_type: bars
+    markets: [CN]
+    asset_types: [option]
+    delivery: [rest]
+    variants: [tushare]
+    intervals:
+      - {code: P1D, history: {start: null, end: null}}
     adjustments: [none]
     fields: [open, high, low, close, volume, amount]
 
@@ -97,3 +124,11 @@ operations:
     operation: pro_bar
   - match: {data_type: bars, market: CN, asset_type: index, interval: P1M, adjust: none, variant: tushare}
     operation: pro_bar
+
+  # ETF：pro.fund_daily（仅日线 × 仅 none）
+  - match: {data_type: bars, market: CN, asset_type: etf, interval: P1D, adjust: none, variant: tushare}
+    operation: fund_daily
+
+  # 期权单一合约：pro.opt_daily（仅日线 × 仅 none）
+  - match: {data_type: bars, market: CN, asset_type: option, interval: P1D, adjust: none, variant: tushare}
+    operation: opt_daily

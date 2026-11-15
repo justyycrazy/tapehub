@@ -15,7 +15,13 @@ from tapehub.providers.manifest import load_builtin_manifest
 from tapehub.providers.registry import build_provider_record
 from tapehub.settings import Settings
 from tests.conftest import make_settings
-from tests.fixtures.providers.stub_tushare import futures_rows, install, stock_rows
+from tests.fixtures.providers.stub_tushare import (
+    fund_rows,
+    futures_rows,
+    install,
+    option_rows,
+    stock_rows,
+)
 
 # CN 标的的时间表达统一用北京时间（领域层会将边界归一化到市场规范时区）
 CN = ZoneInfo("Asia/Shanghai")
@@ -200,6 +206,95 @@ def test_unsupported_index_exchange(monkeypatch: pytest.MonkeyPatch) -> None:
     )
     with pytest.raises(UnsupportedCapabilityError):
         asyncio.run(adapter.fetch_bars(query))
+
+
+def test_etf_request_and_response_mapping(monkeypatch: pytest.MonkeyPatch) -> None:
+    """ETF 经 fund_daily（仅日线）：量额口径与股票日线同（doc_id=127 定案）。"""
+    stub = install(monkeypatch)
+    stub.set_rows("fund_daily", fund_rows(["2026-01-05"]))
+    adapter = _adapter()
+
+    query = _query(
+        asset_type=AssetType.ETF,
+        instrument=Instrument.parse("CN-SSE-510050"),
+        adjust=Adjust.NONE,
+    )
+    batch = asyncio.run(adapter.fetch_bars(query))
+
+    operation, kwargs = stub.last_pro.calls[0]
+    assert operation == "fund_daily"
+    assert kwargs == {
+        "ts_code": "510050.SH",
+        "start_date": "20260101",
+        "end_date": "20260110",
+    }
+    bar = batch.bars[0]
+    # 日线口径：vol 手→股（×100）、amount 千元→元（×1000）
+    assert bar.volume == 735136118.0
+    assert bar.amount == 2068149774.0
+    assert bar.extensions is not None
+    assert bar.extensions["pre_close"] == 2.79
+    assert bar.extensions["pct_chg"] == 0.179
+
+
+def test_etf_szse_ts_code(monkeypatch: pytest.MonkeyPatch) -> None:
+    """深市 ETF SZ→SZ 后缀（fund_daily 沪深同构，探针实证 159915.SZ）。"""
+    stub = install(monkeypatch)
+    stub.set_rows("fund_daily", fund_rows(["2026-01-05"]))
+    adapter = _adapter()
+    asyncio.run(
+        adapter.fetch_bars(
+            _query(
+                asset_type=AssetType.ETF,
+                instrument=Instrument.parse("CN-SZSE-159915"),
+                adjust=Adjust.NONE,
+            )
+        )
+    )
+    assert stub.last_pro.calls[0][1]["ts_code"] == "159915.SZ"
+
+
+def test_option_request_and_response_mapping(monkeypatch: pytest.MonkeyPatch) -> None:
+    """期权经 opt_daily（仅日线）：合约符号原样透传 + 后缀直拼，amount
+    万元→元（与期货同款口径），extensions settle/oi。"""
+    stub = install(monkeypatch)
+    stub.set_rows("opt_daily", option_rows(["2026-01-05"]))
+    adapter = _adapter()
+
+    query = _query(
+        asset_type=AssetType.OPTION,
+        instrument=Instrument.parse("CN-CFFEX-IO2611-C-4150"),
+        adjust=Adjust.NONE,
+    )
+    batch = asyncio.run(adapter.fetch_bars(query))
+
+    operation, kwargs = stub.last_pro.calls[0]
+    assert operation == "opt_daily"
+    assert kwargs == {
+        "ts_code": "IO2611-C-4150.CFX",  # CFFEX 期权 .CFX 与该所期货同后缀
+        "start_date": "20260101",
+        "end_date": "20260110",
+    }
+    bar = batch.bars[0]
+    assert bar.volume == 18942.0  # 手（张）保持
+    assert bar.amount == 17370330.0  # 万元→元（×10000）
+    assert bar.extensions is not None
+    assert bar.extensions["settle"] == 0.1139
+    assert bar.extensions["oi"] == 11987.0
+
+
+def test_unsupported_etf_and_option_exchanges(monkeypatch: pytest.MonkeyPatch) -> None:
+    """ETF 拒绝范围 {SSE, SZSE}、期权拒绝范围六所之外：映射层明确拒绝
+    （广期所期权上游枚举未含，绝不预填未核实条目）。"""
+    install(monkeypatch)
+    adapter = _adapter()
+    for asset_type, code in (
+        (AssetType.ETF, "CN-BSE-920000"),
+        (AssetType.OPTION, "CN-GFEX-LC2601"),
+    ):
+        query = _query(asset_type=asset_type, instrument=Instrument.parse(code), adjust=Adjust.NONE)
+        with pytest.raises(UnsupportedCapabilityError):
+            asyncio.run(adapter.fetch_bars(query))
 
 
 def test_futures_request_and_response_mapping(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -71,7 +71,9 @@ def _stock_bar(row: dict[str, Any], volume_scale: float, amount_scale: float) ->
     )
 
 
-def _futures_bar(row: dict[str, Any]) -> Bar:
+def _derivative_bar(row: dict[str, Any]) -> Bar:
+    """期货/期权共用行映射：vol 保持手（期权为张），amount 万元→元，
+    extensions 白名单 pre_close/settle/oi（两上游字段集同构）。"""
     extensions: dict[str, Any] = {}
     for source, name in (("pre_close", "pre_close"), ("settle", "settle"), ("oi", "oi")):
         value = _to_float(row.get(source))
@@ -83,7 +85,7 @@ def _futures_bar(row: dict[str, Any]) -> Bar:
         high=_to_float(row.get("high")),
         low=_to_float(row.get("low")),
         close=_to_float(row.get("close")),
-        volume=_to_float(row.get("vol")),  # 期货成交量保持手
+        volume=_to_float(row.get("vol")),
         amount=_scaled(row.get("amount"), 10000.0),  # 万元 → 元
         extensions=extensions or None,
     )
@@ -96,6 +98,11 @@ def to_standard_bars(operation: str, interval: Interval, rows: list[dict[str, An
         if scales is None:
             raise ValueError(f"no unit scaling for interval {interval.code}")
         return [_stock_bar(row, *scales) for row in rows]
+    if operation == "fund_daily":
+        # ETF 仅日线，量额口径与股票日线相同（doc_id=127：vol 手/amount 千元）
+        return [_stock_bar(row, 100.0, 1000.0) for row in rows]
     if operation == "fut_daily":
-        return [_futures_bar(row) for row in rows]
+        return [_derivative_bar(row) for row in rows]
+    if operation == "opt_daily":
+        return [_derivative_bar(row) for row in rows]
     raise ValueError(f"no response mapping for operation {operation!r}")

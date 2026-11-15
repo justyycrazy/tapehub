@@ -12,14 +12,24 @@ from tapehub.domain.errors import ProviderNotImplementedError
 from tapehub.domain.models import CN_TIMEZONE, BarBatch, BarQuery
 from tapehub.providers.base import BaseProviderAdapter, call_in_thread
 from tapehub.providers.pagination import paginate_bars
-from tapehub.providers.tushare.request_mapper import FUT_DAILY_MAX_ROWS, build_request
+from tapehub.providers.tushare.request_mapper import (
+    FUND_DAILY_MAX_ROWS,
+    FUT_DAILY_MAX_ROWS,
+    OPT_DAILY_MAX_ROWS,
+    build_request,
+)
 from tapehub.providers.tushare.response_mapper import to_standard_bars
 
 if TYPE_CHECKING:
     pass
 
 # 各接口单次返回上限（达到即无法确认是否截断）
-_ROW_LIMITS = {"pro_bar": None, "fut_daily": FUT_DAILY_MAX_ROWS}
+_ROW_LIMITS = {
+    "pro_bar": None,
+    "fut_daily": FUT_DAILY_MAX_ROWS,
+    "fund_daily": FUND_DAILY_MAX_ROWS,
+    "opt_daily": OPT_DAILY_MAX_ROWS,
+}
 
 
 class ProviderAdapter(BaseProviderAdapter):
@@ -69,7 +79,8 @@ class ProviderAdapter(BaseProviderAdapter):
     def _call_upstream(self, token: str, operation: str, query: BarQuery) -> Any:
         """先完成参数映射，再延迟导入官方 SDK 调用对应接口。
 
-        pro_bar 为模块级函数，fut_daily 为 pro 对象方法。
+        pro_bar 为模块级函数（股票/指数），fut_daily/fund_daily/opt_daily
+        为 pro 对象方法（期货/ETF/期权）。
         """
         kwargs = build_request(operation, query)
         try:
@@ -82,8 +93,8 @@ class ProviderAdapter(BaseProviderAdapter):
         pro = ts.pro_api(token)
         if operation == "pro_bar":
             return ts.pro_bar(api=pro, **kwargs)
-        if operation == "fut_daily":
-            return pro.fut_daily(**kwargs)
+        if operation in ("fut_daily", "fund_daily", "opt_daily"):
+            return getattr(pro, operation)(**kwargs)
         raise ProviderNotImplementedError(
             f"unknown operation {operation!r}",
             details={"provider": self.name, "operation": operation},

@@ -1,4 +1,5 @@
-"""Tushare 请求映射（RequestMapper）：标准请求 → ts.pro_bar / pro.fut_daily 参数。
+"""Tushare 请求映射（RequestMapper）：标准请求 → ts.pro_bar / pro.fut_daily /
+pro.fund_daily / pro.opt_daily 参数。
 
 映射规则与上游行为定案见 docs/providers/tushare.md（唯一出处，本文不复述）。
 探针运行记录见 probes/results/PROBE_LOG.md（本地文件，不入库）。
@@ -11,8 +12,11 @@ from tapehub.domain.errors import UnsupportedCapabilityError
 from tapehub.domain.intervals import Interval
 from tapehub.domain.models import Adjust, AssetType, BarQuery
 
-# 期货接口单次上限（官方文档：单次最大 2000 条）
+# 接口单次上限（官方文档：fut_daily 单次最大 2000 条、fund_daily 单次最大
+# 5000 条、opt_daily 单次最大 15000 条）
 FUT_DAILY_MAX_ROWS = 2000
+FUND_DAILY_MAX_ROWS = 5000
+OPT_DAILY_MAX_ROWS = 15000
 
 _FREQ_CODES: dict[Interval, str] = {
     Interval.parse("P1D"): "D",
@@ -33,6 +37,18 @@ _STOCK_SUFFIXES = {"SSE": "SH", "SZSE": "SZ", "BSE": "BJ"}
 # 指数后缀：pro_bar asset='I' 官方枚举仅「沪深指数」（doc_id=109），BSE 指数
 # 不声明、映射层明确拒绝
 _INDEX_SUFFIXES = {"SSE": "SH", "SZSE": "SZ"}
+# ETF 后缀：fund_daily 为场内基金接口（doc_id=127，沪深两所同构）
+_ETF_SUFFIXES = {"SSE": "SH", "SZSE": "SZ"}
+# 期权后缀：opt_daily 六所（doc_id=159 交易所枚举 + 五所探针实证码格式）；
+# CFFEX 期权 .CFX 与该所期货同后缀（非 ths 的 CFE）
+_OPTION_SUFFIXES = {
+    "SSE": "SH",
+    "SZSE": "SZ",
+    "CFFEX": "CFX",
+    "DCE": "DCE",
+    "SHFE": "SHF",
+    "CZCE": "ZCE",
+}
 _FUTURES_SUFFIXES = {
     "SHFE": "SHF",
     "DCE": "DCE",
@@ -70,6 +86,18 @@ def stock_ts_code(query: BarQuery) -> str:
 def index_ts_code(query: BarQuery) -> str:
     """指数 ts_code：CN-SSE-000001 → 000001.SH、CN-SZSE-399001 → 399001.SZ。"""
     return f"{query.instrument.symbol}.{_suffix(query, _INDEX_SUFFIXES)}"
+
+
+def etf_ts_code(query: BarQuery) -> str:
+    """ETF ts_code：CN-SSE-510050 → 510050.SH、CN-SZSE-159915 → 159915.SZ。"""
+    return f"{query.instrument.symbol}.{_suffix(query, _ETF_SUFFIXES)}"
+
+
+def option_ts_code(query: BarQuery) -> str:
+    """期权 ts_code（合约符号原样透传，不做年份猜测）：CN-SSE-10012437 →
+    10012437.SH、CN-CFFEX-IO2611-C-4150 → IO2611-C-4150.CFX（CFFEX 带连字符
+    中段）、CN-CZCE-SR701C5900 → SR701C5900.ZCE（3 位月码直通）。"""
+    return f"{query.instrument.symbol}.{_suffix(query, _OPTION_SUFFIXES)}"
 
 
 def futures_ts_code(query: BarQuery) -> str:
@@ -122,6 +150,18 @@ def build_request(operation: str, query: BarQuery) -> dict[str, Any]:
             "start_date": _date_code(query.start),
             "end_date": _date_code(query.end),
         }
+    if operation == "fund_daily":
+        return {
+            "ts_code": etf_ts_code(query),
+            "start_date": _date_code(query.start),
+            "end_date": _date_code(query.end),
+        }
+    if operation == "opt_daily":
+        return {
+            "ts_code": option_ts_code(query),
+            "start_date": _date_code(query.start),
+            "end_date": _date_code(query.end),
+        }
     raise UnsupportedCapabilityError(
         f"unknown operation {operation!r}",
         details={"provider": "tushare", "operation": operation},
@@ -129,9 +169,13 @@ def build_request(operation: str, query: BarQuery) -> dict[str, Any]:
 
 
 __all__ = [
+    "FUND_DAILY_MAX_ROWS",
     "FUT_DAILY_MAX_ROWS",
+    "OPT_DAILY_MAX_ROWS",
     "build_request",
+    "etf_ts_code",
     "futures_ts_code",
     "index_ts_code",
+    "option_ts_code",
     "stock_ts_code",
 ]

@@ -22,7 +22,7 @@ defaults:
     order: [baostock, ths, futunn, akshare, tushare]
 
   - match: {data_type: bars, market: CN, asset_type: etf}
-    order: [baostock, ths, futunn, akshare]
+    order: [baostock, ths, futunn, akshare, tushare]
 
   - match: {data_type: bars, market: CN, asset_type: contract}
     order: [tqsdk, ths, akshare]
@@ -34,7 +34,7 @@ defaults:
     order: [tqsdk]
 
   - match: {data_type: bars, market: CN, asset_type: option}
-    order: [ths]
+    order: [ths, tushare]
 
   - match: {data_type: bars, market: HK, asset_type: stock}
     order: [alphafeed, tickflow, futunn, akshare]

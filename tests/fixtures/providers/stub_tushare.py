@@ -37,6 +37,14 @@ class StubPro:
         self.calls.append(("fut_daily", dict(kwargs)))
         return StubDataFrame(self.rows.get("fut_daily", []))
 
+    def fund_daily(self, **kwargs: Any) -> StubDataFrame:
+        self.calls.append(("fund_daily", dict(kwargs)))
+        return StubDataFrame(self.rows.get("fund_daily", []))
+
+    def opt_daily(self, **kwargs: Any) -> StubDataFrame:
+        self.calls.append(("opt_daily", dict(kwargs)))
+        return StubDataFrame(self.rows.get("opt_daily", []))
+
 
 class StubTushareModule:
     """tushare 模块桩：pro_api + 模块级 pro_bar。
@@ -112,6 +120,49 @@ def futures_rows(days: list[str]) -> list[dict[str, Any]]:
             "vol": 54321.0,
             "amount": 37100.0,
             "oi": 100000.0,
+        }
+        for day in days
+    ]
+
+
+def fund_rows(days: list[str]) -> list[dict[str, Any]]:
+    """fund_daily（ETF）输出行：量额口径与股票日线同（vol 手、amount 千元）。"""
+    return [
+        {
+            "ts_code": "510050.SH",
+            "trade_date": _date_str(day),
+            "pre_close": 2.79,
+            "open": 2.80,
+            "high": 2.81,
+            "low": 2.78,
+            "close": 2.795,
+            "change": 0.005,
+            "pct_chg": 0.179,
+            "vol": 7351361.18,
+            "amount": 2068149.774,
+        }
+        for day in days
+    ]
+
+
+def option_rows(days: list[str]) -> list[dict[str, Any]]:
+    """opt_daily（期权）输出行：vol 手（张）、amount 万元、oi 手——与期货
+    同款口径。"""
+    return [
+        {
+            "ts_code": "10012437.SH",
+            "trade_date": _date_str(day),
+            "exchange": "SSE",
+            "pre_settle": 0.108,
+            "pre_close": 0.1139,
+            "open": 0.115,
+            "high": 0.118,
+            "low": 0.112,
+            "close": 0.1139,
+            "settle": 0.1139,
+            "vol": 18942.0,
+            "amount": 1737.033,
+            "oi": 11987.0,
         }
         for day in days
     ]

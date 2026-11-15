@@ -8,7 +8,13 @@ from fastapi.testclient import TestClient
 from tapehub.api.app import create_app
 from tapehub.providers.registry import build_default_registry
 from tests.conftest import make_settings
-from tests.fixtures.providers.stub_tushare import futures_rows, install, stock_rows
+from tests.fixtures.providers.stub_tushare import (
+    fund_rows,
+    futures_rows,
+    install,
+    option_rows,
+    stock_rows,
+)
 
 BASE_PARAMS = {
     "provider": "tushare",
@@ -159,6 +165,48 @@ def test_index_chain(
     assert body["data"]["instrument"] == "CN-SSE-000001"
 
 
+def test_etf_chain(
+    monkeypatch: pytest.MonkeyPatch, tushare_client: tuple[TestClient, Any]
+) -> None:
+    """ETF 贯穿全链路：fund_daily 直调，量额口径与股票日线一致。"""
+    http, stub = tushare_client
+    stub.set_rows("fund_daily", fund_rows(["2026-01-02"]))
+
+    params = {**BASE_PARAMS, "asset_type": "etf", "instrument": "CN-SSE-510050"}
+    response = http.get("/v1/market/bars", params=params)
+    assert response.status_code == 200
+    body = response.json()
+    operation, kwargs = stub.last_pro.calls[0]
+    assert operation == "fund_daily"
+    assert kwargs["ts_code"] == "510050.SH"
+    bar = body["data"]["bars"][0]
+    assert bar["volume"] == 735136118.0  # 日线手→股
+    assert bar["amount"] == 2068149774.0  # 日线千元→元
+    assert bar["extensions"]["pre_close"] == 2.79
+    assert body["data"]["instrument"] == "CN-SSE-510050"
+
+
+def test_option_chain(
+    monkeypatch: pytest.MonkeyPatch, tushare_client: tuple[TestClient, Any]
+) -> None:
+    """期权贯穿全链路：opt_daily 直调，合约符号直拼后缀，amount 万元→元。"""
+    http, stub = tushare_client
+    stub.set_rows("opt_daily", option_rows(["2026-01-02"]))
+
+    params = {**BASE_PARAMS, "asset_type": "option", "instrument": "CN-SSE-10012437"}
+    response = http.get("/v1/market/bars", params=params)
+    assert response.status_code == 200
+    body = response.json()
+    operation, kwargs = stub.last_pro.calls[0]
+    assert operation == "opt_daily"
+    assert kwargs["ts_code"] == "10012437.SH"
+    bar = body["data"]["bars"][0]
+    assert bar["volume"] == 18942.0  # 手（张）保持
+    assert bar["amount"] == 17370330.0  # 万元→元
+    assert bar["extensions"]["settle"] == 0.1139
+    assert body["data"]["instrument"] == "CN-SSE-10012437"
+
+
 def test_missing_token_returns_clear_error(default_client) -> None:  # type: ignore[no-untyped-def]
     """未配置 Token 时：Provider 不启用（能力目录可见），显式请求返回明确错误。"""
     caps = default_client.get("/v1/providers/tushare/capabilities")
@@ -179,7 +227,7 @@ def test_capability_catalog(tushare_client: tuple[TestClient, Any]) -> None:  # 
     entry = response.json()["data"][0]
     assert entry["provider"] == "tushare"
     assert entry["enabled"] is True
-    assert len(entry["capabilities"]) == 4
+    assert len(entry["capabilities"]) == 6
     stock_cap = next(cap for cap in entry["capabilities"] if cap["asset_types"] == ["stock"])
     assert stock_cap["variants"] == ["tushare"]
     assert [i["code"] for i in stock_cap["intervals"]] == ["P1D", "P1W", "P1M"]
@@ -187,8 +235,17 @@ def test_capability_catalog(tushare_client: tuple[TestClient, Any]) -> None:  # 
     index_cap = next(cap for cap in entry["capabilities"] if cap["asset_types"] == ["index"])
     assert [i["code"] for i in index_cap["intervals"]] == ["P1D", "P1W", "P1M"]
     assert index_cap["adjustments"] == ["none"]
-    # 指数日线历史深度：探针实证下界声明（真实最早 ≈1991-01-18，chain 二分精化后回填）
+    # 指数三周期历史深度：探针实证下界声明（真实最早 ≈1991-01-18，chain 常态复验）
     assert index_cap["intervals"][0]["history"]["start"] == "1991-01-01T00:00:00+08:00"
+    etf_cap = next(cap for cap in entry["capabilities"] if cap["asset_types"] == ["etf"])
+    assert [i["code"] for i in etf_cap["intervals"]] == ["P1D"]
+    assert etf_cap["adjustments"] == ["none"]
+    # ETF 历史深度：实证下界声明（510050 上市日；官方口径 2000-01-03 为 LOF/封基更早，未实证）
+    assert etf_cap["intervals"][0]["history"]["start"] == "2005-02-23T00:00:00+08:00"
+    option_cap = next(cap for cap in entry["capabilities"] if cap["asset_types"] == ["option"])
+    assert [i["code"] for i in option_cap["intervals"]] == ["P1D"]
+    assert option_cap["adjustments"] == ["none"]
+    assert option_cap["intervals"][0]["history"]["start"] is None  # 库级起点未核实
     contract_cap = next(cap for cap in entry["capabilities"] if cap["asset_types"] == ["contract"])
     assert [i["code"] for i in contract_cap["intervals"]] == ["P1D"]
     assert contract_cap["adjustments"] == ["none"]
