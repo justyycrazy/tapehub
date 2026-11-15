@@ -42,11 +42,12 @@ defaults:
   - match: {data_type: bars, market: US, asset_type: stock}
     order: [alphafeed, tickflow, twelvedata, futunn, akshare]
 
-  # US ETF：2026-11-15 扩容 alphafeed/tickflow 入链（目录外诊断实证统一
-  # klines 端点对美股 ETF 放行、三复权生效）；位次与 US stock 链同序，
-  # 分钟级（两家不声明）经能力过滤自动落到 twelvedata
+  # US ETF：2026-11-15 两轮扩容 alphafeed/tickflow/futunn 入链（目录外
+  # 诊断实证统一 klines 端点对美股 ETF 放行、复权生效）；位次与 US stock
+  # 链同序，分钟级请求（alphafeed/tickflow 不声明）经能力过滤落到
+  # twelvedata，futunn 为停用兜底（分钟史 2015 起深于 twelvedata）
   - match: {data_type: bars, market: US, asset_type: etf}
-    order: [alphafeed, tickflow, twelvedata]
+    order: [alphafeed, tickflow, twelvedata, futunn]
 
   - match: {data_type: bars, market: GLOBAL, asset_type: forex}
     order: [twelvedata, tiingo]
@@ -81,6 +82,11 @@ defaults:
 
   - match: {data_type: quotes, market: US, asset_type: stock}
     order: [alphafeed, tickflow, futunn]
+
+  # US ETF 快照：2026-11-15 扩容填补空白（此前无 Provider 声明，请求 422；
+  # 目录外诊断实证 futunn stock-quote 对 US.SPY 放行），futunn 独占
+  - match: {data_type: quotes, market: US, asset_type: etf}
+    order: [futunn]
 
   - match: {data_type: quotes, market: GLOBAL, asset_type: forex}
     order: [twelvedata, tiingo]

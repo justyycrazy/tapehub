@@ -1,6 +1,6 @@
 # 富途 OpenAPI（futunn）
 
-富途 OpenAPI HTTP 直连接入：CN 股票/指数/ETF 与 HK/US 正股的 8 核心周期历史 K 线 + 同范围实时快照，纯 REST、AppKey 签名认证，无官方 Python SDK、无 FutuOpenD 网关，各组合居缺省回退链末位。
+富途 OpenAPI HTTP 直连接入：CN 股票/指数/ETF 与 HK/US 正股 + US ETF 的 8 核心周期历史 K 线 + 同范围实时快照（2026-11-15 扩容），纯 REST、AppKey 签名认证，无官方 Python SDK、无 FutuOpenD 网关，各组合居缺省回退链末位。
 
 ## 概要
 
@@ -21,9 +21,10 @@
 | bars | CN etf | 同上 | none / qfq / hfq | 同上 |
 | bars | HK stock | 同上 | none / qfq / hfq | 同上 |
 | bars | US stock | 同上 | none / qfq / hfq | 同上 |
-| quotes | CN stock / index / etf、HK stock、US stock | —（快照无周期，match 显式 null） | —（快照无复权，match 显式 null） | timestamp/last_price/volume/amount |
+| bars | US etf | 同上 | none / qfq / hfq | 同上（2026-11-15 扩容） |
+| quotes | CN stock / index / etf、HK stock、US stock / etf | —（快照无周期，match 显式 null） | —（快照无复权，match 显式 null） | timestamp/last_price/volume/amount |
 
-接入范围注记：CN stock/index 覆盖 SSE/SZSE/BSE（上游品类表 SH/SZ/BJ 前缀支持正股/指数）；CN etf 仅 SSE/SZSE（上游品类表 BJ 无 ETF，ETF×BSE 在映射层拒绝）；HK 仅正股（窝轮/牛熊证不接入）；US 不支持 OTC（上游不支持获取，exchange 白名单拒绝）。
+接入范围注记：CN stock/index 覆盖 SSE/SZSE/BSE（上游品类表 SH/SZ/BJ 前缀支持正股/指数）；CN etf 仅 SSE/SZSE（上游品类表 BJ 无 ETF，ETF×BSE 在映射层拒绝）；HK 仅正股（窝轮/牛熊证不接入）；US 不支持 OTC（上游不支持获取，exchange 白名单拒绝）；US etf 2026-11-15 扩容（目录外诊断第 4/5 轮实证，与 stock 同端点同市场级前缀，映射零分支）。
 
 history.start 历史覆盖声明（逐所/逐周期，均北京时间）：
 
@@ -34,6 +35,7 @@ history.start 历史覆盖声明（逐所/逐周期，均北京时间）：
 | CN etf | 2012-05-28T00:00:00+08:00（上市日锚，基准标的 510300） | ≈2015-07-11T08:26:15+08:00 |
 | HK stock | ≈1991-01-18T16:52:30+08:00（est 上界） | null（保持未声明） |
 | US stock | ≈1997-01-25T00:33:45+08:00（est 上界） | ≈2015-05-15T23:37:30+08:00 |
+| US etf | null（2026-11-15 扩容，保持未核实） | null（同左） |
 
 覆盖依据注记（探针实证）：
 
@@ -65,7 +67,7 @@ history.start 历史覆盖声明（逐所/逐周期，均北京时间）：
 - 复权（autype）：`none→0`、`qfq→1`、`hfq→2`（上游缺省 1=前复权，适配器始终显式传参、不依赖默认值）；
   - stock：三值直映；
   - index：仅 none（指数无复权语义，与 ths 惯例一致）；
-  - etf：三值——**autype 对 ETF 生效**（探针实证：基准 ETF 日线全年 none/qfq、none/hfq 各 242/242 根 close 全差异）；
+  - etf：三值——**autype 对 ETF 生效**（探针实证：CN 基准 510300 日线全年 none/qfq、none/hfq 各 242/242 根 close 全差异；US etf 目录外诊断同证：SPY 日线两两 250/250 全差异，2026-11-15）；
 - 单位：`volume`=股（上游已按信封 `data.volume_precision` 放大 10^n 倍，适配器逐行除以 10^n 还原；缺失/非法按 0 不缩放——官方默认口径，股票一般 n=0）；`turnover` → `amount`=成交额（各市场原币，官方未标注币种折算，不编造换算）；数值缺失/NaN 统一映射 null（不用 0 冒充）。
 
 ## 上游行为定案
@@ -81,6 +83,7 @@ history.start 历史覆盖声明（逐所/逐周期，均北京时间）：
 - 限频与额度（rate-limit 页）：IP 入口层行情类 100 次/分钟；业务限流走 HTTP 200 + `ret_code=-11`；**历史 K 线独立额度池：每标的首次成功返回非空即占用一个额度（默认 7×24 小时后释放，重复读取不延期）**——分页续读必须用 `page_token`（免计「首请求」；`next_time` 分页仍计入，适配器未使用）；`page_token` 15 分钟有效；
 - num 参数失效与单查询行数上限（文档与实测不符（以实测为准））：请求 `num`（文档默认/最大 370，适配器显式传满）被上游忽略，实测单查询恒返回**窗口起点起 ≈1000 行**（CN 精确 1000、US 全年窗实测 911~999）；`pagination.has_more` 恒 False 且无 `next_page_token`——`page_token` 分页实际不可用（适配器分页循环与页数上限 `UPSTREAM_MAX_BARS=370×15=5550` 保留为防御，上游若恢复签发 token 即生效）；
 - 隐式截断与 partial：分钟族窗口 >≈1000 根时上游**静默截断**且无截断信号，`meta.partial` 无法可靠判定（实测恒 false；防御性「触页数上限且最早一根晚于 start 判 partial」保留）——分钟族（PT1M~PT30M）建议窄窗口使用（CN PT1M 单查询 ≈4 个交易日），日/周/月线与 CN PT1H 在常规窗口内完整（实测 P1D 243~249、P1W 52、P1M 12、CN PT1H 全年 968 根完整）；
+- US ETF 扩容定案（目录外诊断 2026-11-15 第 4/5 轮）：统一 klines 端点对美股 ETF 标的（SPY.US/QQQ.US，交易所段无关）不做证券类型路由拒绝——P1D 2025 全窗 250 根直测放行、none/qfq/hfq 三复权两两全窗差异、P1W 52/P1M 12/PT5M 两周 780 根直测放行；raw（未复权 OHLC/成交量）与 alphafeed 侧逐位一致，qfq 与 alphafeed 吻合至 7 位有效数字（复权因子同源）；**hfq 锚定基准两源不同**（futu ≈1.10× vs alphafeed ≈1.79×，后复权基点各异）——各家语义自洽、hfq 数值不可跨源直比；`amount` 为上游真实成交额（美元原币、量级与 vol×close 吻合，分钟行同样有值），非 alphafeed/tickflow US 日线的原值 0；快照 `US.SPY` stock-quote 直测放行（quotes US etf 同轮扩容）。history 未核实保持 null（chain 二分后回填）；
 - time_key 口径：行 `time_key` 为毫秒 Unix 时间戳（绝对时刻），统一北京时间归一化（换算经纪元算术，不用 `datetime.fromtimestamp`——Windows 对早期时间戳受限）；日/周/月 K 线 `time_key` 为标的市场零点墙钟（CN/HK 北京零点、US 美东零点——对应北京时间 13:00 冬令 / 12:00 夏令），绝对时刻口径一致；行内 `time_zone` 为显示用本地时区偏移、不参与标准化（文档口径为相对 UTC 分钟数、实测为小时口径——文档与实测不符（以实测为准），均不影响标准化）；上游排序方向文档未明示，统一由共享分页组件升序归一；
 - bars 契约违背拒绝：行缺失 `time_key` 属上游契约违背（bar 无时间戳无法标准化，时间戳是 bar 的身份键）——抛 `UPSTREAM_ERROR`，loud 失败优于静默丢行；合法无数据（如停牌/窗口越界）上游返回 `kline_list=[]`，映射为空批次不报错；
 - bars 分页防御：续页仅当 `next_page_token` 为非空字符串且 `has_more` 非 False 才触发（单点提取，畸形分页字段按无令牌处理）。
@@ -101,10 +104,10 @@ history.start 历史覆盖声明（逐所/逐周期，均北京时间）：
 
 当前回退链顺序以 `src/tapehub/config/provider_routing.yaml` 为准，本文不复述 order 列表。参与组合与角色：
 
-- bars：CN stock / CN index / CN etf / HK stock / US stock 居各链回退位末位；
-- quotes：CN stock / CN index / CN etf / HK stock / US stock 居各链回退位末位。
+- bars：CN stock / CN index / CN etf / HK stock / US stock / US etf 居各链回退位末位；
+- quotes：CN stock / CN index / CN etf / HK stock / US stock 居各链回退位末位；US etf 独占（2026-11-15 扩容填补空白，此前无 Provider 声明、请求 422）。
 
-位次依据一句话：AppKey 凭据 API 置各既有链末位补位（凭据未配置时 auto 自动跳过），显式 `provider/variant=futunn` 亦可选用；无独占组合（全部为既有链扩容补位）。
+位次依据一句话：AppKey 凭据 API 置各既有链末位补位（凭据未配置时 auto 自动跳过），显式 `provider/variant=futunn` 亦可选用；US etf 快照为独占组合，其余为既有链扩容补位。
 
 ## extensions 白名单
 

@@ -23,13 +23,14 @@ pacing:
   # 免计「首请求」（实测上游未签发 token，分页循环保留为防御）
   call_interval_s: 2.0
   timeout_s: 60
-  # 本轮构成：availability 160（8 目标键 × 8 周期 × 各自复权面；quotes 快照
-  # 不经 chain——框架 chain 仅覆盖 fetch_bars，快照经目录外取证与单测覆盖）
-  # + adjust_diff 12（6 case × 2 调）+ history_depth 40 case（5 目标 ×
-  # 8 周期）× 最坏 24 = 960 最坏 + raw 3（1 case 3 调）≈ 1135 最坏，
-  # 预算 1200 留余量（era 10 年步长下单 case 约 8~15 调）；额度池不新增
-  # 占用——depth 四新目标复用 availability 已占额度的基准标的
-  max_calls: 1200
+  # 本轮构成：availability 184（9 目标键 × 8 周期 × 各自复权面，etf@US
+  # 2026-11-15 扩容 +24；quotes 快照不经 chain——框架 chain 仅覆盖
+  # fetch_bars，快照经目录外取证与单测覆盖）+ adjust_diff 16（8 case ×
+  # 2 调，etf@US 常态复验 +4）+ history_depth 48 case（6 目标 × 8 周期）
+  # × 最坏 24 = 1152 最坏 + raw 3（1 case 3 调）≈ 1355 最坏，预算 1450
+  # 留余量（era 10 年步长下单 case 约 8~15 调）；额度池不新增占用——
+  # depth 新目标复用 availability 已占额度的基准标的
+  max_calls: 1450
 
 # 跨三市场（CN/HK/US）声明能力：用市场限定目标（stock@MARKET）为每个市场
 # 提供独立基准标的；case id 以限定键为前缀（如 stock@HK-P1D-...）。
@@ -92,30 +93,43 @@ targets:
     window: {start: 2025-01-01, end: 2025-12-31}
     min_bars: 10
     required_fields: [open, high, low, close, volume]
+  etf@US:
+    instrument: US-NYSE-SPY
+    # SPY：US ETF 能力 chain 常态复验基准目标——目录外诊断（2026-11-15
+    # 第 4/5 轮：P1D 三复权生效、W/M/分钟直测放行，raw 与 alphafeed 侧
+    # 逐位互证）实证扩容声明后收敛入链；availability 全声明矩阵展开
+    #（8 周期 × 三复权）
+    window: {start: 2025-01-01, end: 2025-12-31}
+    min_bars: 10
+    # amount 必填：futunn US ETF 成交额为上游真实值（第 4 轮实证 ≈293.8
+    # 亿 USD/日、量级与 vol×close 吻合；分钟行同样有值）——与 CN 目标
+    # 「turnover 待观察」口径相反，以此锚定跨源差异
+    required_fields: [open, high, low, close, volume, amount]
 
 chain:
   include_declared: true
   skip: []
   adjust_diff:
-    # 三市场个股复权生效性（qfq/hfq 是否生效、基准为何）：日线足以判定，
-    # 收敛 interval 控制预算（参照 alphafeed/tickflow 先例）；分红除权
-    # 高发窗口放大前复权差异。ETF 仅声明 none、复权生效性不在此对比
-    targets: [stock@CN, stock@HK, stock@US]
+    # 三市场个股与美股 ETF 复权生效性（qfq/hfq 是否生效、基准为何）：日线
+    # 足以判定，收敛 interval 控制预算（参照 alphafeed/tickflow 先例）；
+    # 分红除权高发窗口放大前复权差异。etf@US 三复权生效已目录外诊断定案
+    #（第 4 轮：P1D 两两全窗 250/250 差异），入链常态复验
+    targets: [stock@CN, stock@HK, stock@US, etf@US]
     window: {start: 2024-06-01, end: 2024-08-31}
     intervals: [P1D]
     pairs: [[none, qfq], [none, hfq]]
     fields: [close]
-  # history_depth 五目标 × 8 周期全跑（逐周期独立探测，机制边界外推不作为
-  # 逐周期证据——tiingo 先例）：四新目标复用 availability 已占额度标的
-  #（SH.000001/SH.510300/HK.00002/US-NYSE-GE），不新增历史额度占用，成本
-  # 仅 IP 频率；era_step 10 年减半深库回溯调用（HK.00002/US GE 为深库候选，
-  # 声明值由网格二分收敛到日历边界——snap=month 保守上界，首根实测另记
-  # first_bar 证据）；earliest 1890-01-01
+  # history_depth 六目标 × 8 周期全跑（逐周期独立探测，机制边界外推不作为
+  # 逐周期证据——tiingo 先例）：五新目标复用 availability 已占额度标的
+  #（SH.000001/SH.510300/HK.00002/US-NYSE-GE/US-NYSE-SPY），不新增历史
+  # 额度占用，成本仅 IP 频率；era_step 10 年减半深库回溯调用（HK.00002/
+  # US GE 为深库候选，声明值由网格二分收敛到日历边界——snap=month 保守
+  # 上界，首根实测另记 first_bar 证据）；earliest 1890-01-01
   #（GE 1892 上市，深库下界；触底分支 estimate=earliest 一律不回填——
   # twelvedata 教训）；SZSE/BSE 维持 capability 级以基准标的库底为准、
   # 不单独 depth（README 注明）
   history_depth:
-    targets: [stock@CN, index@CN, etf@CN, stock@HK, stock@US]
+    targets: [stock@CN, index@CN, etf@CN, stock@HK, stock@US, etf@US]
     earliest: 1890-01-01
     era_step_years: 10
     # 单 case（目标×周期）子预算：era 10 年回溯 + 网格月粒度二分（一个纪元

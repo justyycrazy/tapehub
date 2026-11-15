@@ -12,6 +12,7 @@ from tapehub.api.app import create_app
 from tapehub.providers.registry import build_default_registry
 from tests.conftest import make_settings
 from tests.fixtures.providers.stub_futunn import (
+    StubClient,
     envelope,
     install,
     kline_page,
@@ -129,14 +130,20 @@ def test_capability_catalog(futunn_client: TestClient) -> None:
     assert entry["enabled"] is True
     # 单体系 Provider：标量声明 → 覆盖全部声明资产类型
     assert entry["default_variant"] == {"stock": "futunn", "index": "futunn", "etf": "futunn"}
-    assert len(entry["capabilities"]) == 10  # bars 5 块 + quotes 5 块
+    assert len(entry["capabilities"]) == 12  # bars 6 块 + quotes 6 块（US etf 2026-11-15 扩容）
 
     bars_caps = [c for c in entry["capabilities"] if c["data_type"] == "bars"]
-    assert {tuple(cap["asset_types"])[0] for cap in bars_caps} == {"stock", "index", "etf"}
-    markets = {
-        tuple(cap["asset_types"])[0]: tuple(cap["markets"])[0] for cap in bars_caps
+    bars_keys = {
+        (tuple(cap["markets"])[0], tuple(cap["asset_types"])[0]) for cap in bars_caps
     }
-    assert markets == {"stock": "US", "index": "CN", "etf": "CN"}  # US/HK stock 覆盖
+    assert bars_keys == {
+        ("CN", "stock"),
+        ("CN", "index"),
+        ("CN", "etf"),
+        ("HK", "stock"),
+        ("US", "stock"),
+        ("US", "etf"),
+    }
     for cap in bars_caps:
         assert cap["variants"] == ["futunn"]
         # 8 核心周期全量声明
@@ -150,7 +157,8 @@ def test_capability_catalog(futunn_client: TestClient) -> None:
     # ≈1991-01-18、分钟族 ≈2015-05-15；CN etf 日/周/月 2012-05-28（上市日
     # 锚 count-exact）、分钟族 ≈2015-07-11；HK stock 日/周/月 ≈1991-01-18、
     # 分钟族碎片区保持 null；US stock 日/周/月 ≈1997-01-25、分钟族
-    # ≈2015-05-15（除锚定值外均 approx 90 天粒度）
+    # ≈2015-05-15（除锚定值外均 approx 90 天粒度）；US etf 2026-11-15
+    # 扩容，全周期未核实保持 null
     by_key = {
         (tuple(cap["markets"])[0], tuple(cap["asset_types"])[0]): cap
         for cap in bars_caps
@@ -194,6 +202,12 @@ def test_capability_catalog(futunn_client: TestClient) -> None:
         assert us_history[code]["start"] == "2015-05-15T23:37:30+08:00"
     for code in ("P1D", "P1W", "P1M"):
         assert us_history[code]["start"] == "1997-01-25T00:33:45+08:00"
+    us_etf_history = {
+        i["code"]: i["history"] for i in by_key[("US", "etf")]["intervals"]
+    }
+    # US etf（2026-11-15 扩容）：history 未核实保持 null（chain 二分后回填）
+    for code in ("PT1M", "PT5M", "PT15M", "PT30M", "PT1H", "P1D", "P1W", "P1M"):
+        assert us_etf_history[code]["start"] is None
 
     adjustments = {
         (tuple(cap["markets"])[0], tuple(cap["asset_types"])[0]): cap["adjustments"]
@@ -206,10 +220,23 @@ def test_capability_catalog(futunn_client: TestClient) -> None:
     # ETF autype 生效性探针实证（510300 日线 2024 全年三值 242/242 close
     # 全差异，扩三值）
     assert adjustments[("CN", "etf")] == ["none", "qfq", "hfq"]
+    # US etf autype 生效性目录外诊断实证（2026-11-15 第 4 轮：SPY 日线
+    # none/qfq/hfq 两两全窗 250/250 差异）
+    assert adjustments[("US", "etf")] == ["none", "qfq", "hfq"]
 
     # 实时快照：无周期/复权维度（显式空），无盘口五档
     quote_caps = [c for c in entry["capabilities"] if c["data_type"] == "quotes"]
-    assert {tuple(cap["asset_types"])[0] for cap in quote_caps} == {"stock", "index", "etf"}
+    quote_keys = {
+        (tuple(cap["markets"])[0], tuple(cap["asset_types"])[0]) for cap in quote_caps
+    }
+    assert quote_keys == {
+        ("CN", "stock"),
+        ("CN", "index"),
+        ("CN", "etf"),
+        ("HK", "stock"),
+        ("US", "stock"),
+        ("US", "etf"),  # 2026-11-15 扩容
+    }
     for cap in quote_caps:
         assert cap["intervals"] == []
         assert cap["adjustments"] == []
@@ -238,6 +265,65 @@ def test_us_otc_422(futunn_client: TestClient) -> None:
     response = futunn_client.get("/v1/market/bars", params=params)
     assert response.status_code == 422
     assert response.json()["error"]["code"] == "UNSUPPORTED_CAPABILITY"
+
+
+@pytest.mark.parametrize(
+    ("instrument", "upstream_code"),
+    [
+        # US ETF 与 stock 共用统一端点与市场级前缀（目录外诊断 2026-11-15
+        # 第 4/5 轮实证：SPY.US/QQQ.US 直测放行、三复权生效、raw 与
+        # alphafeed 侧逐位互证——映射层零分支）
+        ("US-NYSE-SPY", "US.SPY"),
+        ("US-NASDAQ-QQQ", "US.QQQ"),
+    ],
+)
+def test_us_etf_bars_chain(
+    instrument: str,
+    upstream_code: str,
+    futunn_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """US ETF 贯穿全链路：ETF 缺省 qfq（docs/api.md 默认值约定）。"""
+    preset_payload(monkeypatch, kline_page([DAY1_MS, DAY2_MS]))
+
+    params = {
+        **{k: v for k, v in STOCK_PARAMS.items() if k not in ("adjust", "instrument")},
+        "asset_type": "etf",
+        "instrument": instrument,
+    }
+    response = futunn_client.get("/v1/market/bars", params=params)
+    assert response.status_code == 200
+    body = response.json()
+
+    data = body["data"]
+    assert data["instrument"] == instrument
+    assert data["asset_type"] == "etf"
+    assert data["interval"] == "P1D"
+    assert len(data["bars"]) == 2
+
+    # 上游路径含市场级前缀代码；缺省 adjust：ETF 为 qfq→autype=1
+    call_url = StubClient.instances[-1].calls[0]["url"]
+    assert f"/api/v1.0/quote/{upstream_code}/history-kline?" in call_url
+    assert "autype=1" in call_url
+    assert body["meta"]["variant"] == "futunn"
+
+
+def test_us_etf_quote_chain(
+    futunn_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """US ETF 快照贯穿链路：市场级前缀直达（2026-11-15 扩容填补空白）。"""
+    preset_payload(monkeypatch, quote_payload([quote_row("US.SPY", QUOTE_TIME_MS)]))
+
+    params = {**STOCK_QUOTE_PARAMS, "asset_type": "etf", "instrument": "US-NYSE-SPY"}
+    response = futunn_client.get("/v1/market/quotes", params=params)
+    assert response.status_code == 200
+    body = response.json()
+
+    assert body["data"]["instrument"] == "US-NYSE-SPY"
+    assert body["data"]["asset_type"] == "etf"
+    call = StubClient.instances[-1].calls[0]
+    assert call["method"] == "POST"
+    assert b'"code_list":["US.SPY"]' in call["content"]
 
 
 def test_upstream_business_error_wrapped(
