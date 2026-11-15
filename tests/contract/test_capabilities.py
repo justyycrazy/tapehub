@@ -56,7 +56,7 @@ def test_fake_provider_entry(fake_client) -> None:  # type: ignore[no-untyped-de
     entry = body["data"][0]
     assert entry["provider"] == "fake-provider"
     assert entry["enabled"] is True
-    assert len(entry["capabilities"]) == 1
+    assert len(entry["capabilities"]) == 2  # bars + quotes
     cap = entry["capabilities"][0]
     assert cap["data_type"] == "bars"
     assert cap["markets"] == ["CN"]
@@ -68,6 +68,10 @@ def test_fake_provider_entry(fake_client) -> None:  # type: ignore[no-untyped-de
         for i in cap["intervals"]
     )
     assert cap["adjustments"] == ["none"]
+    quote_cap = entry["capabilities"][1]
+    assert quote_cap["data_type"] == "quotes"
+    assert quote_cap["asset_types"] == ["stock", "index"]
+    assert quote_cap["intervals"] == [] and quote_cap["adjustments"] == []
 
 
 def test_filters(fake_client) -> None:  # type: ignore[no-untyped-def]

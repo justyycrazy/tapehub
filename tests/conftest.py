@@ -69,10 +69,14 @@ def build_fake_record() -> object:
 
 def fake_routing() -> RoutingTable:
     """Fake Provider 的缺省路由表：与 fake_provider.yaml 声明的能力一一对应
-    （bars/CN × stock/etf/index/contract，单 Provider 独占故各为单元素链）。"""
+    （bars/CN × stock/etf/index/contract + quotes/CN × stock/index，
+    单 Provider 独占故各为单元素链）。"""
     keys = [
         (DataType.BARS, "CN", at)
         for at in (AssetType.STOCK, AssetType.ETF, AssetType.INDEX, AssetType.CONTRACT)
+    ]
+    keys += [
+        (DataType.QUOTE, "CN", at) for at in (AssetType.STOCK, AssetType.INDEX)
     ]
     return {key: ("fake-provider",) for key in keys}
 

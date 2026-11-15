@@ -11,13 +11,16 @@ pacing:
   call_interval_s: 10.0
   timeout_s: 60
   # 本轮构成：availability 96（forex 12 + crypto 12 + stock 24 + etf 48：
-  # NYSE/SPY 基准与 CBOE/AAAA 逐所追加各 12 周期 × 2 复权）+ adjust_diff
-  # 2 case×2 + history_depth 9 case×16 最坏（典型 ~8/case）+ limit 2 +
-  # raw 5 case×3 = 最坏约 260、典型约 135。免费档 800/天为硬上限：预算 780
-  # 保留（单日可完整跑全量 + 截断续跑余量，框架对截断如实记录）。
-  # td-etf-adjust-none/all 两条直测 raw 已退役：etf 复权扩容声明并
-  # adjust_diff 入链后由链路常态复验；td-cboe-etf 已升级为 etf@US-CBOE
-  # chain 目标（见 targets 注释）。
+  # NYSE/SPY 基准与 CBOE/AAAA 逐所追加各 12 周期 × 2 复权）+
+  # quote_availability 2（quotes 声明随 include_declared 自动展开：forex +
+  # crypto 各 1 调）+ adjust_diff 2 case×2 + history_depth 2 case×16 最坏
+  #（forex P1W/P1M 残留收敛）+ limit 2 + raw 3 case×3 = 最坏约 145。
+  # 免费档 800/天为硬上限：预算 780 保留（单日可完整跑全量 + 截断续跑余量，
+  # 框架对截断如实记录）。
+  # td-etf-adjust-none/all 与 td-quote-forex/crypto 四条直测 raw 已退役：
+  # 前者随 etf 复权扩容声明 + adjust_diff 入链常态复验；后者随 chain
+  # quote_availability 入链退役（见 raw 段注释）。td-cboe-etf 已升级为
+  # etf@US-CBOE chain 目标（见 targets 注释）。
   max_calls: 780
 
 targets:
@@ -81,9 +84,12 @@ chain:
     documented_max: 5000   # 适配器显式传 outputsize=5000（上游默认仅 30）
 
 raw:
-  # 已定案升级：td-cboe-etf 准入闸门升级为 chain 交易所限定目标
-  # etf@US-CBOE——availability 全声明矩阵常态复验，覆盖强于单点 raw
-  #（见 targets 注释）。
+  # 已定案升级/退役（原始证据见 probes/results/PROBE_LOG.md，不入库）：
+  # td-cboe-etf 准入闸门升级为 chain 交易所限定目标 etf@US-CBOE——
+  # availability 全声明矩阵常态复验，覆盖强于单点 raw（见 targets 注释）；
+  # td-quote-forex/crypto 两条快照字段矩阵随 chain quote_availability 入链
+  # 退役——forex/crypto 快照由 chain 经 adapter.fetch_quote 全链路常态复验
+  #（外汇无量、上游 rolling 字段形态等结论已回填 docs 与 extensions 白名单）。
   #
   # 错误指纹仅观察：采集无效 API Key 的原始报错，供 UPSTREAM 细分错误码参考
   - id: td-invalid-key-fingerprint
@@ -96,26 +102,6 @@ raw:
       - {method: as_json, kwargs: {}}
     expect: {status: error, error_contains: ""}
 
-  # ── 实时快照（REST /quote）：字段矩阵与错误指纹，供 extensions 白名单
-  #    回填决策（与 tqsdk P5 流程一致；quote 结果为单个对象，sample 即完整
-  #    字段矩阵）。适配器显式传 interval=1day/timezone=UTC/eod=false，
-  #    探针以同参数实证返回形态；每 case 消耗 3 次调用（构造 + quote + as_json）
-  - id: td-quote-forex
-    purpose: 外汇实时快照字段矩阵（外汇通常无 volume，故不入 min_fields；文档核实字段断言）
-    module: twelvedata
-    client: {attr: TDClient, kwargs: {apikey: "$TAPEHUB_TWELVEDATA_API_KEY"}}
-    call:
-      - {method: quote, kwargs: {symbol: "EUR/USD", interval: "1day", timezone: "UTC", eod: false}}
-      - {method: as_json, kwargs: {}}
-    expect: {status: ok, min_fields: [symbol, datetime, timestamp, last_quote_at, close]}
-  - id: td-quote-crypto
-    purpose: 加密货币实时快照字段矩阵（实测无 volume；含 crypto 专属 rolling 字段形态）
-    module: twelvedata
-    client: {attr: TDClient, kwargs: {apikey: "$TAPEHUB_TWELVEDATA_API_KEY"}}
-    call:
-      - {method: quote, kwargs: {symbol: "BTC/USD", interval: "1day", timezone: "UTC", eod: false}}
-      - {method: as_json, kwargs: {}}
-    expect: {status: ok, min_fields: [symbol, datetime, timestamp, last_quote_at, close]}
   - id: td-quote-invalid-symbol-fingerprint
     purpose: 采集无效标的的 quote 错误指纹（仅供 UPSTREAM 细分错误码参考；观察）
     assert: false

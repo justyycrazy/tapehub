@@ -10,6 +10,7 @@ import pytest
 from probes.runner import MissingEnvError, _interpolate, run_provider_probe
 from probes.schema import ProbeFile
 
+from tapehub.domain.errors import UpstreamError
 from tapehub.providers.manifest import load_manifest_file
 from tapehub.providers.registry import ProviderRegistry, build_provider_record
 from tapehub.settings import Settings
@@ -58,6 +59,8 @@ def test_availability_confirmed() -> None:
     assert {c.case_id for c in confirmed} == {
         "stock-P1D-none-eastmoney",
         "stock-PT1M-none-eastmoney",
+        # quotes 声明随 include_declared 自动展开（fake manifest 新增 quotes 能力）
+        "quote-stock-eastmoney",
     }
     obs = confirmed[0].observation
     assert obs["count"] > 0
@@ -695,3 +698,52 @@ def test_history_depth_phase_step_lines_logged(caplog: pytest.LogCaptureFixture)
     phase_steps = [m for m in steps if "era#" in m or "bisect#" in m or "verify#" in m]
     assert phase_steps, "bisect-mode history depth must emit phase step lines"
     assert any("(预算 " in m for m in phase_steps)
+
+
+def test_quote_availability_confirmed() -> None:
+    """快照可用性：全链路 fetch_quote 复验，dims 不携带周期/复权维度。"""
+    result = asyncio.run(run_provider_probe(_probe(), _registry(), _settings()))
+    quotes = [c for c in result.cases if c.kind == "quote_availability"]
+    assert {c.case_id for c in quotes} == {"quote-stock-eastmoney"}
+    case = quotes[0]
+    assert case.verdict == "confirmed"
+    assert case.observation["last_price"] == 10.0
+    assert case.observation["timestamp"]
+    assert "interval" not in case.dims and "adjust" not in case.dims
+    assert case.dims["variant"] == "eastmoney"
+    assert result.call_budget["used"] >= 3
+
+
+def test_quote_no_usable_price_failed() -> None:
+    """last/bid/ask 全空判 failed（订阅未就绪 NaN 置空、权限静默降级的捕捉）。"""
+    data = _probe().model_dump()
+    # fake 适配器对 index 快照返回 last/bid/ask 全空（模拟指数快照语义）
+    data["targets"] = {
+        "index": {
+            "instrument": "CN-SSE-000001",
+            "window": {"start": "2025-01-01", "end": "2025-03-31"},
+        }
+    }
+    result = asyncio.run(
+        run_provider_probe(ProbeFile.model_validate(data), _registry(), _settings())
+    )
+    quotes = [c for c in result.cases if c.kind == "quote_availability"]
+    assert [c.verdict for c in quotes] == ["failed"]
+    assert "no usable price" in quotes[0].reason
+    assert quotes[0].observation["last_price"] is None
+
+
+def test_quote_adapter_error_failed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """适配器失败（上游「无有效行情」语义）→ failed，错误进 observation。"""
+    registry = _registry()
+
+    async def _boom(query: object) -> object:
+        raise UpstreamError("no valid quote item", details={"provider": "fake-provider"})
+
+    record = registry.get("fake-provider")
+    assert record is not None and record.adapter is not None
+    monkeypatch.setattr(record.adapter, "fetch_quote", _boom)
+    result = asyncio.run(run_provider_probe(_probe(), registry, _settings()))
+    quotes = [c for c in result.cases if c.kind == "quote_availability"]
+    assert [c.verdict for c in quotes] == ["failed"]
+    assert quotes[0].observation["error"]["error_code"] == "UPSTREAM_ERROR"

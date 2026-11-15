@@ -92,3 +92,31 @@ def test_write_results_creates_files(tmp_path: Path) -> None:
     content = json_path.read_text(encoding="utf-8")
     assert '"provider": "fake-provider"' in content
     assert "2026-01-01T00:00:00+08:00" in content
+
+
+def test_render_quote_availability_section() -> None:
+    """快照可用性单列小节；bars 表不混入 quote case。"""
+    run = _run()
+    run.cases.append(
+        CaseResult(
+            case_id="quote-stock-eastmoney",
+            kind="quote_availability",
+            verdict="confirmed",
+            reason="quote availability confirmed",
+            dims={"asset_type": "stock", "variant": "eastmoney"},
+            observation={
+                "last_price": 10.0,
+                "bid_price1": None,
+                "ask_price1": None,
+                "volume": 1000.0,
+                "amount": 10000.0,
+            },
+            duration_ms=8.1,
+        )
+    )
+    content = render_markdown(run)
+    assert "## 快照可用性（quotes，confirmed）" in content
+    assert "| quote-stock-eastmoney | 10.0 | None/None | 1000.0 | 10000.0 | 8.1 |" in content
+    # bars confirmed 表不含 quote case
+    bars_section = content.split("## 已确认能力")[1].split("## 快照可用性")[0]
+    assert "quote-stock-eastmoney" not in bars_section

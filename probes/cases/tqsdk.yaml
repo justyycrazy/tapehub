@@ -21,9 +21,13 @@ pacing:
   # contract@CN-CZCE 各 6）+ adjust_diff 36 case（分钟族 18 条显式 SKIP：
   # compared adjust 未声明，0 调；PT30M+/P1D 18 条 × 2 调）+
   # history_depth 30 case×~13 + limit 1 + connection 9+12（创建+首调+释放）
-  # + raw 7 case×2 调用（quote 矩阵 + 郑商所 4 位 kline 挂起复验；
-  # 3 位接受度由 chain contract@CN-CZCE 还原链路常态复验）
-  # ≈ 618
+  # + quote_availability 8×1 调（quotes 声明随 include_declared 自动展开：
+  # contract 基准/CZCE 逐所 + continuous + weighted-index + stock 基准/SZSE
+  # 逐所 + index + etf；郑商所 4→3 位还原在快照链路的常态复验由
+  # quote-contract@CN-CZCE 承载）+ raw 1 case×2 调用（郑商所 4 位 kline
+  # 挂起复验负对照；3 位接受度由 chain contract@CN-CZCE 还原链路常态复验；
+  # quote 矩阵 6 条 raw 已随 quotes 入链退役，见 raw 段注释）
+  # ≈ 614
   #（quote-contract-uppercase / quote-bse-fingerprint 已随定案退役，
   # 见 raw 段注释）
   # （深度探针全周期同轮测量：保留边界随时间前移，矩阵须同一时点）
@@ -144,126 +148,32 @@ connection:
     concurrent: 4
 
 raw:
-  # ── P5：get_quote 字段/权限矩阵（实时快照链路的 manifest 声明基础）──
-  # Quote 在首包前字段为 NaN：min_fields 只验证「订阅成功且字段键存在」，
-  # 权限不足的表现（报错 vs 静默 NaN）由 sample 与判定如实记录；
-  # 有文档依据的（期货/四大指数免费）断言，权限未核实的只观察不判定。
-  #
   # ── 已定案退役的探索性 raw（原始证据见 probes/results/PROBE_LOG.md，
   #    不入库）：quote-contract-uppercase（大写品种上游不接受——SHFE.AU2612
   #    matched=False，2026-11-12 第 8 轮定案，request_mapper 品种大小写还原
   #    表依据；还原后形态由 chain contract availability 隐含复验）、
-  #    quote-bse-fingerprint（天勤不支持 BSE 前缀定案，见 targets 注释）。
-  - id: quote-contract
-    purpose: 期货合约实时快照字段可用性（免费版权限亦有据，断言）
-    module: tqsdk
-    client:
-      attr: TqApi
-      kwargs:
-        auth:
-          $ctor:
-            attr: TqAuth
-            kwargs:
-              user_name: "$TAPEHUB_TQSDK_AUTH_USER"
-              password: "$TAPEHUB_TQSDK_AUTH_PASSWORD"
-        disable_print: true
-    call:
-      - {method: get_quote, kwargs: {symbol: "SHFE.au2612"}}
-    close: {method: close}
-    expect: {status: ok, min_fields: [last_price, bid_price1, ask_price1, volume]}
-  - id: quote-continuous
-    purpose: 主力连续实时快照字段可用性（断言）
-    module: tqsdk
-    client:
-      attr: TqApi
-      kwargs:
-        auth:
-          $ctor:
-            attr: TqAuth
-            kwargs:
-              user_name: "$TAPEHUB_TQSDK_AUTH_USER"
-              password: "$TAPEHUB_TQSDK_AUTH_PASSWORD"
-        disable_print: true
-    call:
-      - {method: get_quote, kwargs: {symbol: "KQ.m@SHFE.cu"}}
-    close: {method: close}
-    expect: {status: ok, min_fields: [last_price, bid_price1, ask_price1, volume]}
-  - id: quote-index-sse50
-    purpose: 上证50 实时快照（免费版四大指数有文档依据，断言）
-    module: tqsdk
-    client:
-      attr: TqApi
-      kwargs:
-        auth:
-          $ctor:
-            attr: TqAuth
-            kwargs:
-              user_name: "$TAPEHUB_TQSDK_AUTH_USER"
-              password: "$TAPEHUB_TQSDK_AUTH_PASSWORD"
-        disable_print: true
-    call:
-      - {method: get_quote, kwargs: {symbol: "SSE.000016"}}
-    close: {method: close}
-    expect: {status: ok, min_fields: [last_price, bid_price1, ask_price1, volume]}
-  - id: quote-stock
-    purpose: A股个股实时快照（需专业版账户；当前账户盘中实测可得实时五档）
-    module: tqsdk
-    client:
-      attr: TqApi
-      kwargs:
-        auth:
-          $ctor:
-            attr: TqAuth
-            kwargs:
-              user_name: "$TAPEHUB_TQSDK_AUTH_USER"
-              password: "$TAPEHUB_TQSDK_AUTH_PASSWORD"
-        disable_print: true
-    call:
-      - {method: get_quote, kwargs: {symbol: "SSE.600000"}}
-    close: {method: close}
-    expect: {status: ok, min_fields: [last_price]}
-    assert: false
-  - id: quote-etf
-    purpose: ETF 实时快照（当前专业版账户盘中实测可得实时五档）
-    module: tqsdk
-    client:
-      attr: TqApi
-      kwargs:
-        auth:
-          $ctor:
-            attr: TqAuth
-            kwargs:
-              user_name: "$TAPEHUB_TQSDK_AUTH_USER"
-              password: "$TAPEHUB_TQSDK_AUTH_PASSWORD"
-        disable_print: true
-    call:
-      - {method: get_quote, kwargs: {symbol: "SSE.510050"}}
-    close: {method: close}
-    expect: {status: ok, min_fields: [last_price]}
-    assert: false
-  - id: quote-weighted-index
-    purpose: 商品加权指数实时快照权限口径未核实，只观察
-    module: tqsdk
-    client:
-      attr: TqApi
-      kwargs:
-        auth:
-          $ctor:
-            attr: TqAuth
-            kwargs:
-              user_name: "$TAPEHUB_TQSDK_AUTH_USER"
-              password: "$TAPEHUB_TQSDK_AUTH_PASSWORD"
-        disable_print: true
-    call:
-      - {method: get_quote, kwargs: {symbol: "KQ.i@SHFE.au"}}
-    close: {method: close}
-    expect: {status: ok, min_fields: [last_price]}
-    assert: false
+  #    quote-bse-fingerprint（天勤不支持 BSE 前缀定案，见 targets 注释）、
+  #    kline-czce-3digit（3 位接受度由 chain contract@CN-CZCE 常态复验）。
+  #
+  # ── quote 矩阵 6 条 raw 已随 chain quote_availability 入链退役
+  #   （quote-contract / quote-continuous / quote-index-sse50 / quote-stock /
+  #    quote-etf / quote-weighted-index，2026-11-15）：quotes 全部 6 组声明
+  #    （contract/continuous/weighted-index/stock/index/etf，manifest M2）由
+  #    chain 经 adapter.fetch_quote 全链路常态复验——快照链路的二级路由、
+  #    上游订阅、NaN 置空与标准化全部覆盖，判定与观测覆盖强于 raw 的 SDK
+  #    级 min_fields 检查；原 raw 的权限口径差异（免费/专业版、断言 vs
+  #    观察）不再需要——chain 统一实判定，权限不足如实 failed（这正是
+  #    权限边界的证据）。Quote 首包前 NaN 的上游行为由「last/bid/ask 全空
+  #    判 failed」承接（原 min_fields 只验证键存在，弱于该判定）。
+  #
+  # ── 仅存负对照：郑商所 4 位年月码（与 ths ths-futures-suffix-zce-4digit
+  #    同款设计）——适配器 4→3 还原后链路永远发不出 4 位形态，无法入链，
+  #    常态复验该结论（4 位无响应挂起——TianQin 只认 3 位）。
   - id: kline-czce-4digit
     purpose: 郑商所 4 位年月码上游接受度实证（get_kline_serial CZCE.RM2701，
       观察不判定；已实证 4 位无响应挂起——TianQin 只认 3 位，
       适配器据此做 4→3 位还原，本 case 常态复验该结论；3 位侧常态复验由
-      chain contract@CN-CZCE 承担，原 kline-czce-3digit raw 已退役）
+      chain contract@CN-CZCE 承担）
     module: tqsdk
     client:
       attr: TqApi

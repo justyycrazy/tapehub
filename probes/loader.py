@@ -48,15 +48,20 @@ class ChainCase:
     """展开后的一条 chain 探针（含分析探针），执行前不做任何 IO。"""
 
     case_id: str
-    kind: str  # availability / adjust_diff / history_depth / limit_truncation
+    # availability / quote_availability / adjust_diff / history_depth /
+    # limit_truncation / variant_consistency
+    kind: str
     asset_type: AssetType
-    interval: Interval
-    adjust: Adjust
+    # quotes 无周期/复权维度（manifest 显式声明 null）：quote_availability
+    # case 的 interval/adjust 为 None；bars 各探针恒非 None
+    interval: Interval | None
+    adjust: Adjust | None
     variant: DataVariant
     instrument: str
-    window_start: dt.datetime
-    window_end: dt.datetime
     expected_calls: int = 1
+    # 窗口是 bars 语义；quote_availability 无窗口，保持 None
+    window_start: dt.datetime | None = None
+    window_end: dt.datetime | None = None
     min_bars: int | None = None
     required_fields: tuple[str, ...] = ()
     declared_history_start: dt.datetime | None = None
@@ -513,6 +518,90 @@ def _availability_case(
     )
 
 
+def _targets_by_market(
+    probe: ProbeFile, asset_type: AssetType, markets: list[str]
+) -> list[tuple[str, str, TargetSpec]]:
+    """按能力市场收集基准与追加目标：(market, target_key, target)。
+
+    - 每个市场先解析市场基准标的（市场限定键或裸键回退）；
+    - 交易所限定键是市场基准标的之外的**追加**目标：逐所细分探测
+      （键前缀 <asset_type>@<MARKET>-），bars 与 quotes 展开共用。
+    """
+    targets: list[tuple[str, str, TargetSpec]] = []
+    for market in markets:
+        found = _target_for(probe, TargetRef(asset_type=asset_type, market=market))
+        if found is not None:
+            targets.append((market, *found))
+        for exch_key, exch_target in _exchange_targets_for_market(probe, asset_type, market):
+            targets.append((market, exch_key, exch_target))
+    return targets
+
+
+def _quote_availability_case(
+    *,
+    probe: ProbeFile,
+    target_key: str,
+    target: TargetSpec,
+    asset_type: AssetType,
+    variant: DataVariant,
+) -> ChainCase:
+    """快照可用性 case：经 adapter.fetch_quote 全链路复验已声明的 quotes 能力。
+
+    快照无周期/复权维度（manifest 显式声明 null），case id 前缀 ``quote-``
+    与 bars availability 区分；判定与观测语义见 runner._run_quote_availability。
+    """
+    case_id = f"quote-{target_key}-{variant.value}"
+    skip_reason: str | None = None
+    for skip in probe.chain.skip if probe.chain else []:
+        if skip.case == case_id:
+            skip_reason = f"explicit skip: {skip.reason}"
+    return ChainCase(
+        case_id=case_id,
+        kind="quote_availability",
+        asset_type=asset_type,
+        interval=None,
+        adjust=None,
+        variant=variant,
+        instrument=target.instrument,
+        target_ref=target_key,
+        skip_reason=skip_reason,
+    )
+
+
+def _quote_mismatch_case(
+    *,
+    probe: ProbeFile,
+    capability: Capability,
+    asset_type: AssetType,
+    variant: DataVariant,
+) -> ChainCase:
+    """声明了 target 但其市场不在 quotes 能力市场内：显式跳过的 case（进报告）。"""
+    target = _first_target(probe, asset_type)
+    market = (
+        Instrument.parse(target.instrument).market if target is not None else "unknown"
+    )
+    case_id = f"quote-{asset_type.value}-{variant.value}"
+    for skip in probe.chain.skip if probe.chain else []:
+        if skip.case == case_id:
+            reason = f"explicit skip: {skip.reason}"
+            break
+    else:
+        reason = (
+            f"target instrument market {market!r} not in capability markets "
+            f"{capability.markets}"
+        )
+    return ChainCase(
+        case_id=case_id,
+        kind="quote_availability",
+        asset_type=asset_type,
+        interval=None,
+        adjust=None,
+        variant=variant,
+        instrument=target.instrument if target is not None else "",
+        skip_reason=reason,
+    )
+
+
 def _apply_explicit_skips(probe: ProbeFile, chain_cases: list[ChainCase]) -> None:
     """把显式 skip 条目统一应用到未带跳过原因的 chain case。
 
@@ -549,19 +638,9 @@ def expand_probe(probe: ProbeFile, manifest: ProviderManifest) -> ExpandedProbe:
                 for adjust in capability.adjustments:
                     for variant in capability.variants:
                         for asset_type in capability.asset_types:
-                            targets_by_market: list[tuple[str, str, TargetSpec]] = []
-                            for market in capability.markets:
-                                found = _target_for(
-                                    probe, TargetRef(asset_type=asset_type, market=market)
-                                )
-                                if found is not None:
-                                    targets_by_market.append((market, *found))
-                                # 交易所限定键是市场基准标的之外的追加目标：
-                                # 逐所细分探测（键前缀 <asset_type>@<MARKET>-）
-                                for exch_key, exch_target in _exchange_targets_for_market(
-                                    probe, asset_type, market
-                                ):
-                                    targets_by_market.append((market, exch_key, exch_target))
+                            targets_by_market = _targets_by_market(
+                                probe, asset_type, capability.markets
+                            )
                             if not targets_by_market:
                                 # 声明了 target 但市场全不匹配：保留跳过标记进报告
                                 # （不静默漏探）；未声明任何 target 的 asset_type 不生成
@@ -592,6 +671,43 @@ def expand_probe(probe: ProbeFile, manifest: ProviderManifest) -> ExpandedProbe:
                                         variant=variant,
                                     )
                                 )
+
+        # 快照可用性：与 bars 同一「声明内不抄写」语义——manifest 声明
+        # data_type=quotes 的组合自动展开为 quote_availability case（无周期/
+        # 复权维度，每组合 1 次调用），market/交易所限定目标与显式 skip
+        # 语义同 bars availability。
+        for capability in capabilities:
+            if capability.data_type != DataType.QUOTE:
+                continue
+            for variant in capability.variants:
+                for asset_type in capability.asset_types:
+                    targets_by_market = _targets_by_market(
+                        probe, asset_type, capability.markets
+                    )
+                    if not targets_by_market:
+                        if not _has_target_for(probe, asset_type):
+                            continue
+                        chain_cases.append(
+                            _quote_mismatch_case(
+                                probe=probe,
+                                capability=capability,
+                                asset_type=asset_type,
+                                variant=variant,
+                            )
+                        )
+                        continue
+                    for target_key, target in (
+                        (key, spec) for _, key, spec in targets_by_market
+                    ):
+                        chain_cases.append(
+                            _quote_availability_case(
+                                probe=probe,
+                                target_key=target_key,
+                                target=target,
+                                asset_type=asset_type,
+                                variant=variant,
+                            )
+                        )
 
     if probe.chain:
         chain = probe.chain

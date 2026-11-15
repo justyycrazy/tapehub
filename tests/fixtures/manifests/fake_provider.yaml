@@ -19,8 +19,21 @@ capabilities:
           end: null
     adjustments: [none]
     fields: [open, high, low, close, volume, amount]
+  # quotes 能力：验证 quote_availability 展开（无周期/复权维度，显式 null）
+  - data_type: quotes
+    markets: [CN]
+    asset_types: [stock, index]
+    delivery: [rest]
+    variants: [eastmoney]
+    intervals: []
+    adjustments: []
+    fields: [timestamp, last_price, volume, amount]
 
 operations:
+  - match: {data_type: quotes, market: CN, asset_type: stock, interval: null, adjust: null, variant: eastmoney}
+    operation: fake_stock_quote
+  - match: {data_type: quotes, market: CN, asset_type: index, interval: null, adjust: null, variant: eastmoney}
+    operation: fake_index_quote
   - match: {data_type: bars, market: CN, asset_type: stock, interval: P1D, adjust: none, variant: eastmoney}
     operation: fake_stock_daily
   - match: {data_type: bars, market: CN, asset_type: etf, interval: P1D, adjust: none, variant: eastmoney}

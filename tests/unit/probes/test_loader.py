@@ -564,3 +564,36 @@ def test_unresolved_analysis_target_rejected() -> None:
     probe = ProbeFile.model_validate(data)
     with pytest.raises(ValueError, match="do not resolve"):
         expand_probe(probe, _multi_market_manifest())  # type: ignore[arg-type]
+
+
+def test_quote_availability_expansion() -> None:
+    """quotes 声明随 include_declared 自动展开：无周期/复权维度，quote- 前缀 id。"""
+    expanded = expand_probe(_probe(), _manifest())  # type: ignore[arg-type]
+    quotes = [c for c in expanded.chain_cases if c.kind == "quote_availability"]
+    # fake manifest quotes 声明：CN stock/index；仅 stock 有 target，index 不生成
+    assert [c.case_id for c in quotes] == ["quote-stock-eastmoney"]
+    case = quotes[0]
+    assert case.interval is None
+    assert case.adjust is None
+    assert case.instrument == "CN-SSE-600000"
+    assert case.window_start is None and case.window_end is None
+    assert case.expected_calls == 1
+    assert case.skip_reason is None
+
+
+def test_quote_availability_mismatch_skipped() -> None:
+    """target 市场不在 quotes 能力市场内：quote case 显式跳过（进报告）。"""
+    data = _probe().model_dump()
+    data["targets"]["stock"]["instrument"] = "GLOBAL-OTC-EUR/USD"
+    probe = ProbeFile.model_validate(data)
+    expanded = expand_probe(probe, _manifest())  # type: ignore[arg-type]
+    quotes = [c for c in expanded.chain_cases if c.kind == "quote_availability"]
+    assert [c.case_id for c in quotes] == ["quote-stock-eastmoney"]
+    assert quotes[0].skip_reason is not None and "market" in quotes[0].skip_reason
+
+
+def test_quote_availability_explicit_skip() -> None:
+    probe = _probe(skip=[{"case": "quote-stock-eastmoney", "reason": "快照停机维护"}])
+    expanded = expand_probe(probe, _manifest())  # type: ignore[arg-type]
+    quotes = [c for c in expanded.chain_cases if c.kind == "quote_availability"]
+    assert quotes[0].skip_reason == "explicit skip: 快照停机维护"

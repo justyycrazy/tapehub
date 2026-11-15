@@ -107,8 +107,11 @@ targets:                           # 每个 asset_type 的基准标的 + 默认�
                                    # 校验）；限定键的 market 段不在能力覆盖范围
                                    # 时展开期硬报错（孤儿键不静默忽略）
 
-chain:                             # ── 统一链路探针（经 adapter.fetch_bars）──
-  include_declared: true           # 从 manifest 自动展开全部声明组合
+chain:                             # ── 统一链路探针 ──
+  include_declared: true           # 从 manifest 自动展开全部声明组合：
+                                   # bars → availability（fetch_bars），
+                                   # quotes → quote_availability（fetch_quote，
+                                   # 无周期/复权维度，每组合 1 次调用）
   skip:                            # 显式跳过必须给原因（进报告）
     - {case: contract-P1D-none-eastmoney, reason: 合约已到期摘牌}
   adjust_diff:                     # 复权生效性：同窗口对比价格序列
@@ -176,7 +179,7 @@ notes: 本探针要回答的问题与已知存疑点。
 | 规则 | 说明 |
 | --- | --- |
 | 文件名 = Provider 名 | loader 只认 `BUILTIN_PROVIDERS` 同名文件，缺失/多余即报错 |
-| case ID | chain 自动生成 `{asset_type}-{interval}-{adjust}-{variant}`；分析类为 `adjust-diff-<at>-<interval>-<a>-vs-<b>-<variant>`、`history-depth-<at>-<interval>-<variant>`、`limit-<at>-<interval>-<variant>`、`variant-consistency-<at>-<interval>-<adjust>`；raw 自定义 `^[A-Za-z][A-Za-z0-9._-]*$` 且全局唯一 |
+| case ID | bars 自动生成 `{asset_type}-{interval}-{adjust}-{variant}`（快照为 `quote-{asset_type}-{variant}`，市场/交易所限定键带前缀，如 `quote-stock@HK-tickflow`）；分析类为 `adjust-diff-<at>-<interval>-<a>-vs-<b>-<variant>`、`history-depth-<at>-<interval>-<variant>`、`limit-<at>-<interval>-<variant>`、`variant-consistency-<at>-<interval>-<adjust>`；raw 自定义 `^[A-Za-z][A-Za-z0-9._-]*$` 且全局唯一 |
 | 声明内不抄写 | `include_declared: true` 从 manifest 矩阵展开，manifest 改动探针自动跟随 |
 | **市场限定目标** | `targets` 键与各分析探针的 `targets` 列表项支持 `asset_type@MARKET` 与 `asset_type@MARKET-EXCHANGE` 形式；availability 按 (market × asset_type × interval × adjust × variant) 展开，每市场用对应限定键的标的（无限定键时回退不限定键且标的市场一致才命中）。市场限定目标的 case id 带前缀（如 `stock@HK-P1D-none-tickflow`、`history-depth-stock@US-P1D-tickflow`）；不限定键的 id 不变（向后兼容既有 skip 条目与历史报告） |
 | **交易所限定目标** | `asset_type@MARKET-EXCHANGE` 是市场基准标的之外的**追加**目标（不抑制基准目标、不回退裸键），每个交易所目标按同一能力矩阵独立展开全部 case（availability/adjust_diff 等），id 前缀带交易所段（如 `stock@CN-SZSE-P1D-none-tickflow`）；键的 market/exchange 段必须与标的限定段一致（加载期拒绝）；限定键的 market 段不被能力目录覆盖、或分析探针引用无法解析时，展开期硬报错（孤儿目标不静默忽略） |
@@ -192,12 +195,13 @@ notes: 本探针要回答的问题与已知存疑点。
 
 | 类型 | 链路 | 做什么 | 判定 |
 | --- | --- | --- | --- |
-| availability | chain | 对每个声明组合查一次 | 0 bars / 低于 min_bars / required 字段全 null → failed；否则 confirmed |
+| availability | chain | 对 bars 每个声明组合查一次（fetch_bars） | 0 bars / 低于 min_bars / required 字段全 null → failed；否则 confirmed |
+| quote_availability | chain | 对 quotes 每个声明组合查一次（fetch_quote，全链路二级路由→上游→标准化）；无周期/复权维度，`include_declared: true` 自动展开，`quote-` 前缀 case id | 适配器失败（含上游「无有效行情」语义）→ failed；last/bid1/ask1 全 null → failed（捕捉订阅未就绪 NaN 置空、权限静默降级）；否则 confirmed。volume/amount 的 null（如外汇无量）不判定、如实记录进 observation |
 | adjust_diff | chain | 同窗口 none vs qfq/hfq 对比（按 interval × variant × pair 全量展开） | 序列完全一致 → **suspect**（adjust_no_op_suspect）；有差异 → confirmed；无重叠 → suspect |
 | history_depth | chain | 纪元回溯 + 日历边界网格二分（`snap` 粒度，默认月边界；按 interval × variant 全量展开）：收敛到最小非空边界 B*，B* 之前逐窗实测无数据 + B* 窗口实测有数据；`full_history_targets` 中的目标改走全量模式：单次全窗口调用直接读最早 bar，适用于上游无日期参数（每次返回全量历史，适配器内存过滤）或全量拉取代价可忽略的接口 | 恒为 observe；声明值 `earliest_estimate` = 首个 ≥ 首根实测的日历边界（**保守上界**，查询从声明起点起保证有数据），`first_bar` 为首根实测（二分模式 = 验证窗返回首根；全量模式 = 精确最早 bar，approx=False）；触底（estimate=earliest）/预算中断/未收敛一律不回填 |
 | limit_truncation | chain | 最小周期 + 超长窗口数 bar（按 variant 全量展开） | 实测 = documented_max → confirmed；不等 → suspect；未设 → observe |
 | variant_consistency | chain | 同一 (interval, adjust) 查询在跨能力聚合的全部 variant 下重放并两两对比 | 差异 ≤ `tolerance` → confirmed（差异幅度如实记录）；超出 → suspect，记录 max_abs_diff 与 first_divergence；无重叠 / 预算中断 → suspect |
-| raw | SDK 反射 | 声明外能力探测、错误指纹、快照字段矩阵（`min_fields` 验证 mapping 字段存在性） | 期望匹配 → confirmed / 不匹配 → failed；`assert: false` → observe |
+| raw | SDK 反射 | 声明外能力探测与错误指纹（`min_fields` 验证 mapping 字段存在性；已声明能力的快照字段矩阵自 quote_availability 入链后不再经 raw） | 期望匹配 → confirmed / 不匹配 → failed；`assert: false` → observe |
 | connection | SDK 反射 | 客户端「创建 → 首次取数 → 释放」生命周期计时与并发共存验证（rounds × concurrent） | 全部实例创建/首调/释放成功 → confirmed；任一异常 → failed；`assert: false` → observe。观测值：每实例 create/first_call/close 毫秒 |
 
 判定枚举：`confirmed` / `failed` / `suspect` / `skipped` / `observe`。

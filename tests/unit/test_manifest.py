@@ -14,8 +14,8 @@ from tests.conftest import FIXTURES_DIR
 def test_load_fake_manifest() -> None:
     manifest = load_manifest_file(FIXTURES_DIR / "manifests" / "fake_provider.yaml")
     assert manifest.provider == "fake-provider"
-    assert len(manifest.capabilities) == 1
-    assert len(manifest.operations) == 5
+    assert len(manifest.capabilities) == 2  # bars + quotes
+    assert len(manifest.operations) == 7
 
     capability = manifest.to_domain_capabilities()[0]
     assert capability.data_type == DataType.BARS

@@ -1,7 +1,8 @@
 """探针执行器。
 
-- availability / adjust_diff / history_depth / limit_truncation 走统一链路
-  （adapter.fetch_bars），框架不含任何 Provider 专属逻辑；
+- availability / quote_availability / adjust_diff / history_depth /
+  limit_truncation 走统一链路（adapter.fetch_bars / adapter.fetch_quote），
+  框架不含任何 Provider 专属逻辑；
 - raw 探针按声明式配置反射调用 SDK（延迟导入）；kwargs 支持 ``$ENV``
   环境变量引用、``$ctor``（嵌套轻量对象构造，如认证对象）与
   ``$deadline_s``（相对秒数 → unix epoch）；凭据值不落任何结果文件；
@@ -39,6 +40,7 @@ from tapehub.domain.models import (
     BarQuery,
     DataVariant,
     Instrument,
+    QuoteQuery,
 )
 from tapehub.providers.registry import ProviderRecord, ProviderRegistry
 from tapehub.settings import Settings
@@ -266,13 +268,17 @@ async def run_provider_probe(
 
 
 def _dims_of(case: ChainCase) -> dict[str, str]:
-    return {
+    dims = {
         "asset_type": case.asset_type.value,
-        "interval": case.interval.code,
-        "adjust": case.adjust.value,
+        "interval": case.interval.code if case.interval else "",
+        "adjust": case.adjust.value if case.adjust else "",
         "variant": case.variant.value,
         "instrument": case.instrument,
     }
+    if case.interval is None:
+        # quotes 无周期/复权维度（manifest 显式声明 null），dims 不携带空键
+        del dims["interval"], dims["adjust"]
+    return dims
 
 
 def _build_query(
@@ -399,6 +405,8 @@ async def _run_chain_case(ctx: RunContext, case: ChainCase) -> CaseResult:
         return base
     if case.kind == "availability":
         return await _run_availability(ctx, case, base)
+    if case.kind == "quote_availability":
+        return await _run_quote_availability(ctx, case, base)
     if case.kind == "adjust_diff":
         return await _run_adjust_diff(ctx, case, base)
     if case.kind == "history_depth":
@@ -462,6 +470,90 @@ async def _run_availability(ctx: RunContext, case: ChainCase, base: CaseResult) 
         return base
     base.verdict = CaseVerdict.CONFIRMED.value
     base.reason = "availability confirmed"
+    return base
+
+
+async def _run_quote_availability(ctx: RunContext, case: ChainCase, base: CaseResult) -> CaseResult:
+    """快照可用性：经 adapter.fetch_quote 全链路（二级路由→上游→标准化）复验。
+
+    判定（快照无窗口/行数语义，与 bars availability 不同口径）：
+
+    - 适配器调用失败（含上游「无有效行情抛 UPSTREAM_ERROR」语义）→ failed；
+    - 返回 Quote 但 last/bid1/ask1 全为 null → failed（无可用价格，捕捉
+      订阅未就绪 NaN 置空、权限静默降级等上游异常形态）；
+    - 否则 confirmed。volume/amount 的 null（如外汇无量）不判定，
+      如实记录进 observation（缺失值 null 口径的漂移观察）。
+    """
+    started = time.perf_counter()
+    if not await ctx.take_call():
+        _log_step(case.kind, case.case_id, "预算耗尽，中止后续调用", level=logging.DEBUG)
+        base.reason = "call budget exhausted"
+        return base
+    query = QuoteQuery(
+        provider=ctx.record.name,
+        asset_type=case.asset_type,
+        instrument=Instrument.parse(case.instrument),
+        variant=case.variant,
+    )
+    try:
+        quote = await asyncio.wait_for(
+            ctx.record.adapter.fetch_quote(query), ctx.pacing.timeout_s
+        )
+    except TapehubError as exc:
+        base.duration_ms = round((time.perf_counter() - started) * 1000, 1)
+        _log_step(
+            case.kind, case.case_id,
+            f"{exc.code.value}: {exc.message[:_STEP_ERROR_TEXT_LIMIT]}",
+        )
+        return _failed_from(
+            base,
+            {
+                "error_code": exc.code.value,
+                "error_type": type(exc).__name__,
+                "error_text": exc.message,
+            },
+            base.duration_ms,
+        )
+    except TimeoutError:
+        base.duration_ms = round((time.perf_counter() - started) * 1000, 1)
+        return _failed_from(
+            base,
+            {
+                "error_code": "TIMEOUT",
+                "error_type": "TimeoutError",
+                "error_text": "adapter call timed out",
+            },
+            base.duration_ms,
+        )
+    except Exception as exc:  # noqa: BLE001 - 探针必须记录未知异常而不是崩溃
+        base.duration_ms = round((time.perf_counter() - started) * 1000, 1)
+        return _failed_from(
+            base,
+            {
+                "error_code": "UNEXPECTED",
+                "error_type": type(exc).__name__,
+                "error_text": str(exc)[:500],
+            },
+            base.duration_ms,
+        )
+    base.duration_ms = round((time.perf_counter() - started) * 1000, 1)
+    _log_step(case.kind, case.case_id, f"last_price={quote.last_price}")
+    base.observation = {
+        "timestamp": quote.timestamp.isoformat(),
+        "last_price": quote.last_price,
+        "bid_price1": quote.bid_price1,
+        "ask_price1": quote.ask_price1,
+        "volume": quote.volume,
+        "amount": quote.amount,
+        "extensions_keys": sorted(quote.extensions) if quote.extensions else [],
+        "received_at": quote.received_at.isoformat(),
+    }
+    if quote.last_price is None and quote.bid_price1 is None and quote.ask_price1 is None:
+        base.verdict = CaseVerdict.FAILED.value
+        base.reason = "quote carries no usable price (last/bid/ask all null)"
+        return base
+    base.verdict = CaseVerdict.CONFIRMED.value
+    base.reason = "quote availability confirmed"
     return base
 
 

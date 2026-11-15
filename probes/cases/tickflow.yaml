@@ -15,9 +15,12 @@ pacing:
   timeout_s: 60
   # 预算：availability 66（三市场基准 27 + CN 交易所追加 SZSE/BSE 各 9
   # + index 三周期 3 + etf 三周期三复权 9 + etf@US 三周期三复权 9）+
+  # quote_availability 8（quotes 声明随 include_declared 自动展开：stock@CN
+  # 基准/SZSE/BSE 逐所 + stock@HK/@US + index + etf + etf@US，各 1 调）+
   # adjust_diff 28（7 目标 × P1D × 2 pair × 2 调，etf/etf@US 为 ETF 分红
-  # 复权复验）+ history_depth 9 条 × ≤24 + raw 8（快照 4）= 最坏 320，
-  # 期望约 240。（2026-11-15 起 chain 移除 limit_truncation 维度，原 3 调预算作废）
+  # 复权复验）+ history_depth 9 条 × ≤24 + raw 1 case × 2 调（快照错误指纹；
+  # 快照 3 条 raw 已随 quotes 入链退役，见 raw 段注释）= 最坏 320。
+  #（2026-11-15 起 chain 移除 limit_truncation 维度，原 3 调预算作废）
   max_calls: 360
 
 # 同一 asset_type（stock）跨三市场声明能力：用市场限定目标（stock@MARKET）
@@ -123,33 +126,13 @@ chain:
     # 口径），历史深度无从探测
 
 raw:
-  # ── 实时行情（tf.quotes.get）：三市场字段矩阵与返回形态。SDK 0.1.25 实测
-  #    返回 list[dict]（非文档的 data 包装；无 session 字段）；
-  #    CallSpec method 支持「资源.方法」点链（quotes.get）。
-  - id: tf-quote-cn
-    purpose: A股快照字段矩阵（600000.SH；list 形态 + last_price 断言）
-    module: tickflow
-    client: {attr: TickFlow, kwargs: {api_key: "$TAPEHUB_TICKFLOW_API_KEY"}}
-    call:
-      - {method: quotes.get, kwargs: {symbols: ["600000.SH"]}}
-    expect: {status: ok, min_rows: 1}
-    assert: true
-  - id: tf-quote-hk
-    purpose: 港股快照字段矩阵（00700.HK 后缀核实）
-    module: tickflow
-    client: {attr: TickFlow, kwargs: {api_key: "$TAPEHUB_TICKFLOW_API_KEY"}}
-    call:
-      - {method: quotes.get, kwargs: {symbols: ["00700.HK"]}}
-    expect: {status: ok, min_rows: 1}
-    assert: true
-  - id: tf-quote-us
-    purpose: 美股快照字段矩阵（AAPL.US 后缀核实）
-    module: tickflow
-    client: {attr: TickFlow, kwargs: {api_key: "$TAPEHUB_TICKFLOW_API_KEY"}}
-    call:
-      - {method: quotes.get, kwargs: {symbols: ["AAPL.US"]}}
-    expect: {status: ok, min_rows: 1}
-    assert: true
+  # ── 已定案退役的 raw（原始证据见 probes/results/PROBE_LOG.md，不入库）：
+  #    tf-quote-cn/hk/us 三条快照字段矩阵（2026-11-15 起随 chain
+  #    quote_availability 入链退役）——quotes 声明组合（stock@CN/@HK/@US、
+  #    CN index/etf、US etf）由 chain 经 adapter.fetch_quote 全链路常态复验，
+  #    判定与观测覆盖强于 raw 的 SDK 级字段检查；指数/ETF 快照的扩容实证
+  #    （第 11 轮目录外诊断，与 alphafeed 侧逐位互证）已回填 manifest。
+  #    「资源.方法」点链形态（quotes.get）仍由错误指纹 raw 承载样本。
   - id: tf-quote-invalid-symbol-fingerprint
     purpose: 不存在标的的错误指纹（供错误分类回填）
     module: tickflow

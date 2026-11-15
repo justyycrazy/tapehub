@@ -24,12 +24,15 @@ pacing:
   call_interval_s: 2.0
   timeout_s: 60
   # 本轮构成：availability 208（10 目标键 × 8 周期 × 各自复权面，etf@US
-  # 2026-11-15 扩容 +24、etf@HK 同日扩容 +24；quotes 快照不经 chain——框架
-  # chain 仅覆盖 fetch_bars，快照经目录外取证与单测覆盖）+ adjust_diff 20
-  # （10 case × 2 调，etf@US/etf@HK 常态复验各 +4）+ history_depth 56 case
-  # （7 目标 × 8 周期）× 最坏 24 = 1344 最坏 + raw 3（1 case 3 调）
-  # ≈ 1575 最坏，预算 1650 留余量（era 10 年步长下单 case 约 8~15 调）；
-  # 额度池不新增占用——depth 新目标复用 availability 已占额度的基准标的
+  # 2026-11-15 扩容 +24、etf@HK 同日扩容 +24）+ quote_availability 10×1 调
+  #（quotes 声明随 include_declared 自动展开：CN stock 基准/SZSE/BSE 逐所 +
+  # CN index 基准/BSE 逐所 + CN etf + HK stock/etf + US stock/etf——快照
+  # 自此经 adapter.fetch_quote 全链路常态复验，原「目录外取证+单测覆盖」
+  # 口径闭合）+ adjust_diff 20（10 case × 2 调，etf@US/etf@HK 常态复验各
+  # +4）+ history_depth 56 case（7 目标 × 8 周期）× 最坏 24 = 1344 最坏
+  # + raw 1 case 3 调（无签名错误指纹）≈ 1585 最坏，预算 1650 留余量
+  #（era 10 年步长下单 case 约 8~15 调）；额度池不新增占用——depth 新目标
+  # 复用 availability 已占额度的基准标的
   max_calls: 1650
 
 # 跨三市场（CN/HK/US）声明能力：用市场限定目标（stock@MARKET）为每个市场

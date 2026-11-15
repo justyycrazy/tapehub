@@ -145,13 +145,16 @@ def render_markdown(run: RunResult) -> str:
     flagged = [c for c in run.cases if c.verdict in ("suspect", "observe")]
     skipped = [c for c in run.cases if c.verdict == "skipped"]
     histories = [c for c in run.cases if c.kind == "history_depth"]
+    # 快照可用性单列小节（观测字段与 bars 不同口径），bars 表只收 K 线 case
+    quote_confirmed = [c for c in confirmed if c.kind == "quote_availability"]
+    bars_confirmed = [c for c in confirmed if c.kind != "quote_availability"]
 
     lines.append("## 已确认能力（confirmed）")
     lines.append("")
-    if confirmed:
+    if bars_confirmed:
         lines.append("| case | count | 首根 | 末根 | null 率>0 | 时延(ms) |")
         lines.append("| --- | --- | --- | --- | --- | --- |")
-        for case in confirmed:
+        for case in bars_confirmed:
             obs = case.observation
             nulls = {
                 k: v for k, v in (obs.get("null_rates") or {}).items() if v and v > 0
@@ -159,6 +162,22 @@ def render_markdown(run: RunResult) -> str:
             lines.append(
                 f"| {case.case_id} | {obs.get('count')} | {obs.get('first_timestamp')} "
                 f"| {obs.get('last_timestamp')} | {nulls or '—'} | {case.duration_ms} |"
+            )
+    else:
+        lines.append("（无）")
+    lines.append("")
+
+    lines.append("## 快照可用性（quotes，confirmed）")
+    lines.append("")
+    if quote_confirmed:
+        lines.append("| case | last_price | bid1/ask1 | volume | amount | 时延(ms) |")
+        lines.append("| --- | --- | --- | --- | --- | --- |")
+        for case in quote_confirmed:
+            obs = case.observation
+            lines.append(
+                f"| {case.case_id} | {obs.get('last_price')} "
+                f"| {obs.get('bid_price1')}/{obs.get('ask_price1')} "
+                f"| {obs.get('volume')} | {obs.get('amount')} | {case.duration_ms} |"
             )
     else:
         lines.append("（无）")
@@ -201,7 +220,7 @@ def render_markdown(run: RunResult) -> str:
         lines.append("（无）")
     lines.append("")
 
-    lines.append("## raw 探针（声明外探索 / 快照矩阵）")
+    lines.append("## raw 探针（声明外探索 / 错误指纹）")
     lines.append("")
     if raws:
         lines.append("| case | 判定 | 首样本（截断） |")

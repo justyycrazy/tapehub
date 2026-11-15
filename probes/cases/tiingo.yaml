@@ -17,9 +17,10 @@ requires:
 pacing:
   call_interval_s: 90.0
   timeout_s: 60
-  # 本轮构成：availability 6（forex/crypto × 3 声明周期）+ history_depth
-  # 6 case（forex/crypto × PT1H/PT4H/P1D，逐周期探测）× 16 最坏 +
-  # raw 1 case × 2 调用 ≈ 78 典型、102 最坏，预算 120 留余量
+  # 本轮构成：availability 6（forex/crypto × 3 声明周期）+ quote_availability
+  # 2（quotes 声明随 include_declared 自动展开：forex + crypto 各 1 调）+
+  # history_depth 6 case（forex/crypto × PT1H/PT4H/P1D，逐周期探测）× 16 最坏
+  # + raw 1 case × 2 调用 ≈ 70 典型、106 最坏，预算 120 留余量
   #（tg-resample-2hour/4hour 与 tg-fx-date-shape 已随定案退役，见 raw 段注释）
   max_calls: 120
 

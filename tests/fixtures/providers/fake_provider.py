@@ -7,7 +7,7 @@
 import zlib
 from datetime import datetime, timedelta, timezone
 
-from tapehub.domain.models import Bar, BarBatch, BarQuery
+from tapehub.domain.models import Bar, BarBatch, BarQuery, Quote, QuoteQuery
 from tapehub.providers.base import BaseProviderAdapter
 from tapehub.providers.pagination import paginate_bars
 
@@ -46,6 +46,23 @@ class FakeBarProvider(BaseProviderAdapter):
             received_at=datetime.now(timezone.utc),
             offset=query.offset,
             limit=query.limit,
+        )
+
+    async def fetch_quote(self, query: QuoteQuery) -> Quote:
+        """确定性快照：指数类标的无盘口且无成交价（模拟指数快照语义，
+        last/bid/ask 全空——用于验证 quote 判定的「无可用价格」路径）。"""
+        operation = self.resolve_quote_operation(query)
+        null_price = operation == "fake_index_quote"
+        now = datetime.now(timezone.utc)
+        return Quote(
+            timestamp=now,
+            last_price=None if null_price else 10.0,
+            bid_price1=None,
+            ask_price1=None,
+            volume=None if null_price else 1000.0,
+            amount=None if null_price else 10000.0,
+            provider=self.name,
+            received_at=now,
         )
 
     def _generate(self, operation: str, query: BarQuery) -> list[Bar]:

@@ -15,9 +15,12 @@ pacing:
   timeout_s: 60
   # 预算：availability 66（CN/HK/US 基准 27 + CN 交易所追加 SZSE/BSE 各 9
   # + index 三周期 3 + etf 三周期三复权 9 + etf@US 三周期三复权 9）+
+  # quote_availability 8（quotes 声明随 include_declared 自动展开：stock@CN
+  # 基准/SZSE/BSE 逐所 + stock@HK/@US + index + etf + etf@US，各 1 调）+
   # adjust_diff 28（7 目标 × P1D × 2 pair × 2 调，etf/etf@US 为 ETF 分红
-  # 复权复验）+ history_depth 3 条（US × 三周期）× ≤24 + raw 12（指纹 3 +
-  # 快照 3）= 最坏 178，期望约 150。
+  # 复权复验）+ history_depth 3 条（US × 三周期）× ≤24 + raw 2 case × 2 调
+  # （指纹 2；快照 3 条与 af-period-10m 已随 quotes 入链/定案退役，见 raw 段
+  # 注释）= 最坏 178。
   max_calls: 200
 
 # 同一 asset_type（stock）跨三市场声明能力：用市场限定目标（stock@MARKET）
@@ -126,14 +129,6 @@ raw:
       - {method: klines.get, kwargs: {symbol: "600000.SH", period: "1d", count: 1}}
     expect: {status: error, error_contains: ""}   # 任意错误：记录指纹
     assert: false
-  - id: af-period-10m-fingerprint
-    purpose: 探测 10m 周期上游行为（官方文档枚举无 10m；20261107T173550 实测返回数据、与文档不符，持续观察口径一致性）
-    module: alphafeed
-    client: {attr: AlphaFeed, kwargs: {api_key: "$TAPEHUB_ALPHAFEED_API_KEY"}}
-    call:
-      - {method: klines.get, kwargs: {symbol: "600000.SH", period: "10m", count: 1}}
-    expect: {status: error, error_contains: ""}
-    assert: false
   - id: af-quote-invalid-symbol-fingerprint
     purpose: 不存在标的的快照错误指纹（供错误分类回填）
     module: alphafeed
@@ -143,32 +138,14 @@ raw:
     expect: {status: error, error_contains: ""}
     assert: false
 
-  # ── 实时行情（af.quotes.get）：三市场字段矩阵与返回形态 ──
-  # SDK 实测返回 list[Quote dict]（response["data"]），非 Mapping 形态——
-  # 不能用 min_fields（runner 对非 Mapping 恒 False），字段矩阵看
-  # observation.sample；每条 raw 预算 = 1（client 构造）+ 1（调用）。
-  - id: af-quote-cn
-    purpose: A股快照字段矩阵（600000.SH；list 形态 + 行数断言）
-    module: alphafeed
-    client: {attr: AlphaFeed, kwargs: {api_key: "$TAPEHUB_ALPHAFEED_API_KEY"}}
-    call:
-      - {method: quotes.get, kwargs: {symbols: ["600000.SH"]}}
-    expect: {status: ok, min_rows: 1}
-    assert: true
-  - id: af-quote-hk
-    purpose: 港股快照字段矩阵（00700.HK 后缀核实）
-    module: alphafeed
-    client: {attr: AlphaFeed, kwargs: {api_key: "$TAPEHUB_ALPHAFEED_API_KEY"}}
-    call:
-      - {method: quotes.get, kwargs: {symbols: ["00700.HK"]}}
-    expect: {status: ok, min_rows: 1}
-    assert: true
-  - id: af-quote-us
-    purpose: 美股快照字段矩阵（AAPL.US 后缀核实）
-    module: alphafeed
-    client: {attr: AlphaFeed, kwargs: {api_key: "$TAPEHUB_ALPHAFEED_API_KEY"}}
-    call:
-      - {method: quotes.get, kwargs: {symbols: ["AAPL.US"]}}
-    expect: {status: ok, min_rows: 1}
-    assert: true
+  # ── 已定案退役的 raw（原始证据见 probes/results/PROBE_LOG.md，不入库）：
+  #    ① af-quote-cn/hk/us 三条快照字段矩阵（2026-11-15 起随 chain
+  #      quote_availability 入链退役）——quotes 声明组合（stock@CN/@HK/@US、
+  #      CN index/etf、US etf）由 chain 经 adapter.fetch_quote 全链路常态
+  #      复验，判定与观测覆盖强于 raw 的 SDK 级字段检查；指数/ETF 快照的
+  #      扩容实证（第 11 轮目录外诊断）已回填 manifest；
+  #    ② af-period-10m-fingerprint（10m 周期实测可用但定案不声明，见
+  #      docs/providers/alphafeed.md）——适配器永不会发出 10m 请求，上游
+  #      该周期行为漂移对链路零影响，持续观察无服务价值；未来若决定声明
+  #      PT10M，扩容后由 chain availability 常态复验（届时重探一轮即可）。
 notes: 各轮运行记录见 probes/results/PROBE_LOG.md（不入库）；探针框架规范见 probes/README.md。

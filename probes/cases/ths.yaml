@@ -26,8 +26,12 @@ pacing:
   # 13（bars 13：stock 三复权 + index + etf + contract + option + BSE 逐所
   # stock/index + 期货逐所 CZCE/DCE/INE/GFEX）+ adjust_diff 4（stock 1
   # 目标 × 2 pair × 2 调）+ history_depth 3 case × 最坏 12 +
-  # limit_truncation ≈2 + raw 5 case 各 3 调（client + get + json），
-  # 最坏约 70，预算 100 留余量（约 5 分钟）
+  # limit_truncation ≈2 + quote_availability 11×1 调（quotes 声明随
+  # include_declared 自动展开：stock/index/etf 基准 + BSE 逐所 stock/index
+  # + contract 基准/期货逐所 CZCE/DCE/INE/GFEX + option）+ raw 3 case 各 3 调
+  #（client + get + json：错误指纹 / ETF 复权口径留存 / 郑商所 4 位负对照；
+  # 快照形态与分时量额 2 条 raw 已随 quotes 入链退役，见 raw 段注释），
+  # 最坏约 75，预算 100 留余量（约 5 分钟）
   max_calls: 100
 
 targets:
@@ -149,49 +153,17 @@ chain:
     max_range: P9Y
 
 raw:
-  # ── 快照/分时形态观察：快照与分时不经 chain（框架 chain 仅覆盖
-  #    fetch_bars）；headers 携带 X-api-key（凭据只经环境变量引用，结果
-  #    文件不记录值）
-  - id: ths-snapshot-shape
-    purpose: A 股快照响应形态观察（item 字段完整性、data.timestamp 口径、
-      name 缺失确认）
-    assert: false
-    module: httpx
-    client: {attr: Client, kwargs: {}}
-    call:
-      - {method: get, kwargs: {url: "https://fuyao.aicubes.cn/api/a-share/prices/snapshot", params: {thscodes: "600519.SH"}, headers: {"X-api-key": "$TAPEHUB_THS_API_KEY"}}}
-      - {method: json, kwargs: {}, target: result}
-    expect: {status: ok, min_rows: 1}
-    close: {method: close, kwargs: {}}
-
-  # 期货分时形态观察（快照 volume/amount 回填依据）：核实分时点量额口径
-  # 是逐分钟增量还是当日累计——单日末点 volume 与全点求和对比即可判别；
-  # 结论回填 manifest fields 声明与 response_mapper 映射
-  - id: ths-futures-intraday-quantity-semantics
-    purpose: 期货分时点量额口径核实（volume/turnover 为逐分钟增量或当日
-      累计——期货/期权快照 volume/amount 是否透出的判定依据）
-    assert: false
-    module: httpx
-    client: {attr: Client, kwargs: {}}
-    call:
-      - {method: get, kwargs: {url: "https://fuyao.aicubes.cn/api/futures/prices/intraday", params: {thscode: "CU2706.SHF", session: "intraday", trade_date: "0"}, headers: {"X-api-key": "$TAPEHUB_THS_API_KEY"}}}
-      - {method: json, kwargs: {}, target: result}
-    expect: {status: ok, min_rows: 1}
-    close: {method: close, kwargs: {}}
-
-  # 错误指纹仅观察：采集无效 API Key 的信封报文（预期 code=2001 未认证，
-  # HTTP 恒 200——信封错误走业务码），供 UPSTREAM 细分错误映射参考
-  - id: ths-invalid-key-fingerprint
-    purpose: 采集无效 API Key 的错误指纹（字面量假 Key，非真实凭据；仅观察）
-    assert: false
-    module: httpx
-    client: {attr: Client, kwargs: {}}
-    call:
-      - {method: get, kwargs: {url: "https://fuyao.aicubes.cn/api/a-share/prices/snapshot", params: {thscodes: "600519.SH"}, headers: {"X-api-key": "probe-invalid-key-not-a-credential"}}}
-      - {method: json, kwargs: {}, target: result}
-    expect: {status: ok, min_rows: 1}
-    close: {method: close, kwargs: {}}
-
+  # ── 已定案退役的快照 raw（原始证据见 probes/results/PROBE_LOG.md，
+  #    不入库；结论均已回填 manifest 与 docs/providers/ths.md）：
+  #    ① ths-snapshot-shape（A 股快照形态：item 字段完整性、data.timestamp
+  #      毫秒口径、name 缺失，2026-11-14 定案）与
+  #    ② ths-futures-intraday-quantity-semantics（分时点量额口径：volume/
+  #      amount=分时全点求和、分时点为逐分钟增量，见 docs「上游行为定案」）——
+  #      两条均为一次性形态/语义定案，回填闭合后由映射层与单测守护
+  #     （futunn quotes「目录外取证+单测覆盖」先例）；2026-11-15 起 quotes
+  #      声明组合（stock/index/etf/contract/option + BSE/期货逐所）经 chain
+  #      quote_availability 常态复验，快照可得性不再依赖 raw。
+  #
   # ETF 复权口径留存（观察）：fund historical 端点无 adjust 请求参数（复权
   # 方式不可选），官方文档明示「adjust null 当前固定为 null；价格数据仍采用
   # 前复权口径」——受控对比实证文档属实（对照 baostock none/qfq 序列），
@@ -211,6 +183,19 @@ raw:
       - {method: get, kwargs: {url: "https://fuyao.aicubes.cn/api/fund/market/historical", params: {thscode: "510880.SH", interval: "1d", start: 1736784000000, end: 1737993599000}, headers: {"X-api-key": "$TAPEHUB_THS_API_KEY"}}}
       - {method: json, kwargs: {}, target: result}
     expect: {status: ok, min_fields: [code, message, data]}
+    close: {method: close, kwargs: {}}
+
+  # 错误指纹仅观察：采集无效 API Key 的信封报文（预期 code=2001 未认证，
+  # HTTP 恒 200——信封错误走业务码），供 UPSTREAM 细分错误映射参考
+  - id: ths-invalid-key-fingerprint
+    purpose: 采集无效 API Key 的错误指纹（字面量假 Key，非真实凭据；仅观察）
+    assert: false
+    module: httpx
+    client: {attr: Client, kwargs: {}}
+    call:
+      - {method: get, kwargs: {url: "https://fuyao.aicubes.cn/api/a-share/prices/snapshot", params: {thscodes: "600519.SH"}, headers: {"X-api-key": "probe-invalid-key-not-a-credential"}}}
+      - {method: json, kwargs: {}, target: result}
+    expect: {status: ok, min_rows: 1}
     close: {method: close, kwargs: {}}
 
   # ── 已定案退役的探索性 raw（原始证据见 probes/results/PROBE_LOG.md，
