@@ -59,11 +59,14 @@ defaults:
   - match: {data_type: quotes, market: CN, asset_type: stock}
     order: [ths, alphafeed, tickflow, futunn, tqsdk]
 
+  # CN 指数/ETF 快照：2026-11-15 扩容 alphafeed/tickflow 入链（目录外
+  # 诊断第 11 轮实证统一 quotes 端点放行、与 stock 快照同形结构）；位次
+  # 与 quotes CN stock 链同序——凭据型源居免费无凭据源之后、先接入源居前
   - match: {data_type: quotes, market: CN, asset_type: index}
-    order: [ths, futunn, tqsdk]
+    order: [ths, alphafeed, tickflow, futunn, tqsdk]
 
   - match: {data_type: quotes, market: CN, asset_type: etf}
-    order: [ths, futunn, tqsdk]
+    order: [ths, alphafeed, tickflow, futunn, tqsdk]
 
   - match: {data_type: quotes, market: CN, asset_type: contract}
     order: [tqsdk, ths]
@@ -83,10 +86,11 @@ defaults:
   - match: {data_type: quotes, market: US, asset_type: stock}
     order: [alphafeed, tickflow, futunn]
 
-  # US ETF 快照：2026-11-15 扩容填补空白（此前无 Provider 声明，请求 422；
-  # 目录外诊断实证 futunn stock-quote 对 US.SPY 放行），futunn 独占
+  # US ETF 快照：2026-11-15 两轮扩容——futunn 先入（目录外诊断实证
+  # stock-quote 对 US.SPY 放行，填补空白），alphafeed/tickflow 后入（目录外
+  # 诊断第 11 轮实证统一 quotes 端点放行）；位次与 quotes US stock 链同序
   - match: {data_type: quotes, market: US, asset_type: etf}
-    order: [futunn]
+    order: [alphafeed, tickflow, futunn]
 
   - match: {data_type: quotes, market: GLOBAL, asset_type: forex}
     order: [twelvedata, tiingo]

@@ -1,6 +1,6 @@
 # TickFlow（tickflow）
 
-三市场行情 REST API 接入：CN/HK/US 个股 + CN 指数/ETF 与 US ETF 日/周/月 K 线（2026-11-15 扩容）+ 实时快照（无状态 REST 单次调用），凭据型回退源。
+三市场行情 REST API 接入：CN/HK/US 个股 + CN 指数/ETF 与 US ETF 日/周/月 K 线与实时快照（2026-11-15 扩容，无状态 REST 单次调用），凭据型回退源。
 
 ## 概要
 
@@ -20,6 +20,8 @@
 | bars | CN | etf | tickflow | `tf.klines.get` | P1D/P1W/P1M | none/qfq/hfq | open/high/low/close/volume/amount |
 | bars | US | etf | tickflow | `tf.klines.get` | P1D/P1W/P1M | none/qfq/hfq | open/high/low/close/volume/amount |
 | quotes | CN/HK/US | stock | tickflow | `tf.quotes.get(symbols=[...])` | —（快照无周期） | —（快照无复权） | timestamp/last_price/volume/amount |
+| quotes | CN | index/etf | tickflow | `tf.quotes.get(symbols=[...])` | —（快照无周期） | —（快照无复权） | timestamp/last_price/volume/amount |
+| quotes | US | etf | tickflow | `tf.quotes.get(symbols=[...])` | —（快照无周期） | —（快照无复权） | timestamp/last_price/volume/amount |
 
 - bars 能力按 CN/HK/US **三市场拆块逐市场声明**（三市场周期集与复权相同、历史深度不同，合并声明会以跨市场最早值对历史较浅的市场过度声明；capabilities 与 history.start 一一对应，operations 本就按市场枚举、不受块拆分影响）；
 - quotes 为快照能力：interval/adjust 维度无意义，capabilities 与 operations match 中显式空/null，路由跳过对应维度。
@@ -71,6 +73,7 @@ history.start（历史覆盖声明，探针二分收敛，早上市基准标的�
 ## 快照与流式
 
 - 快照：无状态 REST 单标的单次 `tf.quotes.get` 调用，无订阅/缓存语义（与订阅-推送类 Provider 不同）；不产生 `QUOTE_NOT_READY`——要么返回快照，要么返回上游错误；
+- 快照扩容定案（目录外诊断 2026-11-15 第 11 轮）：统一 quotes 端点对 CN 指数/ETF（SSE/SZSE 两交易所段）与 US ETF（NYSE/NASDAQ 两交易所段）六标的端到端放行，行结构与 stock 快照完全同形（同键集同语义），端到端零改动产出合法标准 Quote（与 alphafeed 侧逐位互证，同源引擎再证）；`ext.type` 维持 `cn_equity`/`us_equity` 不区分证券类型（本就不在白名单）；CN 指数行 `ext` 无 `turnover_rate`（指数无换手）；US ETF 快照 `amount` 为真实成交额（与 US bars 日线 `amount` 原值 0 口径不同）；快照时间戳为最近交易日收盘时刻（CN 15:00、US 美东 16:00，北京时间归一）；
 - 标准字段：`timestamp`/`last_price`/`volume`/`amount`；五档盘口上游无源字段，恒 null（不用 0 冒充）；扩展字段见「extensions 白名单」；
 - 流式：不支持 SSE 流（不实现 `stream_quote`），`/v1/market/quotes/stream` 受理阶段返回 `UNSUPPORTED_CAPABILITY`。
 
@@ -81,9 +84,11 @@ history.start（历史覆盖声明，探针二分收敛，早上市基准标的�
 - bars CN stock / HK stock / US stock：回退位；
 - bars CN index / bars CN etf：参与（2026-11-15 扩容，位次与 CN stock 链同序——凭据型源居免费无凭据源之后）；
 - bars US etf：回退位（2026-11-15 扩容，位次与 US stock 链同序——目录外诊断实证后入链，alphafeed 居首）；
-- quotes CN stock / HK stock / US stock：回退位。
+- quotes CN stock / HK stock / US stock：回退位；
+- quotes CN index / CN etf：回退位（2026-11-15 快照扩容，位次与 quotes CN stock 链同序——ths 居首、alphafeed 居前，目录外诊断实证后入链）；
+- quotes US etf：回退位（2026-11-15 快照扩容，位次与 quotes US stock 链同序——alphafeed 居首，futunn 为先入兜底）。
 
-位次依据一句话：凭据型 REST 源，免费无凭据源与先接入源居前；其三市场日/周/月 K 线与快照能力覆盖广、历史库底深（HK/US 深于东财源），居凭据源前列；US ETF 位次与 US stock 链同序（目录外诊断实证后入链）。
+位次依据一句话：凭据型 REST 源，免费无凭据源与先接入源居前；其三市场日/周/月 K 线与快照能力覆盖广、历史库底深（HK/US 深于东财源），居凭据源前列；CN 指数/ETF 与 US ETF 的 K 线与快照扩容位次均与对应 stock 链同序（目录外诊断实证后入链）。
 
 ## extensions 白名单
 

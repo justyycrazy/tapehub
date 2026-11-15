@@ -1,6 +1,6 @@
 # AlphaFeed（alphafeed）
 
-海外市场行情 REST API 接入：CN/HK/US 三市场个股 + CN 指数/ETF 与 US ETF 日/周/月 K 线（2026-11-15 扩容）+ 实时快照，HK 个股 K 线、HK/US 个股快照与 US ETF K 线的缺省源。
+海外市场行情 REST API 接入：CN/HK/US 三市场个股 + CN 指数/ETF 与 US ETF 日/周/月 K 线与实时快照（2026-11-15 扩容），HK 个股 K 线、HK/US 个股快照、CN 指数/ETF 与 US ETF K 线与快照的缺省源。
 
 ## 概要
 
@@ -20,6 +20,8 @@
 | bars | CN | etf | alphafeed | `af.klines.get` | P1D/P1W/P1M | none/qfq/hfq | open/high/low/close/volume/amount |
 | bars | US | etf | alphafeed | `af.klines.get` | P1D/P1W/P1M | none/qfq/hfq | open/high/low/close/volume/amount |
 | quotes | CN/HK/US | stock | alphafeed | `af.quotes.get(symbols=[...])` | —（快照无周期） | —（快照无复权） | timestamp/last_price/volume/amount |
+| quotes | CN | index/etf | alphafeed | `af.quotes.get(symbols=[...])` | —（快照无周期） | —（快照无复权） | timestamp/last_price/volume/amount |
+| quotes | US | etf | alphafeed | `af.quotes.get(symbols=[...])` | —（快照无周期） | —（快照无复权） | timestamp/last_price/volume/amount |
 
 历史覆盖（history.start，探针二分收敛，取估计窗口右端零点，approx ±90 天、真实最早可能更早；三市场周期集相同但历史深度不同，故 bars 能力拆 CN/HK/US 三块逐市场声明，operations 不受块拆分影响）：
 
@@ -72,6 +74,7 @@ quotes 为快照能力：interval/adjust 维度无意义，capabilities 与 oper
 ## 快照与流式
 
 - 快照（`af.quotes.get(symbols=[...])`）：上游支持 5 标的/次批量与标的池（universes），网关为单标的快照语义、单元素 symbols 调用（套餐限频 10 次/分钟才是实际约束）；
+- 快照扩容定案（目录外诊断 2026-11-15 第 11 轮）：统一 quotes 端点对 CN 指数/ETF（SSE/SZSE 两交易所段）与 US ETF（NYSE/NASDAQ 两交易所段）六标的端到端放行，行结构与 stock 快照完全同形（同键集同语义），端到端零改动产出合法标准 Quote（与 tickflow 侧逐位互证）；`ext.type` 维持 `cn_equity`/`us_equity` 不区分证券类型（本就不在白名单）；CN 指数行 `ext` 无 `turnover_rate`（指数无换手）；US ETF 快照 `amount` 为真实成交额（与 US bars 日线 `amount` 原值 0 口径不同）；快照时间戳为最近交易日收盘时刻（CN 15:00、US 美东 16:00，北京时间归一）；
 - 标准字段：`timestamp`/`last_price`/`volume`/`amount`；五档盘口上游无源字段恒 null（不用 0 冒充）；比例类扩展字段为小数比例（1% = 0.01）；
 - 交付模型：纯 REST 单次调用语义——无推送接口，无首包超时/`QUOTE_NOT_READY`（调用失败统一 `UPSTREAM_ERROR`）；
 - 流式：不实现，`/v1/market/quotes/stream` 路由到 alphafeed 返回 `UNSUPPORTED_CAPABILITY`（与 tickflow 一致）。
@@ -86,9 +89,11 @@ quotes 为快照能力：interval/adjust 维度无意义，capabilities 与 oper
 - bars US stock：缺省（居首，twelvedata/futunn/akshare 依次回退）；
 - bars US etf：缺省（2026-11-15 扩容，位次与 US stock 链同序——目录外诊断实证后入链，分钟级请求经能力过滤落到 twelvedata）；
 - quotes CN stock：回退位（ths 居首）；
-- quotes HK stock / US stock：缺省。
+- quotes CN index / CN etf：回退位（2026-11-15 快照扩容，位次与 quotes CN stock 链同序——凭据型源居免费无凭据源之后，目录外诊断实证后入链）；
+- quotes HK stock / US stock：缺省；
+- quotes US etf：缺省（2026-11-15 快照扩容，位次与 quotes US stock 链同序——目录外诊断实证后入链，futunn 为先入兜底）。
 
-位次依据一句话：官方文档核实的三市场日/周/月 K 线与三市场个股快照能力，凭据型源居免费无凭据源之后；US ETF 缺省与 US stock 链同序（目录外诊断实证后入链）。
+位次依据一句话：官方文档核实的三市场日/周/月 K 线与三市场个股快照能力，凭据型源居免费无凭据源之后；CN 指数/ETF 与 US ETF 的 K 线与快照扩容位次均与对应 stock 链同序（目录外诊断实证后入链）。
 
 ## extensions 白名单
 

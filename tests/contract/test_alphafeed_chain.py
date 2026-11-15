@@ -205,7 +205,8 @@ def test_capability_catalog(alphafeed_client: TestClient) -> None:  # type: igno
     caps = entry["capabilities"]
     # bars 七块（CN stock/index/etf + HK/US stock + US etf 逐块声明：三市场
     # history 深度不同拆块；index/etf history 未核实与 stock 不同亦独立成块
-    # ——2026-11-15 两轮扩容；分钟族不声明、周期枚举无 10m）+ quotes 一块
+    # ——2026-11-15 两轮扩容；分钟族不声明、周期枚举无 10m）+ quotes 四块
+    # （stock 三市场合并 + 2026-11-15 快照扩容 CN index/CN etf/US etf 逐块）
     assert [(cap["data_type"], cap["markets"]) for cap in caps] == [
         ("bars", ["CN"]),
         ("bars", ["CN"]),
@@ -214,6 +215,9 @@ def test_capability_catalog(alphafeed_client: TestClient) -> None:  # type: igno
         ("bars", ["US"]),
         ("bars", ["US"]),
         ("quotes", ["CN", "HK", "US"]),
+        ("quotes", ["CN"]),
+        ("quotes", ["CN"]),
+        ("quotes", ["US"]),
     ]
     assert [cap["asset_types"] for cap in caps[:3]] == [["stock"], ["index"], ["etf"]]
     # CN stock history 逐市场回填（二分收敛估计窗口右端零点，approx ±90 天）；
@@ -243,6 +247,14 @@ def test_capability_catalog(alphafeed_client: TestClient) -> None:  # type: igno
     assert quotes_cap["intervals"] == []
     assert quotes_cap["adjustments"] == []
     assert quotes_cap["fields"] == ["timestamp", "last_price", "volume", "amount"]
+    # 快照扩容（2026-11-15 目录外诊断第 11 轮：CN index/CN etf/US etf 端到端
+    # 实证，与 stock 快照同形结构）；无周期/复权维度，显式空
+    assert [cap["asset_types"] for cap in caps[7:]] == [["index"], ["etf"], ["etf"]]
+    for cap in caps[7:]:
+        assert cap["intervals"] == []
+        assert cap["adjustments"] == []
+        assert cap["fields"] == ["timestamp", "last_price", "volume", "amount"]
+        assert cap["variants"] == ["alphafeed"]
 
 
 def test_pt10m_unsupported(alphafeed_client: TestClient) -> None:  # type: ignore[no-untyped-def]
@@ -344,3 +356,44 @@ def test_quote_chain_three_markets(
     meta = body["meta"]
     assert meta["provider"] == "alphafeed"
     assert meta["variant"] == "alphafeed"
+
+
+@pytest.mark.parametrize(
+    ("asset_type", "instrument", "expected_symbol"),
+    [
+        # 指数/ETF 与 stock 共用统一 quotes 端点与后缀表（目录外诊断
+        # 2026-11-15 第 11 轮实证：端到端放行、与 stock 快照同形结构）
+        ("index", "CN-SSE-000001", "000001.SH"),
+        ("etf", "CN-SSE-510050", "510050.SH"),
+        ("etf", "US-NYSE-SPY", "SPY.US"),
+    ],
+)
+def test_quote_etf_index_chain(
+    asset_type: str,
+    instrument: str,
+    expected_symbol: str,
+    alphafeed_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """CN 指数/ETF 与 US ETF 快照链路：与 stock 共用端点，映射层零分支。"""
+    preset_quote_payload(monkeypatch, quote_payload(symbol=expected_symbol))
+
+    response = alphafeed_client.get(
+        "/v1/market/quotes",
+        params={
+            "provider": "alphafeed",
+            "asset_type": asset_type,
+            "instrument": instrument,
+            "variant": "alphafeed",
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+
+    assert StubAlphaFeed.instances[-1].calls[0] == {"symbols": [expected_symbol]}
+    data = body["data"]
+    assert data["instrument"] == instrument
+    assert data["asset_type"] == asset_type
+    assert data["quote"]["last_price"] == 20.25
+    assert body["meta"]["provider"] == "alphafeed"
+    assert body["meta"]["variant"] == "alphafeed"

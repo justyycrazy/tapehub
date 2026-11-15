@@ -94,6 +94,36 @@ capabilities:
     adjustments: []
     fields: [timestamp, last_price, volume, amount]
 
+  # 快照扩容（2026-11-15 目录外诊断第 11 轮：CN ETF 两交易所段/CN 指数/
+  # US ETF 两交易所段六标的端到端实证，与 stock 快照同形结构、与 tickflow
+  # 侧逐位互证）；与 stock 快照共用统一 quotes 端点，映射层零分支。
+  # 指数行 ext 无 turnover_rate（指数无换手）；ext.type 不区分证券类型，
+  # 不在白名单、不透出。
+  - data_type: quotes
+    markets: [CN]
+    asset_types: [index]
+    delivery: [rest]
+    variants: [alphafeed]
+    intervals: []
+    adjustments: []
+    fields: [timestamp, last_price, volume, amount]
+  - data_type: quotes
+    markets: [CN]
+    asset_types: [etf]
+    delivery: [rest]
+    variants: [alphafeed]
+    intervals: []
+    adjustments: []
+    fields: [timestamp, last_price, volume, amount]
+  - data_type: quotes
+    markets: [US]
+    asset_types: [etf]
+    delivery: [rest]
+    variants: [alphafeed]
+    intervals: []
+    adjustments: []
+    fields: [timestamp, last_price, volume, amount]
+
 operations:
   # 全部周期 × 复权 × 市场组合都调用同一上游接口 af.klines.get。
   # —— CN ——
@@ -204,4 +234,12 @@ operations:
   - match: {data_type: quotes, market: HK, asset_type: stock, interval: null, adjust: null, variant: alphafeed}
     operation: quotes
   - match: {data_type: quotes, market: US, asset_type: stock, interval: null, adjust: null, variant: alphafeed}
+    operation: quotes
+  # —— quotes 扩容（2026-11-15 目录外诊断第 11 轮实证）：CN 指数/ETF 与
+  #    US ETF 与 stock 快照共用同一端点与响应结构 ——
+  - match: {data_type: quotes, market: CN, asset_type: index, interval: null, adjust: null, variant: alphafeed}
+    operation: quotes
+  - match: {data_type: quotes, market: CN, asset_type: etf, interval: null, adjust: null, variant: alphafeed}
+    operation: quotes
+  - match: {data_type: quotes, market: US, asset_type: etf, interval: null, adjust: null, variant: alphafeed}
     operation: quotes
