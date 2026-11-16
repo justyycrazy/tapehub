@@ -76,7 +76,7 @@ API 层 → Application 层 → Domain 层
 
 - **能力目录是唯一事实来源**：`/v1/capabilities` 与公共路由复用同一份目录；
 - **两级路由**：公共 `ProviderRouter` 按 provider × data_type × market × asset_type × interval × adjust × **variant** 选 Provider；适配器按 manifest 的 `operations` 做内部二级路由，上游函数名不暴露到公共 API；
-- **auto 路由优先级（显式声明，非隐式顺序）**：显式 `provider=X` > 缺省路由配置 `src/tapehub/config/provider_routing.yaml`（可用 `TAPEHUB_ROUTING_CONFIG` 指向外部文件整体替换内置版本）的完整回退链。该文件按 `(data_type, market, asset_type)` 三维全显式声明每组合的 Provider 回退顺序（首个「已注册、已启用且能力可解析」者为缺省；未启用条目自动跳过；回退只发生在路由选择阶段，请求执行失败不切换 Provider）；注册表构建期强制校验**凡能力覆盖的组合必须恰有条目**、order 引用的 Provider 必须已注册且实际声明该组合能力（缺失/重复/未知引用都拒绝启动）；代码内注册顺序不承载路由语义；
+- **auto 路由优先级（显式声明，非隐式顺序）**：显式 `provider=X` > 缺省路由配置 `src/tapehub/config/provider_routing.yaml`（可用 `TAPEHUB_ROUTING_CONFIG_PATH` 指向外部文件整体替换内置版本）的完整回退链。该文件按 `(data_type, market, asset_type)` 三维全显式声明每组合的 Provider 回退顺序（首个「已注册、已启用且能力可解析」者为缺省；未启用条目自动跳过；回退只发生在路由选择阶段，请求执行失败不切换 Provider）；注册表构建期强制校验**凡能力覆盖的组合必须恰有条目**、order 引用的 Provider 必须已注册且实际声明该组合能力（缺失/重复/未知引用都拒绝启动）；代码内注册顺序不承载路由语义；
 - **凭据驱动的注册**：需要凭据的 Provider，`.env` 相应变量全部非空（strip 后）才启用；凭据缺失的 Provider **能力目录仍可见但 `enabled=false`**，auto 路由跳过，显式请求返回 `PROVIDER_DISABLED`（details 携带缺失的变量名）。akshare/baostock 无凭据概念恒启用。启用裁决与逃生门细节见 [docs/operations.md](docs/operations.md)；
 - **manifest 属于配置**：缺失、格式错误或校验失败直接启动失败（fail-fast）；路由配置同上；适配器导入失败（可选 SDK 未安装等）仍单 Provider 隔离，不影响启动；
 - **公共能力声明 vs 内部 operation 映射**：manifest 的 `capabilities` 面向目录与公共路由（含 `variants` 声明）；`operations` 的 match 键包含全部六个维度且必须显式声明，面向适配器内部；对请求无意义的维度显式声明 `null`（如 quotes 快照的 interval/adjust，两维度在能力目录同样声明为空、路由时跳过），`null` 只与不携带该维度的请求匹配。

@@ -50,7 +50,7 @@ uv run uvicorn tapehub.api.app:app --reload   # 启动服务（默认 127.0.0.1:
 | `TAPEHUB_CATALOG_VERSION` | `1` | 能力目录版本（出现在 `/v1/capabilities` 的 meta 中） |
 | `TAPEHUB_MAX_LIMIT` | `5000` | 统一分页最大 `limit` |
 | `TAPEHUB_PROVIDER_ENABLED_OVERRIDES` | `{}` | JSON 对象，按 provider 名覆盖启用状态（如 `{"akshare": false}` 整体停用 akshare），语义见上文 |
-| `TAPEHUB_ROUTING_CONFIG` | 空 | 缺省路由顺序配置文件路径；留空用包内内置版本（`src/tapehub/config/provider_routing.yaml`），指定路径时**外部文件整体替换内置版本，不做合并** |
+| `TAPEHUB_ROUTING_CONFIG_PATH` | 空 | 缺省路由顺序配置文件路径；留空用包内内置版本（`src/tapehub/config/provider_routing.yaml`），指定路径时**外部文件整体替换内置版本，不做合并** |
 
 ### Provider 凭据（全部非空才启用对应 Provider）
 

@@ -51,3 +51,17 @@ def test_tqsdk_conn_mode_default_and_validation() -> None:
     assert make_settings(tqsdk_conn_mode="per_request").tqsdk_conn_mode == "per_request"
     with pytest.raises(ValidationError):
         make_settings(tqsdk_conn_mode="pool")
+
+
+def test_routing_config_env_var_matches_docs(monkeypatch: pytest.MonkeyPatch) -> None:
+    """文档环境变量名与 Settings 字段名一致（契约测试）。
+
+    ``routing_config_path`` 由 pydantic-settings 推导的环境变量是
+    ``TAPEHUB_ROUTING_CONFIG_PATH``；文档（README/operations/.env.example/
+    provider_routing.yaml 头注释）必须与之一致，否则外部路由配置会被
+    ``extra="ignore"`` 静默丢弃且无任何提示。
+    """
+    monkeypatch.setenv("TAPEHUB_ROUTING_CONFIG_PATH", "routing.yaml")
+    assert make_settings().routing_config_path == "routing.yaml"
+    monkeypatch.delenv("TAPEHUB_ROUTING_CONFIG_PATH")
+    assert make_settings().routing_config_path is None

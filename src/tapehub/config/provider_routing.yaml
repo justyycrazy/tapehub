@@ -7,7 +7,7 @@
 # 是完整回退链，第一个「已注册、已启用且能力可解析」的 Provider 即缺省
 # 数据源；回退只在路由选择阶段，请求执行失败不切换；注册期强制校验
 # 覆盖完整性；代码注册顺序不承载路由语义。
-# 部署覆盖：Settings 的 TAPEHUB_ROUTING_CONFIG 指定外部文件路径时，
+# 部署覆盖：Settings 的 TAPEHUB_ROUTING_CONFIG_PATH 指定外部文件路径时，
 # 外部文件整体替换本内置版本（不做合并）。
 # 路由模型与裁决细节见 README.md「总体设计」；各 Provider 位次依据见
 # docs/providers/<name>.md。
