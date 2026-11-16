@@ -4,6 +4,7 @@
 """
 
 import asyncio
+import threading
 from collections.abc import AsyncIterator
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any
@@ -68,6 +69,10 @@ class ProviderAdapter(BaseProviderAdapter):
         # crypto / forex 各一个懒启动 WS Runtime（端点与 thresholdLevel 分流）
         self._runtimes: dict[str, TiingoWsRuntime] = {}
         self._runtime_lock = asyncio.Lock()
+        # 实例级长生命周期共享 HTTP 客户端（httpx2.Client 官方文档明确可跨
+        # 线程共享——连接复用免去每请求 TLS 握手）；锁串行化首次创建
+        self._client: Any = None
+        self._client_lock = threading.Lock()
 
     async def fetch_bars(self, query: BarQuery) -> BarBatch:
         operation = self.resolve_operation(query)
@@ -142,11 +147,16 @@ class ProviderAdapter(BaseProviderAdapter):
         )
 
     def shutdown_runtime(self) -> object | None:
-        """停机钩子（由应用 lifespan 调用）：关闭已启动的 WS Runtime。
+        """停机钩子（由应用 lifespan 调用）：关闭已启动的 WS Runtime 与
+        共享 HTTP 客户端。
 
         有运行循环时返回异步停机任务由 lifespan await 到完成；无运行循环
         的兜底路径同步执行并返回 None。
         """
+        with self._client_lock:
+            if self._client is not None:
+                self._client.close()
+                self._client = None
         runtimes = list(self._runtimes.values())
         if not runtimes:
             return None
@@ -162,6 +172,13 @@ class ProviderAdapter(BaseProviderAdapter):
         for runtime in runtimes:  # 无运行循环的兜底（正常不触发）
             asyncio.run(runtime.shutdown())
         return None
+
+    def _http_client(self, httpx2: Any) -> Any:
+        """实例级共享 HTTP 客户端（懒创建，锁串行化首次构建防双创建泄漏）。"""
+        with self._client_lock:
+            if self._client is None:
+                self._client = httpx2.Client(timeout=_HTTP_TIMEOUT_SECONDS)
+            return self._client
 
     @staticmethod
     async def _shutdown_all(runtimes: list[TiingoWsRuntime]) -> None:
@@ -293,8 +310,8 @@ class ProviderAdapter(BaseProviderAdapter):
                 details={"provider": self.name, "sdk": "httpx2"},
             ) from exc
         headers = {"Authorization": f"Token {api_key}"}
-        with httpx2.Client(timeout=_HTTP_TIMEOUT_SECONDS) as client:
-            response = client.get(url, params=params, headers=headers)
+        client = self._http_client(httpx2)
+        response = client.get(url, params=params, headers=headers)
         if response.status_code == 429:
             # 免费档限频（50 请求/时、1000 请求/天）：明确映射可重试限流
             raise UpstreamRateLimitedError(

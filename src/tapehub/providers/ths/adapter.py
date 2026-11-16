@@ -4,8 +4,9 @@
 """
 
 import logging
+import threading
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from tapehub.domain.errors import (
     ProviderNotImplementedError,
@@ -17,6 +18,9 @@ from tapehub.providers.base import BaseProviderAdapter, call_in_thread, truncate
 from tapehub.providers.pagination import paginate_bars
 from tapehub.providers.ths.request_mapper import build_quote_request, build_request
 from tapehub.providers.ths.response_mapper import to_standard_bars, to_standard_quote
+
+if TYPE_CHECKING:
+    from tapehub.settings import Settings
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +37,13 @@ class ProviderAdapter(BaseProviderAdapter):
 
     implemented = True
 
+    def __init__(self, name: str, manifest: Any, settings: "Settings | None" = None) -> None:
+        super().__init__(name, manifest, settings)
+        # 实例级长生命周期共享 HTTP 客户端（httpx2.Client 官方文档明确可跨
+        # 线程共享——连接复用免去每请求 TLS 握手）；锁串行化首次创建
+        self._client: Any = None
+        self._client_lock = threading.Lock()
+
     async def fetch_bars(self, query: BarQuery) -> BarBatch:
         operation = self.resolve_operation(query)
         api_key = self._ensure_ready()
@@ -46,6 +57,20 @@ class ProviderAdapter(BaseProviderAdapter):
         return await call_in_thread(
             self._fetch_quote_sync, api_key, operation, query, abandon_on_cancel=True
         )
+
+    def shutdown_runtime(self) -> None:
+        """停机钩子（由应用 lifespan 调用）：关闭共享 HTTP 客户端。"""
+        with self._client_lock:
+            if self._client is not None:
+                self._client.close()
+                self._client = None
+
+    def _http_client(self, httpx2: Any) -> Any:
+        """实例级共享 HTTP 客户端（懒创建，锁串行化首次构建防双创建泄漏）。"""
+        with self._client_lock:
+            if self._client is None:
+                self._client = httpx2.Client(timeout=_HTTP_TIMEOUT_SECONDS)
+            return self._client
 
     def _ensure_ready(self) -> str:
         """校验运行前提：API Key 配置。"""
@@ -96,8 +121,8 @@ class ProviderAdapter(BaseProviderAdapter):
                 details={"provider": self.name, "sdk": "httpx2"},
             ) from exc
         headers = {"X-api-key": api_key}
-        with httpx2.Client(timeout=_HTTP_TIMEOUT_SECONDS) as client:
-            response = client.get(url, params=params, headers=headers)
+        client = self._http_client(httpx2)
+        response = client.get(url, params=params, headers=headers)
         if response.status_code >= 400:
             # 官方约定业务错误走信封 code（HTTP 恒 200）；非 2xx 属契约外
             # 防御路径（网关/代理层错误等）

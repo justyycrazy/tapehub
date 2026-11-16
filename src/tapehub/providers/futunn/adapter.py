@@ -4,8 +4,9 @@
 """
 
 import logging
+import threading
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from tapehub.domain.errors import (
     ProviderNotImplementedError,
@@ -22,8 +23,11 @@ from tapehub.providers.futunn.request_mapper import (
     futu_code,
 )
 from tapehub.providers.futunn.response_mapper import to_standard_bars, to_standard_quote
-from tapehub.providers.futunn.signing import build_signed_headers, load_private_key_pem
+from tapehub.providers.futunn.signing import build_signed_headers, load_signing_key
 from tapehub.providers.pagination import paginate_bars
+
+if TYPE_CHECKING:
+    from tapehub.settings import Settings
 
 logger = logging.getLogger(__name__)
 
@@ -46,22 +50,45 @@ class ProviderAdapter(BaseProviderAdapter):
 
     implemented = True
 
+    def __init__(self, name: str, manifest: Any, settings: "Settings | None" = None) -> None:
+        super().__init__(name, manifest, settings)
+        # 长生命周期资源（懒创建）：签名私钥对象（每请求只签名不重复解析）
+        # 与共享 HTTP 客户端（httpx2.Client 官方文档明确可跨线程共享——
+        # 连接复用免去每请求 TLS 握手）；均经锁串行化首次创建
+        self._signing_key: object | None = None
+        self._client: Any = None
+        self._resource_lock = threading.Lock()
+
     async def fetch_bars(self, query: BarQuery) -> BarBatch:
         operation = self.resolve_operation(query)
-        app_key, pem = self._ensure_ready()
+        app_key, signing_key = self._ensure_ready()
         return await call_in_thread(
-            self._fetch_sync, app_key, pem, operation, query, abandon_on_cancel=True
+            self._fetch_sync, app_key, signing_key, operation, query, abandon_on_cancel=True
         )
 
     async def fetch_quote(self, query: QuoteQuery) -> Quote:
         operation = self.resolve_quote_operation(query)
-        app_key, pem = self._ensure_ready()
+        app_key, signing_key = self._ensure_ready()
         return await call_in_thread(
-            self._fetch_quote_sync, app_key, pem, operation, query, abandon_on_cancel=True
+            self._fetch_quote_sync, app_key, signing_key, operation, query, abandon_on_cancel=True
         )
 
-    def _ensure_ready(self) -> tuple[str, bytes]:
-        """校验运行前提：AppKey 配置 + 私钥文件路径配置且可读。"""
+    def shutdown_runtime(self) -> None:
+        """停机钩子（由应用 lifespan 调用）：关闭共享 HTTP 客户端。"""
+        with self._resource_lock:
+            if self._client is not None:
+                self._client.close()
+                self._client = None
+
+    def _http_client(self, httpx2: Any) -> Any:
+        """实例级共享 HTTP 客户端（懒创建，锁串行化首次构建防双创建泄漏）。"""
+        with self._resource_lock:
+            if self._client is None:
+                self._client = httpx2.Client(timeout=_HTTP_TIMEOUT_SECONDS)
+            return self._client
+
+    def _ensure_ready(self) -> tuple[str, object]:
+        """校验运行前提：AppKey 配置 + 私钥文件路径配置且可解析（缓存签名私钥）。"""
         app_key = getattr(self.settings, "futunn_app_key", "") if self.settings else ""
         if not app_key:
             raise ProviderNotImplementedError(
@@ -76,12 +103,16 @@ class ProviderAdapter(BaseProviderAdapter):
                 "futunn private key path is not configured.",
                 details={"provider": self.name, "setting": "TAPEHUB_FUTUNN_PRIVATE_KEY_PATH"},
             )
-        # 文件缺失/不可读/非 PEM/算法不受支持均归运行前提失败（signing 模块）
-        pem = load_private_key_pem(key_path, provider=self.name)
-        return app_key, pem
+        # 文件缺失/不可读/非 PEM/算法不受支持均归运行前提失败（signing 模块）；
+        # 私钥对象解析一次进程内复用（文件内容视为生命周期内不变）
+        if self._signing_key is None:
+            with self._resource_lock:
+                if self._signing_key is None:
+                    self._signing_key = load_signing_key(key_path, provider=self.name)
+        return app_key, self._signing_key
 
     def _fetch_sync(
-        self, app_key: str, pem: bytes, operation: str, query: BarQuery
+        self, app_key: str, signing_key: object, operation: str, query: BarQuery
     ) -> BarBatch:
         """历史 K 线：page_token 分页循环 → 闭区间复核 → partial 判定 → 内存分页。"""
         rows: list[dict[str, Any]] = []
@@ -89,7 +120,7 @@ class ProviderAdapter(BaseProviderAdapter):
         page_token: str | None = None
         for _ in range(_MAX_PAGES):
             request = build_request(operation, query, page_token=page_token)
-            payload = self._call_upstream(app_key, pem, request)
+            payload = self._call_upstream(app_key, signing_key, request)
             page_rows, precision, page_token = _kline_page(payload)
             rows.extend(page_rows)
             if page_token is None:
@@ -112,11 +143,11 @@ class ProviderAdapter(BaseProviderAdapter):
         )
 
     def _fetch_quote_sync(
-        self, app_key: str, pem: bytes, operation: str, query: QuoteQuery
+        self, app_key: str, signing_key: object, operation: str, query: QuoteQuery
     ) -> Quote:
         """实时快照：单标的 code_list POST → 匹配 code 行 → 标准映射。"""
         request = build_quote_request(operation, query)
-        payload = self._call_upstream(app_key, pem, request)
+        payload = self._call_upstream(app_key, signing_key, request)
         data = payload.get("data")
         if not isinstance(data, dict):
             raise UpstreamError(
@@ -145,12 +176,13 @@ class ProviderAdapter(BaseProviderAdapter):
         )
 
     def _call_upstream(
-        self, app_key: str, pem: bytes, request: UpstreamRequest
+        self, app_key: str, signing_key: object, request: UpstreamRequest
     ) -> dict[str, Any]:
         """延迟导入 httpx2 直连 REST（签名请求头），解析统一信封并返回载荷。
 
         query_string 由 request_mapper 统一生成：URL 拼接与签名原文共用
-        同一字符串（签名一致性单点保证）。
+        同一字符串（签名一致性单点保证）。HTTP 客户端为实例级长生命周期
+        共享对象（官方文档明确可跨线程共享），首次请求懒创建、停机钩子关闭。
         """
         try:
             import httpx2
@@ -161,17 +193,17 @@ class ProviderAdapter(BaseProviderAdapter):
             ) from exc
         headers = build_signed_headers(
             app_key,
-            pem,
+            signing_key,
             method=request.method,
             request_path=request.request_path,
             query_string=request.query_string,
             body=request.body,
         )
-        with httpx2.Client(timeout=_HTTP_TIMEOUT_SECONDS) as client:
-            if request.method == "POST":
-                response = client.post(request.url, content=request.body, headers=headers)
-            else:
-                response = client.get(request.url, headers=headers)
+        client = self._http_client(httpx2)
+        if request.method == "POST":
+            response = client.post(request.url, content=request.body, headers=headers)
+        else:
+            response = client.get(request.url, headers=headers)
         if response.status_code >= 400:
             # 官方约定业务错误走信封 ret_code（HTTP 200）；非 2xx 属契约外
             # 防御路径（网关/代理层错误、鉴权失败 401 等）

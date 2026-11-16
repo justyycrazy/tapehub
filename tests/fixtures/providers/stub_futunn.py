@@ -38,16 +38,29 @@ class StubResponse:
 
 
 class StubClient:
-    """httpx2.Client 桩；所有实例记录在 ``instances``。"""
+    """httpx2.Client 桩；所有实例记录在 ``instances``。
+
+    适配器为实例级共享客户端（懒创建复用）：preset 经**类级**值在请求时
+    读取——``preset_payload`` 多次调用以最后一次为准；``preset_pages`` 按
+    **请求次序**（call 序）出队，语义即「第 N 次请求返回第 N 页」，与共享
+    client 及逐请求新建两种模型都兼容。
+    """
 
     instances: list["StubClient"] = []
+    _preset_status_code: int = 200
+    _preset_payload: Any = []
+    _page_queue: list[Any] = []  # preset_pages 的请求次序 payload 队列
 
     def __init__(self, timeout: Any = None, **kwargs: Any) -> None:
         self.timeout = timeout
         self.calls: list[dict[str, Any]] = []
-        self.status_code = 200
-        self.payload: Any = []
         StubClient.instances.append(self)
+
+    def _next_payload(self) -> Any:
+        cls = type(self)
+        if cls._page_queue:
+            return cls._page_queue.pop(0)
+        return cls._preset_payload
 
     def get(
         self, url: str, *, headers: dict[str, str] | None = None, **kwargs: Any
@@ -55,7 +68,7 @@ class StubClient:
         self.calls.append(
             {"method": "GET", "url": url, "headers": dict(headers or {}), "content": None}
         )
-        return StubResponse(self.status_code, self.payload)
+        return StubResponse(type(self)._preset_status_code, self._next_payload())
 
     def post(
         self,
@@ -68,7 +81,11 @@ class StubClient:
         self.calls.append(
             {"method": "POST", "url": url, "headers": dict(headers or {}), "content": content}
         )
-        return StubResponse(self.status_code, self.payload)
+        return StubResponse(type(self)._preset_status_code, self._next_payload())
+
+    def close(self) -> None:
+        """停机钩子（shutdown_runtime）调用：桩无连接池，no-op。"""
+        return None
 
     def __enter__(self) -> "StubClient":
         return self
@@ -77,12 +94,8 @@ class StubClient:
         return None
 
 
-# preset_pages 的实例序 payload 队列（bars page_token 多页测试）
-_queue: list[Any] = []
-
-
 def install(monkeypatch: Any) -> type[StubClient]:
-    """把桩模块注入 sys.modules，清空实例记录与页队列。"""
+    """把桩模块注入 sys.modules，清空实例记录与类级 preset/页队列。"""
     import sys
     import types
 
@@ -90,48 +103,28 @@ def install(monkeypatch: Any) -> type[StubClient]:
     module.Client = StubClient  # type: ignore[attr-defined]
     monkeypatch.setitem(sys.modules, "httpx2", module)
     StubClient.instances.clear()
-    _queue.clear()
+    StubClient._preset_status_code = 200
+    StubClient._preset_payload = []
+    StubClient._page_queue = []
     return StubClient
 
 
 def preset_payload(monkeypatch: Any, payload: Any) -> None:
-    """让每个新建的桩客户端返回指定 payload（须在 install 之后调用）。"""
-    original_init = StubClient.__init__
-
-    def init_with_payload(self: StubClient, *args: Any, **kwargs: Any) -> None:
-        original_init(self, *args, **kwargs)
-        self.payload = payload
-
-    monkeypatch.setattr(StubClient, "__init__", init_with_payload)
+    """预置后续请求返回的 payload（请求时读类级值，多次调用以最后一次为准）。"""
+    monkeypatch.setattr(StubClient, "_preset_payload", payload, raising=False)
 
 
 def preset_pages(monkeypatch: Any, payloads: list[Any]) -> None:
-    """按 Client 实例序依次返回 payload（bars page_token 多页循环测试；
-    须在 install 之后调用，实例数超出队列时沿用最后一个）。"""
-    preset_payload(monkeypatch, payloads[-1])
-    _queue.clear()
-    _queue.extend(payloads)
-
-    original_init = StubClient.__init__
-
-    def init_with_queue(self: StubClient, *args: Any, **kwargs: Any) -> None:
-        original_init(self, *args, **kwargs)
-        if _queue:
-            self.payload = _queue.pop(0)
-
-    monkeypatch.setattr(StubClient, "__init__", init_with_queue)
+    """按请求次序依次返回 payload（bars page_token 多页循环测试）；
+    请求次数超出队列时沿用最后一个。"""
+    monkeypatch.setattr(StubClient, "_preset_payload", payloads[-1], raising=False)
+    monkeypatch.setattr(StubClient, "_page_queue", list(payloads), raising=False)
 
 
 def preset_status(monkeypatch: Any, status_code: int, payload: Any) -> None:
-    """让每个新建的桩客户端返回指定状态码与 payload（须在 install 之后调用）。"""
-    original_init = StubClient.__init__
-
-    def init_with_status(self: StubClient, *args: Any, **kwargs: Any) -> None:
-        original_init(self, *args, **kwargs)
-        self.status_code = status_code
-        self.payload = payload
-
-    monkeypatch.setattr(StubClient, "__init__", init_with_status)
+    """预置后续请求返回的状态码与 payload（请求时读类级值）。"""
+    monkeypatch.setattr(StubClient, "_preset_status_code", status_code, raising=False)
+    monkeypatch.setattr(StubClient, "_preset_payload", payload, raising=False)
 
 
 def envelope(
