@@ -134,9 +134,9 @@ Accept: text/event-stream
 
 | event | data 结构 | 语义 |
 | --- | --- | --- |
-| `status` | `{status, instrument, asset_type, provider}` | 流生命周期：`subscribed`（订阅确认，**首事件**，含已缓存快照场景）/ `upstream_disconnected`（上游连接异常或服务停机）/ `recycling`（tqsdk 专属：Runtime 新一代重建——跨交易日回收 / watchdog / 休眠订阅回收，活跃订阅自动重订，重订完成再发 `subscribed`）/ `idle_unsubscribed`（流空闲超时，服务端本地退订并结束流） |
+| `status` | `{status, instrument, asset_type, provider}` | 流生命周期：`subscribed`（订阅确认，**首个业务事件**；已缓存快照场景立即补发）/ `upstream_disconnected`（上游连接异常或服务停机）/ `recycling`（tqsdk 专属：Runtime 新一代重建——跨交易日回收 / watchdog / 休眠订阅回收，活跃订阅自动重订，重订完成再发 `subscribed`）/ `idle_unsubscribed`（流空闲超时，服务端本地退订并结束流） |
 | `quote` | `{instrument, asset_type, quote, provider, variant, received_at}` | 与快照响应同构，`quote` 内为标准快照 |
-| `heartbeat` | `{type, request_id, ts}` | 空闲保活帧（默认 15s，仅出现在首事件之后），代理/负载均衡不至掐断空闲连接 |
+| `heartbeat` | `{type, request_id, ts}` | 空闲保活帧（默认 15s，含订阅确认之前的冷启动等待期），代理/负载均衡不至掐断空闲连接——冷订阅上游静默时连接不再最长静默 `TAPEHUB_STREAM_IDLE_TIMEOUT_SECONDS` 无任何字节 |
 
 行为要点：
 

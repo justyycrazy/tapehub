@@ -84,27 +84,30 @@ def test_sse_headers_and_first_frames(fake_tqsdk: types.ModuleType) -> None:
         assert resp.status_code == 200
         assert resp.headers["content-type"].startswith("text/event-stream")
         assert resp.headers["x-accel-buffering"] == "no"
-        frames = _read_frames(resp, 2)
-    # 首事件 status subscribed，随后首包 quote 帧（P5 实证字段口径）
-    assert frames[0]["event"] == "status"
-    assert frames[0]["data"]["status"] == "subscribed"
-    assert frames[0]["data"]["provider"] == "tqsdk"
-    assert frames[1]["event"] == "quote"
-    assert frames[1]["data"]["quote"]["last_price"] == 848.24
-    assert frames[1]["data"]["variant"] == "tqsdk"
-    assert frames[1]["data"]["received_at"].endswith("+08:00")
+        frames = _read_frames(resp, 4)
+    # 冷订阅等待期内允许心跳帧先行（2026-11 修订：首事件前也保活）；首个
+    # 业务事件仍是 status subscribed → 首包 quote 的顺序（P5 实证字段口径）
+    kinds = [frame["event"] for frame in frames]
+    assert "status" in kinds and "quote" in kinds
+    assert kinds.index("status") < kinds.index("quote")
+    status_frame = frames[kinds.index("status")]
+    assert status_frame["data"]["status"] == "subscribed"
+    assert status_frame["data"]["provider"] == "tqsdk"
+    quote_frame = frames[kinds.index("quote")]
+    assert quote_frame["data"]["quote"]["last_price"] == 848.24
+    assert quote_frame["data"]["variant"] == "tqsdk"
+    assert quote_frame["data"]["received_at"].endswith("+08:00")
 
 
 def test_sse_heartbeat_when_idle(fake_tqsdk: types.ModuleType) -> None:
-    # 首包到达后无增量：心跳帧按配置周期出现
+    # 首包到达后无增量：心跳帧按配置周期出现（含首事件之前的等待期）
     with _client() as client, client.stream(
         "GET", "/v1/market/quotes/stream", params=_STREAM_PARAMS
     ) as resp:
-        frames = _read_frames(resp, 4)
+        frames = _read_frames(resp, 5)
     kinds = [frame["event"] for frame in frames]
-    assert kinds[0] == "status"
-    assert kinds[1] == "quote"
-    assert "heartbeat" in kinds[2:]
+    assert "status" in kinds and "quote" in kinds and "heartbeat" in kinds
+    assert kinds.index("status") < kinds.index("quote")
     heartbeat = next(frame for frame in frames if frame["event"] == "heartbeat")
     assert heartbeat["data"]["type"] == "heartbeat"
     assert heartbeat["data"]["ts"].endswith("+08:00")
@@ -146,12 +149,20 @@ def test_sse_disconnect_unsubscribes(fake_tqsdk: types.ModuleType) -> None:
 
 def test_sse_idle_timeout_ends_stream(fake_tqsdk: types.ModuleType) -> None:
     """空闲退订：超时窗口无行情事件时发 idle_unsubscribed 并结束流。"""
+
+    def _ended(frames: list[dict]) -> bool:
+        return any(
+            frame["event"] == "status"
+            and frame["data"]["status"] == "idle_unsubscribed"
+            for frame in frames
+        )
+
     with _client(stream_idle_timeout_seconds=0.15) as client, client.stream(
         "GET", "/v1/market/quotes/stream", params=_STREAM_PARAMS
     ) as resp:
-        frames = _read_frames(resp, 6)
+        frames = _read_until(resp, _ended)
     kinds = [frame["event"] for frame in frames]
-    assert kinds[0] == "status"
+    assert "status" in kinds  # 订阅确认（心跳可能先行，位置不固定）
     assert "heartbeat" in kinds
     assert frames[-1]["event"] == "status"
     assert frames[-1]["data"]["status"] == "idle_unsubscribed"

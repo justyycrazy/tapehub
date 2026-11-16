@@ -174,7 +174,6 @@ class QuoteStreamService:
         """叠加心跳、空闲退订与停机终结的流驱动循环。"""
         next_task: asyncio.Task[QuoteStreamEvent] | None = None
         last_data_at = time.monotonic()
-        got_first_event = False
         try:
             while True:
                 if next_task is None:
@@ -206,7 +205,6 @@ class QuoteStreamService:
                         yield QuoteStreamEvent(status=StreamStatusKind.UPSTREAM_DISCONNECTED)
                         return
                     next_task = None
-                    got_first_event = True
                     if not event.heartbeat:
                         last_data_at = time.monotonic()
                     yield event
@@ -215,10 +213,10 @@ class QuoteStreamService:
                 if time.monotonic() - last_data_at >= self._idle_timeout_seconds:
                     yield QuoteStreamEvent(status=StreamStatusKind.IDLE_UNSUBSCRIBED)
                     return
-                if got_first_event:
-                    # 心跳只出现在首事件之后：保证流的第一帧是 status
-                    # （订阅确认/错误），不被保活帧抢先
-                    yield QuoteStreamEvent(heartbeat=True)
+                # 心跳无条件发送（含首事件之前的等待期）：冷订阅上游静默时
+                # 连接最长可静默 idle_timeout（默认 300s），无任何字节会让
+                # 客户端与中间代理无法区分「订阅建立中」与「连接已死」
+                yield QuoteStreamEvent(heartbeat=True)
         finally:
             if next_task is not None and not next_task.done():
                 next_task.cancel()
