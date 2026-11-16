@@ -89,6 +89,7 @@
 - 流关闭（客户端断开/空闲超时/停机）即本地退订（引用计数 −1）并注销监听器；上游订阅保留至代际回收；停机钩子同步 join（上限 10 秒），停机时在飞请求显式失败、流监听器以 `upstream_disconnected` 收尾；
 - Runtime 状态经 `/v1/capabilities` 的 `runtime_status` 回填：`idle`（懒启动前）/ `starting` / `ready` / `recycling` / `fatal`；`per_request` 模式无长连接，恒为 `unknown`（不伪造状态）；
 - 并发闸门：在飞 K 线请求达 `TAPEHUB_TQSDK_MAX_INFLIGHT_FETCH`（默认 16）立即返回 `CONCURRENCY_LIMIT`（429）；
+- 运行时推送与历史取数互不干扰（2026-11-16 夜盘盘中实测）：并发 8×5000 根历史大取数期间，活跃订阅相邻推送间隔与空闲基线完全持平（p50 500ms / p95 547ms）——统一实例（历史与行情同连接）无推送抖动；行情新鲜度滞后（墙钟−quote 时间戳 p50 ≈10s）为空闲基线既有、非负载引入。首包延迟盘后退化（3.6×）系盘后上游历史服务慢的伪影（与盘后复权无响应同源），盘中无退化；
 - SSE 三类事件帧结构、coalesce 丢旧保新（只约束 quote 帧）、心跳与客户端容量闸门等通用约定见 `../api.md`（心跳/空闲退订由 Application 层流服务统一管理，Provider 无关）。
 
 ## 缺省路由参与
