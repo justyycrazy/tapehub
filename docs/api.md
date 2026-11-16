@@ -302,6 +302,7 @@ GET /v1/instruments/resolve?q=AAPL&exchange=NASDAQ
 
 - 结果先按 `timestamp` **升序**排序，再应用 `offset`/`limit`；
 - 两者描述**统一接口最终结果**的分页语义；不支持原生分页的 Provider 由适配器用共享组件在内存切片（不落盘）；
+- **per-provider 翻页上限**：tqsdk 的上游模型为「返回最新 N 根」（固定 `data_length=5000`，不支持按时间范围请求），单次请求可见数据窗固定为最新 5000 根——`offset ≥ 5000` 的窗口恒为空页且 `meta.partial` 不置位（深于该窗的历史取不到，属上游模型限制；详见 [providers/tqsdk.md](providers/tqsdk.md)）；
 - 第一版不返回 `total`；响应 `meta` 返回 `offset`、`limit`、`count`。
 
 ## 单位换算总则
