@@ -39,20 +39,25 @@ _ADJ_TYPE: dict[Adjust, str | None] = {
 # 上游写法还原表：标准 symbol 恒为大写 4 位年月（domain 层归一），交易所
 # 原生写法（品种大小写 / 年月码位数）在此还原。只收实证条目（依据见
 # docs/providers/tqsdk.md），绝不预填未核实约定（写错比透传更隐蔽）：
-# - SHFE：品种小写；整段小写；
+# - SHFE/INE/DCE/GFEX：品种整段小写（cu2607 / sc2706 / m2705 / lc2706；
+#   主连/加权品种码 cu/sc/m/lc 同规则）。INE/DCE/GFEX 为 2026-11-16 第 13
+#   轮期货聚焦轮探针实证（大写不被上游接受——DCE/INE 无响应挂起、GFEX
+#   graphql「查询合约服务报错」快速否定）；
 # - CZCE：合约 4 位年月码 → 3 位（RM2701 → RM701；上游只认 3 位、4 位
 #   写法无响应挂起直至超时）。转换只作用于匹配「品种+2 位年+2 位月」
 #   的合约代码；主连/加权品种码（无年月段）与不规则代码原样透传。
 #   3 位旧写法输入（SR601）不二次加工，如实透传；
-# - DCE/INE/GFEX：写法约定未核实，暂直通，实证后逐所回填。
-# 注意：期权代码结构均与该所期货不同（品种小写混合大小写、连字符形态、
+# - CFFEX：大写品种直通（IF2706），不做改写（2026-11-16 实证）。
+# 注意：无效代码的订阅会把共享 TqApi 运行时堵死（殃及后续一切调用）——
+# 还原表只收实证条目正是该行为的防线。
+# 期权代码结构均与该所期货不同（品种小写混合大小写、连字符形态、
 # CZCE 期权 3 位月码直通），不沿用本表规则——期权还原见下方
 # _OPTION_PRODUCT_LOWER_EXCHANGES（2026-11-16 聚焦轮八所探针定案）。
 _CZCE_MONTH_CODE_RE = re.compile(r"^([A-Z]{1,2})(\d{2})(\d{2})$")
 
 
-def _rewrite_shfe_symbol(symbol: str) -> str:
-    """SHFE 品种整段小写还原（cu2607 / cu）。"""
+def _rewrite_lower_symbol(symbol: str) -> str:
+    """品种整段小写还原（cu2607 / cu；SHFE/INE/DCE/GFEX 同系小写）。"""
     return symbol.lower()
 
 
@@ -70,15 +75,18 @@ def _rewrite_czce_symbol(symbol: str) -> str:
 
 
 _SYMBOL_REWRITES: dict[str, Callable[[str], str]] = {
-    "SHFE": _rewrite_shfe_symbol,
+    "SHFE": _rewrite_lower_symbol,
+    "INE": _rewrite_lower_symbol,
+    "DCE": _rewrite_lower_symbol,
+    "GFEX": _rewrite_lower_symbol,
     "CZCE": _rewrite_czce_symbol,
 }
 
 # 期权品种小写还原交易所集合（2026-11-16 聚焦轮八所探针定案）：SHFE/INE/
 # DCE/GFEX 期权品种字母段小写（cu2701C102000 / sc2701C550 / m2701-C-3500 /
-# lc2701-C-90000）——注意 DCE 期权品种小写与该所期货大写实证相反；SSE/SZSE
-# （数字合约码）、CFFEX/CZCE（大写品种）直通。月码与连字符形态在标准码中
-# 已与上游一致（CZCE 期权 3 位月码直通），不做改写。
+# lc2701-C-90000）——期权与该所期货合约品种大小写同系（第 13 轮期货聚焦轮
+# 互证）；SSE/SZSE（数字合约码）、CFFEX/CZCE（大写品种）直通。月码与连字符
+# 形态在标准码中已与上游一致（CZCE 期权 3 位月码直通），不做改写。
 _OPTION_PRODUCT_LOWER_EXCHANGES = frozenset({"SHFE", "INE", "DCE", "GFEX"})
 _OPTION_PRODUCT_RE = re.compile(r"^([A-Za-z]+)(.+)$")
 

@@ -45,11 +45,12 @@
 
 标准代码 `{market}-{exchange}-{symbol}` → 上游 `交易所.合约`（交易所段全大写）；标准 symbol 恒为大写 4 位年月（Domain 层归一），交易所原生写法由适配器还原，还原表只收探针实证条目：
 
-- 期货单一合约：
-  - SHFE：品种整段小写——`CN-SHFE-CU2607 → SHFE.cu2607`（大写 `SHFE.AU2612` 实测失败）；
+- 期货单一合约（六所写法定案，2026-11-16 第 13 轮期货聚焦轮探针实证；与第 12 轮期权八所品种大小写体系互证一致）：
+  - SHFE/INE/DCE/GFEX：品种整段小写——`CN-SHFE-CU2607 → SHFE.cu2607`、`CN-INE-SC2706 → INE.sc2706`、`CN-DCE-M2705 → DCE.m2705`、`CN-GFEX-LC2706 → GFEX.lc2706`（大写不被上游接受：DCE/INE 无响应挂起、GFEX.LC2706 graphql「查询合约服务报错」快速否定）；
   - CZCE：合约 4 位年月码 → 3 位——`CN-CZCE-RM2701 → CZCE.RM701`（上游只认 3 位，4 位写法无响应挂起直至超时；转换只作用于「品种+2 位年+2 位月」形态，主连/加权品种码、3 位旧写法与不规则代码原样透传）；
-  - DCE/INE/GFEX：写法约定未核实，暂按大写直通；
-- 主力连续：`KQ.m@<交易所>.<品种>`——`CN-SHFE-CU → KQ.m@SHFE.cu`；指数连续（加权）：`KQ.i@<交易所>.<品种>`——`CN-SHFE-BU → KQ.i@SHFE.bu`；
+  - CFFEX：大写品种直通——`CN-CFFEX-IF2706 → CFFEX.IF2706`（2026-11-16 实证，不做改写）；
+- 主力连续：`KQ.m@<交易所>.<品种>`——`CN-SHFE-CU → KQ.m@SHFE.cu`、`CN-DCE-M → KQ.m@DCE.m`、`CN-INE-SC → KQ.m@INE.sc`、`CN-GFEX-LC → KQ.m@GFEX.lc`、`CN-CZCE-MA → KQ.m@CZCE.MA`、`CN-CFFEX-IF → KQ.m@CFFEX.IF`（五所逐所 2026-11-16 探针实证有数据——金融期货主连存在性定案）；指数连续（加权）：`KQ.i@<交易所>.<品种>`——`CN-SHFE-BU → KQ.i@SHFE.bu`、`CN-INE-SC → KQ.i@INE.sc`、`CN-CFFEX-IF → KQ.i@CFFEX.IF` 等（同轮实证，品种码大小写与合约同系）；
+- 无效代码行为：无效订阅无响应挂起直至超时（CZCE 4 位码、DCE/INE 大写品种），个别形态 graphql 快速报错（GFEX 大写）——且无效订阅会把共享 TqApi 运行时堵死、殃及后续一切调用（含合法代码，第 13 轮聚焦轮实证）；还原表只收实证条目正是该行为的防线；
 - 股票/指数/ETF（同期货格式，官方文档示例口径）：`CN-SSE-600000 → SSE.600000`、`CN-SZSE-000001 → SZSE.000001`、指数 `CN-SSE-000016 → SSE.000016`、ETF `CN-SSE-510050 → SSE.510050`（指数仅核实 SSE/SZSE 发布的代码）；
 - 拒绝范围：资产类型以能力目录为准（上表七类）；BSE 交易所前缀上游不支持（快速报 non-existent instrument）；期权码式还原见上方「期权补充口径」（品种小写还原仅作用于 SHFE/INE/DCE/GFEX 四所期权，不沿用期货表规则）。
 

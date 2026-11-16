@@ -172,14 +172,24 @@ def test_unsupported_interval_rejected_by_operation_routing(
     ("asset_type", "instrument", "expected"),
     [
         # 标准 symbol 恒为大写 4 位年月；交易所原生写法由适配器还原
-        #（探针实证：SHFE 品种小写、CZCE 合约 4→3 位年月码）
+        #（2026-11-16 第 13 轮期货聚焦轮定案：SHFE/INE/DCE/GFEX 品种小写、
+        # CZCE 合约 4→3 位年月码、CFFEX 大写直通）
         (AssetType.CONTRACT, "CN-SHFE-CU2607", "SHFE.cu2607"),
         (AssetType.CONTRACT, "cn-shfe-cu2607", "SHFE.cu2607"),
+        (AssetType.CONTRACT, "CN-INE-SC2706", "INE.sc2706"),
+        (AssetType.CONTRACT, "CN-DCE-M2705", "DCE.m2705"),
+        (AssetType.CONTRACT, "CN-GFEX-LC2706", "GFEX.lc2706"),
+        (AssetType.CONTRACT, "CN-CFFEX-IF2706", "CFFEX.IF2706"),
         (AssetType.CONTRACT, "CN-CZCE-RM2609", "CZCE.RM609"),
         # CZCE 主连品种码无年月段，还原表正则天然 no-op 直通
         (AssetType.CONTINUOUS, "CN-CZCE-SR", "KQ.m@CZCE.SR"),
         (AssetType.CONTINUOUS, "CN-SHFE-CU", "KQ.m@SHFE.cu"),
+        (AssetType.CONTINUOUS, "CN-DCE-M", "KQ.m@DCE.m"),
+        (AssetType.CONTINUOUS, "CN-GFEX-LC", "KQ.m@GFEX.lc"),
+        (AssetType.CONTINUOUS, "CN-CFFEX-IF", "KQ.m@CFFEX.IF"),
         (AssetType.WEIGHTED_INDEX, "CN-SHFE-BU", "KQ.i@SHFE.bu"),
+        (AssetType.WEIGHTED_INDEX, "CN-INE-SC", "KQ.i@INE.sc"),
+        (AssetType.WEIGHTED_INDEX, "CN-CFFEX-IF", "KQ.i@CFFEX.IF"),
         (AssetType.STOCK, "CN-SSE-600000", "SSE.600000"),
         (AssetType.STOCK, "CN-SZSE-000001", "SZSE.000001"),
         (AssetType.INDEX, "CN-SSE-000016", "SSE.000016"),

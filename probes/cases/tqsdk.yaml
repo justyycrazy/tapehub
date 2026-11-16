@@ -13,16 +13,21 @@ pacing:
   # ⚠ 运行时段建议：盘中（如 09:30-15:00）运行——盘后复权数据服务无响应，
   # 股票/ETF 全部 qfq/hfq 复权 case 的 get_kline_serial(adj_type=F/B) 均挂满
   # timeout 超时（同标的同周期 adj_type=None 正常通过）；复权生效性已有盘中
-  # 实证（hfq/none 差异显著），复权 case 判定以盘中运行为准；天勤不支持
+  # 实证（hfq/none 差异显著），复权 case 判定以盘中运行为准；凌晨时段
+  # kline 亦不稳定（2026-11-16 00:1x 第 13 轮：合法形态亦挂起，全新实例
+  # 直测复验正常——时段与形态因素并存时以全新实例直测判别）；天勤不支持
   # BSE 前缀（BSE.920000 快速报「non-existent instrument」graphql 错误，
-  # 闸门 case quote-bse-fingerprint）
+  # 闸门 case quote-bse-fingerprint）；无效代码订阅会堵死 shared 运行时
+  #（第 13 轮实证：DCE 大写挂起后同实例一切调用超时，含合法 SHFE）——
+  # 遇连续挂起优先用全新实例直测判别形态问题
   # 可用性 168（stock/stock@CN-SZSE/etf/etf@CN-SZSE 各 12：分钟族仅 none +
   # PT30M/PT1H/P1D 三值——复权收窄后拆块；index/index@CN-SZSE 6 + contract/
   # continuous/weighted-index
   # 基准与 contract@CN-CZCE/DCE/INE/GFEX/CFFEX、continuous@CN-CZCE/DCE/
   # INE/GFEX/CFFEX、weighted-index@CN-CZCE/DCE/INE/GFEX/CFFEX 各 6——
-  # 期货六所扩容（2026-11-15）：逐所 availability 即写法约定实证，见
-  # targets 注释）+ adjust_diff 36 case（分钟族 18 条显式 SKIP：
+  # 期货六所扩容（2026-11-15 增补目标；写法 2026-11-16 第 13 轮定案，
+  # 逐所 availability 为映射链路常态复验，见 targets 注释）+ adjust_diff
+  # 36 case（分钟族 18 条显式 SKIP：
   # compared adjust 未声明，0 调；PT30M+/P1D 18 条 × 2 调）+
   # history_depth 30 case×~13 + limit 1 + connection 9+12（创建+首调+释放）
   # + quote_availability 24×1 调（quotes 声明随 include_declared 自动展开：
@@ -60,61 +65,62 @@ targets:
     window: {start: 2026-07-01, end: 2026-12-31}
     min_bars: 30
   contract@CN-DCE:
-    # 大商所合约（豆粕为全市场持仓前列品种）：DCE 写法约定未核实，暂按
-    # {EXCHANGE}.{SYMBOL} 大写直通（DCE.M2705），本目标 availability 即实证。
-    # 合约会到期：运行前按大商所挂牌信息核对，失败如实记录，到期轮换为
-    # 当时的现活合约
+    # 大商所合约（豆粕为全市场持仓前列品种）：DCE 品种小写（适配器还原
+    # DCE.M2705 → DCE.m2705，2026-11-16 第 13 轮直测定案；大写无响应挂起），
+    # 本目标 availability 即映射链路常态复验。合约会到期：运行前按大商所
+    # 挂牌信息核对，失败如实记录，到期轮换为当时的现活合约
     instrument: CN-DCE-M2705
     window: {start: 2026-07-01, end: 2026-12-31}
     min_bars: 30
   contract@CN-INE:
-    # 上期能源合约（原油为该所绝对主力）：INE 写法约定未核实，暂按大写
-    # 直通（INE.SC2706），本目标 availability 即实证。合约会到期：同上轮换
+    # 上期能源合约（原油为该所绝对主力）：INE 品种小写（INE.SC2706 →
+    # INE.sc2706，2026-11-16 定案；大写无响应挂起）。合约会到期：同上轮换
     instrument: CN-INE-SC2706
     window: {start: 2026-07-01, end: 2026-12-31}
     min_bars: 30
   contract@CN-GFEX:
-    # 广期所合约（碳酸锂为该所上市以来活跃度第一品种）：GFEX 写法约定未
-    # 核实，暂按大写直通（GFEX.LC2706），本目标 availability 即实证。
+    # 广期所合约（碳酸锂为该所上市以来活跃度第一品种）：GFEX 品种小写
+    #（GFEX.LC2706 → GFEX.lc2706，2026-11-16 定案；大写 graphql 快速报错）。
     # 合约会到期：同上轮换
     instrument: CN-GFEX-LC2706
     window: {start: 2026-07-01, end: 2026-12-31}
     min_bars: 30
   contract@CN-CFFEX:
-    # 中金所合约（沪深300 历史最久、代表性强）：CFFEX 写法约定未核实，暂按
-    # 大写直通（CFFEX.IF2706 季月），本目标 availability 即实证。合约会
-    # 到期：同上轮换
+    # 中金所合约（沪深300 历史最久、代表性强）：CFFEX 大写品种直通正确
+    #（CFFEX.IF2706 季月，2026-11-16 定案）。min_bars 20：季月合约挂牌晚
+    #（IF2706 2026-10-19 挂牌，窗口内仅约 21 根），对齐挂牌窗口口径。
+    # 合约会到期：同上轮换
     instrument: CN-CFFEX-IF2706
     window: {start: 2026-07-01, end: 2026-12-31}
-    min_bars: 30
+    min_bars: 20
   continuous:
     instrument: CN-SHFE-CU
     window: {start: 2026-07-01, end: 2026-11-30}
     min_bars: 60
   continuous@CN-CZCE:
-    # 郑商所主连（甲醇为郑商所持仓王）：品种码无年月段适配器原样透传
-    #（KQ.m@CZCE.MA），上游接受度未实证，本目标 availability 即实证
+    # 郑商所主连（甲醇为郑商所持仓王）：品种码无年月段透传（KQ.m@CZCE.MA，
+    # 2026-11-16 第 13 轮直测有数据），本目标 availability 即映射链路常态复验
     instrument: CN-CZCE-MA
     window: {start: 2026-07-01, end: 2026-11-30}
     min_bars: 60
   continuous@CN-DCE:
-    # 大商所主连（豆粕）：品种码透传（KQ.m@DCE.M），未实证即实证
+    # 大商所主连（豆粕）：品种小写透传（KQ.m@DCE.m，2026-11-16 直测有数据）
     instrument: CN-DCE-M
     window: {start: 2026-07-01, end: 2026-11-30}
     min_bars: 60
   continuous@CN-INE:
-    # 上期能源主连（原油）：品种码透传（KQ.m@INE.SC），未实证即实证
+    # 上期能源主连（原油）：品种小写透传（KQ.m@INE.sc，2026-11-16 有数据）
     instrument: CN-INE-SC
     window: {start: 2026-07-01, end: 2026-11-30}
     min_bars: 60
   continuous@CN-GFEX:
-    # 广期所主连（碳酸锂）：品种码透传（KQ.m@GFEX.LC），未实证即实证
+    # 广期所主连（碳酸锂）：品种小写透传（KQ.m@GFEX.lc，2026-11-16 有数据）
     instrument: CN-GFEX-LC
     window: {start: 2026-07-01, end: 2026-11-30}
     min_bars: 60
   continuous@CN-CFFEX:
-    # 中金所主连（沪深300）：品种码透传（KQ.m@CFFEX.IF）；金融期货主连
-    # 是否存在上游未实证，失败如实记录
+    # 中金所主连（沪深300）：大写品种透传（KQ.m@CFFEX.IF，2026-11-16 直测
+    # 有数据——金融期货主连存在性定案）
     instrument: CN-CFFEX-IF
     window: {start: 2026-07-01, end: 2026-11-30}
     min_bars: 60
@@ -123,29 +129,29 @@ targets:
     window: {start: 2026-07-01, end: 2026-11-30}
     min_bars: 60
   weighted-index@CN-CZCE:
-    # 郑商所加权：KQ.i@ 形态品种码透传（KQ.i@CZCE.MA，与主连同品种），
-    # 未实证即实证
+    # 郑商所加权：KQ.i@ 形态品种码透传（KQ.i@CZCE.MA，与主连同品种，
+    # 2026-11-16 直测有数据）
     instrument: CN-CZCE-MA
     window: {start: 2026-07-01, end: 2026-11-30}
     min_bars: 60
   weighted-index@CN-DCE:
-    # 大商所加权：KQ.i@（KQ.i@DCE.M 豆粕），未实证即实证
+    # 大商所加权：KQ.i@（KQ.i@DCE.m 豆粕，2026-11-16 直测有数据）
     instrument: CN-DCE-M
     window: {start: 2026-07-01, end: 2026-11-30}
     min_bars: 60
   weighted-index@CN-INE:
-    # 上期能源加权：KQ.i@（KQ.i@INE.SC 原油），未实证即实证
+    # 上期能源加权：KQ.i@（KQ.i@INE.sc 原油，2026-11-16 直测有数据）
     instrument: CN-INE-SC
     window: {start: 2026-07-01, end: 2026-11-30}
     min_bars: 60
   weighted-index@CN-GFEX:
-    # 广期所加权：KQ.i@（KQ.i@GFEX.LC 碳酸锂），未实证即实证
+    # 广期所加权：KQ.i@（KQ.i@GFEX.lc 碳酸锂，2026-11-16 直测有数据）
     instrument: CN-GFEX-LC
     window: {start: 2026-07-01, end: 2026-11-30}
     min_bars: 60
   weighted-index@CN-CFFEX:
-    # 中金所加权：KQ.i@（KQ.i@CFFEX.IF 沪深300）；金融期货加权是否存在
-    # 上游未实证，失败如实记录
+    # 中金所加权：KQ.i@（KQ.i@CFFEX.IF 沪深300，2026-11-16 直测有数据——
+    # 金融期货加权存在性定案）
     instrument: CN-CFFEX-IF
     window: {start: 2026-07-01, end: 2026-11-30}
     min_bars: 60
@@ -218,9 +224,9 @@ targets:
     window: {start: 2026-11-01, end: 2026-11-30}
     min_bars: 3
   option@CN-DCE:
-    # 豆粕期权（品种小写连字符 m2701-C-3500——与该所期货大写实证相反）：
-    # 同上双证收编（大写 M2701-C-3500 快速报错否定）；轮换按 opt_basic 同款
-    # 口径重选
+    # 豆粕期权（品种小写连字符 m2701-C-3500——品种大小写与该所期货同系
+    # 小写，第 13 轮期货聚焦轮互证）：同上双证收编（大写 M2701-C-3500
+    # 快速报错否定）；轮换按 opt_basic 同款口径重选
     instrument: CN-DCE-M2701-C-3500
     window: {start: 2026-11-01, end: 2026-11-30}
     min_bars: 3
@@ -350,8 +356,8 @@ raw:
   #    八所回填后，11 条（八所各 1 + DCE/INE/GFEX 对照候选各 1）收敛为
   #    chain option@CN-* 目标常态复验（bars availability + quote_availability
   #    逐所展开），同轮退役。胜出码式：SSE/SZSE 数字码直拼、CFFEX/CZCE 大写
-  #    直通（CZCE 3 位月码）、SHFE/INE/DCE/GFEX 品种字母段小写（DCE 期权
-  #    小写与该所期货大写实证相反；DCE/GFEX 连字符）；落选 3 候选（INE
+  #    直通（CZCE 3 位月码）、SHFE/INE/DCE/GFEX 品种字母段小写（与该所期货
+  #    品种大小写同系，第 13 轮互证；DCE/GFEX 连字符）；落选 3 候选（INE
   #    大写 / DCE 大写 / GFEX 无连字符）graphql「查询合约服务报错」快速
   #    否定。原始证据：聚焦轮报告 report-tqsdk-20261116T085805+0800.md 与
   #    tqsdk-options-20261116.log，PROBE_LOG 第 12 轮；码式矩阵规范出处见
