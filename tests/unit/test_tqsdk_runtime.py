@@ -12,6 +12,7 @@
 """
 
 import asyncio
+import concurrent.futures
 import time
 import types
 
@@ -65,7 +66,7 @@ async def _gather_and_check(runtime: TqSdkRuntime) -> None:
 
 
 def test_inflight_gate_rejects_beyond_limit(fake_tqsdk: types.ModuleType) -> None:
-    fake_rt.FETCH_DELAY = 0.5  # 制造慢请求，拉宽闸门窗口
+    fake_rt.FETCH_DELAY = 0.5  # 制造慢请求：在飞窗口覆盖整个场景
     runtime = _make_runtime(max_inflight=2)
     runtime.start()
 
@@ -74,7 +75,14 @@ def test_inflight_gate_rejects_beyond_limit(fake_tqsdk: types.ModuleType) -> Non
             runtime.fetch({"symbol": "A", "duration_seconds": 60, "data_length": 1})
             for _ in range(2)
         ]
-        # 两笔在飞未完成时，第三笔立即拒绝
+        # 等两笔慢取数真正派发并进入在飞 await（get_kline_serial 已调用）——
+        # 闸门语义必须覆盖「在飞取数」本身，而非仅入队未派发窗口
+        api = FakeTqApi.instances[-1]
+        deadline = time.time() + 5
+        while api._inflight_fetches < 2 and time.time() < deadline:
+            await asyncio.sleep(0.01)
+        assert api._inflight_fetches >= 2, "slow fetches never entered in-flight state"
+        # 两笔在飞未完成时，第三笔拒绝
         with pytest.raises(ConcurrencyLimitError):
             runtime.fetch({"symbol": "C", "duration_seconds": 60, "data_length": 1})
         # 放行后闸门恢复
@@ -84,6 +92,37 @@ def test_inflight_gate_rejects_beyond_limit(fake_tqsdk: types.ModuleType) -> Non
 
     asyncio.run(scenario())
     runtime.shutdown()
+
+
+def test_inflight_peak_bounded_by_limit(fake_tqsdk: types.ModuleType) -> None:
+    """超限提交被拒且在飞峰值不超上限（稳态并发保护，非仅入队窗口）。
+
+    ``fetch`` 在闸门处同步抛 ``ConcurrencyLimitError``（慢取数占满 3 个
+    在飞名额期间，后续提交全部被拒）。
+    """
+    fake_rt.FETCH_DELAY = 0.3
+    runtime = _make_runtime(max_inflight=3)
+    runtime.start()
+
+    async def scenario() -> None:
+        cfs: list[concurrent.futures.Future] = []
+        rejected_sync = 0
+        for i in range(10):
+            try:
+                cfs.append(
+                    runtime.fetch({"symbol": f"S{i}", "duration_seconds": 60, "data_length": 1})
+                )
+            except ConcurrencyLimitError:
+                rejected_sync += 1
+        assert rejected_sync >= 1, "over-limit submissions must be rejected"
+        results = await asyncio.gather(
+            *[asyncio.wrap_future(cf) for cf in cfs], return_exceptions=True
+        )
+        assert all(not isinstance(r, BaseException) for r in results)
+
+    asyncio.run(scenario())
+    runtime.shutdown()
+    assert FakeTqApi.instances[-1].inflight_peak <= 3
 
 
 def test_watchdog_rebuilds_new_generation(fake_tqsdk: types.ModuleType) -> None:

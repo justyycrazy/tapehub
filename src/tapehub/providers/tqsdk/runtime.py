@@ -586,22 +586,25 @@ class TqSdkRuntime:
     ) -> None:
         """取数协程：在 tqsdk 私有循环上运行，结果回填 concurrent Future。
 
-        计数回收必须在 ``set_result`` **之前**（同协程内同步完成）：若依赖
-        task done callback（循环下一拍才触发），调用方可能在闸门计数未释放
-        的窗口内提交下一请求，造成偶发误拒。
+        计数回收在 ``finally``（协程内同步执行，无论成功/异常/取消都回收，
+        防止并发闸门泄漏）：闸门因此覆盖「在飞取数」全程而非仅入队窗口。
+        ``set_result`` 的调用方唤醒经 ``wrap_future``/call_soon 调度，必然
+        晚于 finally 释放——不存在「闸门未释放窗口内误拒下一请求」的问题
+        （原针对的是 task done callback 方案，回调在循环下一拍才触发）。
         """
-        # 计数回收（无论请求是否已被取消都要执行，防止并发闸门泄漏）
-        with self._lock:
-            self._inflight = max(0, self._inflight - 1)
-            self._pending.discard(cf)
-        if cf.cancelled():
-            return  # 调用方已取消（wrap_future 反向传播）：不再消耗 SDK 协程
         try:
-            frame = await api.get_kline_serial(**kwargs)
-            cf.set_result(list(frame.to_dict("records")))
-        except Exception as exc:  # noqa: BLE001 - 单请求失败不伤实例
-            if not cf.done():
-                cf.set_exception(exc)
+            if cf.cancelled():
+                return  # 调用方已取消（wrap_future 反向传播）：不再消耗 SDK 协程
+            try:
+                frame = await api.get_kline_serial(**kwargs)
+                cf.set_result(list(frame.to_dict("records")))
+            except Exception as exc:  # noqa: BLE001 - 单请求失败不伤实例
+                if not cf.done():
+                    cf.set_exception(exc)
+        finally:
+            with self._lock:
+                self._inflight = max(0, self._inflight - 1)
+                self._pending.discard(cf)
 
     def _fail_inflight(self, reason: str) -> None:
         """新一代重建/停机前，明确失败全部在飞与排队请求（调用方可快速重试）。"""

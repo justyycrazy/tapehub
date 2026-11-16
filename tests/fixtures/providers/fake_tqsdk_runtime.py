@@ -73,17 +73,24 @@ class FakeFrame:
 
 
 class FakeSerial:
-    """可 await 序列：推进 ticks 次（每次需 wait_update 驱动）后返回 frame。"""
+    """可 await 序列：推进 ticks 次（每次需 wait_update 驱动）后返回 frame。
 
-    def __init__(self, rows: list[dict[str, object]], ticks: int) -> None:
+    完成时回调 ``api`` 归还在飞取数计数（finally 保证取消/异常路径也归还）。
+    """
+
+    def __init__(self, api: "FakeTqApi", rows: list[dict[str, object]], ticks: int) -> None:
+        self._api = api
         self._rows = rows
         self._ticks = ticks
 
     def __await__(self):  # type: ignore[no-untyped-def]
         async def _go():  # type: ignore[no-untyped-def]
-            for _ in range(self._ticks):
-                await asyncio.sleep(FETCH_DELAY / max(1, self._ticks))
-            return FakeFrame(self._rows)
+            try:
+                for _ in range(self._ticks):
+                    await asyncio.sleep(FETCH_DELAY / max(1, self._ticks))
+                return FakeFrame(self._rows)
+            finally:
+                self._api._inflight_fetches = max(0, self._api._inflight_fetches - 1)
 
         return _go().__await__()
 
@@ -113,6 +120,9 @@ class FakeTqApi:
         self._quote_first_due: dict[str, int] = {}
         self._changed_ids: set[int] = set()
         self.get_quote_calls: list[str] = []
+        # 在飞取数观测：get_kline_serial 已调用且序列未完成（协程已进入 await）
+        self._inflight_fetches = 0
+        self.inflight_peak = 0
         FakeTqApi.instances.append(self)
 
     def create_task(self, coro):  # type: ignore[no-untyped-def]
@@ -137,7 +147,9 @@ class FakeTqApi:
             }
             for i in range(FakeTqApi.rows_per_call)
         ]
-        return FakeSerial(rows, ticks=TICKS_PER_FETCH)
+        self._inflight_fetches += 1
+        self.inflight_peak = max(self.inflight_peak, self._inflight_fetches)
+        return FakeSerial(self, rows, ticks=TICKS_PER_FETCH)
 
     def get_quote(self, symbol: str) -> FakeQuote:
         """订阅并返回 Quote；循环未运行（同步路径）时驱动至首包（真实 SDK 语义）。"""
