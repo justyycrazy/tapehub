@@ -106,3 +106,15 @@ uv run uvicorn tapehub.api.app:app --reload   # 启动服务（默认 127.0.0.1:
 - Provider 凭据只经环境变量注入，禁止写入代码、manifest.yaml、日志、异常响应或测试 fixture；
 - 日志不记录 Provider 密钥与完整行情响应；
 - SDK 异常不穿透 API（统一包装为错误码，见 [api.md](api.md) 错误处理）。
+
+### 安全边界（部署警示）
+
+当前版本为 `single` 单进程单用户最小运行模式，**默认无入站鉴权**：
+
+- 服务不强制回环绑定。默认启动命令（`uv run uvicorn tapehub.api.app:app`）监听
+  `127.0.0.1:8000`；若以 `--host 0.0.0.0` 等方式绑定非回环地址，任何网络可达
+  主体都可无门槛调用全部端点——消耗已配置 Provider 的付费配额（tushare 积分、
+  ths/futunn/tiingo/twelvedata Key、tqsdk 账户）并读取全部行情数据；
+- 对外（非回环）暴露前，必须配置入站认证（可选 API Key，`TAPEHUB_API_KEYS`，
+  见 [api.md](api.md)「认证」）或确保端口仅处于可信网络内；
+- `/health` 保持无鉴权（连接测试用途，不访问上游）。

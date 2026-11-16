@@ -22,6 +22,11 @@ GET http://tapehub:8000/health
 
 调用方可同时校验 **HTTP 200** 与 **`service == "tapehub"`**。该接口不访问任何上游 Provider，也不需要鉴权。
 
+## 认证
+
+- 当前版本（`TAPEHUB_DEPLOYMENT_MODE=single`，单进程单用户最小运行模式）**默认无入站鉴权**：全部端点对本机/可信网络内的任何调用方开放。服务不强制回环绑定——**对外（非回环）暴露前必须配置入站认证或置于可信网络**，否则任何可达主体都可无门槛消耗已配置 Provider 的付费配额与数据（部署警示见 [operations.md](operations.md)「安全边界」）。
+- 可选入站 API Key 认证（`TAPEHUB_API_KEYS`，请求头 `X-Api-Key`）随安全加固提交提供；未配置时行为与上述默认语义完全一致。
+
 ## 能力目录
 
 ```http
@@ -123,7 +128,7 @@ GET /v1/market/quotes/stream?provider=tqsdk&asset_type=contract&instrument=CN-SH
 Accept: text/event-stream
 ```
 
-参数与快照接口一致（`provider`/`asset_type`/`instrument`/`variant`），响应为 `text/event-stream`（HTTP/1.1 chunked 流，零新依赖）。**行情推送是纯单向流，选 SSE 而非 WebSocket**：复用 HTTP 鉴权/中间件/request_id，客户端 `curl -N` 即可消费。仅实现 `stream_quote` 的 Provider 可用（当前 tqsdk、twelvedata、tiingo）；其余 Provider 在受理阶段即返回 `UNSUPPORTED_CAPABILITY`（422）。
+参数与快照接口一致（`provider`/`asset_type`/`instrument`/`variant`），响应为 `text/event-stream`（HTTP/1.1 chunked 流，零新依赖）。**行情推送是纯单向流，选 SSE 而非 WebSocket**：复用 HTTP 中间件/request_id（入站鉴权语义与全部接口一致，见「认证」节），客户端 `curl -N` 即可消费。仅实现 `stream_quote` 的 Provider 可用（当前 tqsdk、twelvedata、tiingo）；其余 Provider 在受理阶段即返回 `UNSUPPORTED_CAPABILITY`（422）。
 
 三类事件帧（`event:` + `data:` JSON，帧间空行分隔）：
 
