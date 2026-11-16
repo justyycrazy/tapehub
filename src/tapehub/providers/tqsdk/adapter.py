@@ -4,6 +4,7 @@
 """
 
 import asyncio
+import logging
 import time
 from collections.abc import AsyncIterator
 from datetime import datetime
@@ -37,10 +38,16 @@ from tapehub.providers.tqsdk.runtime import RuntimeStatus, TqSdkRuntime
 if TYPE_CHECKING:
     from tapehub.settings import Settings
 
+logger = logging.getLogger(__name__)
+
 # 与 Settings.tqsdk_conn_mode 默认值保持一致（settings 为 None 的回退路径）
 _DEFAULT_CONN_MODE = "shared"
 # 快照首包等待的轮询间隔（秒）：M2 快照链路为轮询语义，SSE（M3）改为推送
 _SNAPSHOT_POLL_INTERVAL = 0.05
+# Runtime 替换宽限（秒）：缓存实例非 READY 且距创建超过该值即收编替换——
+# 覆盖构造持续失败（重试退避期内）与构造永久挂死两类残留态；
+# FATAL（SDK 缺失/线程死亡）无条件替换（SDK 缺失会以 120s 周期重试并告警）
+_RUNTIME_REPLACE_GRACE_SECONDS = 120.0
 
 
 class ProviderAdapter(BaseProviderAdapter):
@@ -52,6 +59,8 @@ class ProviderAdapter(BaseProviderAdapter):
         super().__init__(name, manifest, settings)
         self._runtime: TqSdkRuntime | None = None
         self._runtime_lock = asyncio.Lock()
+        # 当前 Runtime 实例的创建时刻（monotonic）：替换宽限期判定基准
+        self._runtime_created_at = 0.0
 
     async def fetch_bars(self, query: BarQuery) -> BarBatch:
         self.resolve_operation(query)
@@ -198,9 +207,41 @@ class ProviderAdapter(BaseProviderAdapter):
         return int(getattr(self.settings, "stream_queue_size", 64) or 64)
 
     async def _ensure_runtime(self, auth: tuple[str, str]) -> TqSdkRuntime:
-        """shared 模式：懒启动进程内唯一 Runtime（构造在线程内，不阻塞事件循环）。"""
+        """shared 模式：懒启动进程内唯一 Runtime（构造在线程内，不阻塞事件循环）。
+
+        已缓存实例满足任一条件即收编替换新实例（避免该 Provider 永久不可用
+        直至进程重启）：
+
+        - ``FATAL``（SDK 缺失 / 驱动线程死亡）；
+        - 非 ``READY`` 且距创建超过 ``_RUNTIME_REPLACE_GRACE_SECONDS``
+          （构造持续失败的重试窗口 / 构造永久挂死的 ``STARTING`` 残留）。
+        """
         async with self._runtime_lock:
-            if self._runtime is None:
+            runtime = self._runtime
+            if runtime is not None:
+                # 鸭子类型防御读取状态（注入桩/无该属性时不替换，同
+                # capability_service._runtime_status 模式）
+                status = getattr(runtime, "status", None)
+                if status is RuntimeStatus.FATAL:
+                    replace = True
+                elif (
+                    isinstance(status, RuntimeStatus) and status is not RuntimeStatus.READY
+                ):
+                    replace = (
+                        time.monotonic() - self._runtime_created_at
+                        > _RUNTIME_REPLACE_GRACE_SECONDS
+                    )
+                else:
+                    replace = False
+                if replace:
+                    logger.warning(
+                        "tqsdk adapter replacing runtime in %s state", status
+                    )
+                    # 非阻塞收编（构造挂死的线程在构造返回后自行退出）
+                    runtime.shutdown(timeout=0)
+                    self._runtime = None
+                    runtime = None
+            if runtime is None:
                 user, password = auth
                 runtime = TqSdkRuntime(
                     auth_user=user,
@@ -219,6 +260,7 @@ class ProviderAdapter(BaseProviderAdapter):
                     runtime.shutdown(timeout=0)
                     raise
                 self._runtime = runtime
+                self._runtime_created_at = time.monotonic()
         return self._runtime
 
     async def _shared_rows(

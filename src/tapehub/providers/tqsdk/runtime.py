@@ -38,6 +38,8 @@ from tapehub.domain.models import CN_TIMEZONE
 _WATCHDOG_STREAK_LIMIT = 3
 # 新一代重建退避（秒）：上游不可用时避免密集重试
 _REBUILD_BACKOFF_SECONDS = 2.0
+# 构造失败退避封顶（秒）：指数退避 `backoff * 2^(attempt-1)` 的上限
+_CONSTRUCT_BACKOFF_CAP_SECONDS = 60.0
 
 
 logger = logging.getLogger("tapehub.tqsdk.runtime")
@@ -112,6 +114,8 @@ class TqSdkRuntime:
         # 已派发、尚未回填的请求 Future：停机/回收时必须显式失败，避免调用方挂起
         self._pending: set[concurrent.futures.Future] = set()
         self._generation = 0
+        # 连续构造失败次数（成功一代归零）：驱动指数退避
+        self._attempt = 0
         # —— 实时快照订阅（M2）——
         # symbol → 订阅引用计数（外部线程增减）
         self._sub_refs: dict[str, int] = {}
@@ -156,11 +160,12 @@ class TqSdkRuntime:
             )
             self._thread.start()
         if not self._ready.wait(self._construct_timeout):
+            # 超时不停止线程：构造可能仍在退避重试中（后续成功即 READY）；
+            # 构造永久挂死的残留态由适配器的 runtime 替换兜底
             self._last_error = UpstreamError(
                 "tqsdk runtime construction timed out.",
                 details={"timeout_s": self._construct_timeout},
             )
-            self._request_stop()
 
     def fetch(self, kwargs: dict[str, Any]) -> "concurrent.futures.Future[list[dict[str, Any]]]":
         """提交一次取数；返回 concurrent Future（不阻塞调用方线程）。"""
@@ -297,6 +302,14 @@ class TqSdkRuntime:
             self._stop_requested = True
         self._jobs.put(_StopSignal())
 
+    def _sleep_interruptible(self, seconds: float) -> None:
+        """退避睡眠：分段检查停止请求，停机不被长退避拖延（封顶 60s）。"""
+        remaining = seconds
+        while remaining > 0 and not self._stop_requested:
+            chunk = min(remaining, 0.5)
+            time.sleep(chunk)
+            remaining -= chunk
+
     def _notify_stream(self, symbol: str, kind: str, snapshot: dict[str, Any] | None) -> None:
         """通知单标的的流监听器（Runtime 线程内；回调异常只记录不阻塞 tick）。"""
         with self._lock:
@@ -338,7 +351,9 @@ class TqSdkRuntime:
         backoff = 0.0
         while not self._stop_requested:
             if backoff:
-                time.sleep(backoff)
+                self._sleep_interruptible(backoff)
+                backoff = 0.0
+                continue
             self._status = RuntimeStatus.RECYCLING
             _construct_t0 = time.perf_counter()
             # 每代一个显式循环并设为线程 current loop：
@@ -352,20 +367,36 @@ class TqSdkRuntime:
                     disable_print=True,
                     loop=gen_loop,
                 )
-            except Exception as exc:  # noqa: BLE001 - 构造失败属致命（凭据/网络初始失败）
+            except Exception as exc:  # noqa: BLE001 - 构造失败按退避重试（非致命）
+                # 网络抖动/认证服务暂不可达等暂时性失败：指数退避重试（封顶
+                # 60s），不做单次失败即 FATAL——否则每日 04:00 回收 / watchdog
+                # 重建窗口的一次抖动会让该 Provider 永久不可用直至进程重启。
+                # FATAL 仅保留给 SDK 缺失（ImportError，外层）与线程死亡。
                 gen_loop.close()
                 asyncio.set_event_loop(None)
                 with self._lock:
                     self._last_error = exc
-                    self._status = RuntimeStatus.FATAL
-                logger.error("tqsdk runtime construction failed: %r", exc)
-                self._ready.set()
-                self._fail_all_jobs("tqsdk runtime construction failed")
-                return
+                    self._attempt += 1
+                    attempt = self._attempt
+                self._ready.set()  # 唤醒 start() 等待（幂等；首次失败即唤醒）
+                # 重置在飞计数并显式失败排队请求（重试窗口内调用方快速失败可重试）
+                self._fail_inflight("tqsdk runtime construction failed")
+                backoff = min(
+                    _REBUILD_BACKOFF_SECONDS * (2 ** min(attempt - 1, 5)),
+                    _CONSTRUCT_BACKOFF_CAP_SECONDS,
+                )
+                logger.warning(
+                    "tqsdk runtime construction failed (attempt %d): %r; retrying in %.1fs",
+                    attempt,
+                    exc,
+                    backoff,
+                )
+                continue
             with self._lock:
                 self._generation += 1
                 self._status = RuntimeStatus.READY
                 self._last_error = None
+                self._attempt = 0
             logger.info(
                 "tqsdk runtime generation %d ready (construct %.2fs)",
                 self._generation,

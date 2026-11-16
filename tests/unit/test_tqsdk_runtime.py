@@ -179,12 +179,50 @@ def test_recycle_on_cross_trading_day(
 
 
 def test_fatal_construct_rejects_and_fails_jobs(fake_tqsdk: types.ModuleType) -> None:
-    FakeTqApi.fail_construct = True
+    # ImportError（SDK 缺失形态）才是致命构造失败：FATAL 不自动恢复；
+    # 暂时性失败（RuntimeError）走退避重试（见 recover 用例）
+    del fake_tqsdk.TqApi
     runtime = _make_runtime()
     runtime.start()
     assert runtime.status == RuntimeStatus.FATAL
     with pytest.raises(UpstreamError):
         runtime.fetch({"symbol": "X", "duration_seconds": 60, "data_length": 1})
+    runtime.shutdown()
+
+
+def test_transient_construct_failure_retries_and_recovers(
+    fake_tqsdk: types.ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """暂时性构造失败：指数退避重试后恢复 READY（单次失败不再 FATAL）。"""
+    monkeypatch.setattr(
+        "tapehub.providers.tqsdk.runtime._REBUILD_BACKOFF_SECONDS", 0.01
+    )
+    FakeTqApi.construct_fail_times = 2
+    runtime = _make_runtime()
+    runtime.start()  # 首次失败即唤醒 start()（不再等满 construct_timeout）
+    assert runtime.status == RuntimeStatus.RECYCLING
+    deadline = time.time() + 5
+    while runtime.status is not RuntimeStatus.READY and time.time() < deadline:
+        time.sleep(0.02)
+    assert runtime.status is RuntimeStatus.READY
+    assert runtime.generation == 1  # 失败代不计入代数，成功一代即 1
+    rows = asyncio.run(_fetch(runtime, "SHFE.au2612"))
+    assert len(rows) == FakeTqApi.rows_per_call
+    runtime.shutdown()
+
+
+def test_start_timeout_does_not_stop_retry(fake_tqsdk: types.ModuleType) -> None:
+    """构造慢于 construct_timeout：start() 超时返回但不再停止线程，后续成功即 READY。"""
+    FakeTqApi.construct_hang_times = 1
+    runtime = _make_runtime(construct_timeout=0.1)
+    runtime.start()  # 超时返回（构造仍在线程内挂 0.3s 后完成）
+    assert not runtime._stop_requested  # type: ignore[attr-defined]
+    deadline = time.time() + 5
+    while runtime.status is not RuntimeStatus.READY and time.time() < deadline:
+        time.sleep(0.02)
+    assert runtime.status is RuntimeStatus.READY
+    rows = asyncio.run(_fetch(runtime, "SHFE.au2612"))
+    assert len(rows) == FakeTqApi.rows_per_call
     runtime.shutdown()
 
 
@@ -302,7 +340,8 @@ def test_dormant_subscription_recycle_rebuilds_generation(
 
 
 def test_quote_subscribe_rejected_when_fatal(fake_tqsdk: types.ModuleType) -> None:
-    FakeTqApi.fail_construct = True
+    # FATAL（SDK 缺失形态，见 test_fatal_construct_rejects_and_fails_jobs）
+    del fake_tqsdk.TqApi
     runtime = _make_runtime()
     runtime.start()
     with pytest.raises(UpstreamError):
@@ -466,13 +505,37 @@ def test_adapter_runtime_status_lifecycle(fake_tqsdk: types.ModuleType) -> None:
 
 
 def test_adapter_runtime_status_fatal(fake_tqsdk: types.ModuleType) -> None:
-    """构造致命失败：Runtime 进入 fatal，runtime_status 如实透出。"""
-    FakeTqApi.fail_construct = True
+    """致命构造失败（SDK 缺失形态）：Runtime 进入 fatal，runtime_status 如实透出。"""
+    del fake_tqsdk.TqApi
     adapter = _quote_adapter(tqsdk_first_snapshot_timeout=0.2)
     assert adapter.runtime_status == "idle"
     with pytest.raises(UpstreamError):
         asyncio.run(adapter.fetch_quote(_quote_query()))
     assert adapter.runtime_status == "fatal"
+    adapter.shutdown_runtime()
+
+
+def test_adapter_replaces_stale_runtime(
+    fake_tqsdk: types.ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """缓存实例非 READY 且超替换宽限：适配器收编替换新实例后恢复服务。
+
+    覆盖「构造持续失败/永久挂死」残留态（IDLE/STARTING 超宽限）——替换
+    判定发生在下一次 `_ensure_runtime` 进入时，旧实例非阻塞收编。
+    """
+    from tapehub.providers.tqsdk.runtime import TqSdkRuntime as _RT
+
+    adapter = _quote_adapter(tqsdk_first_snapshot_timeout=0.2)
+    stuck = _RT(auth_user="u@example.com", auth_password="secret")  # 未启动 → IDLE
+    adapter._runtime = stuck  # type: ignore[attr-defined]
+    # 拨回创建时刻：IDLE 且超宽限 → 满足替换条件
+    adapter._runtime_created_at = time.monotonic() - 999.0  # type: ignore[attr-defined]
+
+    quote = asyncio.run(adapter.fetch_quote(_quote_query()))
+
+    assert adapter._runtime is not stuck  # type: ignore[attr-defined]
+    assert adapter.runtime_status == "ready"
+    assert quote.last_price == 848.24
     adapter.shutdown_runtime()
 
 

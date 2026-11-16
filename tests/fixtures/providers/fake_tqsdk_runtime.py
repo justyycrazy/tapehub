@@ -13,6 +13,9 @@
 
 - ``FETCH_DELAY`` / ``TICKS_PER_FETCH``：取数协程推进时长与 tick 数；
 - ``FakeTqApi.fail_construct`` / ``fail_wait_update_times``：故障注入；
+- ``FakeTqApi.construct_fail_times``：前 N 次 TqApi 构造抛错（暂时性失败序列）；
+- ``FakeTqApi.construct_hang_seconds`` / ``construct_hang_times``：前 N 次
+  构造先阻塞该时长（构造挂死/慢构造序列）；
 - ``FakeTqApi.quote_first_packet_ticks``：首包到达所需 tick 数；
 - ``FakeTqApi.quote_update_every_ticks``：增量推送周期（0 = 不推送）。
 """
@@ -26,6 +29,8 @@ from typing import Any
 # 取数协程推进所需时长（秒）；闸门/停机测试通过调大它制造慢请求
 FETCH_DELAY = 0.0
 TICKS_PER_FETCH = 2
+# 构造挂死时长（秒）：construct_hang_times 次数内生效
+CONSTRUCT_HANG_SECONDS = 0.3
 
 
 def _quote_fields(last_price: float) -> dict[str, object]:
@@ -99,6 +104,9 @@ class FakeTqApi:
     instances: list["FakeTqApi"] = []
     fail_construct = False
     fail_wait_update_times = 0
+    # 暂时性构造失败/挂死序列：每次构造消费一格（前 N 次生效）
+    construct_fail_times = 0
+    construct_hang_times = 0
     rows_per_call = 3
     # quote 语义脚本：首包在第 N 次 wait_update 到达；其后每 N 次推送一次增量
     quote_first_packet_ticks = 2
@@ -109,6 +117,12 @@ class FakeTqApi:
     ) -> None:
         if FakeTqApi.fail_construct:
             raise RuntimeError("auth failed")
+        if FakeTqApi.construct_fail_times > 0:
+            FakeTqApi.construct_fail_times -= 1
+            raise RuntimeError("transient construction failure")
+        if FakeTqApi.construct_hang_times > 0:
+            FakeTqApi.construct_hang_times -= 1
+            time.sleep(CONSTRUCT_HANG_SECONDS)
         self.auth = auth
         self._loop = (
             loop if isinstance(loop, asyncio.AbstractEventLoop) else asyncio.new_event_loop()
@@ -226,6 +240,8 @@ def install(monkeypatch: Any) -> types.ModuleType:
     FakeTqApi.instances = []
     FakeTqApi.fail_construct = False
     FakeTqApi.fail_wait_update_times = 0
+    FakeTqApi.construct_fail_times = 0
+    FakeTqApi.construct_hang_times = 0
     FakeTqApi.quote_first_packet_ticks = 2
     FakeTqApi.quote_update_every_ticks = 0
     global FETCH_DELAY, TICKS_PER_FETCH
