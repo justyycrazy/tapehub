@@ -104,7 +104,8 @@
 ## extensions 白名单
 
 - bars：`open_oi` / `close_oi`（持仓量；期货为真实持仓，股票/指数/ETF 列存在但恒为 0——如实透出 0.0，不用 null 冒充）；
-- quotes（快照与流帧同口径）：`open` / `highest` / `lowest` / `average` / `pre_settlement` / `pre_close` / `open_interest` / `pre_open_interest` / `upper_limit` / `lower_limit`（均为探针样本中实证有值的行情字段；盘中为 NaN 的字段如 `close`/`settlement` 不透出；合约元数据类字段不透出；缺失/NaN 一律不进 extensions）。
+- quotes（快照与流帧同口径）：`open` / `highest` / `lowest` / `average` / `pre_settlement` / `pre_close` / `open_interest` / `pre_open_interest` / `upper_limit` / `lower_limit`（均为探针样本中实证有值的行情字段；盘中为 NaN 的字段如 `close`/`settlement` 不透出；合约元数据类字段不透出；缺失/NaN 一律不进 extensions）；
+- quotes 另有网关注入字段 `snapshot_age_ms`（2026-11 修订）：Runtime 快照到达时刻距响应生成时刻的毫秒数——断连重建/静默窗口内命中缓存的快照可据此判陈旧（`received_at` 是标准化时刻，不反映数据到达），`per_request` 模式独立实例无缓存复用，不透出该字段。
 
 ## 探针依据
 

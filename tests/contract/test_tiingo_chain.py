@@ -225,7 +225,9 @@ def test_quote_chain_forex(tiingo_client: TestClient) -> None:
     assert quote["ask_price1"] == 1.086
     assert quote["volume"] is None  # WS 形态未实证，volume 恒 null
     assert quote["ask_price5"] is None
-    assert quote["extensions"] is None  # 样本无 exchange
+    # 样本无 exchange（forex top 文档无该字段）；快照带 Runtime 到达戳 →
+    # 新鲜度 age（测试桩即时投递为 0）
+    assert quote["extensions"] == {"snapshot_age_ms": 0}
     # date ISO UTC → 北京时间
     from datetime import datetime
 
@@ -259,7 +261,8 @@ def test_quote_chain_crypto(tiingo_client: TestClient) -> None:
     assert frames[0]["eventData"]["thresholdLevel"] == 2  # crypto 端点
     quote = response.json()["data"]["quote"]
     assert quote["last_price"] == 43120.75
-    assert quote["extensions"] == {"exchange": "Binance"}  # 白名单透出
+    # 白名单透出；快照带 Runtime 到达戳 → 新鲜度 age（测试桩即时投递为 0）
+    assert quote["extensions"] == {"exchange": "Binance", "snapshot_age_ms": 0}
     assert response.json()["meta"]["provider"] == "tiingo"
 
 

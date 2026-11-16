@@ -19,6 +19,7 @@ linger 窗口内快照仍可读（新鲜度由 ``received_at`` 表达）。
 import asyncio
 import json
 import logging
+import time
 import weakref
 from collections.abc import Callable
 from typing import Any
@@ -396,6 +397,9 @@ class TiingoWsRuntime:
             # （订阅集=活跃引用）
             if not isinstance(ticker, str) or ticker not in self._refs:
                 continue
+            # 打到达时刻（墙钟秒）：映射层据此透出 snapshot_age_ms（断连/静默
+            # 窗口内命中缓存可判陈旧，绝不冒充新鲜）
+            snapshot["_arrival"] = time.time()
             self._snapshots[ticker] = snapshot
             self._resolve_waiters(ticker, snapshot)
             if ticker in self._pending:

@@ -26,6 +26,7 @@ unsubscribe 释放 credit 并清缓存——M2 轮询与快速重连的流在窗
 import asyncio
 import json
 import logging
+import time
 import weakref
 from collections.abc import Callable
 from typing import Any
@@ -344,6 +345,9 @@ class TwelvedataWsRuntime:
             if not isinstance(symbol, str) or not symbol:
                 return
             snapshot = dict(message)
+            # 打到达时刻（墙钟秒）：映射层据此透出 snapshot_age_ms（断连/静默
+            # 窗口内命中缓存可判陈旧，绝不冒充新鲜）
+            snapshot["_arrival"] = time.time()
             self._snapshots[symbol] = snapshot
             self._resolve_waiters(symbol, snapshot)
             if symbol in self._pending:

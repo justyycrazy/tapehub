@@ -537,6 +537,13 @@ class TqSdkRuntime:
             kwargs, cf = item
             api.create_task(self._fetch_coro(api, kwargs, cf))
 
+    def _stamp_snapshot(self, raw: dict[str, Any]) -> dict[str, Any]:
+        """线程内拷贝快照并打到达时刻（墙钟秒）：映射层据此透出
+        ``snapshot_age_ms``（快照新鲜度，断连/静默窗口内命中缓存可判陈旧）。"""
+        snapshot = dict(raw)
+        snapshot["_arrival"] = time.time()
+        return snapshot
+
     def _handle_subscribe(self, api: Any, symbol: str) -> None:
         """处理订阅命令（Runtime 线程）：唤醒休眠订阅或发起首次订阅。"""
         with self._lock:
@@ -550,7 +557,7 @@ class TqSdkRuntime:
                     # 休眠唤醒：复用本代既有 Quote 引用，线程内拷贝发布当前值
                     # （dict 拷贝在 Runtime 线程完成，此时 quote 不会被并发修改）
                     self._live_quotes[symbol] = quote
-                    self._snapshots[symbol] = dict(quote)
+                    self._snapshots[symbol] = self._stamp_snapshot(quote)
                     wakeup = dict(self._snapshots[symbol])
                 else:
                     # 命令到达前引用已归零：放回休眠，等待回收
@@ -581,7 +588,7 @@ class TqSdkRuntime:
             return
         with self._lock:
             if self._sub_refs.get(symbol, 0) > 0:
-                snapshot = dict(quote)
+                snapshot = self._stamp_snapshot(quote)
                 self._live_quotes[symbol] = quote
                 self._snapshots[symbol] = snapshot
             else:
@@ -599,7 +606,7 @@ class TqSdkRuntime:
         for symbol, quote in live:
             try:
                 if api.is_changing(quote):
-                    changed[symbol] = dict(quote)
+                    changed[symbol] = self._stamp_snapshot(quote)
             except Exception as exc:  # noqa: BLE001 - 单标的判定异常不伤实例
                 logger.warning("tqsdk is_changing failed for %s: %r", symbol, exc)
         if changed:

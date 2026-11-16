@@ -720,3 +720,14 @@ def test_missing_peek_attr_logged_once_and_tick_survives(
         if r.levelno == logging.ERROR and "_pending_peek" in r.getMessage()
     ]
     assert len(errors) == 1
+
+
+def test_snapshot_cache_stamped_with_arrival(fake_tqsdk: types.ModuleType) -> None:
+    """快照缓存带 `_arrival` 到达戳：映射层据此透出 snapshot_age_ms（新鲜度）。"""
+    runtime = _make_runtime()
+    runtime.start()
+    runtime.subscribe("SHFE.au2612")
+    snapshot = _wait_latest(runtime, "SHFE.au2612")
+    assert isinstance(snapshot.get("_arrival"), float)
+    runtime.unsubscribe("SHFE.au2612")
+    runtime.shutdown()

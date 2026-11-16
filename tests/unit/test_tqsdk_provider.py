@@ -516,3 +516,25 @@ def test_quote_lease_concurrent_same_symbol(monkeypatch: pytest.MonkeyPatch) -> 
     asyncio.run(scenario())
 
     assert len(runtime.subscribed) == 2 and len(runtime.unsubscribed) == 2
+
+
+def test_quote_snapshot_age_ms_extension() -> None:
+    """Runtime 到达戳（`_arrival`）→ extensions.snapshot_age_ms（新鲜度透出）。"""
+    import time
+
+    from tapehub.providers.tqsdk.response_mapper import to_standard_quote
+
+    # 快照需带合法 datetime（mapper 要求，空值显式抛错）
+    snapshot = {"datetime": "2026-11-13 10:00:00.000000", "last_price": 100.0}
+    snapshot["_arrival"] = time.time() - 120  # 断连窗口内的陈旧缓存
+    quote = to_standard_quote(
+        snapshot, provider="tqsdk", received_at=datetime.now(CN_TIMEZONE)
+    )
+    assert quote.extensions is not None
+    assert quote.extensions["snapshot_age_ms"] >= 119_000
+
+    bare = {"datetime": "2026-11-13 10:00:00.000000", "last_price": 100.0}
+    bare_quote = to_standard_quote(
+        bare, provider="tqsdk", received_at=datetime.now(CN_TIMEZONE)
+    )
+    assert bare_quote.extensions is None  # 无戳不透出（per_request 独立实例路径）

@@ -310,10 +310,13 @@ def test_fetch_quote_cold_subscription_and_cache_hit(monkeypatch: pytest.MonkeyP
     for i in range(1, 6):  # 上游无盘口：五档恒 null
         assert getattr(quote1, f"bid_price{i}") is None
         assert getattr(quote1, f"ask_price{i}") is None
+    # EUR/USD price 事件无 exchange（探针实证）；快照带 Runtime 到达戳 →
+    # 新鲜度 age（刚到达为 0）
     assert quote1.extensions == {
         "currency_base": "Euro",
         "currency_quote": "US Dollar",
-        "type": "Physical Currency",  # EUR/USD price 事件无 exchange（探针实证）
+        "type": "Physical Currency",
+        "snapshot_age_ms": 0,
     }
     assert quote2.last_price == fake_ws.INITIAL_PRICE
     assert subscribes == 1  # 第二次请求命中缓存，未重复订阅
@@ -498,3 +501,33 @@ def test_ws_price_to_quote_pre_1970_epoch() -> None:
     )
     # 同一时刻的北京表示（00:00 UTC = 08:00 +08:00）
     assert quote.timestamp == datetime(1960, 6, 15, 8, tzinfo=CN_TIMEZONE)
+
+
+def test_ws_price_to_quote_snapshot_age_ms() -> None:
+    """Runtime 打的 `_arrival` → extensions.snapshot_age_ms；无戳不透出。"""
+    import time
+
+    payload = fake_ws.price_event(_SYMBOL, 1.12183)
+    payload["_arrival"] = time.time()
+    quote = ws_price_to_quote(
+        payload, provider="twelvedata", received_at=datetime.now(CN_TIMEZONE)
+    )
+    assert isinstance(quote.extensions, dict)
+    age = quote.extensions["snapshot_age_ms"]
+    assert isinstance(age, int) and 0 <= age <= 2000
+
+    stale_payload = fake_ws.price_event(_SYMBOL, 1.12183)
+    stale_payload["_arrival"] = time.time() - 120  # 断连窗口内的陈旧缓存
+    stale = ws_price_to_quote(
+        stale_payload, provider="twelvedata", received_at=datetime.now(CN_TIMEZONE)
+    )
+    assert stale.extensions is not None
+    assert stale.extensions["snapshot_age_ms"] >= 119_000
+
+    bare = ws_price_to_quote(
+        fake_ws.price_event(_SYMBOL, 1.12183),
+        provider="twelvedata",
+        received_at=datetime.now(CN_TIMEZONE),
+    )
+    assert bare.extensions is not None
+    assert "snapshot_age_ms" not in bare.extensions

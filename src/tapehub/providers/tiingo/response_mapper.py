@@ -10,6 +10,7 @@ UPSTREAM_ERROR（不伪造）；缺失值与 NaN 统一映射为 null。
 """
 
 import math
+import time
 from datetime import datetime
 from typing import Any
 
@@ -191,6 +192,11 @@ def ws_price_to_quote(
         value = str(raw).strip()
         if value:
             extensions[field] = value
+    # 快照新鲜度：Runtime 打的到达时刻（`_arrival`，墙钟秒）→ 距今毫秒。
+    # 断连/静默窗口内命中缓存的快照可据此判陈旧；无戳（构造直造 payload）不透出
+    arrival = payload.get("_arrival")
+    if isinstance(arrival, (int, float)) and not isinstance(arrival, bool):
+        extensions["snapshot_age_ms"] = max(0, round((time.time() - arrival) * 1000))
     return Quote(
         timestamp=timestamp,
         last_price=last_price,

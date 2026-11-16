@@ -9,6 +9,7 @@ K 线 datetime 为自 unix epoch 以来的纳秒数，规范为北京时间（+0
 """
 
 import math
+import time
 from datetime import datetime
 from typing import Any
 
@@ -107,6 +108,12 @@ def to_standard_quote(
         value = _to_float(snapshot.get(field))
         if value is not None:
             extensions[field] = value
+    # 快照新鲜度：Runtime 打的到达时刻（`_arrival`，墙钟秒）→ 距今毫秒。
+    # 断连/静默窗口内命中缓存的快照可据此判陈旧，绝不冒充新鲜；无戳
+    # （per_request 独立实例路径等）不透出
+    arrival = snapshot.get("_arrival")
+    if isinstance(arrival, (int, float)) and not isinstance(arrival, bool):
+        extensions["snapshot_age_ms"] = max(0, round((time.time() - arrival) * 1000))
     return Quote(
         timestamp=_to_quote_datetime(snapshot.get("datetime")),
         last_price=_to_float(snapshot.get("last_price")),

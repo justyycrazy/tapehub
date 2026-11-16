@@ -12,6 +12,7 @@ quote（WS price 事件）``timestamp`` 为分钟桶 Unix 秒、按 UTC 解释�
 """
 
 import math
+import time
 from datetime import datetime, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -122,6 +123,11 @@ def ws_price_to_quote(
         value = str(raw).strip()
         if value:
             extensions[field] = value
+    # 快照新鲜度：Runtime 打的到达时刻（`_arrival`，墙钟秒）→ 距今毫秒。
+    # 断连/静默窗口内命中缓存的快照可据此判陈旧；无戳（构造直造 payload）不透出
+    arrival = payload.get("_arrival")
+    if isinstance(arrival, (int, float)) and not isinstance(arrival, bool):
+        extensions["snapshot_age_ms"] = max(0, round((time.time() - arrival) * 1000))
     return Quote(
         timestamp=epoch_to_datetime(epoch * 1_000_000_000, timezone.utc),
         last_price=price,

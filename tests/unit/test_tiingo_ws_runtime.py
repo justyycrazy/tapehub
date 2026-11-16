@@ -423,7 +423,9 @@ def test_fetch_quote_cold_subscription_and_cache_hit(monkeypatch: pytest.MonkeyP
     for i in range(2, 6):
         assert getattr(quote1, f"bid_price{i}") is None
         assert getattr(quote1, f"ask_price{i}") is None
-    assert quote1.extensions is None  # 样本无 exchange（forex top 文档无该字段）
+    # 样本无 exchange（forex top 文档无该字段）；快照带 Runtime 到达戳 →
+    # 新鲜度 age（刚到达为 0）
+    assert quote1.extensions == {"snapshot_age_ms": 0}
     assert quote2.last_price == 1.0855
     assert subscribes == 1  # 第二次请求命中缓存，未重复订阅
 
@@ -449,7 +451,10 @@ def test_fetch_quote_crypto_trade_payload(monkeypatch: pytest.MonkeyPatch) -> No
 
     quote = asyncio.run(scenario())
     assert quote.last_price == 43120.75
-    assert quote.extensions == {"exchange": "Binance"}
+    assert quote.extensions is not None
+    # 快照带 Runtime 到达戳 → 新鲜度 age（刚到达为 0）
+    assert quote.extensions["exchange"] == "Binance"
+    assert quote.extensions["snapshot_age_ms"] == 0
 
 
 def test_fetch_quote_timeout_not_ready(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -650,3 +655,31 @@ def test_ws_price_to_quote_contract_violations() -> None:
         ws_price_to_quote(
             {"date": fake_ws.INITIAL_DATE}, provider="tiingo", received_at=now
         )
+
+
+def test_ws_price_to_quote_snapshot_age_ms() -> None:
+    """Runtime 打的 `_arrival` → extensions.snapshot_age_ms；无戳不透出。"""
+    import time
+
+    snapshot = ws_element_to_snapshot(fake_ws.top_element("eurusd", bid=1.085, ask=1.086))
+    snapshot["_arrival"] = time.time()
+    quote = ws_price_to_quote(
+        snapshot, provider="tiingo", received_at=datetime.now(CN_TIMEZONE)
+    )
+    assert isinstance(quote.extensions, dict)
+    age = quote.extensions["snapshot_age_ms"]
+    assert isinstance(age, int) and 0 <= age <= 2000
+
+    stale = ws_element_to_snapshot(fake_ws.top_element("eurusd", bid=1.085, ask=1.086))
+    stale["_arrival"] = time.time() - 120
+    stale_quote = ws_price_to_quote(
+        stale, provider="tiingo", received_at=datetime.now(CN_TIMEZONE)
+    )
+    assert stale_quote.extensions is not None
+    assert stale_quote.extensions["snapshot_age_ms"] >= 119_000
+
+    bare = ws_element_to_snapshot(fake_ws.top_element("eurusd", bid=1.085, ask=1.086))
+    bare_quote = ws_price_to_quote(
+        bare, provider="tiingo", received_at=datetime.now(CN_TIMEZONE)
+    )
+    assert bare_quote.extensions is None or "snapshot_age_ms" not in bare_quote.extensions

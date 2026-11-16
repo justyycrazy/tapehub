@@ -314,11 +314,13 @@ def test_quote_chain_forex(twelvedata_client: TestClient) -> None:  # type: igno
     assert quote["amount"] is None
     assert quote["bid_price1"] is None  # 上游无盘口：五档恒 null
     assert quote["ask_price5"] is None
-    # extensions 白名单（WS 探针实证回填）：4 个字符串字段
+    # extensions 白名单（WS 探针实证回填）；快照带 Runtime 到达戳 → 新鲜度
+    # age（测试桩即时投递为 0）
     assert quote["extensions"] == {
         "currency_base": "Euro",
         "currency_quote": "US Dollar",
         "type": "Physical Currency",  # EUR/USD price 事件无 exchange
+        "snapshot_age_ms": 0,
     }
 
     meta = body["meta"]
@@ -362,6 +364,7 @@ def test_quote_chain_crypto(twelvedata_client: TestClient) -> None:  # type: ign
         "currency_quote": "US Dollar",
         "exchange": "Binance",
         "type": "Digital Currency",
+        "snapshot_age_ms": 0,
     }
     assert response.json()["meta"]["provider"] == "twelvedata"
 

@@ -192,6 +192,9 @@
 
 - quotes：`exchange`（交易所/来源标识字符串；fx 无该字段、crypto 有，缺失
   不透出）；
+- quotes 另有网关注入字段 `snapshot_age_ms`（2026-11 修订）：WS Runtime 快照
+  到达时刻距响应生成时刻的毫秒数——断连重连与退订 linger（60s）窗口内命中
+  缓存的快照可据此判陈旧（`received_at` 是标准化时刻，不反映数据到达）；
 - bars：无（crypto 上游的 `volumeNotional`/`tradesDone` 不透出——标准
   `volume` 已承载 base 币成交量口径，`amount` 恒 null）。
 

@@ -103,7 +103,7 @@
 
 - quotes（WS price 事件，快照与流帧同口径）：
   - `currency_base` / `currency_quote` / `exchange` / `type` 四个字符串字段（缺失不透出；实测外汇 EUR/USD 无 `exchange`、加密 BTC/USD 有且为聚合源交易所名）；
-  - 数值类扩展字段不透出；
+  - 数值类扩展字段不透出，唯一例外为网关注入字段 `snapshot_age_ms`（2026-11 修订）：WS Runtime 快照到达时刻距响应生成时刻的毫秒数——断连重连与退订 linger（60s）窗口内命中缓存的快照可据此判陈旧（`received_at` 是标准化时刻，不反映数据到达）；
 - bars：无 extensions。
 
 ## 探针依据
