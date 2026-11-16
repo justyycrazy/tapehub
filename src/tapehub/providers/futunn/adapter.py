@@ -3,6 +3,7 @@
 映射规则与上游行为定案见 docs/providers/futunn.md（唯一出处，本文不复述）。
 """
 
+import logging
 from datetime import datetime
 from typing import Any
 
@@ -12,7 +13,7 @@ from tapehub.domain.errors import (
     UpstreamRateLimitedError,
 )
 from tapehub.domain.models import CN_TIMEZONE, Bar, BarBatch, BarQuery, Quote, QuoteQuery
-from tapehub.providers.base import BaseProviderAdapter, call_in_thread
+from tapehub.providers.base import BaseProviderAdapter, call_in_thread, truncate_upstream_message
 from tapehub.providers.futunn.request_mapper import (
     PAGE_SIZE,
     UpstreamRequest,
@@ -23,6 +24,8 @@ from tapehub.providers.futunn.request_mapper import (
 from tapehub.providers.futunn.response_mapper import to_standard_bars, to_standard_quote
 from tapehub.providers.futunn.signing import build_signed_headers, load_private_key_pem
 from tapehub.providers.pagination import paginate_bars
+
+logger = logging.getLogger(__name__)
 
 # httpx2 客户端超时（秒）：应用层 upstream_timeout_seconds（默认 30s）为
 # 整体兜底，客户端自身超时取更小的保守值，避免长挂线程占用 worker
@@ -197,11 +200,14 @@ class ProviderAdapter(BaseProviderAdapter):
             )
         if code != 0:
             message = payload.get("ret_msg") or payload.get("message")
+            # 上游报文全文只进日志（可按 request_id 关联）；错误响应 details
+            # 携带截断文本（上游可控文本不透传完整内容）
+            logger.warning("futunn upstream business error: code=%s message=%s", code, message)
             if code == _UPSTREAM_RATE_LIMITED_CODE:
                 details: dict[str, Any] = {
                     "provider": self.name,
                     "upstream_code": code,
-                    "upstream_message": message,
+                    "upstream_message": truncate_upstream_message(message),
                 }
                 retry_after = response.headers.get("Retry-After")
                 if retry_after:
@@ -214,7 +220,7 @@ class ProviderAdapter(BaseProviderAdapter):
                 details={
                     "provider": self.name,
                     "upstream_code": code,
-                    "upstream_message": message,
+                    "upstream_message": truncate_upstream_message(message),
                 },
             )
         return payload

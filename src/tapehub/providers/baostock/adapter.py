@@ -4,6 +4,7 @@
 官方文档：https://baostock.com/mainContent?file=pythonAPI.md。
 """
 
+import logging
 import threading
 from datetime import datetime
 from typing import Any
@@ -12,8 +13,10 @@ from tapehub.domain.errors import ProviderNotImplementedError, UpstreamError
 from tapehub.domain.models import CN_TIMEZONE, BarBatch, BarQuery
 from tapehub.providers.baostock.request_mapper import build_request
 from tapehub.providers.baostock.response_mapper import to_standard_bars
-from tapehub.providers.base import BaseProviderAdapter, call_in_thread
+from tapehub.providers.base import BaseProviderAdapter, call_in_thread, truncate_upstream_message
 from tapehub.providers.pagination import paginate_bars
+
+logger = logging.getLogger(__name__)
 
 # 上游单次返回行数上限（恰 5000 根截断，返回窗口内最早 5000 根）
 _UPSTREAM_ROW_LIMIT = 5000
@@ -57,12 +60,17 @@ def _error_msg(result: Any) -> str:
 
 
 def _upstream_error(message: str, error_code: str, error_msg: str) -> UpstreamError:
+    # 上游报文全文只进日志（可按 request_id 关联）；错误响应 details 携带
+    # 截断文本（上游可控文本不透传完整内容）
+    logger.warning(
+        "baostock upstream error: error_code=%s error_msg=%s", error_code, error_msg
+    )
     return UpstreamError(
         message,
         details={
             "provider": "baostock",
             "upstream_error_code": error_code,
-            "upstream_error_msg": error_msg,
+            "upstream_error_msg": truncate_upstream_message(error_msg),
         },
     )
 

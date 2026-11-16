@@ -3,6 +3,7 @@
 映射规则与上游行为定案见 docs/providers/ths.md（唯一出处，本文不复述）。
 """
 
+import logging
 from datetime import datetime
 from typing import Any
 
@@ -12,10 +13,12 @@ from tapehub.domain.errors import (
     UpstreamRateLimitedError,
 )
 from tapehub.domain.models import CN_TIMEZONE, BarBatch, BarQuery, Quote, QuoteQuery
-from tapehub.providers.base import BaseProviderAdapter, call_in_thread
+from tapehub.providers.base import BaseProviderAdapter, call_in_thread, truncate_upstream_message
 from tapehub.providers.pagination import paginate_bars
 from tapehub.providers.ths.request_mapper import build_quote_request, build_request
 from tapehub.providers.ths.response_mapper import to_standard_bars, to_standard_quote
+
+logger = logging.getLogger(__name__)
 
 # httpx2 客户端超时（秒）：应用层 upstream_timeout_seconds（默认 30s）为
 # 整体兜底，客户端自身超时取更小的保守值，避免长挂线程占用 worker
@@ -117,13 +120,16 @@ class ProviderAdapter(BaseProviderAdapter):
         code = payload.get("code")
         if code != 0:
             message = payload.get("message")
+            # 上游报文全文只进日志（可按 request_id 关联）；错误响应 details
+            # 携带截断文本（上游可控文本不透传完整内容）
+            logger.warning("ths upstream business error: code=%s message=%s", code, message)
             if code == _UPSTREAM_RATE_LIMITED_CODE:
                 raise UpstreamRateLimitedError(
                     "ths upstream rate limit exceeded.",
                     details={
                         "provider": self.name,
                         "upstream_code": code,
-                        "upstream_message": message,
+                        "upstream_message": truncate_upstream_message(message),
                     },
                 )
             raise UpstreamError(
@@ -131,7 +137,7 @@ class ProviderAdapter(BaseProviderAdapter):
                 details={
                     "provider": self.name,
                     "upstream_code": code,
-                    "upstream_message": message,
+                    "upstream_message": truncate_upstream_message(message),
                 },
             )
         data = payload.get("data")

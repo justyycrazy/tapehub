@@ -834,3 +834,22 @@ def test_quote_missing_credentials() -> None:
     )
     with pytest.raises(ProviderNotImplementedError):
         asyncio.run(adapter.fetch_quote(_quote_query()))
+
+
+def test_upstream_message_truncated_in_details(
+    futunn_settings: Any, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """超长上游报文：details 携带截断文本，全文只进服务端日志（信息泄露纵深）。"""
+    import logging
+
+    install(monkeypatch)
+    long_message = "机密" * 500  # 1000 字符
+    preset_payload(monkeypatch, envelope(None, ret_code=-7, ret_msg=long_message))
+    adapter = _adapter(futunn_settings)
+    with caplog.at_level(logging.WARNING, logger="tapehub.providers.futunn.adapter"):
+        with pytest.raises(UpstreamError) as excinfo:
+            asyncio.run(adapter.fetch_bars(_query()))
+    truncated = excinfo.value.details["upstream_message"]
+    assert truncated == long_message[:200] + "…[truncated]"  # 保留前 200 字符
+    warnings = [r for r in caplog.records if r.name == "tapehub.providers.futunn.adapter"]
+    assert any(long_message in r.getMessage() for r in warnings)  # 全文留在日志

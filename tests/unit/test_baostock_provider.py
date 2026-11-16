@@ -383,3 +383,25 @@ def test_partial_when_row_limit_reached(monkeypatch: pytest.MonkeyPatch) -> None
     stub.result = daily_stock_rows(["2026-01-05"])
     batch = asyncio.run(_adapter().fetch_bars(_query()))
     assert batch.partial is False
+
+
+def test_upstream_error_msg_truncated_in_details(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """超长上游报文：details 携带截断文本，全文只进服务端日志（信息泄露纵深）。"""
+    import logging
+
+    stub = _install_stub(monkeypatch)
+    long_message = "报文" * 500  # 1000 字符
+    stub.result = StubResultData([], [], error_code="10004011", error_msg=long_message)
+
+    with caplog.at_level(logging.WARNING, logger="tapehub.providers.baostock.adapter"):
+        with pytest.raises(UpstreamError) as exc_info:
+            asyncio.run(_adapter().fetch_bars(_query()))
+
+    truncated = exc_info.value.details["upstream_error_msg"]
+    assert truncated == long_message[:200] + "…[truncated]"  # 保留前 200 字符
+    warnings = [
+        r for r in caplog.records if r.name == "tapehub.providers.baostock.adapter"
+    ]
+    assert any(long_message in r.getMessage() for r in warnings)  # 全文留在日志

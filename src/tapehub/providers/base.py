@@ -138,3 +138,16 @@ async def call_in_thread(
         functools.partial(func, *args, **kwargs),
         abandon_on_cancel=abandon_on_cancel,
     )
+
+
+def truncate_upstream_message(value: object, limit: int = 200) -> str:
+    """上游报文文本进错误 details 前的统一截断（信息泄露纵深）。
+
+    上游业务报文由上游控制，理论上可能回显请求参数或账户信息；错误响应
+    details 只保留截断文本，全文经调用方 ``logger.warning`` 留在服务端
+    日志（可按 request_id 关联）。
+    """
+    text = "" if value is None else str(value)
+    if len(text) <= limit:
+        return text
+    return text[:limit] + "…[truncated]"
