@@ -56,7 +56,8 @@ class AssetType(StrEnum):
 
     - securities 证券：stock（个股）、index（指数）、etf
     - futures 期货：contract（单一合约）、continuous（主力连续）、weighted-index（加权）
-    - options 期权：option
+    - options 期权：commodity-option（商品期权）、index-option（股指期权）、
+      etf-option（ETF期权）
     - forex 外汇：forex
     - crypto 加密货币：crypto
     """
@@ -67,9 +68,39 @@ class AssetType(StrEnum):
     CONTRACT = "contract"
     CONTINUOUS = "continuous"
     WEIGHTED_INDEX = "weighted-index"
-    OPTION = "option"
+    COMMODITY_OPTION = "commodity-option"
+    INDEX_OPTION = "index-option"
+    ETF_OPTION = "etf-option"
     FOREX = "forex"
     CRYPTO = "crypto"
+
+
+# 期权子类 × 交易所词汇表（契约级市场结构事实，CN 期权八所 2026-11 探针实证，
+# 出处 docs/api.md「asset_type 资产类型体系」）：commodity-option 五所商品
+# 期货交易所、index-option 中金所、etf-option 沪深两所。与 _MARKET_EXCHANGES
+# 同层分工：该表管「market 与 exchange 段的契约合法性」，本表管「期权子类
+# 与交易所组合的契约合法性」（BarQuery/QuoteQuery 构造期校验）；各 Provider
+# 的接入范围由映射层白名单另行收窄——两层分开。
+_OPTION_ASSET_TYPE_EXCHANGES: dict[AssetType, frozenset[str]] = {
+    AssetType.COMMODITY_OPTION: frozenset({"SHFE", "INE", "DCE", "CZCE", "GFEX"}),
+    AssetType.INDEX_OPTION: frozenset({"CFFEX"}),
+    AssetType.ETF_OPTION: frozenset({"SSE", "SZSE"}),
+}
+
+
+def _validate_option_exchange(asset_type: AssetType, instrument: "Instrument") -> None:
+    """期权子类 × 交易所一致性校验：矛盾组合构造期拒绝。
+
+    ``commodity-option`` 搭配 ``CN-SSE-…`` 等矛盾请求在此前置拒绝为参数
+    错误（经 API 层统一映射 ``INVALID_REQUEST``），不再透传到路由链逐家
+    报不支持；非期权类型不受本表约束。
+    """
+    allowed = _OPTION_ASSET_TYPE_EXCHANGES.get(asset_type)
+    if allowed is not None and instrument.exchange not in allowed:
+        raise ValueError(
+            f"invalid request: asset type {asset_type.value!r} does not apply to "
+            f"exchange {instrument.exchange!r} in instrument {instrument.code!r}"
+        )
 
 
 class DataVariant(StrEnum):
@@ -257,6 +288,13 @@ class BarQuery(BaseModel):
         self.end = self.end.astimezone(CN_TIMEZONE)
         return self
 
+    @model_validator(mode="after")
+    def _option_exchange_matches_asset_type(self) -> "BarQuery":
+        # 期权子类与交易所矛盾组合构造期拒绝（词汇表与语义见
+        # _validate_option_exchange）
+        _validate_option_exchange(self.asset_type, self.instrument)
+        return self
+
 
 class BarBatch(BaseModel):
     """标准化 K 线批次。
@@ -379,6 +417,12 @@ class QuoteQuery(BaseModel):
     # 数据源变体；未传递（None）表示不表达偏好，由所选 Provider 能力的
     # default_variant 具体化（见 application 路由），适配器收到的一律是具体值
     variant: DataVariant | None = None
+
+    @model_validator(mode="after")
+    def _option_exchange_matches_asset_type(self) -> "QuoteQuery":
+        # 期权子类与交易所矛盾组合构造期拒绝（与 BarQuery 同语义）
+        _validate_option_exchange(self.asset_type, self.instrument)
+        return self
 
 
 class StreamStatusKind(StrEnum):

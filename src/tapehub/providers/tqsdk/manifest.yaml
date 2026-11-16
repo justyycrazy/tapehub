@@ -114,12 +114,32 @@ capabilities:
       - {code: P1D, history: {start: "2018-01-02T00:00:00+08:00", end: null}}
     adjustments: [none, qfq, hfq]
     fields: [open, high, low, close, volume]
-  # 期权合约（2026-11-16 聚焦轮八所码式+K 线探针实证收编）：adj_type 对期权
-  # 无效（官方文档口径仅股票/基金有效），仅声明 none；周期仅核实 P1D，其余
-  # 周期未核实不声明；合约级数据随上市起、随摘牌止，history.start 保持 null
+  # 期权合约（asset_type 三分：commodity-option / index-option / etf-option，
+  # 2026-11-16 聚焦轮八所码式+K 线探针实证收编；八所归属见 docs/api.md
+  # 「asset_type 资产类型体系」，三子类能力同构故声明同构拆块）：adj_type 对
+  # 期权无效（官方文档口径仅股票/基金有效），仅声明 none；周期仅核实 P1D，
+  # 其余周期未核实不声明；合约级数据随上市起、随摘牌止，history.start 保持 null
   - data_type: bars
     markets: [CN]
-    asset_types: [option]
+    asset_types: [commodity-option]
+    delivery: [rest]
+    variants: [tqsdk]
+    intervals:
+      - {code: P1D, history: {start: null, end: null}}
+    adjustments: [none]
+    fields: [open, high, low, close, volume]
+  - data_type: bars
+    markets: [CN]
+    asset_types: [index-option]
+    delivery: [rest]
+    variants: [tqsdk]
+    intervals:
+      - {code: P1D, history: {start: null, end: null}}
+    adjustments: [none]
+    fields: [open, high, low, close, volume]
+  - data_type: bars
+    markets: [CN]
+    asset_types: [etf-option]
     delivery: [rest]
     variants: [tqsdk]
     intervals:
@@ -127,10 +147,11 @@ capabilities:
     adjustments: [none]
     fields: [open, high, low, close, volume]
   # 实时快照（M2）：订阅-推送模型，无周期/复权维度，两维度声明为空；
-  # 期权快照 2026-11-16 聚焦轮实证收编（免费版账户即含期权实时行情口径）
+  # 期权快照 2026-11-16 聚焦轮实证收编（免费版账户即含期权实时行情口径），
+  # asset_type 三分后三子类同构并入本块
   - data_type: quotes
     markets: [CN]
-    asset_types: [contract, continuous, weighted-index, stock, index, etf, option]
+    asset_types: [contract, continuous, weighted-index, stock, index, etf, commodity-option, index-option, etf-option]
     delivery: [rest]
     variants: [tqsdk]
     intervals: []
@@ -259,8 +280,13 @@ operations:
     operation: get_kline_serial
   - match: {data_type: bars, market: CN, asset_type: index, interval: P1D, adjust: none, variant: tqsdk}
     operation: get_kline_serial
-  # 期权（2026-11-16 聚焦轮八所探针实证收编）：同一上游接口，P1D × none
-  - match: {data_type: bars, market: CN, asset_type: option, interval: P1D, adjust: none, variant: tqsdk}
+  # 期权（asset_type 三分，2026-11-16 聚焦轮八所探针实证收编）：同一上游
+  # 接口，P1D × none，三子类按子类显式枚举
+  - match: {data_type: bars, market: CN, asset_type: commodity-option, interval: P1D, adjust: none, variant: tqsdk}
+    operation: get_kline_serial
+  - match: {data_type: bars, market: CN, asset_type: index-option, interval: P1D, adjust: none, variant: tqsdk}
+    operation: get_kline_serial
+  - match: {data_type: bars, market: CN, asset_type: etf-option, interval: P1D, adjust: none, variant: tqsdk}
     operation: get_kline_serial
   # 实时快照：全部资产类型调用同一上游接口 api.get_quote；
   # 周期/复权对快照无意义，显式声明 null（只与无该维度的 quote 查询匹配）
@@ -276,5 +302,9 @@ operations:
     operation: get_quote
   - match: {data_type: quotes, market: CN, asset_type: etf, interval: null, adjust: null, variant: tqsdk}
     operation: get_quote
-  - match: {data_type: quotes, market: CN, asset_type: option, interval: null, adjust: null, variant: tqsdk}
+  - match: {data_type: quotes, market: CN, asset_type: commodity-option, interval: null, adjust: null, variant: tqsdk}
+    operation: get_quote
+  - match: {data_type: quotes, market: CN, asset_type: index-option, interval: null, adjust: null, variant: tqsdk}
+    operation: get_quote
+  - match: {data_type: quotes, market: CN, asset_type: etf-option, interval: null, adjust: null, variant: tqsdk}
     operation: get_quote

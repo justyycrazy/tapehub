@@ -19,12 +19,12 @@
 | bars | index | `GET /api/a-share-index/prices/historical` | none | retention_days=1825（滚动窗口） | 同上 |
 | bars | etf | `GET /api/fund/market/historical` | qfq（上游固定前复权，不可选） | retention_days=1825（滚动窗口） | 同上 |
 | bars | contract | `GET /api/futures/prices/daily` | none | start=null（随合约轮换漂移，不锚定） | 同上 |
-| bars | option | `GET /api/options/prices/daily` | none | start=null（同上） | 同上 |
+| bars | 期权三子类（commodity-option/index-option/etf-option） | `GET /api/options/prices/daily` | none | start=null（同上） | 同上 |
 | quotes | stock | `GET /api/a-share/prices/snapshot` | —（快照无复权） | — | timestamp/last_price/volume/amount |
 | quotes | index | `GET /api/a-share-index/prices/snapshot` | — | — | 同上 |
 | quotes | etf | `GET /api/fund/market/snapshot` | — | — | 同上 |
 | quotes | contract | `GET /api/futures/prices/intraday`（分时末点） | — | — | 同上 |
-| quotes | option | `GET /api/options/prices/intraday`（分时末点） | — | — | 同上 |
+| quotes | 期权三子类（同上三分） | `GET /api/options/prices/intraday`（分时末点） | — | — | 同上 |
 
 bars 行字段两种形态统一映射（时间键不同、其余同构）：A 股/指数/ETF 行时间键 `date_ms`，期货/期权日 K 行时间键 `timestamp`；价格键 `open_price/high_price/low_price/close_price`，量额键 `volume`/`turnover`（`turnover` → 标准 `amount`）。stock 历史覆盖为聚焦二分 ±30 天粒度 approx（真实最早可能更早）；指数/ETF 为滚动窗口语义。
 
@@ -37,7 +37,11 @@ bars 行字段两种形态统一映射（时间键不同、其余同构）：A �
 | stock / index | SSE→SH、SZSE→SZ、BSE→BJ | `CN-SSE-600519 → 600519.SH`、`CN-SZSE-000001 → 000001.SZ`、`CN-BSE-920000 → 920000.BJ` |
 | etf | SSE→SH、SZSE→SZ（北交所无 ETF） | |
 | contract | SHFE→SHF、CZCE→CZC、DCE→DCE、INE→INE、GFEX→GFE、CFFEX→CFE（六所实证：MA612.CZC / MA701.CZC / EG2701.DCE / BC2612.INE / LC2701.GFE 均 code=0 正常返回；CFFEX 2026-11-16 探针实证 IF2706.CFE code=0 真实日线、IF2706.CFX 3001 'Target not found'——**与该所期权同后缀 CFE**，与 tushare 侧该所期货 .CFX 不同） | `CN-SHFE-CU2706 → CU2706.SHF`、`CN-CFFEX-IF2706 → IF2706.CFE` |
-| option | 八所（2026-11-16 聚焦轮双候选探针实证收编）：SSE→SH、SZSE→SZ（数字合约码，与该所证券后缀同段）；SHFE→SHF、INE→INE、DCE→DCE、CZCE→CZC、GFEX→GFE、CFFEX→CFE（商品/金融期权后缀与该所期货同段；各所 3001 否定证据见 PROBE_LOG 第 10 轮） | `CN-SSE-10012437 → 10012437.SH`、`CN-CFFEX-IO2612-C-4000 → IO2612-C-4000.CFE`、`CN-SHFE-CU2701C102000 → CU2701C102000.SHF`、`CN-DCE-M2701-C-3500 → M2701-C-3500.DCE`、`CN-GFEX-LC2701-C-90000 → LC2701-C-90000.GFE` |
+| commodity-option | SHFE→SHF、INE→INE、DCE→DCE、CZCE→CZC、GFEX→GFE（商品期权五所，后缀与该所期货同段） | `CN-SHFE-CU2701C102000 → CU2701C102000.SHF`、`CN-DCE-M2701-C-3500 → M2701-C-3500.DCE`、`CN-GFEX-LC2701-C-90000 → LC2701-C-90000.GFE` |
+| index-option | CFFEX→CFE（与该所期货同段） | `CN-CFFEX-IO2612-C-4000 → IO2612-C-4000.CFE` |
+| etf-option | SSE→SH、SZSE→SZ（数字合约码，与该所证券后缀同段） | `CN-SSE-10012437 → 10012437.SH` |
+
+期权后缀八所（asset_type 三分后按子类拆键，2026-11-16 聚焦轮双候选探针实证收编；各所另一码式 3001 否定证据见 PROBE_LOG 第 10 轮）。
 
 期权码式矩阵（各所另一码式已 3001 干净否定，双候选证据见聚焦轮报告）：SSE/SZSE 为数字合约码；SHFE/INE「品种4位月C/P行权价」**无连字符**；DCE/GFEX/CFFEX「品种4位月-C/P-行权价」**连字符**；CZCE「品种3位月C/P行权价」无连字符（701=2027-01）。与 tushare 侧 INE（无连字符）/GFEX（连字符）同轮互证一致；注意 CFFEX 期权 ths 侧后缀 .CFE、tushare 侧 .CFX。
 
@@ -82,11 +86,11 @@ bars 行字段两种形态统一映射（时间键不同、其余同构）：A �
 
 当前回退链顺序以 `src/tapehub/config/provider_routing.yaml` 为准，本文不复述 order 列表。参与组合与角色：
 
-- bars：CN stock / index / etf / contract 居回退位末位（付费凭据 API、仅日线、窗口受限）；CN option 居**缺省首位**（2026-11-16 八所收编后与 tushare 同覆盖，tushare 凭据型兜底居链尾）；
-- quotes：CN stock / index / etf / contract 居回退位末位（个股/指数/ETF 快照直出，期货/期权经分时端点取末点）；CN option 独占（tushare 不声明快照）；
+- bars：CN stock / index / etf / contract 居回退位末位（付费凭据 API、仅日线、窗口受限）；CN 期权三子类（commodity-option/index-option/etf-option）居**缺省首位**（2026-11-16 八所收编后与 tushare 同覆盖，tushare 凭据型兜底居链尾）；
+- quotes：CN stock / index / etf / contract 居回退位末位（个股/指数/ETF 快照直出，期货/期权经分时端点取末点）；CN 期权三子类独占（tushare 不声明快照）；
 - ETF 特例：仅声明 `qfq`——`adjust=none` 的 auto ETF 请求经六维匹配跳过 ths、不参与该请求的回退。
 
-位次依据一句话：付费凭据 API 置各既有链末尾补位；CN option bars 为八所同覆盖下的缺省首位（先接入居前），quotes 为唯一覆盖该组合的 Provider 故独占。
+位次依据一句话：付费凭据 API 置各既有链末尾补位；CN 期权 bars（三子类同链）为八所同覆盖下的缺省首位（先接入居前），quotes 为唯一覆盖该组合的 Provider 故独占。
 
 ## extensions 白名单
 

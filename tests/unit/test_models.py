@@ -11,7 +11,7 @@ import pytest
 from pydantic import ValidationError
 
 from tapehub.domain.intervals import Interval
-from tapehub.domain.models import Adjust, Bar, BarBatch, BarQuery, Instrument
+from tapehub.domain.models import Adjust, Bar, BarBatch, BarQuery, Instrument, QuoteQuery
 
 CN = ZoneInfo("Asia/Shanghai")
 
@@ -146,6 +146,62 @@ class TestBarQuery:
     def test_naive_bounds_rejected(self) -> None:
         with pytest.raises(ValidationError):
             self._query(start=datetime(2026, 1, 1), end=datetime(2026, 1, 31, tzinfo=CN))
+
+    @pytest.mark.parametrize(
+        ("asset_type", "instrument"),
+        [
+            ("commodity-option", "CN-SHFE-CU2701C102000"),
+            ("commodity-option", "CN-CZCE-SR701C5900"),
+            ("index-option", "CN-CFFEX-IO2612-C-4000"),
+            ("etf-option", "CN-SSE-10012437"),
+            ("etf-option", "CN-SZSE-90008083"),
+        ],
+    )
+    def test_option_subtype_valid_combinations(self, asset_type: str, instrument: str) -> None:
+        """期权子类 × 本所组合（CN 期权八所归属，探针实证）：正常构造。"""
+        query = self._query(asset_type=asset_type, instrument=instrument)
+        assert query.asset_type.value == asset_type
+
+    @pytest.mark.parametrize(
+        ("asset_type", "instrument"),
+        [
+            ("commodity-option", "CN-SSE-10012437"),  # SSE 属 etf-option
+            ("commodity-option", "CN-CFFEX-IO2612-C-4000"),  # CFFEX 属 index-option
+            ("index-option", "CN-SHFE-CU2701C102000"),  # SHFE 属 commodity-option
+            ("etf-option", "CN-CFFEX-IO2612-C-4000"),  # CFFEX 属 index-option
+            ("etf-option", "CN-DCE-M2701-C-3500"),  # DCE 属 commodity-option
+            # BSE（北交所）无期权，三子类词汇表均不含
+            ("commodity-option", "CN-BSE-920001"),
+            ("index-option", "CN-BSE-920001"),
+            ("etf-option", "CN-BSE-920001"),
+        ],
+    )
+    def test_option_subtype_contradictory_exchange_rejected(
+        self, asset_type: str, instrument: str
+    ) -> None:
+        """期权子类 × 交易所矛盾组合构造期拒绝（词汇表校验），不透传映射层。"""
+        with pytest.raises(ValidationError, match="does not apply to exchange"):
+            self._query(asset_type=asset_type, instrument=instrument)
+
+
+class TestQuoteQuery:
+    @pytest.mark.parametrize(
+        ("asset_type", "instrument"),
+        [
+            ("commodity-option", "CN-INE-SC2701C550"),
+            ("index-option", "CN-CFFEX-IO2612-C-4000"),
+            ("etf-option", "CN-SZSE-90008083"),
+        ],
+    )
+    def test_option_subtype_valid_combinations(self, asset_type: str, instrument: str) -> None:
+        """快照查询同受期权子类×交易所词汇表约束：合法组合正常构造。"""
+        query = QuoteQuery(asset_type=asset_type, instrument=instrument)
+        assert query.asset_type.value == asset_type
+
+    def test_option_subtype_contradictory_exchange_rejected(self) -> None:
+        """快照查询矛盾组合（commodity-option + CN-SSE）构造期拒绝。"""
+        with pytest.raises(ValidationError, match="does not apply to exchange"):
+            QuoteQuery(asset_type="commodity-option", instrument="CN-SSE-10012437")
 
 
 class TestBarBatch:

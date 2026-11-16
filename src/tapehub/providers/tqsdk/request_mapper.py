@@ -82,11 +82,17 @@ _SYMBOL_REWRITES: dict[str, Callable[[str], str]] = {
     "CZCE": _rewrite_czce_symbol,
 }
 
-# 期权品种小写还原交易所集合（2026-11-16 聚焦轮八所探针定案）：SHFE/INE/
-# DCE/GFEX 期权品种字母段小写（cu2701C102000 / sc2701C550 / m2701-C-3500 /
+# 期权（asset_type 三分：commodity-option / index-option / etf-option）品种
+# 小写还原交易所集合（2026-11-16 聚焦轮八所探针定案）：SHFE/INE/DCE/GFEX
+# 期权品种字母段小写（cu2701C102000 / sc2701C550 / m2701-C-3500 /
 # lc2701-C-90000）——期权与该所期货合约品种大小写同系（第 13 轮期货聚焦轮
-# 互证）；SSE/SZSE（数字合约码）、CFFEX/CZCE（大写品种）直通。月码与连字符
-# 形态在标准码中已与上游一致（CZCE 期权 3 位月码直通），不做改写。
+# 互证），四所全部属于 commodity-option；SSE/SZSE（数字合约码，etf-option）、
+# CFFEX/CZCE（大写品种，index-option/commodity-option）直通。月码与连字符
+# 形态在标准码中已与上游一致（CZCE 期权 3 位月码直通），不做改写；
+# 子类×本所矛盾组合已由 domain 层词汇表构造期拒绝，映射层只处理合法组合。
+_OPTION_ASSET_TYPES = frozenset(
+    {AssetType.COMMODITY_OPTION, AssetType.INDEX_OPTION, AssetType.ETF_OPTION}
+)
 _OPTION_PRODUCT_LOWER_EXCHANGES = frozenset({"SHFE", "INE", "DCE", "GFEX"})
 _OPTION_PRODUCT_RE = re.compile(r"^([A-Za-z]+)(.+)$")
 
@@ -115,7 +121,7 @@ def upstream_symbol(instrument: Instrument, asset_type: AssetType) -> str:
         return f"{_WEIGHTED_PREFIX}{base}"
     if asset_type in (AssetType.STOCK, AssetType.INDEX, AssetType.ETF):
         return base
-    if asset_type is AssetType.OPTION:
+    if asset_type in _OPTION_ASSET_TYPES:
         option = instrument.symbol
         if instrument.exchange in _OPTION_PRODUCT_LOWER_EXCHANGES:
             option = _rewrite_option_symbol(option)

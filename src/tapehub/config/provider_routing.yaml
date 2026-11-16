@@ -33,9 +33,16 @@ defaults:
   - match: {data_type: bars, market: CN, asset_type: weighted-index}
     order: [tqsdk]
 
-  # CN 期权：2026-11-15 ths/tushare 期权扩容入链（当时仅两家覆盖），
-  # 2026-11-16 tqsdk 期权八所探针实证收编（凭据型，先接入居前居链尾）
-  - match: {data_type: bars, market: CN, asset_type: option}
+  # CN 期权（asset_type 三分：commodity-option / index-option / etf-option，
+  # 八所归属见 docs/api.md「asset_type 资产类型体系」）：2026-11-15 ths/
+  # tushare 期权扩容入链（当时仅两家覆盖），2026-11-16 tqsdk 期权八所探针
+  # 实证收编（凭据型，先接入居前居链尾）；三分后八所覆盖三子类同构，
+  # 三条链序一致，位次依据见 docs/providers/<name>.md
+  - match: {data_type: bars, market: CN, asset_type: commodity-option}
+    order: [ths, tushare, tqsdk]
+  - match: {data_type: bars, market: CN, asset_type: index-option}
+    order: [ths, tushare, tqsdk]
+  - match: {data_type: bars, market: CN, asset_type: etf-option}
     order: [ths, tushare, tqsdk]
 
   - match: {data_type: bars, market: HK, asset_type: stock}
@@ -85,9 +92,14 @@ defaults:
   - match: {data_type: quotes, market: CN, asset_type: weighted-index}
     order: [tqsdk]
 
-  # CN 期权快照：ths 独占（2026-11-15）→ 2026-11-16 tqsdk 期权快照实证
-  # 收编居链尾（凭据型订阅-推送模型，SSE 流式经显式 variant/provider 可达）
-  - match: {data_type: quotes, market: CN, asset_type: option}
+  # CN 期权快照（asset_type 三分）：ths 独占（2026-11-15）→ 2026-11-16
+  # tqsdk 期权快照实证收编居链尾（凭据型订阅-推送模型，SSE 流式经显式
+  # variant/provider 可达）；三分后三子类链序一致
+  - match: {data_type: quotes, market: CN, asset_type: commodity-option}
+    order: [ths, tqsdk]
+  - match: {data_type: quotes, market: CN, asset_type: index-option}
+    order: [ths, tqsdk]
+  - match: {data_type: quotes, market: CN, asset_type: etf-option}
     order: [ths, tqsdk]
 
   - match: {data_type: quotes, market: HK, asset_type: stock}

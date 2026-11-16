@@ -39,19 +39,25 @@ _STOCK_SUFFIXES = {"SSE": "SH", "SZSE": "SZ", "BSE": "BJ"}
 _INDEX_SUFFIXES = {"SSE": "SH", "SZSE": "SZ"}
 # ETF 后缀：fund_daily 为场内基金接口（doc_id=127，沪深两所同构）
 _ETF_SUFFIXES = {"SSE": "SH", "SZSE": "SZ"}
-# 期权后缀：opt_daily 八所（2026-11-16 聚焦轮目录+日 K 双证收编 INE/GFEX——
-# doc_id=159 文档枚举未列这两所，实测可查，文档滞后；码式矩阵见
-# docs/providers/tushare.md「标的代码映射」）；CFFEX 期权 .CFX 与该所期货
-# 同后缀（非 ths 的 CFE）
-_OPTION_SUFFIXES = {
-    "SSE": "SH",
-    "SZSE": "SZ",
-    "CFFEX": "CFX",
+# 期权三子类后缀表（asset_type 三分：commodity-option / index-option /
+# etf-option，上游同为 pro.opt_daily、后缀码式零变化——2026-11-16 聚焦轮
+# 目录+日 K 双证收编 INE/GFEX，doc_id=159 文档枚举未列这两所属文档滞后；
+# CFFEX 期权 .CFX 与该所期货同后缀，非 ths 的 CFE）；子类×本所矛盾组合
+# 已由 domain 层词汇表构造期拒绝，码式矩阵见 docs/providers/tushare.md
+# 「标的代码映射」
+_ETF_OPTION_SUFFIXES = {"SSE": "SH", "SZSE": "SZ"}
+_INDEX_OPTION_SUFFIXES = {"CFFEX": "CFX"}
+_COMMODITY_OPTION_SUFFIXES = {
     "DCE": "DCE",
     "SHFE": "SHF",
     "CZCE": "ZCE",
     "INE": "INE",
     "GFEX": "GFE",
+}
+_OPTION_SUFFIX_TABLES: dict[AssetType, dict[str, str]] = {
+    AssetType.ETF_OPTION: _ETF_OPTION_SUFFIXES,
+    AssetType.INDEX_OPTION: _INDEX_OPTION_SUFFIXES,
+    AssetType.COMMODITY_OPTION: _COMMODITY_OPTION_SUFFIXES,
 }
 _FUTURES_SUFFIXES = {
     "SHFE": "SHF",
@@ -101,8 +107,9 @@ def etf_ts_code(query: BarQuery) -> str:
 def option_ts_code(query: BarQuery) -> str:
     """期权 ts_code（合约符号原样透传，不做年份猜测）：CN-SSE-10012437 →
     10012437.SH、CN-CFFEX-IO2611-C-4150 → IO2611-C-4150.CFX（CFFEX 带连字符
-    中段）、CN-CZCE-SR701C5900 → SR701C5900.ZCE（3 位月码直通）。"""
-    return f"{query.instrument.symbol}.{_suffix(query, _OPTION_SUFFIXES)}"
+    中段）、CN-CZCE-SR701C5900 → SR701C5900.ZCE（3 位月码直通）；
+    后缀按期权子类查分表（_OPTION_SUFFIX_TABLES）。"""
+    return f"{query.instrument.symbol}.{_suffix(query, _OPTION_SUFFIX_TABLES[query.asset_type])}"
 
 
 def futures_ts_code(query: BarQuery) -> str:

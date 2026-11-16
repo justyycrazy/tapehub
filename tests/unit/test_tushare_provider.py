@@ -263,7 +263,7 @@ def test_option_request_and_response_mapping(monkeypatch: pytest.MonkeyPatch) ->
     adapter = _adapter()
 
     query = _query(
-        asset_type=AssetType.OPTION,
+        asset_type=AssetType.INDEX_OPTION,
         instrument=Instrument.parse("CN-CFFEX-IO2611-C-4150"),
         adjust=Adjust.NONE,
     )
@@ -285,47 +285,59 @@ def test_option_request_and_response_mapping(monkeypatch: pytest.MonkeyPatch) ->
 
 
 @pytest.mark.parametrize(
-    ("instrument", "expected_ts_code"),
+    ("asset_type", "instrument", "expected_ts_code"),
     [
-        ("CN-SSE-10012437", "10012437.SH"),
-        ("CN-SZSE-90008083", "90008083.SZ"),
-        ("CN-CFFEX-IO2611-C-4150", "IO2611-C-4150.CFX"),  # 与该所期货同后缀
-        ("CN-DCE-M2612-C-3500", "M2612-C-3500.DCE"),  # 连字符 4 位月
-        ("CN-SHFE-FU2612C6100", "FU2612C6100.SHF"),  # 无连字符
-        ("CN-CZCE-SR701C5900", "SR701C5900.ZCE"),  # 3 位月码直通
+        (AssetType.ETF_OPTION, "CN-SSE-10012437", "10012437.SH"),
+        (AssetType.ETF_OPTION, "CN-SZSE-90008083", "90008083.SZ"),
+        (AssetType.INDEX_OPTION, "CN-CFFEX-IO2611-C-4150", "IO2611-C-4150.CFX"),  # 与该所期货同后缀
+        (AssetType.COMMODITY_OPTION, "CN-DCE-M2612-C-3500", "M2612-C-3500.DCE"),  # 连字符 4 位月
+        (AssetType.COMMODITY_OPTION, "CN-SHFE-FU2612C6100", "FU2612C6100.SHF"),  # 无连字符
+        (AssetType.COMMODITY_OPTION, "CN-CZCE-SR701C5900", "SR701C5900.ZCE"),  # 3 位月码直通
         # INE/GFEX：2026-11-16 聚焦轮目录+日 K 双证收编（INE 无连字符与 SHFE
         # 同构；GFEX 连字符式，与该所期货主连「品种+L」不同构）
-        ("CN-INE-SC2701C550", "SC2701C550.INE"),
-        ("CN-GFEX-LC2701-C-90000", "LC2701-C-90000.GFE"),
+        (AssetType.COMMODITY_OPTION, "CN-INE-SC2701C550", "SC2701C550.INE"),
+        (AssetType.COMMODITY_OPTION, "CN-GFEX-LC2701-C-90000", "LC2701-C-90000.GFE"),
     ],
 )
-def test_option_suffix_mapping(instrument: str, expected_ts_code: str) -> None:
-    """期权八所 ts_code 后缀直拼（合约符号原样透传）。"""
+def test_option_suffix_mapping(
+    asset_type: AssetType, instrument: str, expected_ts_code: str
+) -> None:
+    """期权八所 ts_code 后缀直拼（asset_type 三分后按子类查分表，合约符号
+    原样透传）。"""
     query = _query(
-        asset_type=AssetType.OPTION,
+        asset_type=asset_type,
         instrument=Instrument.parse(instrument),
         adjust=Adjust.NONE,
     )
     assert option_ts_code(query) == expected_ts_code
 
 
-@pytest.mark.parametrize(
-    ("asset_type", "code"),
-    [
-        (AssetType.ETF, "CN-BSE-920000"),  # BSE 不在 ETF 拒绝表
-        (AssetType.OPTION, "CN-BSE-IO2601-C-4000"),  # BSE 无期权
-    ],
-)
-def test_unsupported_etf_and_option_exchanges(
-    asset_type: AssetType, code: str, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """ETF 拒绝范围 {SSE, SZSE}、期权八所（SSE/SZSE/CFFEX/DCE/SHFE/CZCE/
-    INE/GFEX）之外的 exchange 段：映射层明确拒绝，绝不预填未核实条目。"""
+def test_unsupported_etf_exchange(monkeypatch: pytest.MonkeyPatch) -> None:
+    """ETF 拒绝范围 {SSE, SZSE} 之外的 exchange 段（如 BSE）：映射层明确
+    拒绝，绝不预填未核实条目。"""
     install(monkeypatch)
     adapter = _adapter()
-    query = _query(asset_type=asset_type, instrument=Instrument.parse(code), adjust=Adjust.NONE)
+    query = _query(asset_type=AssetType.ETF, instrument="CN-BSE-920000", adjust=Adjust.NONE)
     with pytest.raises(UnsupportedCapabilityError):
         asyncio.run(adapter.fetch_bars(query))
+
+
+@pytest.mark.parametrize(
+    "asset_type",
+    [AssetType.COMMODITY_OPTION, AssetType.INDEX_OPTION, AssetType.ETF_OPTION],
+)
+def test_option_suffix_table_rejects_unverified_exchange(asset_type: AssetType) -> None:
+    """映射层防御纵深：期权后缀分表按子类收窄，八所（commodity-option 五所/
+    CFFEX/沪深两所）之外的 exchange 段（如 BSE——北交所无期权，三子类词汇
+    表均不含）即使绕过域层校验也明确拒绝而非透传上游（model_construct 绕过
+    构造期校验直测映射函数；正常请求路径下该组合在 domain 层即被拒绝）。"""
+    query = BarQuery.model_construct(
+        asset_type=asset_type,
+        instrument=Instrument.parse("CN-BSE-IO2601-C-4000"),
+        adjust=Adjust.NONE,
+    )
+    with pytest.raises(UnsupportedCapabilityError):
+        option_ts_code(query)
 
 
 def test_futures_request_and_response_mapping(monkeypatch: pytest.MonkeyPatch) -> None:

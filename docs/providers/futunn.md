@@ -58,7 +58,7 @@ history.start 历史覆盖声明（逐所/逐周期，均北京时间）：
 | HK / US | 市场段即前缀（US 限 NYSE/NASDAQ/AMEX） | `HK-HKEX-00700 → HK.00700`、`US-NASDAQ-AAPL → US.AAPL` |
 
 - symbol 段：CN 6 位证券代码原样透传（要求纯数字，非数字拒绝）；港股短码零填充 5 位（`700`→`00700`）；美股 ticker 已由域层大写归一、原样透传（上游美股前缀不区分交易所）；
-- 资产类型层面：futunn 仅支持 stock/index/etf 三类，其余 asset_type（contract/option/forex/crypto 等）在映射层直接拒绝（`UnsupportedCapabilityError`），不透传上游。
+- 资产类型层面：futunn 仅支持 stock/index/etf 三类，其余 asset_type（contract/期权三子类/forex/crypto 等）在映射层直接拒绝（`UnsupportedCapabilityError`），不透传上游。
 
 ## 周期 / 复权 / 单位映射
 

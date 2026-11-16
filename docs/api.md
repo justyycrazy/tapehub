@@ -212,11 +212,15 @@ GET /v1/instruments/resolve?q=AAPL&exchange=NASDAQ
 | futures 期货 | `contract` | 单一合约 |
 | futures 期货 | `continuous` | 主力连续 |
 | futures 期货 | `weighted-index` | 加权 |
-| options 期权 | `option` | 期权 |
+| options 期权 | `commodity-option` | 商品期权（SHFE/INE/DCE/CZCE/GFEX） |
+| options 期权 | `index-option` | 股指期权（CFFEX） |
+| options 期权 | `etf-option` | ETF 期权（SSE/SZSE） |
 | forex 外汇 | `forex` | 外汇 |
 | crypto 加密货币 | `crypto` | 加密货币 |
 
 缺失或未知取值返回统一参数错误 `INVALID_REQUEST`。
+
+期权三子类与交易所存在契约级归属约束（CN 期权八所，2026-11 探针实证）：矛盾组合（如 `commodity-option` + `CN-SSE-…`）在请求构造期拒绝，返回 `INVALID_REQUEST`。旧取值 `option` 已于 2026-11-16 拆分为上述三子类，不再合法（返回 `INVALID_REQUEST`）。
 
 ### variant 数据源变体
 
@@ -251,7 +255,7 @@ GET /v1/instruments/resolve?q=AAPL&exchange=NASDAQ
 | --- | --- |
 | `stock` | **`qfq`（前复权）** |
 | `etf` | **`qfq`（前复权）** |
-| 其余（index、contract 等） | `none` |
+| 其余（index、contract、期权三子类等） | `none` |
 
 > **决策记录（2026-11-15）——ETF 缺省复权调整为 qfq**：ETF 原与 index/contract 同组缺省 `none`；调整为与 stock 同组缺省 `qfq`。动机：场内基金与个股同样存在分红除权，ETF 作为可复权场内证券，缺省「前复权」才能给出跨分红时点可比的价格序列（与个股缺省口径对齐）；指数是人为构造的点位序列、期货无复权概念，维持 `none`。影响面：仅声明 `none` 的 Provider（如 tushare/tqsdk 的 ETF 能力）在缺省请求下被能力过滤出候选集——显式传 `adjust=none` 仍可达；支持 `qfq` 的 Provider（baostock/ths/futunn/akshare/alphafeed/tickflow/twelvedata US）承接缺省请求。实现：`api/schemas/requests.py` 的 `effective_adjust` 按 `(stock, etf) → qfq` 填充声明默认值。
 

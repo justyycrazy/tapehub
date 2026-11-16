@@ -98,11 +98,13 @@ def test_capability_catalog(tqsdk_client: TestClient) -> None:  # type: ignore[n
         "stock": "tqsdk",
         "index": "tqsdk",
         "etf": "tqsdk",
-        "option": "tqsdk",
+        "commodity-option": "tqsdk",
+        "index-option": "tqsdk",
+        "etf-option": "tqsdk",
     }
     # 期货三类拆分 + 股票分钟族/股票 PT30M+（复权收窄拆分）+ 指数 +
-    # ETF 分钟族/ETF PT30M+ + 期权（2026-11-16 收编）+ quotes
-    assert len(entry["capabilities"]) == 10
+    # ETF 分钟族/ETF PT30M+ + 期权三子类（asset_type 三分，bars 拆三块）+ quotes
+    assert len(entry["capabilities"]) == 12
     cap = entry["capabilities"][0]
     assert cap["data_type"] == "bars"
     assert cap["asset_types"] == ["contract"]
@@ -112,12 +114,13 @@ def test_capability_catalog(tqsdk_client: TestClient) -> None:  # type: ignore[n
     ]
     assert cap["adjustments"] == ["none"]
     assert cap["fields"] == ["open", "high", "low", "close", "volume"]
-    # quotes 能力：无周期/复权维度（两维度为空），覆盖七类资产（含期权）
+    # quotes 能力：无周期/复权维度（两维度为空），覆盖九类资产（含期权三子类）
     quotes_cap = next(c for c in entry["capabilities"] if c["data_type"] == "quotes")
     assert quotes_cap["intervals"] == []
     assert quotes_cap["adjustments"] == []
     assert set(quotes_cap["asset_types"]) == {
-        "contract", "continuous", "weighted-index", "stock", "index", "etf", "option",
+        "contract", "continuous", "weighted-index", "stock", "index", "etf",
+        "commodity-option", "index-option", "etf-option",
     }
     assert quotes_cap["variants"] == ["tqsdk"]
     assert "last_price" in quotes_cap["fields"]
@@ -155,12 +158,13 @@ def test_missing_auth_returns_clear_error(default_client) -> None:  # type: igno
 def test_option_bars_chain(
     tqsdk_client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """期权链路（2026-11-16 八所探针实证收编）：品种字母段小写还原。"""
+    """期权链路（asset_type 三分，2026-11-16 八所探针实证收编）：品种字母段
+    小写还原（commodity-option 五所）。"""
     preset_rows(monkeypatch, klines_rows(["2026-01-02", "2026-01-05"]))
 
     params = {
         **BASE_PARAMS,
-        "asset_type": "option",
+        "asset_type": "commodity-option",
         "instrument": "CN-SHFE-CU2701C102000",
     }
     response = tqsdk_client.get("/v1/market/bars", params=params)
@@ -172,7 +176,7 @@ def test_option_bars_chain(
 
     data = body["data"]
     assert data["instrument"] == "CN-SHFE-CU2701C102000"
-    assert data["asset_type"] == "option"
+    assert data["asset_type"] == "commodity-option"
     assert len(data["bars"]) == 2
     assert data["bars"][0]["volume"] == 500.0
 
@@ -363,10 +367,11 @@ def test_quote_auto_routes_and_symbol_mapping(
 def test_quote_option_chain(
     tqsdk_client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """期权快照链路（2026-11-16 八所探针实证收编）：数字合约码直拼。"""
+    """期权快照链路（asset_type 三分，2026-11-16 八所探针实证收编）：数字
+    合约码直拼（etf-option 沪深两所）。"""
     preset_quote(monkeypatch, DEFAULT_QUOTE_FIELDS)
 
-    params = {**QUOTE_PARAMS, "asset_type": "option", "instrument": "CN-SSE-10012437"}
+    params = {**QUOTE_PARAMS, "asset_type": "etf-option", "instrument": "CN-SSE-10012437"}
     response = tqsdk_client.get("/v1/market/quotes", params=params)
     assert response.status_code == 200
     body = response.json()
@@ -375,7 +380,7 @@ def test_quote_option_chain(
     assert api.quote_calls == ["SSE.10012437"]
     data = body["data"]
     assert data["instrument"] == "CN-SSE-10012437"
-    assert data["asset_type"] == "option"
+    assert data["asset_type"] == "etf-option"
     assert data["quote"]["last_price"] is not None
 
 

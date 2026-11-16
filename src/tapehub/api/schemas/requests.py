@@ -9,6 +9,7 @@
   （YYYY-MM-DD）或无时区的裸时间——不做隐式时区解释；
 - ``start`` 必须早于 ``end``；时间范围为闭区间 [start, end]；
 - ``limit`` 不超过服务配置上限；
+- 期权子类与交易所矛盾组合（如 commodity-option + CN-SSE，域层词汇表校验）拒绝；
 - ``adjust`` 未传递时：个股（stock）与 ETF（etf）默认 ``qfq``（前复权），其余默认 ``none``；
 - ``variant`` 未传递（None）表示不表达数据源偏好：该维度不参与能力过滤，
   由所选 Provider 声明的 ``default_variant`` 具体化，响应 meta 回显实际使用的变体。
@@ -16,7 +17,7 @@
 
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from tapehub.domain.errors import InvalidRequestError
 from tapehub.domain.intervals import Interval
@@ -118,18 +119,23 @@ def to_bar_query(params: BarsQueryParams, settings: Settings) -> BarQuery:
     if params.limit > settings.max_limit:
         raise _invalid("limit", f"limit must not exceed configured maximum {settings.max_limit}")
 
-    return BarQuery(
-        provider=params.provider,
-        asset_type=params.asset_type,
-        instrument=instrument,
-        interval=interval,
-        start=start,
-        end=end,
-        adjust=effective_adjust(params),
-        variant=params.variant,
-        offset=params.offset,
-        limit=params.limit,
-    )
+    try:
+        return BarQuery(
+            provider=params.provider,
+            asset_type=params.asset_type,
+            instrument=instrument,
+            interval=interval,
+            start=start,
+            end=end,
+            adjust=effective_adjust(params),
+            variant=params.variant,
+            offset=params.offset,
+            limit=params.limit,
+        )
+    except ValidationError as exc:
+        # 域层构造期校验（期权子类×交易所词汇表等）映射为统一参数错误，
+        # 与上方逐字段包装同语义
+        raise _invalid("query", str(exc)) from exc
 
 
 class QuotesQueryParams(BaseModel):
@@ -152,9 +158,13 @@ def to_quote_query(params: QuotesQueryParams) -> QuoteQuery:
     except ValueError as exc:
         raise _invalid("instrument", str(exc)) from exc
 
-    return QuoteQuery(
-        provider=params.provider,
-        asset_type=params.asset_type,
-        instrument=instrument,
-        variant=params.variant,
-    )
+    try:
+        return QuoteQuery(
+            provider=params.provider,
+            asset_type=params.asset_type,
+            instrument=instrument,
+            variant=params.variant,
+        )
+    except ValidationError as exc:
+        # 域层构造期校验（期权子类×交易所词汇表等）映射为统一参数错误
+        raise _invalid("query", str(exc)) from exc

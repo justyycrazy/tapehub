@@ -2,8 +2,10 @@
 
 auto 路由说明：bars/quotes CN stock/index/etf/contract 的回退链中 baostock、
 akshare 等免凭据 Provider 会截胡 auto 请求，故显式传 variant=ths 定向路由；
-CN option bars 组合 ths 为缺省首位（回退链 ths→tushare，测试环境 tushare
-凭据缺失自动跳过）、quotes 组合 ths 独占，auto（无 provider/variant 参数）直达。
+CN 期权 bars（asset_type 三分：commodity-option / index-option / etf-option，
+八所归属见 docs/api.md）组合 ths 为缺省首位（回退链 ths→tushare，测试环境
+tushare 凭据缺失自动跳过）、quotes 组合 ths 独占，auto（无 provider/variant
+参数）直达。
 """
 
 import pytest
@@ -84,16 +86,28 @@ def test_stock_bars_chain(ths_client: TestClient, monkeypatch: pytest.MonkeyPatc
     assert body["warnings"] == []
 
 
+@pytest.mark.parametrize(
+    ("asset_type", "instrument"),
+    [
+        ("index-option", "CN-CFFEX-IO2601-C-4000"),
+        ("etf-option", "CN-SSE-10012437"),
+        ("commodity-option", "CN-SHFE-CU2701C102000"),
+    ],
+)
 def test_option_bars_auto_chain(
-    ths_client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ths_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    asset_type: str,
+    instrument: str,
 ) -> None:
-    """CN option bars 组合 ths 缺省首位（tushare 凭据型兜底居链尾，测试环境
-    凭据缺失自动跳过）：无 provider/variant 参数 auto 直达。"""
+    """CN 期权 bars（asset_type 三分，三子类同链）组合 ths 缺省首位（tushare
+    凭据型兜底居链尾，测试环境凭据缺失自动跳过）：无 provider/variant 参数
+    auto 直达。"""
     preset_payload(monkeypatch, envelope({"item": bar_rows("timestamp", [1767196800000])}))
 
     params = {
-        "asset_type": "option",
-        "instrument": "CN-CFFEX-IO2601-C-4000",
+        "asset_type": asset_type,
+        "instrument": instrument,
         "interval": "P1D",
         "start": "2026-01-01T00:00:00+08:00",
         "end": "2026-01-10T00:00:00+08:00",
@@ -113,7 +127,7 @@ def test_capability_catalog(ths_client: TestClient) -> None:
     entry = response.json()["data"][0]
     assert entry["provider"] == "ths"
     assert entry["enabled"] is True
-    assert len(entry["capabilities"]) == 10  # bars 5 块 + quotes 5 块
+    assert len(entry["capabilities"]) == 14  # bars 7 块 + quotes 7 块（期权三子类拆三）
 
     bars_caps = [c for c in entry["capabilities"] if c["data_type"] == "bars"]
     assert {tuple(cap["asset_types"])[0] for cap in bars_caps} == {
@@ -121,7 +135,9 @@ def test_capability_catalog(ths_client: TestClient) -> None:
         "index",
         "etf",
         "contract",
-        "option",
+        "commodity-option",
+        "index-option",
+        "etf-option",
     }
     for cap in bars_caps:
         assert cap["variants"] == ["ths"]
@@ -147,7 +163,7 @@ def test_capability_catalog(ths_client: TestClient) -> None:
     assert adjustments["stock"] == ["none", "qfq", "hfq"]  # 唯一三值复权资产
     # ETF 上游固定前复权（受控对比实证：无 adjust 参数、数据固定 qfq 口径）
     assert adjustments["etf"] == ["qfq"]
-    for asset in ("index", "contract", "option"):
+    for asset in ("index", "contract", "commodity-option", "index-option", "etf-option"):
         assert adjustments[asset] == ["none"]
 
     # 实时快照：无周期/复权维度（显式空）；期货/期权量额=分时全点求和
@@ -158,13 +174,18 @@ def test_capability_catalog(ths_client: TestClient) -> None:
         "index",
         "etf",
         "contract",
-        "option",
+        "commodity-option",
+        "index-option",
+        "etf-option",
     }
     for cap in quote_caps:
         assert cap["intervals"] == []
         assert cap["adjustments"] == []
     fields_by_asset = {tuple(cap["asset_types"])[0]: cap["fields"] for cap in quote_caps}
-    for asset in ("stock", "index", "etf", "contract", "option"):
+    for asset in (
+        "stock", "index", "etf", "contract",
+        "commodity-option", "index-option", "etf-option",
+    ):
         assert fields_by_asset[asset] == ["timestamp", "last_price", "volume", "amount"]
 
 
@@ -249,10 +270,21 @@ def test_stock_quote_chain(ths_client: TestClient, monkeypatch: pytest.MonkeyPat
     assert meta["received_at"].endswith("+08:00")
 
 
+@pytest.mark.parametrize(
+    ("asset_type", "instrument"),
+    [
+        ("index-option", "CN-CFFEX-IO2601-C-4000"),
+        ("etf-option", "CN-SSE-10012437"),
+        ("commodity-option", "CN-SHFE-CU2701C102000"),
+    ],
+)
 def test_option_quote_auto_chain(
-    ths_client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ths_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    asset_type: str,
+    instrument: str,
 ) -> None:
-    """期权快照（分时末点）：CN option 组合 auto 直达，量额恒 null。"""
+    """期权快照（分时末点，asset_type 三分后三子类同链 ths 独占）：auto 直达。"""
     preset_payload(
         monkeypatch,
         envelope(
@@ -261,8 +293,8 @@ def test_option_quote_auto_chain(
     )
 
     params = {
-        "asset_type": "option",
-        "instrument": "CN-CFFEX-IO2601-C-4000",
+        "asset_type": asset_type,
+        "instrument": instrument,
     }
     response = ths_client.get("/v1/market/quotes", params=params)
     assert response.status_code == 200

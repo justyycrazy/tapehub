@@ -57,10 +57,30 @@ capabilities:
     adjustments: [none]
     fields: [open, high, low, close, volume, amount]
 
-  # 期权合约（端外仅日 K、time_period=day_1）
+  # 期权合约（asset_type 三分：commodity-option / index-option / etf-option，
+  # 2026-11-16 聚焦轮八所探针实证收编，八所归属见 docs/api.md「asset_type
+  # 资产类型体系」，三子类能力同构故声明同构拆块；端外仅日 K、time_period=day_1）
   - data_type: bars
     markets: [CN]
-    asset_types: [option]
+    asset_types: [commodity-option]
+    delivery: [rest]
+    variants: [ths]
+    intervals:
+      - {code: P1D, history: {start: null, end: null}}
+    adjustments: [none]
+    fields: [open, high, low, close, volume, amount]
+  - data_type: bars
+    markets: [CN]
+    asset_types: [index-option]
+    delivery: [rest]
+    variants: [ths]
+    intervals:
+      - {code: P1D, history: {start: null, end: null}}
+    adjustments: [none]
+    fields: [open, high, low, close, volume, amount]
+  - data_type: bars
+    markets: [CN]
+    asset_types: [etf-option]
     delivery: [rest]
     variants: [ths]
     intervals:
@@ -108,9 +128,26 @@ capabilities:
     intervals: []
     adjustments: []
     fields: [timestamp, last_price, volume, amount]
+  # 期权快照（asset_type 三分后按子类拆块，能力同构）
   - data_type: quotes
     markets: [CN]
-    asset_types: [option]
+    asset_types: [commodity-option]
+    delivery: [rest]
+    variants: [ths]
+    intervals: []
+    adjustments: []
+    fields: [timestamp, last_price, volume, amount]
+  - data_type: quotes
+    markets: [CN]
+    asset_types: [index-option]
+    delivery: [rest]
+    variants: [ths]
+    intervals: []
+    adjustments: []
+    fields: [timestamp, last_price, volume, amount]
+  - data_type: quotes
+    markets: [CN]
+    asset_types: [etf-option]
     delivery: [rest]
     variants: [ths]
     intervals: []
@@ -135,8 +172,12 @@ operations:
   # 期货日 K（GET /api/futures/prices/daily）
   - match: {data_type: bars, market: CN, asset_type: contract, interval: P1D, adjust: none, variant: ths}
     operation: futures_daily
-  # 期权日 K（GET /api/options/prices/daily）
-  - match: {data_type: bars, market: CN, asset_type: option, interval: P1D, adjust: none, variant: ths}
+  # 期权日 K（asset_type 三分后按子类显式枚举，GET /api/options/prices/daily）
+  - match: {data_type: bars, market: CN, asset_type: commodity-option, interval: P1D, adjust: none, variant: ths}
+    operation: options_daily
+  - match: {data_type: bars, market: CN, asset_type: index-option, interval: P1D, adjust: none, variant: ths}
+    operation: options_daily
+  - match: {data_type: bars, market: CN, asset_type: etf-option, interval: P1D, adjust: none, variant: ths}
     operation: options_daily
 
   # —— 实时快照：周期/复权对快照无意义，match 显式 null ——
@@ -150,5 +191,10 @@ operations:
   # 期货/期权快照：分时端点（/api/futures|options/prices/intraday）取末点
   - match: {data_type: quotes, market: CN, asset_type: contract, interval: null, adjust: null, variant: ths}
     operation: futures_snapshot
-  - match: {data_type: quotes, market: CN, asset_type: option, interval: null, adjust: null, variant: ths}
+  # 期权快照（asset_type 三分后按子类显式枚举）
+  - match: {data_type: quotes, market: CN, asset_type: commodity-option, interval: null, adjust: null, variant: ths}
+    operation: options_snapshot
+  - match: {data_type: quotes, market: CN, asset_type: index-option, interval: null, adjust: null, variant: ths}
+    operation: options_snapshot
+  - match: {data_type: quotes, market: CN, asset_type: etf-option, interval: null, adjust: null, variant: ths}
     operation: options_snapshot

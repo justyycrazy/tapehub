@@ -18,7 +18,7 @@ Tushare Pro 官方数据源接入：CN 个股日/周/月三复权 K 线 + CN 指
 | bars | stock | `ts.pro_bar`（asset='E'） | P1D/P1W/P1M | none/qfq/hfq | open/high/low/close/volume/amount |
 | bars | index | `ts.pro_bar`（asset='I'） | P1D/P1W/P1M | none | open/high/low/close/volume/amount |
 | bars | etf | `pro.fund_daily` | P1D | none | open/high/low/close/volume/amount |
-| bars | option | `pro.opt_daily` | P1D | none | open/high/low/close/volume/amount |
+| bars | 期权三子类（commodity-option/index-option/etf-option） | `pro.opt_daily` | P1D | none | open/high/low/close/volume/amount |
 | bars | contract | `pro.fut_daily` | P1D | none | open/high/low/close/volume/amount |
 | bars | continuous | `pro.fut_daily` | P1D | none | open/high/low/close/volume/amount |
 
@@ -27,7 +27,7 @@ Tushare Pro 官方数据源接入：CN 个股日/周/月三复权 K 线 + CN 指
 - stock 日/周/月：`1999-12-08T00:00:00+08:00`（二分估计粒度 90 天 approx，三周期各自二分收敛、结果一致；真值≈标的上市日 1999-11-10 落在估算窗口内，与 akshare 个股口径同日互证）；
 - index 三周期：`1991-01-01T00:00:00+08:00`（实证下界声明——探针 2026-11-15 第 13 轮 P1D raw 直测 1991 全年 255 行；第 15 轮 chain 二分 P1W/P1M era 回溯同至 1991 触底；真实最早 bar ≈1991-01-18 与 baostock 结论互证，chain history_depth 常态复验）；
 - etf 日线：`2005-02-23T00:00:00+08:00`（实证下界声明——510050.SH 上市日，2005 全年 213 行；官方口径 fund_daily 起始 2000-01-03 系 LOF/封闭式基金更早数据，未实证不声明；capability 为库级声明，各标的以自身上市日起）；
-- option 日线：库级历史起点未核实，manifest 保持 null（合约级数据随上市起、随摘牌止）；
+- 期权三子类日线：库级历史起点未核实，manifest 保持 null（合约级数据随上市起、随摘牌止）；
 - contract：`2023-01-17T00:00:00+08:00`（探针标的 CU2401 上市首日，全量模式精确定值 approx=False）——capability 为 asset_type 级声明，各合约数据以自身上市日起、随摘牌止；
 - continuous：`1991-01-01T00:00:00+08:00`（二分下限触底，真实可能更早；主连拼接历史深于个股）。
 
@@ -51,7 +51,7 @@ BSE 说明：文档 doc_id=14 后缀表列明 `.BJ`，且经探针双证（全�
 
 ETF ts_code 后缀（fund_daily 场内基金接口，doc_id=127，沪深同构探针实证）：SSE→SH、SZSE→SZ。示例：`CN-SSE-510050 → 510050.SH`（华夏上证 50ETF）、`CN-SZSE-159915 → 159915.SZ`（易方达创业板 ETF）。拒绝范围 {SSE, SZSE}。
 
-期权 ts_code 后缀（opt_daily 八所；六所经 doc_id=159 交易所枚举 + 探针实证，**INE/GFEX 为 2026-11-16 聚焦轮目录+日 K 双证收编**——doc_id=159 文档枚举未列这两所，实测 `opt_basic` 目录可查，文档滞后）：合约符号**原样透传**（不做年份猜测与连字符改写）——SSE→SH（`CN-SSE-10012437 → 10012437.SH`）、SZSE→SZ（`90008083.SZ` 式）、CFFEX→CFX（`CN-CFFEX-IO2611-C-4150 → IO2611-C-4150.CFX`，带连字符中段「品种月-C/P-行权价」，**后缀 .CFX 与该所期货同**）、DCE→DCE（`M2612-C-3500.DCE` 式，4 位月带连字符）、SHFE→SHF（`FU2612C6100.SHF` 式，无连字符）、CZCE→ZCE（`SR701C5900.ZCE` 式，**3 位月码直通**，701=2027-01）、INE→INE（`CN-INE-SC2701C550 → SC2701C550.INE`，无连字符，与 SHFE 同构；目录形态样本 `SC2703P440.INE`）、GFEX→GFE（`CN-GFEX-LC2701-C-90000 → LC2701-C-90000.GFE`，连字符式；目录形态样本 `PS2710-C-30000.GFE`——**期权连字符式与该所期货主连「品种+L」不同构**）。拒绝范围 {SSE, SZSE, CFFEX, DCE, SHFE, CZCE, INE, GFEX} 之外（如 BSE 无期权）。
+期权 ts_code 后缀（asset_type 三分后按子类查分表，上游同为 pro.opt_daily、后缀码式零变化；opt_daily 八所；六所经 doc_id=159 交易所枚举 + 探针实证，**INE/GFEX 为 2026-11-16 聚焦轮目录+日 K 双证收编**——doc_id=159 文档枚举未列这两所，实测 `opt_basic` 目录可查，文档滞后）：合约符号**原样透传**（不做年份猜测与连字符改写）——SSE→SH（`CN-SSE-10012437 → 10012437.SH`）、SZSE→SZ（`90008083.SZ` 式）、CFFEX→CFX（`CN-CFFEX-IO2611-C-4150 → IO2611-C-4150.CFX`，带连字符中段「品种月-C/P-行权价」，**后缀 .CFX 与该所期货同**）、DCE→DCE（`M2612-C-3500.DCE` 式，4 位月带连字符）、SHFE→SHF（`FU2612C6100.SHF` 式，无连字符）、CZCE→ZCE（`SR701C5900.ZCE` 式，**3 位月码直通**，701=2027-01）、INE→INE（`CN-INE-SC2701C550 → SC2701C550.INE`，无连字符，与 SHFE 同构；目录形态样本 `SC2703P440.INE`）、GFEX→GFE（`CN-GFEX-LC2701-C-90000 → LC2701-C-90000.GFE`，连字符式；目录形态样本 `PS2710-C-30000.GFE`——**期权连字符式与该所期货主连「品种+L」不同构**）。拒绝范围：三子类各自的八所子集（commodity-option 五所 / index-option CFFEX / etf-option 沪深两所，合计八所）之外（如 BSE 无期权；子类×交易所矛盾组合在域层词汇表即拒绝，见 ../api.md）。
 
 拒绝范围：股票 {SSE, SZSE, BSE}、指数/ETF {SSE, SZSE}、期权八所 {SSE, SZSE, CFFEX, DCE, SHFE, CZCE, INE, GFEX} 之外、期货六所 {SHFE, DCE, INE, CFFEX, CZCE, GFEX} 之外的 exchange 明确拒绝（`UnsupportedCapabilityError`）；绝不预填未核实条目（证伪即移除）。
 
@@ -81,7 +81,7 @@ ETF ts_code 后缀（fund_daily 场内基金接口，doc_id=127，沪深同构�
 - bars CN stock：参与（凭据型回退候选之一）；
 - bars CN index：参与（链尾追加·凭据型兜底，2026-11-15 指数扩容；凭据缺失自动跳过）；
 - bars CN etf：参与（链尾追加·凭据型兜底，2026-11-15 ETF 扩容）；
-- bars CN option：参与（ths 之后链尾追加·凭据型兜底，2026-11-15 期权扩容 + 2026-11-16 八所收编 INE/GFEX，缺省链凭据缺失自动跳过）；
+- bars CN 期权三子类：参与（ths 之后链尾追加·凭据型兜底，2026-11-15 期权扩容 + 2026-11-16 八所收编 INE/GFEX + asset_type 三分三子类同链，缺省链凭据缺失自动跳过）；
 - bars CN contract、bars CN continuous：能力已声明，但链上不写即明确不参与 auto 路由——仅显式 `provider=tushare` 可用。
 
 ## extensions 白名单

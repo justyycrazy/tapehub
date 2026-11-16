@@ -197,6 +197,18 @@ class TestRequestValidation:
         for interval in ("1d", "tick", "PT"):
             assert self._post(fake_client, interval=interval).status_code == 422
 
+    def test_option_subtype_contradictory_exchange(self, fake_client) -> None:  # type: ignore[no-untyped-def]
+        """期权子类 × 交易所矛盾组合（域层词汇表校验，八所归属见 docs/api.md）：
+        构造期拒绝 → 422 INVALID_REQUEST，不进入路由链。"""
+        for asset_type, instrument in (
+            ("commodity-option", "CN-SSE-10012437"),  # SSE 属 etf-option
+            ("index-option", "CN-SHFE-CU2701C102000"),  # SHFE 属 commodity-option
+            ("etf-option", "CN-CFFEX-IO2612-C-4000"),  # CFFEX 属 index-option
+        ):
+            response = self._post(fake_client, asset_type=asset_type, instrument=instrument)
+            assert response.status_code == 422
+            assert response.json()["error"]["code"] == "INVALID_REQUEST"
+
     def test_offset_negative(self, fake_client) -> None:  # type: ignore[no-untyped-def]
         assert self._post(fake_client, offset=-1).status_code == 422
 
@@ -253,8 +265,10 @@ class TestRoutingErrors:
         assert response.json()["error"]["code"] == "PROVIDER_NOT_FOUND"
 
     def test_auto_without_candidates(self, default_client) -> None:  # type: ignore[no-untyped-def]
-        # 没有任何 Provider 支持期权，auto 路由无候选
-        params = {**self.PARAMS, "asset_type": "option", "instrument": "CN-SSE-10000001"}
+        # 期权链上 Provider（ths/tushare/tqsdk）均为凭据型，测试环境全未启用：
+        # auto 无可用候选（2026-11-16 八所收编后并非「无 Provider 支持期权」，
+        # 本用例语义是「候选全部停用」）
+        params = {**self.PARAMS, "asset_type": "etf-option", "instrument": "CN-SSE-10000001"}
         response = default_client.get("/v1/market/bars", params=params)
         assert response.status_code == 409
         assert response.json()["error"]["code"] == "NO_PROVIDER_AVAILABLE"
