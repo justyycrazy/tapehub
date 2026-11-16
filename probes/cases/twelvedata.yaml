@@ -112,16 +112,12 @@ raw:
       - {method: as_json, kwargs: {}}
     expect: {status: error, error_contains: ""}
 
-  # ── CN/HK 计划门槛指纹（目录探针：Basic 可用仅 CN stock/etf、
-  #    HK stock 各 1 个标的）：记录 404 Pro 门槛报错形态，升档后复测回填
-  - id: td-hk-pro-threshold-fingerprint
-    purpose: 采集 HK 标的 Pro 计划门槛错误指纹（CN/HK 不声明的实证依据；观察）
-    assert: false
-    module: twelvedata
-    client: {attr: TDClient, kwargs: {apikey: "$TAPEHUB_TWELVEDATA_API_KEY"}}
-    call:
-      - {method: time_series, kwargs: {symbol: "0700", exchange: "HKEX", interval: "1day", outputsize: 5}}
-      - {method: as_json, kwargs: {}}
-    expect: {status: error, error_contains: ""}
+  # ── 已定案退役（2026-11-16 非运行轮清退）：td-hk-pro-threshold-fingerprint
+  #    （CN/HK 计划门槛指纹：目录探针实证 Basic 可用仅 CN stock/etf、
+  #    HK stock 各 1 个标的，404 Pro 门槛报错形态）——CN/HK 不声明 →
+  #    链路永不发出该请求，上游漂移对链路零影响（alphafeed 10m 周期先例）；
+  #    计划升档属账户侧动作、运营者主动可知，升档复测按需单轮重探即可
+  #    （目录证据见 2026-11-05~06 目录外专项 catalog-coverage-* /
+  #    plan-dist-3-*，PROBE_LOG 留档）。
 
 notes: 各轮运行记录见 probes/results/PROBE_LOG.md（不入库）；探针框架规范见 probes/README.md。

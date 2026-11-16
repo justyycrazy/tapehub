@@ -321,7 +321,6 @@ raw:
     purpose: 能源中心期权目录常态留存（opt_basic exchange=INE 在市列表，
       2026-11-16 首轮 6528 行）：commodity-option@CN-INE 目标的在市标的轮换
       证据来源，到期轮换按本 case 结果重选近月/主力系列
-    assert: false
     module: tushare
     client: {attr: pro_api, kwargs: {token: "$TAPEHUB_TUSHARE_TOKEN"}}
     call:
@@ -331,7 +330,6 @@ raw:
     purpose: 广期所期权目录常态留存（opt_basic exchange=GFEX，2026-11-16 首轮
       12000 行——doc_id=159 文档枚举未列 GFEX 属文档滞后）：commodity-option@CN-GFEX
       目标的在市标的轮换证据来源，到期轮换按本 case 结果重选
-    assert: false
     module: tushare
     client: {attr: pro_api, kwargs: {token: "$TAPEHUB_TUSHARE_TOKEN"}}
     call:

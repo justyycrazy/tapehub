@@ -314,7 +314,7 @@ connection:
     rounds: 1
     concurrent: 4
 
-raw:
+raw: []
   # ── 已定案退役的探索性 raw（原始证据见 probes/results/PROBE_LOG.md，
   #    不入库）：quote-contract-uppercase（大写品种上游不接受——SHFE.AU2612
   #    matched=False，2026-11-12 第 8 轮定案，request_mapper 品种大小写还原
@@ -333,30 +333,14 @@ raw:
   #    权限边界的证据）。Quote 首包前 NaN 的上游行为由「last/bid/ask 全空
   #    判 failed」承接（原 min_fields 只验证键存在，弱于该判定）。
   #
-  # ── 仅存负对照：郑商所 4 位年月码（与 ths ths-futures-suffix-zce-4digit
-  #    同款设计）——适配器 4→3 还原后链路永远发不出 4 位形态，无法入链，
-  #    常态复验该结论（4 位无响应挂起——TianQin 只认 3 位）。
-  - id: kline-czce-4digit
-    purpose: 郑商所 4 位年月码上游接受度实证（get_kline_serial CZCE.RM2701，
-      观察不判定；已实证 4 位无响应挂起——TianQin 只认 3 位，
-      适配器据此做 4→3 位还原，本 case 常态复验该结论；3 位侧常态复验由
-      chain contract@CN-CZCE 承担）
-    module: tqsdk
-    client:
-      attr: TqApi
-      kwargs:
-        auth:
-          $ctor:
-            attr: TqAuth
-            kwargs:
-              user_name: "$TAPEHUB_TQSDK_AUTH_USER"
-              password: "$TAPEHUB_TQSDK_AUTH_PASSWORD"
-        disable_print: true
-    call:
-      - {method: get_kline_serial, kwargs: {symbol: "CZCE.RM2701", duration_seconds: 86400, data_length: 2}}
-    close: {method: close}
-    expect: {status: ok, min_rows: 1}
-    assert: false
+  # ── 已定案退役的负对照 raw（2026-11-16 非运行轮清退）：kline-czce-4digit
+  #    （郑商所 4 位年月码 get_kline_serial 无响应挂起——TianQin 只认 3 位，
+  #    多轮复现：2026-11-12/13 第 9/10 轮、期货聚焦轮再证）——适配器 4→3
+  #    还原后链路永远发不出 4 位形态，负向结论无决策依赖：上游即使改为
+  #    接受 4 位亦不影响链路行为；正向侧（3 位可用）由 chain
+  #    contract@CN-CZCE 常态复验，上游连 3 位都拒时 chain availability
+  #    响亮失败。原 case 每轮挂起烧满一次调用超时（纯墙钟负收益），与
+  #    ths ths-futures-suffix-zce-4digit 同轮同口径清退。
 
   # ── 已定案退役的期权八所探测 raw（2026-11-16 聚焦轮一轮全通 + 映射层
   #    八所回填后，11 条（八所各 1 + DCE/INE/GFEX 对照候选各 1）收敛为

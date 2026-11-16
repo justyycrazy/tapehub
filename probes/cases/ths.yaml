@@ -265,28 +265,16 @@ raw:
   #      两条均为一次性形态/语义定案，回填闭合后由映射层与单测守护
   #     （futunn quotes「目录外取证+单测覆盖」先例）；2026-11-15 起 quotes
   #      声明组合（stock/index/etf/contract/option + BSE/期货逐所）经 chain
-  #      quote_availability 常态复验，快照可得性不再依赖 raw。
-  #
-  # ETF 复权口径留存（观察）：fund historical 端点无 adjust 请求参数（复权
-  # 方式不可选），官方文档明示「adjust null 当前固定为 null；价格数据仍采用
-  # 前复权口径」——受控对比实证文档属实（对照 baostock none/qfq 序列），
-  # manifest etf 复权声明据实回填 [qfq]。baostock ResultData 非 JSON 形态、
-  # 模块级 login/logout 模型不适配声明式 client/close，参照序列对比走目录外
-  # 脚本。本 case 常态留存 ths 侧证据：窗口钉在 2025-01-21 除息日 ±7 自然日
-  # （跨除息口径差异肉眼可核）。框架 kwargs 统一关键字传参（dict.get 不接受
-  # 关键字），无法链式抽取 item——链止于整信封、以 min_fields 判定，样本随
-  # 窄窗口限量。
-  - id: ths-etf-dividend-window
-    purpose: ETF 跨除息窗口日线可得性与复权口径证据留存（2025-01-21 除息日
-      ±7 自然日；结论见目录外对比报告 etf-adjust-20261114T080423+0800）
-    assert: false
-    module: httpx
-    client: {attr: Client, kwargs: {}}
-    call:
-      - {method: get, kwargs: {url: "https://fuyao.aicubes.cn/api/fund/market/historical", params: {thscode: "510880.SH", interval: "1d", start: 1736784000000, end: 1737993599000}, headers: {"X-api-key": "$TAPEHUB_THS_API_KEY"}}}
-      - {method: json, kwargs: {}, target: result}
-    expect: {status: ok, min_fields: [code, message, data]}
-    close: {method: close, kwargs: {}}
+  #      quote_availability 常态复验，快照可得性不再依赖 raw；
+  #    ③ ths-etf-dividend-window（ETF 跨除息窗口复权口径证据，2026-11-16
+  #      非运行轮退役）——fund historical 端点无 adjust 请求参数（复权方式
+  #      不可选），官方「价格数据仍采用前复权口径」经受控对比实证属实
+  #      （对照 baostock none/qfq 序列，目录外报告
+  #      etf-adjust-20261114T080423+0800），manifest etf 复权 [qfq] 已回填；
+  #      窗口钉死 2025-01-21 除息日 ±7 自然日、历史 bar 不可变，每轮重跑无
+  #      漂移检测价值（近两轮报告 matched=True 同值）。chain 侧不可表达
+  #      （无 adjust 参数 → adjust_diff 不可用，etf 可得性已由 chain
+  #      availability 覆盖），终态为退役而非升级。
 
   # 错误指纹仅观察：采集无效 API Key 的信封报文（预期 code=2001 未认证，
   # HTTP 恒 200——信封错误走业务码），供 UPSTREAM 细分错误映射参考
@@ -298,7 +286,7 @@ raw:
     call:
       - {method: get, kwargs: {url: "https://fuyao.aicubes.cn/api/a-share/prices/snapshot", params: {thscodes: "600519.SH"}, headers: {"X-api-key": "probe-invalid-key-not-a-credential"}}}
       - {method: json, kwargs: {}, target: result}
-    expect: {status: ok, min_rows: 1}
+    expect: {status: ok, min_fields: [code, message]}
     close: {method: close, kwargs: {}}
 
   # ── 已定案退役的探索性 raw（原始证据见 probes/results/PROBE_LOG.md，
@@ -316,21 +304,13 @@ raw:
   #      [qfq] 声明已回填；
   #    ⑥ CFFEX 期货后缀双候选（IF2706.CFE code=0 真实日线、IF2706.CFX
   #      3001 'Target not found'，2026-11-16 第 9 轮定案回填）——chain
-  #      contract@CN-CFFEX 目标常态复验同一端点同一代码形态。
-  #
-  # 仅存负对照：郑商所四位年月码——适配器 4→3 还原后链路永远发不出 4 位
-  # 形态，无法入链，常态留存（与 tqsdk kline-czce-4digit 同款设计）。
-  - id: ths-futures-suffix-zce-4digit
-    purpose: 郑商所四位年月码对照实证（MA2701.CZC 3001——4→3 还原依据
-      常态留存，非后缀探测）
-    assert: false
-    module: httpx
-    client: {attr: Client, kwargs: {}}
-    call:
-      - {method: get, kwargs: {url: "https://fuyao.aicubes.cn/api/futures/prices/daily", params: {thscode: "MA2701.CZC", start: 1785715200000, end: 1794614399000, time_period: "day_1"}, headers: {"X-api-key": "$TAPEHUB_THS_API_KEY"}}}
-      - {method: json, kwargs: {}, target: result}
-    expect: {status: ok, min_fields: [code, message, data]}
-    close: {method: close, kwargs: {}}
+  #      contract@CN-CFFEX 目标常态复验同一端点同一代码形态；
+  #    ⑦ ths-futures-suffix-zce-4digit（郑商所四位年月码 3001 负对照，
+  #      2026-11-16 非运行轮退役）——4→3 还原依据已定案且无决策依赖：
+  #      适配器还原后链路永远发不出 4 位形态，上游即使改为接受 4 位亦不
+  #      影响链路行为；正向侧（3 位可用）由 chain contract@CN-CZCE 常态
+  #      复验，上游连 3 位都拒时 chain availability 响亮失败（近两轮报告
+  #      3001 同值；与 tqsdk kline-czce-4digit 同轮同口径清退）。
 
   # ── 已定案退役的期权八所探测 raw（2026-11-16 聚焦轮双候选定案 + 映射层
   #    八所回填后，7 条胜出候选（SSE/SZSE/SHFE/INE/DCE/CZCE/GFEX）收敛为
