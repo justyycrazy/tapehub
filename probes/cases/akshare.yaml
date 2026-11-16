@@ -9,7 +9,10 @@ requires:
 pacing:
   call_interval_s: 5.0   # 东方财富 push2 对高频断连限流：首次约 5 分钟恢复，
   timeout_s: 60          # 反复触发需 40 分钟以上；实测 2s 节流即被限流
-  max_calls: 355         # availability 59（CN stock 15 + index 5 + etf 9 +
+  max_calls: 400         # availability 91（CN stock 15 + stock@CN-SZSE 15 +
+                         # index 5 + index@CN-SZSE 5 + index@CN-BSE 3
+                         #（eastmoney 变体；sina/tencent 变体显式 skip）+
+                         # etf 9 + etf@CN-SZSE 9 +
                          # 期货 12：contract 基准/CZCE + continuous 基准
                          # + 六所扩容 contract@CN-DCE/INE/GFEX/CFFEX 与
                          # continuous@CN-CZCE/DCE/INE/GFEX/CFFEX——新浪源
@@ -35,16 +38,46 @@ targets:
     # 跨周期下限（D≈243 / W≈53 / M≈12 根），只用于拦截空结果；按日线标定会产生周/月假阳性
     min_bars: 10
     required_fields: [open, high, low, close, volume]
+  stock@CN-SZSE:
+    instrument: CN-SZSE-000001
+    # 平安银行（深市主板）：交易所限定追加目标，三变体共用（eastmoney 纯
+    # 6 位代码、sina/tencent sz 前缀，白名单均含 SZSE）。首验轮——声明内 +
+    # mapper 放行，首次运行即实证。BSE 个股不设目标：东财接口不返回 BSE
+    # 数据（bse-stock-fingerprint 负闸门在位），维持「BSE 未探针不声明」
+    window: {start: 2025-01-01, end: 2025-12-31}
+    min_bars: 10
+    required_fields: [open, high, low, close, volume]
   index:
     instrument: CN-SSE-000001
     window: {start: 2025-01-01, end: 2025-12-31}
     # 跨周期下限（指数 P1W/P1M：W≈53 / M≈12 根），只用于拦截空结果；
     # 按日线标定会产生周/月假阳性
     min_bars: 10
+  index@CN-SZSE:
+    instrument: CN-SZSE-399001
+    # 深证成指：交易所限定追加目标，三变体共用（eastmoney 纯代码自动判市、
+    # sina/tencent sz399001 前缀，白名单均含 SZSE）。首验轮
+    window: {start: 2025-01-01, end: 2025-12-31}
+    min_bars: 10
+  index@CN-BSE:
+    instrument: CN-BSE-899050
+    # 北证 50：交易所限定追加目标——仅 eastmoney 变体放行（指数代码映射表
+    # 探针实测覆盖 BSE，见 docs/providers/akshare.md）；sina/tencent 变体
+    # 白名单仅 SSE/SZSE，其 BSE case 显式 skip（见 chain.skip）。首验轮
+    window: {start: 2025-01-01, end: 2025-12-31}
+    min_bars: 10
   etf:
     instrument: CN-SSE-510050
     window: {start: 2025-01-01, end: 2025-12-31}
     min_bars: 10         # 跨周期下限，同 stock 口径
+    required_fields: [open, high, low, close, volume, amount]
+  etf@CN-SZSE:
+    instrument: CN-SZSE-159915
+    # 易方达创业板 ETF：交易所限定追加目标（仅 eastmoney 变体声明 ETF，
+    # 纯代码首位「5/6→沪、其余→深」自动判向）。首验轮。BSE×ETF 不存在
+    #（北交所无 ETF），不设该所目标
+    window: {start: 2025-01-01, end: 2025-12-31}
+    min_bars: 10
     required_fields: [open, high, low, close, volume, amount]
   stock@HK:
     instrument: HK-HKEX-00002
@@ -126,7 +159,14 @@ targets:
 
 chain:
   include_declared: true
-  skip: []
+  skip:
+    # index@CN-BSE 仅 eastmoney 变体放行：sina/tencent 变体指数白名单为
+    # {SSE, SZSE}（映射层拒绝 BSE），其 BSE availability case 显式跳过——
+    # 变体不对称如实留痕，eastmoney 侧常态复验
+    - case: index@CN-BSE-P1D-none-sina
+      reason: sina 变体指数白名单仅 SSE/SZSE，映射层拒绝 BSE（不做上游调用）
+    - case: index@CN-BSE-P1D-none-tencent
+      reason: tencent 变体指数白名单仅 SSE/SZSE，映射层拒绝 BSE（不做上游调用）
   adjust_diff:
     targets: [stock, etf, stock@HK, stock@US]
     intervals: [P1D]     # 周/月与日线同端点同复权参数（对齐 tickflow/alphafeed 做法，控预算）

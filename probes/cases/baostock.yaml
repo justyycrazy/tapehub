@@ -15,14 +15,15 @@ pacing:
   # （懒登录复用），探针链路与 raw 共享同一会话。
   call_interval_s: 2.0
   timeout_s: 60
-  # 预算：availability 66（stock 基准 21 + stock@CN-SZSE 追加 21 + index 3 +
-  # etf 21，含 ETF 分钟族 12）+ adjust_diff 12（stock/stock@CN-SZSE/etf 各
-  # 2 case × 2 调）+ raw 3 case × 4 调 = 90
+  # 预算：availability 90（stock 基准 21 + stock@CN-SZSE 追加 21 + index 3 +
+  # index@CN-SZSE 追加 3 + etf 21 + etf@CN-SZSE 追加 21，含 ETF 分钟族 24）
+  # + adjust_diff 12（stock/stock@CN-SZSE/etf 各 2 case × 2 调）+ raw 3 case
+  # × 4 调 = 114
   #（history_depth 六条已收敛全量 skip，不占预算；指数分钟族与文档矛盾点/
   # 边界行为 one-off raw 已随定案退役，证据见 raw 段注释）。
   # ⚠ 分钟族重查询可能贴线/超时（属上游瞬时时延非能力缺口），failed 时
   # 重跑复验即可。
-  max_calls: 120
+  max_calls: 150
 
 # 基准标的沿用 tickflow/alphafeed 探针定稿的「早上市标的」原则（破除二分
 # 收敛点 = 标的自身上市日伪影）：
@@ -51,6 +52,14 @@ targets:
     window: {start: 2025-01-01, end: 2025-12-31}
     min_bars: 10
     required_fields: [open, high, low, close, volume, amount]
+  index@CN-SZSE:
+    instrument: CN-SZSE-399001
+    # 深证成指：交易所限定追加目标，sz. 前缀分支（与 stock@CN-SZSE 同一
+    # 前缀机制，stock 侧已 chain 级实证；指数侧为首验轮——声明内 + mapper
+    # 放行，首次运行即实证）。BSE 不声明（官方仅覆盖沪深两市）
+    window: {start: 2025-01-01, end: 2025-12-31}
+    min_bars: 10
+    required_fields: [open, high, low, close, volume, amount]
   etf:
     instrument: CN-SSE-510050
     # 华夏上证 50ETF（2004-12-30 上市，最早 CN ETF 之一）；窗口锚定 ETF
@@ -60,6 +69,16 @@ targets:
     # query_history_k_data_plus 实际覆盖无关）
     window: {start: 2026-01-05, end: 2026-12-31}
     # 月线 2026 年内约 11 根，min_bars 10 贴近月线真实值
+    min_bars: 10
+    required_fields: [open, high, low, close, volume, amount]
+  etf@CN-SZSE:
+    instrument: CN-SZSE-159915
+    # 易方达创业板 ETF（深市，2011-09-29 上市）：交易所限定追加目标，sz.
+    # 前缀分支（与 stock@CN-SZSE 同一前缀机制，stock 侧已 chain 级实证；
+    # ETF 侧为首验轮）。窗口对齐基准 etf 的分钟族起点锚（2026-01-05），
+    # availability 的 ETF 分钟族 case 依赖此窗。BSE×ETF 不存在（北交所无
+    # ETF），不设该所目标
+    window: {start: 2026-01-05, end: 2026-12-31}
     min_bars: 10
     required_fields: [open, high, low, close, volume, amount]
 

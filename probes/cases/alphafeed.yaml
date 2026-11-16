@@ -13,15 +13,17 @@ pacing:
   # 自带最多 3 次退避重试（_base_client.py），pacing 过密会掩盖限频真相。
   call_interval_s: 6.5
   timeout_s: 60
-  # 预算：availability 66（CN/HK/US 基准 27 + CN 交易所追加 SZSE/BSE 各 9
-  # + index 三周期 3 + etf 三周期三复权 9 + etf@US 三周期三复权 9）+
-  # quote_availability 8（quotes 声明随 include_declared 自动展开：stock@CN
-  # 基准/SZSE/BSE 逐所 + stock@HK/@US + index + etf + etf@US，各 1 调）+
+  # 预算：availability 81（CN/HK/US 基准 27 + CN 交易所追加 SZSE/BSE 各 9
+  # + index 三周期 3 + index@CN-SZSE/BSE 逐所各 3 + etf 三周期三复权 9 +
+  # etf@CN-SZSE 三周期三复权 9 + etf@US 三周期三复权 9）+
+  # quote_availability 11（quotes 声明随 include_declared 自动展开：stock@CN
+  # 基准/SZSE/BSE 逐所 + stock@HK/@US + index + index@CN-SZSE/BSE 逐所 +
+  # etf + etf@CN-SZSE + etf@US，各 1 调）+
   # adjust_diff 28（7 目标 × P1D × 2 pair × 2 调，etf/etf@US 为 ETF 分红
   # 复权复验）+ history_depth 3 条（US × 三周期）× ≤24 + raw 2 case × 2 调
   # （指纹 2；快照 3 条与 af-period-10m 已随 quotes 入链/定案退役，见 raw 段
-  # 注释）= 最坏 178。
-  max_calls: 200
+  # 注释）= 最坏 196。
+  max_calls: 220
 
 # 同一 asset_type（stock）跨三市场声明能力：用市场限定目标（stock@MARKET）
 # 为每个市场提供独立基准标的；case id 以限定键为前缀（如 stock@HK-P1D-...）。
@@ -74,10 +76,33 @@ targets:
     window: {start: 2025-01-01, end: 2025-12-31}
     min_bars: 10
     required_fields: [open, high, low, close, volume, amount]
+  index@CN-SZSE:
+    instrument: CN-SZSE-399001
+    # 深证成指：交易所限定追加目标（.SZ 后缀，统一 CN 后缀表三所齐全）。
+    # quotes 侧 CN 指数 SSE/SZSE 已第 11 轮目录外诊断实证；bars 侧为首验轮
+    #——声明内 + mapper 放行，首次运行即实证
+    window: {start: 2025-01-01, end: 2025-12-31}
+    min_bars: 10
+    required_fields: [open, high, low, close, volume, amount]
+  index@CN-BSE:
+    instrument: CN-BSE-899050
+    # 北证 50：交易所限定追加目标（.BJ 后缀，920 段个股逐所已实证收编见
+    # stock@CN-BSE）。bars 侧首验轮；BSE×ETF 不存在（北交所无 ETF），不设
+    # 该所目标
+    window: {start: 2025-01-01, end: 2025-12-31}
+    min_bars: 10
+    required_fields: [open, high, low, close, volume, amount]
   etf:
     instrument: CN-SSE-510050
     # 华夏上证 50ETF：ETF 能力 chain 常态复验基准目标（探测 7 条 raw 收敛，
     # 出处同 index 注释）；availability 全声明矩阵展开（3 周期 × 三复权）
+    window: {start: 2025-01-01, end: 2025-12-31}
+    min_bars: 10
+    required_fields: [open, high, low, close, volume, amount]
+  etf@CN-SZSE:
+    instrument: CN-SZSE-159915
+    # 易方达创业板 ETF：交易所限定追加目标（.SZ 后缀；quotes 侧 CN ETF
+    # SZSE 已第 11 轮实证）。bars 侧首验轮
     window: {start: 2025-01-01, end: 2025-12-31}
     min_bars: 10
     required_fields: [open, high, low, close, volume, amount]
