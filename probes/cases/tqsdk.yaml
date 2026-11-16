@@ -16,21 +16,25 @@ pacing:
   # 实证（hfq/none 差异显著），复权 case 判定以盘中运行为准；天勤不支持
   # BSE 前缀（BSE.920000 快速报「non-existent instrument」graphql 错误，
   # 闸门 case quote-bse-fingerprint）
-  # 可用性 150（stock/stock@CN-SZSE/etf 各 12：分钟族仅 none + PT30M/PT1H/
-  # P1D 三值——复权收窄后拆块；index/contract/continuous/weighted-index
+  # 可用性 168（stock/stock@CN-SZSE/etf/etf@CN-SZSE 各 12：分钟族仅 none +
+  # PT30M/PT1H/P1D 三值——复权收窄后拆块；index/index@CN-SZSE 6 + contract/
+  # continuous/weighted-index
   # 基准与 contract@CN-CZCE/DCE/INE/GFEX/CFFEX、continuous@CN-CZCE/DCE/
   # INE/GFEX/CFFEX、weighted-index@CN-CZCE/DCE/INE/GFEX/CFFEX 各 6——
   # 期货六所扩容（2026-11-15）：逐所 availability 即写法约定实证，见
   # targets 注释）+ adjust_diff 36 case（分钟族 18 条显式 SKIP：
   # compared adjust 未声明，0 调；PT30M+/P1D 18 条 × 2 调）+
   # history_depth 30 case×~13 + limit 1 + connection 9+12（创建+首调+释放）
-  # + quote_availability 22×1 调（quotes 声明随 include_declared 自动展开：
+  # + quote_availability 24×1 调（quotes 声明随 include_declared 自动展开：
   # contract/continuous/weighted-index 基准与五所逐所 + stock 基准/SZSE
-  # 逐所 + index + etf；郑商所 4→3 位还原在快照链路的常态复验由
+  # 逐所 + index 基准/SZSE 逐所 + etf 基准/SZSE 逐所；郑商所 4→3 位还原在
+  # 快照链路的常态复验由
   # quote-contract@CN-CZCE 承载）+ raw 1 case×2 调用（郑商所 4 位 kline
   # 挂起复验负对照；3 位接受度由 chain contract@CN-CZCE 还原链路常态复验；
   # quote 矩阵 6 条 raw 已随 quotes 入链退役，见 raw 段注释）
-  # ≈ 658
+  # + 期权八所探测 11 case × 3 调（client + get_quote + get_kline_serial：
+  # 八所各 1 + DCE/INE/GFEX 码式对照候选各 1）
+  # ≈ 711
   #（quote-contract-uppercase / quote-bse-fingerprint 已随定案退役，
   # 见 raw 段注释）
   # （深度探针全周期同轮测量：保留边界随时间前移，矩阵须同一时点；
@@ -163,9 +167,23 @@ targets:
     instrument: CN-SSE-000016
     window: {start: 2026-07-01, end: 2026-11-30}
     min_bars: 60
+  index@CN-SZSE:
+    # 深证成指：交易所限定追加目标，SZSE. 前缀（与 stock@CN-SZSE 同一
+    # 直拼机制；文档口径「指数仅核实 SSE/SZSE 发布的代码」）。首验轮——
+    # 声明内 + mapper 放行（透传无白名单），首次运行即实证
+    instrument: CN-SZSE-399001
+    window: {start: 2026-07-01, end: 2026-11-30}
+    min_bars: 60
   etf:
     # ETF 权限口径未核实，失败如实记录
     instrument: CN-SSE-510050
+    window: {start: 2026-07-01, end: 2026-11-30}
+    min_bars: 60
+  etf@CN-SZSE:
+    # 易方达创业板 ETF：交易所限定追加目标，SZSE. 前缀直拼（与 stock@CN-SZSE
+    # 同一机制）。首验轮。BSE 不上 chain 目标（天勤不支持 BSE 前缀定案，
+    # 见 stock@CN-SZSE 注释）
+    instrument: CN-SZSE-159915
     window: {start: 2026-07-01, end: 2026-11-30}
     min_bars: 60
 
@@ -277,5 +295,243 @@ raw:
     close: {method: close}
     expect: {status: ok, min_rows: 1}
     assert: false
+
+  # ── 期权八所扩容探测（未定案，observe）：官方文档声称支持期权，但八所
+  #    期权码式、K 线与快照行为均未实证——upstream_symbol 现对 OPTION 明确
+  #    拒绝，链路发不出期权请求，走 raw 直测（get_quote 验标的存在性 +
+  #    get_kline_serial 验 K 线数据面，链式：标的不存在/挂起时 K 线调用
+  #    不执行）。每候选独立 case（框架仅采样链末结果）。
+  #    品种选择与码式候选依据（代表性 + 高持仓；request_mapper 注释已预留
+  #    SHFE「cu2607C50000 混合大小写」与 CZCE「品种+年月+C/P+行权价」线索，
+  #    期权代码结构与期货不同，不得沿用整段小写/4→3 规则）：
+  #    SSE/SZSE 数字合约码直拼（50ETF 购 10012437 / 沪深300ETF 购 90008083，
+  #    2026-11-25 到期）；CFFEX IO2612-C-4000（连字符）；SHFE 铜期权
+  #    cu2701C102000（品种小写混合大小写，ATM 实码）；INE 原油期权双候选
+  #    sc2701C550（SHFE 同构小写）/ SC2701C550（大写直通，期货侧已实证
+  #    大写）；DCE 豆粕期权双候选 M2701-C-3500（大写直通）/ m2701-C-3500
+  #    （官方文档示例小写 m）；CZCE 白糖期权 SR701C5900（3 位月码）；GFEX
+  #    碳酸锂期权双候选 lc2701-C-90000（连字符）/ lc2701C90000（无连字符）。
+  #    行权价为当期实码（ATM 或有量合约），到期按各所挂牌轮换；无效形态
+  #    上游表现为「non-existent instrument」快速报错或无响应挂起（超时
+  #    120s）——两类均为否定证据，如实记录。
+  - id: tqsdk-option-sse-etf
+    purpose: 上交所 ETF 期权探测（50ETF 购近月 10012437，数字合约码直拼；2026-11-25 到期，过期按当期挂牌近月重选）
+    assert: false
+    module: tqsdk
+    client:
+      attr: TqApi
+      kwargs:
+        auth:
+          $ctor:
+            attr: TqAuth
+            kwargs:
+              user_name: "$TAPEHUB_TQSDK_AUTH_USER"
+              password: "$TAPEHUB_TQSDK_AUTH_PASSWORD"
+        disable_print: true
+    call:
+      - {method: get_quote, kwargs: {symbol: "SSE.10012437"}}
+      - {method: get_kline_serial, kwargs: {symbol: "SSE.10012437", duration_seconds: 86400, data_length: 3}, target: client}
+    close: {method: close}
+    expect: {status: ok, min_rows: 1}
+
+  - id: tqsdk-option-szse-etf
+    purpose: 深交所 ETF 期权探测（沪深300ETF 购近月 90008083，数字合约码直拼；2026-11-25 到期，过期轮换）
+    assert: false
+    module: tqsdk
+    client:
+      attr: TqApi
+      kwargs:
+        auth:
+          $ctor:
+            attr: TqAuth
+            kwargs:
+              user_name: "$TAPEHUB_TQSDK_AUTH_USER"
+              password: "$TAPEHUB_TQSDK_AUTH_PASSWORD"
+        disable_print: true
+    call:
+      - {method: get_quote, kwargs: {symbol: "SZSE.90008083"}}
+      - {method: get_kline_serial, kwargs: {symbol: "SZSE.90008083", duration_seconds: 86400, data_length: 3}, target: client}
+    close: {method: close}
+    expect: {status: ok, min_rows: 1}
+
+  - id: tqsdk-option-cffex
+    purpose: 中金所股指期权探测（IO2612-C-4000 连字符式，与 tushare 侧该所期权同构；月度合约到期轮换）
+    assert: false
+    module: tqsdk
+    client:
+      attr: TqApi
+      kwargs:
+        auth:
+          $ctor:
+            attr: TqAuth
+            kwargs:
+              user_name: "$TAPEHUB_TQSDK_AUTH_USER"
+              password: "$TAPEHUB_TQSDK_AUTH_PASSWORD"
+        disable_print: true
+    call:
+      - {method: get_quote, kwargs: {symbol: "CFFEX.IO2612-C-4000"}}
+      - {method: get_kline_serial, kwargs: {symbol: "CFFEX.IO2612-C-4000", duration_seconds: 86400, data_length: 3}, target: client}
+    close: {method: close}
+    expect: {status: ok, min_rows: 1}
+
+  - id: tqsdk-option-shfe
+    purpose: 上期所铜期权探测（cu2701C102000——request_mapper 注释预留的混合大小写形态：品种小写 + 大写月/C/P + 行权价；ATM 实码）
+    assert: false
+    module: tqsdk
+    client:
+      attr: TqApi
+      kwargs:
+        auth:
+          $ctor:
+            attr: TqAuth
+            kwargs:
+              user_name: "$TAPEHUB_TQSDK_AUTH_USER"
+              password: "$TAPEHUB_TQSDK_AUTH_PASSWORD"
+        disable_print: true
+    call:
+      - {method: get_quote, kwargs: {symbol: "SHFE.cu2701C102000"}}
+      - {method: get_kline_serial, kwargs: {symbol: "SHFE.cu2701C102000", duration_seconds: 86400, data_length: 3}, target: client}
+    close: {method: close}
+    expect: {status: ok, min_rows: 1}
+
+  - id: tqsdk-option-ine-lower
+    purpose: 能源中心原油期权探测·候选一（sc2701C550——仿 SHFE 期权品种小写同构；期货侧 INE 大写直通已实证，期权侧待定）
+    assert: false
+    module: tqsdk
+    client:
+      attr: TqApi
+      kwargs:
+        auth:
+          $ctor:
+            attr: TqAuth
+            kwargs:
+              user_name: "$TAPEHUB_TQSDK_AUTH_USER"
+              password: "$TAPEHUB_TQSDK_AUTH_PASSWORD"
+        disable_print: true
+    call:
+      - {method: get_quote, kwargs: {symbol: "INE.sc2701C550"}}
+      - {method: get_kline_serial, kwargs: {symbol: "INE.sc2701C550", duration_seconds: 86400, data_length: 3}, target: client}
+    close: {method: close}
+    expect: {status: ok, min_rows: 1}
+
+  - id: tqsdk-option-ine-upper
+    purpose: 能源中心原油期权探测·候选二（SC2701C550 大写直通——与该所期货实证写法同构对照）
+    assert: false
+    module: tqsdk
+    client:
+      attr: TqApi
+      kwargs:
+        auth:
+          $ctor:
+            attr: TqAuth
+            kwargs:
+              user_name: "$TAPEHUB_TQSDK_AUTH_USER"
+              password: "$TAPEHUB_TQSDK_AUTH_PASSWORD"
+        disable_print: true
+    call:
+      - {method: get_quote, kwargs: {symbol: "INE.SC2701C550"}}
+      - {method: get_kline_serial, kwargs: {symbol: "INE.SC2701C550", duration_seconds: 86400, data_length: 3}, target: client}
+    close: {method: close}
+    expect: {status: ok, min_rows: 1}
+
+  - id: tqsdk-option-dce-upper
+    purpose: 大商所豆粕期权探测·候选一（M2701-C-3500 大写直通——与该所期货实证写法同构，连字符 4 位月）
+    assert: false
+    module: tqsdk
+    client:
+      attr: TqApi
+      kwargs:
+        auth:
+          $ctor:
+            attr: TqAuth
+            kwargs:
+              user_name: "$TAPEHUB_TQSDK_AUTH_USER"
+              password: "$TAPEHUB_TQSDK_AUTH_PASSWORD"
+        disable_print: true
+    call:
+      - {method: get_quote, kwargs: {symbol: "DCE.M2701-C-3500"}}
+      - {method: get_kline_serial, kwargs: {symbol: "DCE.M2701-C-3500", duration_seconds: 86400, data_length: 3}, target: client}
+    close: {method: close}
+    expect: {status: ok, min_rows: 1}
+
+  - id: tqsdk-option-dce-lower
+    purpose: 大商所豆粕期权探测·候选二（m2701-C-3500 小写——官方文档期权示例品种小写口径对照）
+    assert: false
+    module: tqsdk
+    client:
+      attr: TqApi
+      kwargs:
+        auth:
+          $ctor:
+            attr: TqAuth
+            kwargs:
+              user_name: "$TAPEHUB_TQSDK_AUTH_USER"
+              password: "$TAPEHUB_TQSDK_AUTH_PASSWORD"
+        disable_print: true
+    call:
+      - {method: get_quote, kwargs: {symbol: "DCE.m2701-C-3500"}}
+      - {method: get_kline_serial, kwargs: {symbol: "DCE.m2701-C-3500", duration_seconds: 86400, data_length: 3}, target: client}
+    close: {method: close}
+    expect: {status: ok, min_rows: 1}
+
+  - id: tqsdk-option-czce
+    purpose: 郑商所白糖期权探测（SR701C5900——品种+年月+C/P+行权价 3 位月码，与该所期货 3 位还原同构；到期 2026-12-11 轮换）
+    assert: false
+    module: tqsdk
+    client:
+      attr: TqApi
+      kwargs:
+        auth:
+          $ctor:
+            attr: TqAuth
+            kwargs:
+              user_name: "$TAPEHUB_TQSDK_AUTH_USER"
+              password: "$TAPEHUB_TQSDK_AUTH_PASSWORD"
+        disable_print: true
+    call:
+      - {method: get_quote, kwargs: {symbol: "CZCE.SR701C5900"}}
+      - {method: get_kline_serial, kwargs: {symbol: "CZCE.SR701C5900", duration_seconds: 86400, data_length: 3}, target: client}
+    close: {method: close}
+    expect: {status: ok, min_rows: 1}
+
+  - id: tqsdk-option-gfex-hyphen
+    purpose: 广期所碳酸锂期权探测·候选一（lc2701-C-90000 连字符——与 tushare 侧该所期权连字符式同构；行权价 90000 参考该所期货价 8.6~9.4 万）
+    assert: false
+    module: tqsdk
+    client:
+      attr: TqApi
+      kwargs:
+        auth:
+          $ctor:
+            attr: TqAuth
+            kwargs:
+              user_name: "$TAPEHUB_TQSDK_AUTH_USER"
+              password: "$TAPEHUB_TQSDK_AUTH_PASSWORD"
+        disable_print: true
+    call:
+      - {method: get_quote, kwargs: {symbol: "GFEX.lc2701-C-90000"}}
+      - {method: get_kline_serial, kwargs: {symbol: "GFEX.lc2701-C-90000", duration_seconds: 86400, data_length: 3}, target: client}
+    close: {method: close}
+    expect: {status: ok, min_rows: 1}
+
+  - id: tqsdk-option-gfex-plain
+    purpose: 广期所碳酸锂期权探测·候选二（lc2701C90000 无连字符——交易所原生品种+月+C/P+行权价形态对照）
+    assert: false
+    module: tqsdk
+    client:
+      attr: TqApi
+      kwargs:
+        auth:
+          $ctor:
+            attr: TqAuth
+            kwargs:
+              user_name: "$TAPEHUB_TQSDK_AUTH_USER"
+              password: "$TAPEHUB_TQSDK_AUTH_PASSWORD"
+        disable_print: true
+    call:
+      - {method: get_quote, kwargs: {symbol: "GFEX.lc2701C90000"}}
+      - {method: get_kline_serial, kwargs: {symbol: "GFEX.lc2701C90000", duration_seconds: 86400, data_length: 3}, target: client}
+    close: {method: close}
+    expect: {status: ok, min_rows: 1}
 
 notes: 各轮运行记录见 probes/results/PROBE_LOG.md（不入库）；探针框架规范见 probes/README.md。
