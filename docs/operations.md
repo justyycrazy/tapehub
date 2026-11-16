@@ -96,6 +96,7 @@ uv run uvicorn tapehub.api.app:app --reload   # 启动服务（默认 127.0.0.1:
 | `TAPEHUB_STREAM_HEARTBEAT_SECONDS` | `15`（秒） | 空闲心跳间隔：无事件时按该周期发送保活帧 |
 | `TAPEHUB_STREAM_IDLE_TIMEOUT_SECONDS` | `300`（秒） | 流空闲超时：该窗口内无行情事件（心跳不算）则本地退订并结束流 |
 | `TAPEHUB_UPSTREAM_TIMEOUT_SECONDS` | `30`（秒） | bars/quotes 单次请求从发起到返回的上限，超时返回 `UPSTREAM_TIMEOUT`（504）；SSE 流为长驻设计不适用此值 |
+| `TAPEHUB_THREAD_POOL_SIZE` | `40` | 线程池容量：全部线程型上游调用共享（anyio 默认 limiter）；akshare/baostock 等 SDK 上游 socket 无超时，挂死调用占用容量至自然结束——调大是缓解手段，根治需上游超时或按 Provider 分组限流 |
 
 ## 测试与本地环境解耦
 

@@ -83,3 +83,25 @@ def test_lifespan_collects_multiple_hook_tasks() -> None:
         pass
 
     assert a1.shutdown_done and a2.shutdown_done
+
+
+def test_lifespan_applies_thread_pool_size() -> None:
+    """lifespan 启动把 Settings.thread_pool_size 应用到 anyio 默认 limiter。
+
+    limiter 是 per-event-loop 的 RunVar：测试在同一 loop 内直接驱动
+    lifespan 协程（不经 TestClient portal，其 loop 与断言所在的 loop 不同），
+    结束前还原原值避免污染同 loop 内的其他测试。
+    """
+    import anyio.to_thread
+
+    async def scenario() -> None:
+        limiter = anyio.to_thread.current_default_thread_limiter()
+        original = limiter.total_tokens
+        try:
+            app = create_app(settings=make_settings(thread_pool_size=13))
+            async with app.router.lifespan_context(app):
+                assert limiter.total_tokens == 13
+        finally:
+            limiter.total_tokens = original
+
+    asyncio.run(scenario())

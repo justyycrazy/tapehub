@@ -6,6 +6,7 @@ import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
+import anyio.to_thread
 from fastapi import FastAPI
 
 from tapehub.api.exception_handlers import register_exception_handlers
@@ -40,6 +41,14 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        # 线程池容量：call_in_thread（全部线程型上游调用）共享 anyio 默认
+        # limiter。anyio 默认 limiter 是 per-event-loop 的 RunVar，必须在本
+        # loop 的 lifespan 启动阶段设置（create_app 模块级无 loop 可用）；
+        # 挂死上游调用占满容量会拖垮全部线程型 Provider，见
+        # settings.thread_pool_size 注释
+        anyio.to_thread.current_default_thread_limiter().total_tokens = (
+            app.state.settings.thread_pool_size
+        )
         yield
         # 停机顺序：先终结行情流（释放订阅引用，客户端收到明确事件），
         # 再关闭持有长连接的适配器运行时（鸭子类型，不感知具体 Provider）

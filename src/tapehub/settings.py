@@ -62,6 +62,11 @@ class Settings(BaseSettings):
     # （其余 Provider 与 tqsdk per_request）经 call_in_thread 的可放弃语义
     # 取消即时返回，工作线程在后台跑完当前上游调用后自行退出
     upstream_timeout_seconds: float = Field(default=30.0, gt=0)
+    # 线程池容量（anyio 默认 limiter 的 total_tokens）：全部线程型上游调用
+    # 共享该容量；akshare/baostock 等 SDK 上游 socket 无超时，挂死调用会
+    # 占用容量至自然结束——调大是缓解手段，根治需上游超时或按 Provider
+    # 分组限流（当前依赖上游报错与监控告警兜底）
+    thread_pool_size: int = Field(default=40, ge=1)
     version: str = "0.1.0"
     api_version: str = "v1"
     catalog_version: str = "1"
