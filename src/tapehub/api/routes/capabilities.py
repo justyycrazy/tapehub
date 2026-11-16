@@ -4,7 +4,12 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, Request
 
-from tapehub.api.dependencies import get_capability_service, get_request_id, get_settings
+from tapehub.api.dependencies import (
+    get_capability_service,
+    get_request_id,
+    get_settings,
+    require_api_key,
+)
 from tapehub.api.schemas.responses import (
     CapabilitiesMeta,
     CapabilitiesResponse,
@@ -22,6 +27,7 @@ router = APIRouter(prefix="/v1", tags=["capabilities"])
 @router.get("/capabilities", response_model=CapabilitiesResponse)
 async def list_capabilities(
     request: Request,
+    _auth: Annotated[None, Depends(require_api_key)],
     service: Annotated[CapabilityService, Depends(get_capability_service)],
     settings: Annotated[Settings, Depends(get_settings)],
     request_id: Annotated[str, Depends(get_request_id)],
@@ -60,6 +66,7 @@ async def list_capabilities(
 async def get_provider_capabilities(
     provider: str,
     request: Request,
+    _auth: Annotated[None, Depends(require_api_key)],
     service: Annotated[CapabilityService, Depends(get_capability_service)],
     settings: Annotated[Settings, Depends(get_settings)],
     request_id: Annotated[str, Depends(get_request_id)],

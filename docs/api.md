@@ -24,8 +24,9 @@ GET http://tapehub:8000/health
 
 ## 认证
 
-- 当前版本（`TAPEHUB_DEPLOYMENT_MODE=single`，单进程单用户最小运行模式）**默认无入站鉴权**：全部端点对本机/可信网络内的任何调用方开放。服务不强制回环绑定——**对外（非回环）暴露前必须配置入站认证或置于可信网络**，否则任何可达主体都可无门槛消耗已配置 Provider 的付费配额与数据（部署警示见 [operations.md](operations.md)「安全边界」）。
-- 可选入站 API Key 认证（`TAPEHUB_API_KEYS`，请求头 `X-Api-Key`）随安全加固提交提供；未配置时行为与上述默认语义完全一致。
+- **默认（`TAPEHUB_API_KEYS` 留空）无入站鉴权**：全部端点对本机/可信网络内的任何调用方开放（`TAPEHUB_DEPLOYMENT_MODE=single` 单进程单用户最小运行模式的设计边界）。服务不强制回环绑定——**对外（非回环）暴露前必须配置入站认证或置于可信网络**（部署警示见 [operations.md](operations.md)「安全边界」）。
+- **可选入站 API Key 认证**：`TAPEHUB_API_KEYS` 配置为 JSON 数组（如 `["k1","k2"]`）即启用——全部业务端点（bars/quotes/流受理/capabilities/instruments）要求请求头 `X-Api-Key` 匹配白名单任一 Key，缺失或不匹配返回 **401**（统一错误结构）；`/health` 保持无鉴权（连接测试用途，不访问上游）。
+- 启动日志在未配置时提示 `no inbound API keys configured`（如实声明无鉴权状态）。
 
 ## 能力目录
 

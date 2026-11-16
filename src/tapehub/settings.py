@@ -71,6 +71,10 @@ class Settings(BaseSettings):
     api_version: str = "v1"
     catalog_version: str = "1"
     max_limit: int = Field(default=5000, ge=1)
+    # 入站 API Key 白名单（env 为 JSON 数组，如 '["k1","k2"]'）：非空即启用
+    # 全部业务端点的 X-Api-Key 校验（/health 除外）；空列表 = 不启用
+    # （single 模式默认无鉴权，行为与历史版本完全一致）
+    api_keys: list[str] = Field(default_factory=list)
     provider_enabled_overrides: dict[str, bool] = Field(default_factory=dict)
     # 缺省路由顺序配置（provider_routing.yaml）：None 用包内内置版本；
     # 外部文件整体替换内置版本，不做合并

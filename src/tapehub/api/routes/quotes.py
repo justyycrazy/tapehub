@@ -15,6 +15,7 @@ from tapehub.api.dependencies import (
     get_quote_query_service,
     get_quote_stream_service,
     get_request_id,
+    require_api_key,
 )
 from tapehub.api.schemas.requests import QuotesQueryParams, to_quote_query
 from tapehub.api.schemas.responses import QuoteResponse, quote_stream_frame, quote_to_response
@@ -27,6 +28,7 @@ router = APIRouter(prefix="/v1", tags=["market"])
 @router.get("/market/quotes", response_model=QuoteResponse)
 async def get_market_quote(
     params: Annotated[QuotesQueryParams, Query()],
+    _auth: Annotated[None, Depends(require_api_key)],
     service: Annotated[QuoteQueryService, Depends(get_quote_query_service)],
     request_id: Annotated[str, Depends(get_request_id)],
 ) -> QuoteResponse:
@@ -38,6 +40,7 @@ async def get_market_quote(
 @router.get("/market/quotes/stream")
 async def stream_market_quote(
     params: Annotated[QuotesQueryParams, Query()],
+    _auth: Annotated[None, Depends(require_api_key)],
     service: Annotated[QuoteStreamService, Depends(get_quote_stream_service)],
     request_id: Annotated[str, Depends(get_request_id)],
 ) -> StreamingResponse:

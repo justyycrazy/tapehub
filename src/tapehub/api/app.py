@@ -49,6 +49,14 @@ def create_app(
         anyio.to_thread.current_default_thread_limiter().total_tokens = (
             app.state.settings.thread_pool_size
         )
+        # 入站认证提示：未配置 API Key 即无鉴权（single 单用户设计边界），
+        # 启动日志如实声明，避免部署者误以为有认证层（对外暴露前须配置
+        # TAPEHUB_API_KEYS 或置于可信网络，见 docs/operations.md 安全边界）
+        if not app.state.settings.api_keys:
+            logger.info(
+                "no inbound API keys configured (TAPEHUB_API_KEYS empty); "
+                "all endpoints are unauthenticated"
+            )
         yield
         # 停机顺序：先终结行情流（释放订阅引用，客户端收到明确事件），
         # 再关闭持有长连接的适配器运行时（鸭子类型，不感知具体 Provider）

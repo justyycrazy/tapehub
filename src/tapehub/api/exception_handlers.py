@@ -53,7 +53,12 @@ def _request_id(request: Request) -> str:
 
 
 def error_response(
-    request: Request, code: ErrorCode, message: str, details: dict[str, Any]
+    request: Request,
+    code: ErrorCode,
+    message: str,
+    details: dict[str, Any],
+    *,
+    status_code: int | None = None,
 ) -> JSONResponse:
     body = ErrorResponse(
         error=ErrorBody(
@@ -63,8 +68,10 @@ def error_response(
             details=details,
         )
     )
+    # ``status_code`` 覆盖：HTTP 异常透传路径保留原始状态码（如 401），
+    # 避免业务码查表把非标准状态覆盖为查表值
     return JSONResponse(
-        status_code=_STATUS_BY_CODE[code], content=body.model_dump()
+        status_code=status_code or _STATUS_BY_CODE[code], content=body.model_dump()
     )
 
 
@@ -105,7 +112,9 @@ def register_exception_handlers(app: FastAPI) -> None:
             ),
         )
         code, message = fallback
-        return error_response(request, code, message, {})
+        # 保留原始状态码（统一错误结构不变）：业务码映射表只覆盖 Domain
+        # 错误，HTTP 层异常（401/404/405 等）不该被查表值改写
+        return error_response(request, code, message, {}, status_code=exc.status_code)
 
     @app.exception_handler(Exception)
     async def handle_unexpected_error(request: Request, exc: Exception) -> JSONResponse:

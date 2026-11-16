@@ -65,3 +65,13 @@ def test_routing_config_env_var_matches_docs(monkeypatch: pytest.MonkeyPatch) ->
     assert make_settings().routing_config_path == "routing.yaml"
     monkeypatch.delenv("TAPEHUB_ROUTING_CONFIG_PATH")
     assert make_settings().routing_config_path is None
+
+
+def test_api_keys_env_json_array(monkeypatch: pytest.MonkeyPatch) -> None:
+    """TAPEHUB_API_KEYS 为 JSON 数组（认证节契约）：空数组 = 不启用。"""
+    monkeypatch.setenv("TAPEHUB_API_KEYS", '["k1","k2"]')
+    assert make_settings().api_keys == ["k1", "k2"]
+    monkeypatch.setenv("TAPEHUB_API_KEYS", "[]")
+    assert make_settings().api_keys == []
+    monkeypatch.delenv("TAPEHUB_API_KEYS")
+    assert make_settings().api_keys == []

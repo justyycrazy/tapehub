@@ -8,7 +8,12 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
 
-from tapehub.api.dependencies import get_bar_query_service, get_request_id, get_settings
+from tapehub.api.dependencies import (
+    get_bar_query_service,
+    get_request_id,
+    get_settings,
+    require_api_key,
+)
 from tapehub.api.schemas.requests import BarsQueryParams, to_bar_query
 from tapehub.api.schemas.responses import BarsResponse, bars_to_response
 from tapehub.application.bar_query_service import BarQueryService
@@ -20,6 +25,7 @@ router = APIRouter(prefix="/v1", tags=["market"])
 @router.get("/market/bars", response_model=BarsResponse)
 async def get_market_bars(
     params: Annotated[BarsQueryParams, Query()],
+    _auth: Annotated[None, Depends(require_api_key)],
     service: Annotated[BarQueryService, Depends(get_bar_query_service)],
     settings: Annotated[Settings, Depends(get_settings)],
     request_id: Annotated[str, Depends(get_request_id)],

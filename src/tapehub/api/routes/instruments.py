@@ -8,7 +8,11 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
 
-from tapehub.api.dependencies import get_instrument_resolve_service, get_request_id
+from tapehub.api.dependencies import (
+    get_instrument_resolve_service,
+    get_request_id,
+    require_api_key,
+)
 from tapehub.api.schemas.responses import InstrumentResolveResponse, resolve_to_response
 from tapehub.application.instrument_resolve_service import InstrumentResolveService
 from tapehub.domain.models import AssetType
@@ -18,6 +22,7 @@ router = APIRouter(prefix="/v1", tags=["instruments"])
 
 @router.get("/instruments/resolve", response_model=InstrumentResolveResponse)
 async def resolve_instrument(
+    _auth: Annotated[None, Depends(require_api_key)],
     service: Annotated[InstrumentResolveService, Depends(get_instrument_resolve_service)],
     request_id: Annotated[str, Depends(get_request_id)],
     q: Annotated[
