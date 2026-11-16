@@ -31,6 +31,11 @@ uv run python -m probes.cli run --yes                         # 全部 Provider
 uv run python -m probes.cli run --provider ths --yes -v --log-file probes/results/run.log
 ```
 
+主题聚焦验证（只探某资产类型/某几所等）用 `--cases-dir` 指向聚焦目录
+`results/_cases-focus-<主题>/`：目录须含全部 Provider 同名文件（loader 强制），
+聚焦 Provider 自规范文件裁剪 targets/raw——完整方案见 `../AGENTS.md`
+「数据探针」节「聚焦目录方案」。
+
 真实运行必须显式 `--yes`；退出码：0 正常（允许 skipped/observe）、
 1 存在 failed、2 参数或前提问题。凭据经 `.env` / 环境变量（前缀 `TAPEHUB_`）
 注入，运行前确认 `requires.env` 列出的变量已配置。

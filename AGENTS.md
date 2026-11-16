@@ -130,6 +130,25 @@ tests/                                           # 该适配器的 Mock 测试
   （探针框架自身测试在 `tests/unit/probes/`，全部离线）；
 - 运行：`uv run python -m probes.cli list`（零网络）／
   `run --provider <name> --dry-run` ／ `run --provider <name> --yes`（真实调用，消耗配额）；
+- **聚焦目录方案**（只验证某一主题——如某资产类型/某几所扩容——避免全量跑；
+  照此执行，无需再行验证）：
+  1. 目录 `probes/results/_cases-focus-<主题>/`（gitignore 内，不入库）。
+     **必须含全部 BUILTIN_PROVIDERS 同名 yaml**（loader 对缺失/多余一律报错）——
+     非聚焦 Provider 直接 `cp probes/cases/<name>.yaml` 占位即可，不被
+     `--provider` 选中就不会执行；
+  2. 聚焦 Provider 文件自规范文件裁剪：`targets` 只留聚焦主题的目标键——
+     chain `include_declared: true` 只为「有目标键」的声明组合展开 case，
+     无目标键的能力组合不生成 case；分析探针（adjust_diff/history_depth 等）
+     按需保留或整段删除；raw 段只留聚焦主题 case；
+  3. 预算按聚焦轮实际构成重算 `max_calls`（client 构造与每条 call 各计 1 调，
+     close 不计），注释写明构成；
+  4. 零网络校验两步：`list --cases-dir <目录> --provider <聚焦>`（schema/
+     展开/预算核对）→ `run ... --dry-run`；然后 `run --cases-dir <目录>
+     --provider <聚焦> --yes` 真实运行（多 Provider 各自独立调用与
+     `--log-file`；调用链某步异常即中止后续调用——目录探测与直测须分列 case）；
+  5. 迭代复测：聚焦文件是即用即弃工件，可按首轮证据就地改候选/收窄 case
+     复跑；跑完照常追加 PROBE_LOG 轮次条目（注明聚焦目录）；定案后的规范
+     文件修订与 manifest 回填照常走人工确认、单独提交；
 - 运行日志统一 logging：默认输出 case 生命周期与每次上游调用的子步骤行，
   `-v` 开调试细节、`--log-file` 全量落盘；级别语义与格式规范见
   `probes/README.md`「日志与输出」；
