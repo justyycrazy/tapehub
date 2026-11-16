@@ -6,6 +6,9 @@ readme = "README.md"
 requires-python = ">=3.12"
 license = { file = "LICENSE" }
 dependencies = [
+    # anyio：providers.base.call_in_thread 直接使用 to_thread.run_sync
+    # （>=4 为 abandon_on_cancel 参数命名），其余经 fastapi/starlette 传递
+    "anyio>=4.0",
     "fastapi>=0.115",
     "pydantic>=2.7",
     "pydantic-settings>=2.3",

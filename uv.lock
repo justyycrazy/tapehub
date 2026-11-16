@@ -1986,6 +1986,7 @@ name = "tapehub"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "anyio" },
     { name = "fastapi" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
@@ -2040,6 +2041,7 @@ dev = [
 requires-dist = [
     { name = "akshare", marker = "extra == 'akshare'", specifier = ">=1.14" },
     { name = "alphafeed", marker = "extra == 'alphafeed'" },
+    { name = "anyio", specifier = ">=4.0" },
     { name = "baostock", marker = "extra == 'baostock'", specifier = ">=0.9.3" },
     { name = "cryptography", marker = "extra == 'futunn'", specifier = ">=42" },
     { name = "fastapi", specifier = ">=0.115" },
