@@ -33,8 +33,10 @@ defaults:
   - match: {data_type: bars, market: CN, asset_type: weighted-index}
     order: [tqsdk]
 
+  # CN 期权：2026-11-15 ths/tushare 期权扩容入链（当时仅两家覆盖），
+  # 2026-11-16 tqsdk 期权八所探针实证收编（凭据型，先接入居前居链尾）
   - match: {data_type: bars, market: CN, asset_type: option}
-    order: [ths, tushare]
+    order: [ths, tushare, tqsdk]
 
   - match: {data_type: bars, market: HK, asset_type: stock}
     order: [alphafeed, tickflow, futunn, akshare]
@@ -83,8 +85,10 @@ defaults:
   - match: {data_type: quotes, market: CN, asset_type: weighted-index}
     order: [tqsdk]
 
+  # CN 期权快照：ths 独占（2026-11-15）→ 2026-11-16 tqsdk 期权快照实证
+  # 收编居链尾（凭据型订阅-推送模型，SSE 流式经显式 variant/provider 可达）
   - match: {data_type: quotes, market: CN, asset_type: option}
-    order: [ths]
+    order: [ths, tqsdk]
 
   - match: {data_type: quotes, market: HK, asset_type: stock}
     order: [alphafeed, tickflow, futunn]

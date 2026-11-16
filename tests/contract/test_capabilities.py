@@ -31,10 +31,11 @@ def test_default_catalog_lists_all_builtin_providers(default_client) -> None:  #
     assert tushare["enabled"] is False
     assert len(tushare["capabilities"]) == 6
     # tqsdk 已接入：凭据未配置 → 不启用；期货三类拆分 + 股票分钟族/股票
-    # PT30M+（复权收窄拆分）+ 指数 + ETF 分钟族/ETF PT30M+ + 实时快照
+    # PT30M+（复权收窄拆分）+ 指数 + ETF 分钟族/ETF PT30M+ + 期权
+    #（2026-11-16 收编）+ 实时快照
     tqsdk = next(entry for entry in body["data"] if entry["provider"] == "tqsdk")
     assert tqsdk["enabled"] is False
-    assert len(tqsdk["capabilities"]) == 9
+    assert len(tqsdk["capabilities"]) == 10
     assert tqsdk["capabilities"][0]["asset_types"] == ["contract"]
     # quotes 能力：无周期/复权维度（两维度为空）
     quotes = [cap for cap in tqsdk["capabilities"] if cap["data_type"] == "quotes"]
@@ -116,7 +117,7 @@ def test_single_provider_on_default_catalog(default_client) -> None:  # type: ig
     assert body["data"]["provider"] == "tqsdk"
     # 凭据未配置：不启用，能力目录仍完整可见（复权收窄后股票/ETF 各拆两块）
     assert body["data"]["enabled"] is False
-    assert len(body["data"]["capabilities"]) == 9
+    assert len(body["data"]["capabilities"]) == 10
 
 
 def test_runtime_status_per_request_stays_unknown() -> None:

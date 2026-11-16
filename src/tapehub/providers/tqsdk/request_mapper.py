@@ -45,9 +45,9 @@ _ADJ_TYPE: dict[Adjust, str | None] = {
 #   的合约代码；主连/加权品种码（无年月段）与不规则代码原样透传。
 #   3 位旧写法输入（SR601）不二次加工，如实透传；
 # - DCE/INE/GFEX：写法约定未核实，暂直通，实证后逐所回填。
-# 注意：SHFE 期权（cu2607C50000 混合大小写）、CZCE 期权（品种+年月+C/P+
-# 行权价）代码结构均不同，接入 option 资产类型时须另行核实，不得沿用
-# 本表的整段小写 / 4→3 规则。
+# 注意：期权代码结构均与该所期货不同（品种小写混合大小写、连字符形态、
+# CZCE 期权 3 位月码直通），不沿用本表规则——期权还原见下方
+# _OPTION_PRODUCT_LOWER_EXCHANGES（2026-11-16 聚焦轮八所探针定案）。
 _CZCE_MONTH_CODE_RE = re.compile(r"^([A-Z]{1,2})(\d{2})(\d{2})$")
 
 
@@ -74,6 +74,23 @@ _SYMBOL_REWRITES: dict[str, Callable[[str], str]] = {
     "CZCE": _rewrite_czce_symbol,
 }
 
+# 期权品种小写还原交易所集合（2026-11-16 聚焦轮八所探针定案）：SHFE/INE/
+# DCE/GFEX 期权品种字母段小写（cu2701C102000 / sc2701C550 / m2701-C-3500 /
+# lc2701-C-90000）——注意 DCE 期权品种小写与该所期货大写实证相反；SSE/SZSE
+# （数字合约码）、CFFEX/CZCE（大写品种）直通。月码与连字符形态在标准码中
+# 已与上游一致（CZCE 期权 3 位月码直通），不做改写。
+_OPTION_PRODUCT_LOWER_EXCHANGES = frozenset({"SHFE", "INE", "DCE", "GFEX"})
+_OPTION_PRODUCT_RE = re.compile(r"^([A-Za-z]+)(.+)$")
+
+
+def _rewrite_option_symbol(symbol: str) -> str:
+    """期权品种字母段小写还原（CU2701C102000 → cu2701C102000）。"""
+    matched = _OPTION_PRODUCT_RE.match(symbol)
+    if matched is None:
+        return symbol
+    product, rest = matched.groups()
+    return product.lower() + rest
+
 
 def upstream_symbol(instrument: Instrument, asset_type: AssetType) -> str:
     """标准标的 → TqSdk 合约代码（K 线与快照共用同一映射）。"""
@@ -90,6 +107,11 @@ def upstream_symbol(instrument: Instrument, asset_type: AssetType) -> str:
         return f"{_WEIGHTED_PREFIX}{base}"
     if asset_type in (AssetType.STOCK, AssetType.INDEX, AssetType.ETF):
         return base
+    if asset_type is AssetType.OPTION:
+        option = instrument.symbol
+        if instrument.exchange in _OPTION_PRODUCT_LOWER_EXCHANGES:
+            option = _rewrite_option_symbol(option)
+        return f"{instrument.exchange}.{option}"
     raise UnsupportedCapabilityError(
         f"TqSdk does not support asset type {asset_type.value}.",
         details={

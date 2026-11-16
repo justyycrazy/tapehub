@@ -185,6 +185,16 @@ def test_unsupported_interval_rejected_by_operation_routing(
         (AssetType.INDEX, "CN-SSE-000016", "SSE.000016"),
         (AssetType.ETF, "CN-SSE-510050", "SSE.510050"),
         (AssetType.ETF, "CN-SZSE-159919", "SZSE.159919"),
+        # 期权八所（2026-11-16 聚焦轮探针定案）：SHFE/INE/DCE/GFEX 品种字母
+        # 段小写，SSE/SZSE 数字码与 CFFEX/CZCE 大写直通
+        (AssetType.OPTION, "CN-SSE-10012437", "SSE.10012437"),
+        (AssetType.OPTION, "CN-SZSE-90008083", "SZSE.90008083"),
+        (AssetType.OPTION, "CN-CFFEX-IO2612-C-4000", "CFFEX.IO2612-C-4000"),
+        (AssetType.OPTION, "CN-SHFE-CU2701C102000", "SHFE.cu2701C102000"),
+        (AssetType.OPTION, "CN-INE-SC2701C550", "INE.sc2701C550"),
+        (AssetType.OPTION, "CN-DCE-M2701-C-3500", "DCE.m2701-C-3500"),
+        (AssetType.OPTION, "CN-CZCE-SR701C5900", "CZCE.SR701C5900"),
+        (AssetType.OPTION, "CN-GFEX-LC2701-C-90000", "GFEX.lc2701-C-90000"),
     ],
 )
 def test_kline_symbols(

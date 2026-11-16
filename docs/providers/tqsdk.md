@@ -1,6 +1,6 @@
 # TqSdk（tqsdk）
 
-天勤（TianQin）官方 Python SDK 接入的中国行情 Provider：CN 期货（合约/主力连续/加权指数）、股票、指数、ETF 的历史 K 线、实时快照与 SSE 快照流。
+天勤（TianQin）官方 Python SDK 接入的中国行情 Provider：CN 期货（合约/主力连续/加权指数）、期权（八所，2026-11-16 收编）、股票、指数、ETF 的历史 K 线、实时快照与 SSE 快照流。
 
 ## 概要
 
@@ -28,7 +28,14 @@
 | bars | index | PT1M/PT5M/PT15M/PT30M/PT1H/P1D | none（adj_type 对指数无效） | 滚动保留：1m 35 / 5m 150 / 15m 450 / 30m 930 / 1h 1500 天；P1D start 2018-01-02 | 同上 |
 | bars | etf（分钟族 ≤PT15M） | PT1M/PT5M/PT15M | none（复权 no-op） | 滚动保留：1m 35 / 5m 150 / 15m 450 天 | 同上 |
 | bars | etf（PT30M 起） | PT30M/PT1H/P1D | none/qfq/hfq | 滚动保留：30m 930 / 1h 1500 天；P1D start 2018-01-02 | 同上 |
-| quotes | contract/continuous/weighted-index/stock/index/etf | 无周期维度（声明为空） | 无复权维度（声明为空） | 不适用 | timestamp、last_price、五档买卖价量（bid/ask 价量 1..5）、volume、amount |
+| bars | option（八所） | P1D | none（adj_type 对期权无效） | start 均为 null（合约级数据随上市起、随摘牌止） | open/high/low/close/volume |
+| quotes | contract/continuous/weighted-index/stock/index/etf/option | 无周期维度（声明为空） | 无复权维度（声明为空） | 不适用 | timestamp、last_price、五档买卖价量（bid/ask 价量 1..5）、volume、amount |
+
+期权补充口径（2026-11-16 聚焦轮八所探针实证，PROBE_LOG 第 12 轮）：
+
+- **八所全覆盖码式**（期权品种字母段小写为 tqsdk 期权独有约定，与该所期货写法不同构）：SSE/SZSE 数字合约码直拼（`CN-SSE-10012437 → SSE.10012437`）；SHFE/INE 品种小写无连字符（`CN-SHFE-CU2701C102000 → SHFE.cu2701C102000`、`CN-INE-SC2701C550 → INE.sc2701C550`）；DCE 品种小写连字符 4 位月（`CN-DCE-M2701-C-3500 → DCE.m2701-C-3500`，**与该所期货大写实证相反**）；CZCE 大写品种 3 位月码直通（`CN-CZCE-SR701C5900 → CZCE.SR701C5900`）；GFEX 品种小写连字符（`CN-GFEX-LC2701-C-90000 → GFEX.lc2701-C-90000`）；CFFEX 大写直通连字符（`CN-CFFEX-IO2612-C-4000 → CFFEX.IO2612-C-4000`）；
+- 落选候选否定证据：INE `SC2701C550` / DCE `M2701-C-3500` / GFEX `lc2701C90000`（大写直通、无连字符）均 graphql「查询合约服务报错」快速拒绝——期权写错即快速报错（非期货侧 4 位年月码的挂起行为）；
+- 权限口径：官方权限模型免费版账户即含期权实时行情（当前账户专业版）；周期仅核实 P1D（`get_kline_serial` 其余周期对期权未核实，不声明），K 线实证 3 根/标的 × 八所、快照与流式走通用 `get_quote` 订阅链路。
 
 - 标准字段口径：上游返回列 `id/datetime/open/high/low/close/volume/open_oi/close_oi`，无成交额列——标准 `amount` 恒为 `null`（不用 0 冒充）；持仓量经受控 `extensions` 透出（见「extensions 白名单」）；
 - 分钟级历史不声明固定起点，以 `retention_days` 声明**滚动保留**（覆盖 now − N 天 → now，边界随时间前移）；日线以固定 `start` 声明；`/v1/capabilities` 的 interval history 字段按声明形式原样透出；
@@ -44,7 +51,7 @@
   - DCE/INE/GFEX：写法约定未核实，暂按大写直通；
 - 主力连续：`KQ.m@<交易所>.<品种>`——`CN-SHFE-CU → KQ.m@SHFE.cu`；指数连续（加权）：`KQ.i@<交易所>.<品种>`——`CN-SHFE-BU → KQ.i@SHFE.bu`；
 - 股票/指数/ETF（同期货格式，官方文档示例口径）：`CN-SSE-600000 → SSE.600000`、`CN-SZSE-000001 → SZSE.000001`、指数 `CN-SSE-000016 → SSE.000016`、ETF `CN-SSE-510050 → SSE.510050`（指数仅核实 SSE/SZSE 发布的代码）；
-- 拒绝范围：仅支持上表六类资产类型，其余（如 option）在适配器层抛 `UNSUPPORTED_CAPABILITY`；BSE 交易所前缀上游不支持（快速报 non-existent instrument）；SHFE/CZCE 期权代码结构均不同（混合大小写、品种+年月+C/P+行权价），接入 option 时须另行核实，不得沿用本表规则。
+- 拒绝范围：资产类型以能力目录为准（上表七类）；BSE 交易所前缀上游不支持（快速报 non-existent instrument）；期权码式还原见上方「期权补充口径」（品种小写还原仅作用于 SHFE/INE/DCE/GFEX 四所期权，不沿用期货表规则）。
 
 ## 周期 / 复权 / 单位映射
 
@@ -85,8 +92,8 @@
 
 ## 缺省路由参与
 
-- bars：CN `etf`/`contract`/`continuous` 承担缺省；CN `weighted-index` 独占；CN `stock`/`index` 仅声明能力、不参与 auto 回退链（仅显式 `provider=tqsdk` 可用）；`option` 未声明；
-- quotes：CN `stock`/`index`/`etf`/`contract` 承担缺省；CN `continuous`/`weighted-index` 独占；`option` 未声明；
+- bars：CN `etf`/`contract`/`continuous` 承担缺省；CN `weighted-index` 独占；CN `stock`/`index` 仅声明能力、不参与 auto 回退链（仅显式 `provider=tqsdk` 可用）；CN `option` 居链尾（2026-11-16 八所收编，凭据型，ths 缺省首位、tushare 居中）；
+- quotes：CN `stock`/`index`/`etf`/`contract` 承担缺省；CN `continuous`/`weighted-index` 独占；CN `option` 居链尾（2026-11-16 收编，ths REST 快照居首；期权 SSE 流式经显式 `provider/variant=tqsdk` 可达）；
 - 位次依据（一句话）：期货三类与 CN 全资产快照是本 Provider 的原生长连接订阅能力面，故承担缺省/独占；个股/指数 K 线保留显式通道、不进 auto 链是路由决策（回退链上不写即明确不参与）；
 - 当前回退链顺序与组合覆盖以 `src/tapehub/config/provider_routing.yaml` 为准，本文不复述 order 列表；凭据未配置时本 Provider 自动跳过，由回退链下一位生效。
 
@@ -97,5 +104,5 @@
 
 ## 探针依据
 
-- 能力核实与行为实证用例：`probes/cases/tqsdk.yaml`（探针框架规范见 `probes/README.md`）——覆盖可用性矩阵、复权生效性（adjust_diff）、历史深度（history_depth）、单次上限（limit）、错误指纹（raw，含 BSE 闸门与 CZCE 4 位年月码复验）、连接时长（connection）；运行时段建议**盘中**（盘后复权 case 会挂满超时，见「上游行为定案」）；
+- 能力核实与行为实证用例：`probes/cases/tqsdk.yaml`（探针框架规范见 `probes/README.md`）——覆盖可用性矩阵（CN 证券 SSE/SZSE 逐所，BSE 上游拒绝不上目标）、复权生效性（adjust_diff）、历史深度（history_depth）、单次上限（limit）、错误指纹（raw，含 CZCE 4 位年月码复验；原 BSE 闸门 raw 已随定案退役，拒绝结论由「不设 BSE 目标」承载）、连接时长（connection）；运行时段建议**盘中**（盘后复权 case 会挂满超时，见「上游行为定案」）；
 - 各轮运行记录：`probes/results/PROBE_LOG.md`（本地文件，不入库）。

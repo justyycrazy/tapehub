@@ -98,10 +98,11 @@ def test_capability_catalog(tqsdk_client: TestClient) -> None:  # type: ignore[n
         "stock": "tqsdk",
         "index": "tqsdk",
         "etf": "tqsdk",
+        "option": "tqsdk",
     }
     # 期货三类拆分 + 股票分钟族/股票 PT30M+（复权收窄拆分）+ 指数 +
-    # ETF 分钟族/ETF PT30M+ + quotes
-    assert len(entry["capabilities"]) == 9
+    # ETF 分钟族/ETF PT30M+ + 期权（2026-11-16 收编）+ quotes
+    assert len(entry["capabilities"]) == 10
     cap = entry["capabilities"][0]
     assert cap["data_type"] == "bars"
     assert cap["asset_types"] == ["contract"]
@@ -111,12 +112,12 @@ def test_capability_catalog(tqsdk_client: TestClient) -> None:  # type: ignore[n
     ]
     assert cap["adjustments"] == ["none"]
     assert cap["fields"] == ["open", "high", "low", "close", "volume"]
-    # quotes 能力：无周期/复权维度（两维度为空），覆盖六类资产
+    # quotes 能力：无周期/复权维度（两维度为空），覆盖七类资产（含期权）
     quotes_cap = next(c for c in entry["capabilities"] if c["data_type"] == "quotes")
     assert quotes_cap["intervals"] == []
     assert quotes_cap["adjustments"] == []
     assert set(quotes_cap["asset_types"]) == {
-        "contract", "continuous", "weighted-index", "stock", "index", "etf",
+        "contract", "continuous", "weighted-index", "stock", "index", "etf", "option",
     }
     assert quotes_cap["variants"] == ["tqsdk"]
     assert "last_price" in quotes_cap["fields"]
@@ -151,16 +152,29 @@ def test_missing_auth_returns_clear_error(default_client) -> None:  # type: igno
     assert "TAPEHUB_TQSDK_AUTH_PASSWORD" in error["details"]["disabled_reason"]
 
 
-def test_unsupported_option(tqsdk_client: TestClient) -> None:  # type: ignore[no-untyped-def]
-    # TqSdk 未声明期权：请求在能力目录即拒绝
+def test_option_bars_chain(
+    tqsdk_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """期权链路（2026-11-16 八所探针实证收编）：品种字母段小写还原。"""
+    preset_rows(monkeypatch, klines_rows(["2026-01-02", "2026-01-05"]))
+
     params = {
         **BASE_PARAMS,
         "asset_type": "option",
-        "instrument": "CN-SSE-10004512",
+        "instrument": "CN-SHFE-CU2701C102000",
     }
     response = tqsdk_client.get("/v1/market/bars", params=params)
-    assert response.status_code == 422
-    assert response.json()["error"]["code"] == "UNSUPPORTED_CAPABILITY"
+    assert response.status_code == 200
+    body = response.json()
+
+    api = StubTqApi.instances[-1]
+    assert api.calls[0]["symbol"] == "SHFE.cu2701C102000"
+
+    data = body["data"]
+    assert data["instrument"] == "CN-SHFE-CU2701C102000"
+    assert data["asset_type"] == "option"
+    assert len(data["bars"]) == 2
+    assert data["bars"][0]["volume"] == 500.0
 
 
 def test_weighted_index_chain(
@@ -346,12 +360,23 @@ def test_quote_auto_routes_and_symbol_mapping(
     assert StubTqApi.instances[-1].quote_calls == ["KQ.m@SHFE.cu"]
 
 
-def test_quote_unsupported_asset_type(tqsdk_client: TestClient) -> None:
-    """TqSdk quotes 能力不含期权：能力目录即拒绝。"""
-    params = {**QUOTE_PARAMS, "asset_type": "option", "instrument": "CN-SSE-10004512"}
+def test_quote_option_chain(
+    tqsdk_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """期权快照链路（2026-11-16 八所探针实证收编）：数字合约码直拼。"""
+    preset_quote(monkeypatch, DEFAULT_QUOTE_FIELDS)
+
+    params = {**QUOTE_PARAMS, "asset_type": "option", "instrument": "CN-SSE-10012437"}
     response = tqsdk_client.get("/v1/market/quotes", params=params)
-    assert response.status_code == 422
-    assert response.json()["error"]["code"] == "UNSUPPORTED_CAPABILITY"
+    assert response.status_code == 200
+    body = response.json()
+
+    api = StubTqApi.instances[-1]
+    assert api.quote_calls == ["SSE.10012437"]
+    data = body["data"]
+    assert data["instrument"] == "CN-SSE-10012437"
+    assert data["asset_type"] == "option"
+    assert data["quote"]["last_price"] is not None
 
 
 def test_quote_missing_auth_returns_clear_error(default_client) -> None:  # type: ignore[no-untyped-def]
