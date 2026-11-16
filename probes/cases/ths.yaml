@@ -138,7 +138,7 @@ targets:
     min_bars: 20
     required_fields: [open, high, low, close, volume, amount]
   index-option:
-    instrument: CN-CFFEX-IO2612-C-4000
+    instrument: CN-CFFEX-IO2612C4000
     # 沪深300期权：CFFEX→CFE（2026-11-16 聚焦轮后八所收编，本基准目标保留
     # CFFEX 段；asset_type 三分前为裸键 option）。月度合约会到期：运行前按
     # 中金所挂牌信息核对（行权价 4000 需在挂牌行权价序列内），失败如实记录，
@@ -180,21 +180,21 @@ targets:
     min_bars: 1
     required_fields: [open, high, low, close, volume, amount]
   commodity-option@CN-DCE:
-    instrument: CN-DCE-M2701-C-3500
+    instrument: CN-DCE-M2701C3500
     # 豆粕期权（连字符式，4 位月）：聚焦轮 code=0 四行实证收编；轮换按
     # opt_basic（exchange=DCE，name 含豆粕 + delist_date 未过）重选
     window: {start: 2026-11-09, end: 2026-11-13}
     min_bars: 3
     required_fields: [open, high, low, close, volume, amount]
   commodity-option@CN-CZCE:
-    instrument: CN-CZCE-SR701C5900
+    instrument: CN-CZCE-SR2701C5900
     # 白糖期权（无连字符，3 位月码 701=2027-01）：聚焦轮 code=0 四行实证
     # 收编；到期 2026-12-11，轮换按 opt_basic 同款口径重选
     window: {start: 2026-11-09, end: 2026-11-13}
     min_bars: 3
     required_fields: [open, high, low, close, volume, amount]
   commodity-option@CN-GFEX:
-    instrument: CN-GFEX-LC2701-C-90000
+    instrument: CN-GFEX-LC2701C90000
     # 碳酸锂期权（连字符式，与期货主连「品种+L」不同构）：聚焦轮 code=0
     # 五行实证收编；轮换按挂牌行权价序列重选
     window: {start: 2026-11-09, end: 2026-11-13}

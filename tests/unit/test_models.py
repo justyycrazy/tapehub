@@ -151,8 +151,8 @@ class TestBarQuery:
         ("asset_type", "instrument"),
         [
             ("commodity-option", "CN-SHFE-CU2701C102000"),
-            ("commodity-option", "CN-CZCE-SR701C5900"),
-            ("index-option", "CN-CFFEX-IO2612-C-4000"),
+            ("commodity-option", "CN-CZCE-SR2701C5900"),
+            ("index-option", "CN-CFFEX-IO2612C4000"),
             ("etf-option", "CN-SSE-10012437"),
             ("etf-option", "CN-SZSE-90008083"),
         ],
@@ -165,11 +165,52 @@ class TestBarQuery:
     @pytest.mark.parametrize(
         ("asset_type", "instrument"),
         [
+            ("commodity-option", "CN-SHFE-CU2701C102000"),  # SHFE/INE 无连字符直通式
+            ("commodity-option", "CN-DCE-M2701C3500"),  # 连字符为映射层还原，标准式无
+            ("commodity-option", "CN-CZCE-SR2701C5900"),  # CZCE 统一 4 位年月
+            ("index-option", "CN-CFFEX-IO2612P4000"),  # P 方向与 C 同构
+            ("index-option", "CN-CFFEX-IO2612C4000.5"),  # 行权价小数未观测但放行
+        ],
+    )
+    def test_option_unified_symbol_valid(self, asset_type: str, instrument: str) -> None:
+        """结构子类统一符号式 {品种}{YYMM}{C/P}{行权价}：正常构造。"""
+        query = self._query(asset_type=asset_type, instrument=instrument)
+        assert query.instrument.code == instrument
+
+    def test_option_unified_symbol_lowercase_normalized(self) -> None:
+        """小写统一式输入经域层大写归一后通过校验（无单独小写通道）。"""
+        query = self._query(
+            asset_type="commodity-option", instrument="cn-shfe-cu2701c102000"
+        )
+        assert query.instrument.code == "CN-SHFE-CU2701C102000"
+
+    @pytest.mark.parametrize(
+        ("asset_type", "instrument"),
+        [
+            ("commodity-option", "CN-DCE-M2701-C-3500"),  # 旧连字符式
+            ("commodity-option", "CN-CZCE-SR701C5900"),  # 旧 3 位月码
+            ("commodity-option", "CN-GFEX-LC2701-C-90000"),  # 旧连字符式
+            ("index-option", "CN-CFFEX-IO2612-C-4000"),  # 旧连字符式
+            ("commodity-option", "CN-SHFE-CU2701C10X000"),  # 非法行权价
+            ("commodity-option", "CN-SHFE-CU2701C"),  # 缺行权价
+            ("commodity-option", "CN-SHFE-CU27C102000"),  # 年月非 4 位
+        ],
+    )
+    def test_option_unified_symbol_invalid_rejected(
+        self, asset_type: str, instrument: str
+    ) -> None:
+        """结构子类非统一式（旧写法/残缺形态）构造期拒绝，不透传映射层。"""
+        with pytest.raises(ValidationError, match="requires instrument symbol"):
+            self._query(asset_type=asset_type, instrument=instrument)
+
+    @pytest.mark.parametrize(
+        ("asset_type", "instrument"),
+        [
             ("commodity-option", "CN-SSE-10012437"),  # SSE 属 etf-option
-            ("commodity-option", "CN-CFFEX-IO2612-C-4000"),  # CFFEX 属 index-option
+            ("commodity-option", "CN-CFFEX-IO2612C4000"),  # CFFEX 属 index-option
             ("index-option", "CN-SHFE-CU2701C102000"),  # SHFE 属 commodity-option
-            ("etf-option", "CN-CFFEX-IO2612-C-4000"),  # CFFEX 属 index-option
-            ("etf-option", "CN-DCE-M2701-C-3500"),  # DCE 属 commodity-option
+            ("etf-option", "CN-CFFEX-IO2612C4000"),  # CFFEX 属 index-option
+            ("etf-option", "CN-DCE-M2701C3500"),  # DCE 属 commodity-option
             # BSE（北交所）无期权，三子类词汇表均不含
             ("commodity-option", "CN-BSE-920001"),
             ("index-option", "CN-BSE-920001"),
@@ -189,12 +230,12 @@ class TestQuoteQuery:
         ("asset_type", "instrument"),
         [
             ("commodity-option", "CN-INE-SC2701C550"),
-            ("index-option", "CN-CFFEX-IO2612-C-4000"),
+            ("index-option", "CN-CFFEX-IO2612C4000"),
             ("etf-option", "CN-SZSE-90008083"),
         ],
     )
     def test_option_subtype_valid_combinations(self, asset_type: str, instrument: str) -> None:
-        """快照查询同受期权子类×交易所词汇表约束：合法组合正常构造。"""
+        """快照查询同受期权子类×交易所词汇表与统一式约束：合法组合正常构造。"""
         query = QuoteQuery(asset_type=asset_type, instrument=instrument)
         assert query.asset_type.value == asset_type
 

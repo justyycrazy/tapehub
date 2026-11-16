@@ -37,16 +37,16 @@ bars 行字段两种形态统一映射（时间键不同、其余同构）：A �
 | stock / index | SSE→SH、SZSE→SZ、BSE→BJ | `CN-SSE-600519 → 600519.SH`、`CN-SZSE-000001 → 000001.SZ`、`CN-BSE-920000 → 920000.BJ` |
 | etf | SSE→SH、SZSE→SZ（北交所无 ETF） | |
 | contract | SHFE→SHF、CZCE→CZC、DCE→DCE、INE→INE、GFEX→GFE、CFFEX→CFE（六所实证：MA612.CZC / MA701.CZC / EG2701.DCE / BC2612.INE / LC2701.GFE 均 code=0 正常返回；CFFEX 2026-11-16 探针实证 IF2706.CFE code=0 真实日线、IF2706.CFX 3001 'Target not found'——**与该所期权同后缀 CFE**，与 tushare 侧该所期货 .CFX 不同） | `CN-SHFE-CU2706 → CU2706.SHF`、`CN-CFFEX-IF2706 → IF2706.CFE` |
-| commodity-option | SHFE→SHF、INE→INE、DCE→DCE、CZCE→CZC、GFEX→GFE（商品期权五所，后缀与该所期货同段） | `CN-SHFE-CU2701C102000 → CU2701C102000.SHF`、`CN-DCE-M2701-C-3500 → M2701-C-3500.DCE`、`CN-GFEX-LC2701-C-90000 → LC2701-C-90000.GFE` |
-| index-option | CFFEX→CFE（与该所期货同段） | `CN-CFFEX-IO2612-C-4000 → IO2612-C-4000.CFE` |
+| commodity-option | SHFE→SHF、INE→INE、DCE→DCE、CZCE→CZC、GFEX→GFE（商品期权五所，后缀与该所期货同段） | `CN-SHFE-CU2701C102000 → CU2701C102000.SHF`、`CN-DCE-M2701C3500 → M2701-C-3500.DCE`、`CN-CZCE-SR2701C5900 → SR701C5900.CZC`、`CN-GFEX-LC2701C90000 → LC2701-C-90000.GFE` |
+| index-option | CFFEX→CFE（与该所期货同段） | `CN-CFFEX-IO2612C4000 → IO2612-C-4000.CFE` |
 | etf-option | SSE→SH、SZSE→SZ（数字合约码，与该所证券后缀同段） | `CN-SSE-10012437 → 10012437.SH` |
 
 期权后缀八所（asset_type 三分后按子类拆键，2026-11-16 聚焦轮双候选探针实证收编；各所另一码式 3001 否定证据见 PROBE_LOG 第 10 轮）。
 
-期权码式矩阵（各所另一码式已 3001 干净否定，双候选证据见聚焦轮报告）：SSE/SZSE 为数字合约码；SHFE/INE「品种4位月C/P行权价」**无连字符**；DCE/GFEX/CFFEX「品种4位月-C/P-行权价」**连字符**；CZCE「品种3位月C/P行权价」无连字符（701=2027-01）。与 tushare 侧 INE（无连字符）/GFEX（连字符）同轮互证一致；注意 CFFEX 期权 ths 侧后缀 .CFE、tushare 侧 .CFX。
+期权原生码式矩阵（统一式入参经映射层还原后的上游写法；各所另一码式已 3001 干净否定，双候选证据见聚焦轮报告）：SSE/SZSE 为数字合约码；SHFE/INE「品种4位月C/P行权价」**无连字符**；DCE/GFEX/CFFEX「品种4位月-C/P-行权价」**连字符**；CZCE「品种3位月C/P行权价」无连字符（701=2027-01，统一式 4 位年月去年份十位还原）。与 tushare 侧 INE（无连字符）/GFEX（连字符）同轮互证一致；注意 CFFEX 期权 ths 侧后缀 .CFE、tushare 侧 .CFX。
 
 - CZCE 年月码 4→3 还原：`CN-CZCE-MA2701 → MA701.CZC`（去年份十位，与 tqsdk 同构；4 位码 MA2701.CZC 上游 3001 不识别、3 位 MA701.CZC 可用）；仅匹配「品种 + 2 位年 + 2 位月」形态——主连/加权品种码（无年月段）、3 位旧写法与不规则代码原样透传；
-- contract/option 的 symbol 段除 CZCE 还原外原样透传（期权行权价等结构不做改写）；
+- contract 的 symbol 段除 CZCE 还原外原样透传；期权结构子类统一式入参经映射层逐所还原（SHFE/INE 无连字符直通、CZCE 4→3 月码、DCE/GFEX/CFFEX 连字符插入）；etf-option 数字码原样透传；
 - 查表无果（exchange 段不在该资产类型后缀表）属命名空间外请求，明确抛 `UnsupportedCapabilityError`——不透传上游猜错更隐蔽。
 
 ## 周期 / 复权 / 单位映射

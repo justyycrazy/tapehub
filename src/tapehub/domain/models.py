@@ -87,19 +87,45 @@ _OPTION_ASSET_TYPE_EXCHANGES: dict[AssetType, frozenset[str]] = {
     AssetType.ETF_OPTION: frozenset({"SSE", "SZSE"}),
 }
 
+# 期权结构子类统一符号格式（契约级）：commodity-option / index-option 的
+# symbol 段为 {品种}{4位年月YYMM}{C/P}{行权价}（CN-SHFE-CU2701C102000 /
+# CN-CFFEX-IO2612C4000），逐所原生写法（连字符、CZCE 3 位月码、品种大小写）
+# 由各 Provider 映射层统一还原（码式矩阵见 docs/providers/<name>.md）。
+# etf-option（SSE/SZSE）为交易所指派数字合约码，无结构，不受本式约束。
+# 诚实边界：行权价样本全为整数（CN 期权八所 2026-11 探针实证），小数未
+# 观测但放行不拒绝（解析 ≠ 验证存在，存在性由上游验证）；P 方向码式未
+# 直测，与 C 同构处理。
+_STRUCTURED_OPTION_ASSET_TYPES = frozenset(
+    {AssetType.COMMODITY_OPTION, AssetType.INDEX_OPTION}
+)
+_UNIFIED_OPTION_SYMBOL_RE = re.compile(r"^[A-Z]+\d{4}[CP]\d+(?:\.\d+)?$")
 
-def _validate_option_exchange(asset_type: AssetType, instrument: "Instrument") -> None:
-    """期权子类 × 交易所一致性校验：矛盾组合构造期拒绝。
 
-    ``commodity-option`` 搭配 ``CN-SSE-…`` 等矛盾请求在此前置拒绝为参数
-    错误（经 API 层统一映射 ``INVALID_REQUEST``），不再透传到路由链逐家
-    报不支持；非期权类型不受本表约束。
+def _validate_option_request(asset_type: AssetType, instrument: "Instrument") -> None:
+    """期权子类请求校验（构造期拒绝，经 API 层统一映射 ``INVALID_REQUEST``）：
+
+    ① 子类 × 交易所词汇表：``commodity-option`` 搭配 ``CN-SSE-…`` 等矛盾
+    组合不再透传到路由链逐家报不支持；
+    ② 结构子类统一符号格式：旧连字符式（``M2701-C-3500``）、CZCE 3 位月码
+    （``SR701C5900``）等历史写法不再合法。
+
+    非期权类型不受本函数约束。
     """
     allowed = _OPTION_ASSET_TYPE_EXCHANGES.get(asset_type)
     if allowed is not None and instrument.exchange not in allowed:
         raise ValueError(
             f"invalid request: asset type {asset_type.value!r} does not apply to "
             f"exchange {instrument.exchange!r} in instrument {instrument.code!r}"
+        )
+    if (
+        asset_type in _STRUCTURED_OPTION_ASSET_TYPES
+        and not _UNIFIED_OPTION_SYMBOL_RE.match(instrument.symbol)
+    ):
+        raise ValueError(
+            f"invalid request: asset type {asset_type.value!r} requires instrument "
+            f"symbol {instrument.symbol!r} to match '{{PRODUCT}}{{YYMM}}{{C|P}}"
+            f"{{STRIKE}}' (e.g. CU2701C102000); legacy hyphenated or 3-digit-month "
+            "forms are no longer accepted"
         )
 
 
@@ -290,9 +316,9 @@ class BarQuery(BaseModel):
 
     @model_validator(mode="after")
     def _option_exchange_matches_asset_type(self) -> "BarQuery":
-        # 期权子类与交易所矛盾组合构造期拒绝（词汇表与语义见
-        # _validate_option_exchange）
-        _validate_option_exchange(self.asset_type, self.instrument)
+        # 期权子类校验（交易所词汇表 + 结构子类统一符号式，语义见
+        # _validate_option_request）
+        _validate_option_request(self.asset_type, self.instrument)
         return self
 
 
@@ -420,8 +446,8 @@ class QuoteQuery(BaseModel):
 
     @model_validator(mode="after")
     def _option_exchange_matches_asset_type(self) -> "QuoteQuery":
-        # 期权子类与交易所矛盾组合构造期拒绝（与 BarQuery 同语义）
-        _validate_option_exchange(self.asset_type, self.instrument)
+        # 期权子类校验（与 BarQuery 同语义，见 _validate_option_request）
+        _validate_option_request(self.asset_type, self.instrument)
         return self
 
 

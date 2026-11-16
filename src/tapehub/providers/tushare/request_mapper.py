@@ -6,11 +6,12 @@ pro.fund_daily / pro.opt_daily 参数。
 官方文档：https://tushare.pro/document/2。
 """
 
+import re
 from typing import Any
 
 from tapehub.domain.errors import UnsupportedCapabilityError
 from tapehub.domain.intervals import Interval
-from tapehub.domain.models import Adjust, AssetType, BarQuery
+from tapehub.domain.models import Adjust, AssetType, BarQuery, Instrument
 
 # 接口单次上限（官方文档：fut_daily 单次最大 2000 条、fund_daily 单次最大
 # 5000 条、opt_daily 单次最大 15000 条）
@@ -104,12 +105,42 @@ def etf_ts_code(query: BarQuery) -> str:
     return f"{query.instrument.symbol}.{_suffix(query, _ETF_SUFFIXES)}"
 
 
+# 期权结构子类统一标准式解析（commodity-option / index-option，域层已
+# fullmatch 校验；etf-option 数字合约码原样透传不走本式）。原生 ts_code
+# 符号逐所还原（2026-11-16 聚焦轮八所探针定案，出处 docs/providers/tushare.md
+# 「标的代码映射」）：SHFE/INE 无连字符直通（FU2612C6100 / SC2701C550）；
+# CZCE 3 位月码（SR701C5900——统一式 4 位年月去年份十位）；DCE/GFEX/CFFEX
+# 连字符式（M2612-C-3500 / LC2701-C-90000 / IO2611-C-4150）。品种一律大写。
+_OPTION_SYMBOL_RE = re.compile(r"^([A-Z]+)(\d{2})(\d{2})([CP])(\d+(?:\.\d+)?)$")
+
+
+def _option_native_symbol(instrument: Instrument) -> str:
+    """统一标准式期权符号 → tushare 原生 ts_code 符号（逐所还原，见上方码式说明）。"""
+    matched = _OPTION_SYMBOL_RE.match(instrument.symbol)
+    if matched is None:
+        # 域层已校验统一式，此分支仅防 model_construct 绕过路径
+        raise UnsupportedCapabilityError(
+            f"invalid option symbol {instrument.symbol!r}: expected "
+            "'{PRODUCT}{YYMM}{C|P}{STRIKE}' (e.g. CU2701C102000)",
+            details={"provider": "tushare", "instrument": instrument.code},
+        )
+    product, year, month, cp, strike = matched.groups()
+    if instrument.exchange == "CZCE":
+        return f"{product}{year[1]}{month}{cp}{strike}"
+    if instrument.exchange in ("DCE", "GFEX", "CFFEX"):
+        return f"{product}{year}{month}-{cp}-{strike}"
+    return f"{product}{year}{month}{cp}{strike}"  # SHFE/INE（无连字符直通）
+
+
 def option_ts_code(query: BarQuery) -> str:
-    """期权 ts_code（合约符号原样透传，不做年份猜测）：CN-SSE-10012437 →
-    10012437.SH、CN-CFFEX-IO2611-C-4150 → IO2611-C-4150.CFX（CFFEX 带连字符
-    中段）、CN-CZCE-SR701C5900 → SR701C5900.ZCE（3 位月码直通）；
-    后缀按期权子类查分表（_OPTION_SUFFIX_TABLES）。"""
-    return f"{query.instrument.symbol}.{_suffix(query, _OPTION_SUFFIX_TABLES[query.asset_type])}"
+    """期权 ts_code：etf-option 数字合约码原样透传（CN-SSE-10012437 →
+    10012437.SH）；结构子类统一式 → 原生式（CN-CFFEX-IO2611C4150 →
+    IO2611-C-4150.CFX 带连字符中段、CN-CZCE-SR2701C5900 → SR701C5900.ZCE
+    3 位月码）；后缀按期权子类查分表（_OPTION_SUFFIX_TABLES）。"""
+    suffix = _suffix(query, _OPTION_SUFFIX_TABLES[query.asset_type])
+    if query.asset_type is AssetType.ETF_OPTION:
+        return f"{query.instrument.symbol}.{suffix}"
+    return f"{_option_native_symbol(query.instrument)}.{suffix}"
 
 
 def futures_ts_code(query: BarQuery) -> str:

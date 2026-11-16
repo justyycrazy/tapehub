@@ -89,7 +89,7 @@ def test_stock_bars_chain(ths_client: TestClient, monkeypatch: pytest.MonkeyPatc
 @pytest.mark.parametrize(
     ("asset_type", "instrument"),
     [
-        ("index-option", "CN-CFFEX-IO2601-C-4000"),
+        ("index-option", "CN-CFFEX-IO2601C4000"),
         ("etf-option", "CN-SSE-10012437"),
         ("commodity-option", "CN-SHFE-CU2701C102000"),
     ],
@@ -273,7 +273,7 @@ def test_stock_quote_chain(ths_client: TestClient, monkeypatch: pytest.MonkeyPat
 @pytest.mark.parametrize(
     ("asset_type", "instrument"),
     [
-        ("index-option", "CN-CFFEX-IO2601-C-4000"),
+        ("index-option", "CN-CFFEX-IO2601C4000"),
         ("etf-option", "CN-SSE-10012437"),
         ("commodity-option", "CN-SHFE-CU2701C102000"),
     ],

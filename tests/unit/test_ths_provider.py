@@ -212,14 +212,14 @@ def test_futures_daily_request_and_response(monkeypatch: pytest.MonkeyPatch) -> 
     assert batch.bars[0].timestamp == datetime(2026, 1, 1, 0, tzinfo=CN_TIMEZONE)
 
 
-def test_options_daily_symbol_passthrough(monkeypatch: pytest.MonkeyPatch) -> None:
-    """期权合约 symbol 段原样透传（IO2601-C-4000 → IO2601-C-4000.CFE）。"""
+def test_options_daily_symbol_mapping(monkeypatch: pytest.MonkeyPatch) -> None:
+    """期权统一式 → 原生式（CFFEX 连字符式：IO2601C4000 → IO2601-C-4000.CFE）。"""
     install(monkeypatch)
     preset_payload(monkeypatch, envelope({"item": bar_rows("timestamp", [START_MS])}))
     adapter = _adapter()
     query = _query(
         asset_type=AssetType.INDEX_OPTION,
-        instrument=Instrument.parse("CN-CFFEX-IO2601-C-4000"),
+        instrument=Instrument.parse("CN-CFFEX-IO2601C4000"),
         adjust=Adjust.NONE,
     )
     asyncio.run(adapter.fetch_bars(query))
@@ -315,13 +315,15 @@ def test_contract_suffix_mapping(
         # ETF 期权数字合约码，与证券同段 SH
         (AssetType.ETF_OPTION, "CN-SSE-10012437", "10012437.SH"),
         (AssetType.ETF_OPTION, "CN-SZSE-90008083", "90008083.SZ"),
-        (AssetType.COMMODITY_OPTION, "CN-SHFE-CU2701C102000", "CU2701C102000.SHF"),  # 无连字符
+        (AssetType.COMMODITY_OPTION, "CN-SHFE-CU2701C102000", "CU2701C102000.SHF"),  # 无连字符直通
         # 无连字符（与 SHFE 同构）
         (AssetType.COMMODITY_OPTION, "CN-INE-SC2701C550", "SC2701C550.INE"),
-        (AssetType.COMMODITY_OPTION, "CN-DCE-M2701-C-3500", "M2701-C-3500.DCE"),  # 连字符 4 位月
-        (AssetType.COMMODITY_OPTION, "CN-CZCE-SR701C5900", "SR701C5900.CZC"),  # 无连字符 3 位月码
-        (AssetType.COMMODITY_OPTION, "CN-GFEX-LC2701-C-90000", "LC2701-C-90000.GFE"),  # 连字符
-        (AssetType.INDEX_OPTION, "CN-CFFEX-IO2612-C-4000", "IO2612-C-4000.CFE"),
+        (AssetType.COMMODITY_OPTION, "CN-DCE-M2701C3500", "M2701-C-3500.DCE"),  # 统一式→连字符式
+        # 统一式 4 位年月 → 原生 3 位月码
+        (AssetType.COMMODITY_OPTION, "CN-CZCE-SR2701C5900", "SR701C5900.CZC"),
+        # 统一式 → 连字符式
+        (AssetType.COMMODITY_OPTION, "CN-GFEX-LC2701C90000", "LC2701-C-90000.GFE"),
+        (AssetType.INDEX_OPTION, "CN-CFFEX-IO2612C4000", "IO2612-C-4000.CFE"),
     ],
 )
 def test_option_suffix_mapping(
@@ -330,9 +332,9 @@ def test_option_suffix_mapping(
     expected_thscode: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """期权八所后缀探针实证收编（asset_type 三分：commodity-option /
-    index-option / etf-option，后缀表按子类拆键，2026-11-16 聚焦轮双候选
-    定案；码式矩阵与落选否定证据见 docs/providers/ths.md「标的代码映射」）。"""
+    """期权八所后缀探针实证收编（统一式 {品种}{YYMM}{C/P}{行权价} 入参 →
+    逐所原生式 + 后缀；码式矩阵与落选否定证据见 docs/providers/ths.md
+    「标的代码映射」）。"""
     install(monkeypatch)
     preset_payload(
         monkeypatch,
@@ -364,7 +366,7 @@ def test_option_suffix_table_rejects_unverified_exchange(asset_type: AssetType) 
     构造期校验直测映射函数；正常请求路径下该组合在 domain 层即被拒绝）。"""
     query = BarQuery.model_construct(
         asset_type=asset_type,
-        instrument=Instrument.parse("CN-BSE-IO2601-C-4000"),
+        instrument=Instrument.parse("CN-BSE-IO2601C4000"),
         adjust=Adjust.NONE,
     )
     with pytest.raises(UnsupportedCapabilityError):
@@ -754,7 +756,7 @@ def test_options_quote_from_intraday(monkeypatch: pytest.MonkeyPatch) -> None:
     adapter = _adapter()
     query = _quote_query(
         asset_type=AssetType.INDEX_OPTION,
-        instrument=Instrument.parse("CN-CFFEX-IO2601-C-4000"),
+        instrument=Instrument.parse("CN-CFFEX-IO2601C4000"),
     )
     quote = asyncio.run(adapter.fetch_quote(query))
 

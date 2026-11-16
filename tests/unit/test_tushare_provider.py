@@ -264,7 +264,7 @@ def test_option_request_and_response_mapping(monkeypatch: pytest.MonkeyPatch) ->
 
     query = _query(
         asset_type=AssetType.INDEX_OPTION,
-        instrument=Instrument.parse("CN-CFFEX-IO2611-C-4150"),
+        instrument=Instrument.parse("CN-CFFEX-IO2611C4150"),
         adjust=Adjust.NONE,
     )
     batch = asyncio.run(adapter.fetch_bars(query))
@@ -289,21 +289,22 @@ def test_option_request_and_response_mapping(monkeypatch: pytest.MonkeyPatch) ->
     [
         (AssetType.ETF_OPTION, "CN-SSE-10012437", "10012437.SH"),
         (AssetType.ETF_OPTION, "CN-SZSE-90008083", "90008083.SZ"),
-        (AssetType.INDEX_OPTION, "CN-CFFEX-IO2611-C-4150", "IO2611-C-4150.CFX"),  # 与该所期货同后缀
-        (AssetType.COMMODITY_OPTION, "CN-DCE-M2612-C-3500", "M2612-C-3500.DCE"),  # 连字符 4 位月
-        (AssetType.COMMODITY_OPTION, "CN-SHFE-FU2612C6100", "FU2612C6100.SHF"),  # 无连字符
-        (AssetType.COMMODITY_OPTION, "CN-CZCE-SR701C5900", "SR701C5900.ZCE"),  # 3 位月码直通
+        # 统一式 → 连字符式；后缀 .CFX 与该所期货同
+        (AssetType.INDEX_OPTION, "CN-CFFEX-IO2611C4150", "IO2611-C-4150.CFX"),
+        (AssetType.COMMODITY_OPTION, "CN-DCE-M2612C3500", "M2612-C-3500.DCE"),  # 统一式→连字符式
+        (AssetType.COMMODITY_OPTION, "CN-SHFE-FU2612C6100", "FU2612C6100.SHF"),  # 无连字符直通
+        # 统一式 4 位年月 → 原生 3 位月码
+        (AssetType.COMMODITY_OPTION, "CN-CZCE-SR2701C5900", "SR701C5900.ZCE"),
         # INE/GFEX：2026-11-16 聚焦轮目录+日 K 双证收编（INE 无连字符与 SHFE
-        # 同构；GFEX 连字符式，与该所期货主连「品种+L」不同构）
+        # 同构；GFEX 原生连字符式，与该所期货主连「品种+L」不同构）
         (AssetType.COMMODITY_OPTION, "CN-INE-SC2701C550", "SC2701C550.INE"),
-        (AssetType.COMMODITY_OPTION, "CN-GFEX-LC2701-C-90000", "LC2701-C-90000.GFE"),
+        (AssetType.COMMODITY_OPTION, "CN-GFEX-LC2701C90000", "LC2701-C-90000.GFE"),
     ],
 )
 def test_option_suffix_mapping(
     asset_type: AssetType, instrument: str, expected_ts_code: str
 ) -> None:
-    """期权八所 ts_code 后缀直拼（asset_type 三分后按子类查分表，合约符号
-    原样透传）。"""
+    """期权八所 ts_code 映射（统一式入参 → 逐所原生式 + 后缀分表）。"""
     query = _query(
         asset_type=asset_type,
         instrument=Instrument.parse(instrument),
@@ -333,7 +334,7 @@ def test_option_suffix_table_rejects_unverified_exchange(asset_type: AssetType) 
     构造期校验直测映射函数；正常请求路径下该组合在 domain 层即被拒绝）。"""
     query = BarQuery.model_construct(
         asset_type=asset_type,
-        instrument=Instrument.parse("CN-BSE-IO2601-C-4000"),
+        instrument=Instrument.parse("CN-BSE-IO2601C4000"),
         adjust=Adjust.NONE,
     )
     with pytest.raises(UnsupportedCapabilityError):

@@ -198,8 +198,8 @@ def test_etf_chain(
     ("asset_type", "instrument", "expected_ts_code"),
     [
         ("etf-option", "CN-SSE-10012437", "10012437.SH"),
-        ("index-option", "CN-CFFEX-IO2611-C-4150", "IO2611-C-4150.CFX"),
-        ("commodity-option", "CN-CZCE-SR701C5900", "SR701C5900.ZCE"),
+        ("index-option", "CN-CFFEX-IO2611C4150", "IO2611-C-4150.CFX"),
+        ("commodity-option", "CN-CZCE-SR2701C5900", "SR701C5900.ZCE"),
     ],
 )
 def test_option_chain(

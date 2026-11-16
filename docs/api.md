@@ -152,6 +152,8 @@ Accept: text/event-stream
 - `market`、`exchange` 由服务端解析，调用方无需重复传递；
 - **不接受** `CN.SSE.600000`、`600000` 等非标准格式；Provider 专用代码由适配器转换；
 - **market/exchange 组合一致性**：exchange 段必须属于 market 段的规范词汇（CN：SSE/SZSE/BSE/SHFE/DCE/CZCE/INE/GFEX/CFFEX/CSI；HK：HKEX；US：NYSE/NASDAQ/CBOE/AMEX/OTC/IEX；GLOBAL：OTC/CRYPTO），矛盾组合（如 `CN-NYSE-…`）在参数校验期拒绝（`INVALID_REQUEST`），不会透传到 Provider 映射层；各 Provider 的接入范围是词汇表的更窄子集，由映射层白名单自行收窄；
+- **期权子类 × 交易所归属**：`commodity-option` 仅适用于 SHFE/INE/DCE/CZCE/GFEX、`index-option` 仅 CFFEX、`etf-option` 仅 SSE/SZSE（CN 期权八所，2026-11 探针实证）；矛盾组合（如 `commodity-option` + `CN-SSE-…`）与 market/exchange 矛盾同层在参数校验期拒绝（`INVALID_REQUEST`）；
+- **期权结构子类统一符号式**：`commodity-option` / `index-option` 的 symbol 段为 `{品种}{4位年月YYMM}{C/P}{行权价}`（如 `CN-SHFE-CU2701C102000`、`CN-CFFEX-IO2612C4000`、`CN-CZCE-SR2701C5900`），在参数校验期严格校验（`INVALID_REQUEST`）；各交易所原生写法（SHFE/INE 品种小写无连字符、DCE/GFEX/CFFEX 连字符式、CZCE 3 位月码）由 Provider 适配器统一还原。`etf-option`（SSE/SZSE）为交易所指派数字合约码（如 `CN-SSE-10012437`），无结构不受本式约束。诚实边界：行权价样本全为整数（八所探针实证），小数未观测但放行不拒绝；P 方向码式未直测、与 C 同构处理。历史连字符式（`M2701-C-3500`）与 3 位月码写法自 2026-11-16 统一式定案起不再合法；
 - 第一版不通过标的元数据验证真实资产类型（「解析 ≠ 验证存在」：标的是否真实存在由 bars/quotes 请求经上游验证）。
 
 ### 标的解析（模糊查询）

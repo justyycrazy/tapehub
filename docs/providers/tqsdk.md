@@ -33,8 +33,8 @@
 
 期权补充口径（asset_type 三分：commodity-option/index-option/etf-option，八所归属见 ../api.md「asset_type 资产类型体系」；2026-11-16 聚焦轮八所探针实证，PROBE_LOG 第 12 轮）：
 
-- **八所全覆盖码式**（期权品种字母段小写为 tqsdk 期权独有约定，与该所期货写法不同构）：SSE/SZSE 数字合约码直拼（`CN-SSE-10012437 → SSE.10012437`）；SHFE/INE 品种小写无连字符（`CN-SHFE-CU2701C102000 → SHFE.cu2701C102000`、`CN-INE-SC2701C550 → INE.sc2701C550`）；DCE 品种小写连字符 4 位月（`CN-DCE-M2701-C-3500 → DCE.m2701-C-3500`，**与该所期货大写实证相反**）；CZCE 大写品种 3 位月码直通（`CN-CZCE-SR701C5900 → CZCE.SR701C5900`）；GFEX 品种小写连字符（`CN-GFEX-LC2701-C-90000 → GFEX.lc2701-C-90000`）；CFFEX 大写直通连字符（`CN-CFFEX-IO2612-C-4000 → CFFEX.IO2612-C-4000`）；
-- 落选候选否定证据：INE `SC2701C550` / DCE `M2701-C-3500` / GFEX `lc2701C90000`（大写直通、无连字符）均 graphql「查询合约服务报错」快速拒绝——期权写错即快速报错（非期货侧 4 位年月码的挂起行为）；
+- **统一式入参 → 原生式还原**（结构子类统一式 {品种}{YYMM}{C/P}{行权价} 见 ../api.md「instrument 标准代码」；tqsdk 原生写法为八所中唯一品种小写源，与该所期货品种大小写同系）：SSE/SZSE 数字合约码直拼（`CN-SSE-10012437 → SSE.10012437`）；SHFE/INE 品种小写无连字符（`CN-SHFE-CU2701C102000 → SHFE.cu2701C102000`、`CN-INE-SC2701C550 → INE.sc2701C550`）；DCE/GFEX 品种小写连字符 4 位月（`CN-DCE-M2701C3500 → DCE.m2701-C-3500`，**与该所期货大写实证相反**；`CN-GFEX-LC2701C90000 → GFEX.lc2701-C-90000`）；CZCE 大写品种 3 位月码（`CN-CZCE-SR2701C5900 → CZCE.SR701C5900`，统一式 4→3 还原与该所期货合约同构）；CFFEX 大写连字符式（`CN-CFFEX-IO2612C4000 → CFFEX.IO2612-C-4000`）；
+- 落选候选否定证据（原生式侧，定案时以标准码直测）：INE 大写直通 / DCE 大写直通 / GFEX 无连字符 `lc2701C90000` 均 graphql「查询合约服务报错」快速拒绝——期权写错即快速报错（非期货侧 4 位年月码的挂起行为）；统一式定案后旧连字符/3 位月码写法在域层即拒绝，不再到达上游；
 - 权限口径：官方权限模型免费版账户即含期权实时行情（当前账户专业版）；周期仅核实 P1D（`get_kline_serial` 其余周期对期权未核实，不声明），K 线实证 3 根/标的 × 八所、快照与流式走通用 `get_quote` 订阅链路。
 
 - 标准字段口径：上游返回列 `id/datetime/open/high/low/close/volume/open_oi/close_oi`，无成交额列——标准 `amount` 恒为 `null`（不用 0 冒充）；持仓量经受控 `extensions` 透出（见「extensions 白名单」）；
@@ -52,7 +52,7 @@
 - 主力连续：`KQ.m@<交易所>.<品种>`——`CN-SHFE-CU → KQ.m@SHFE.cu`、`CN-DCE-M → KQ.m@DCE.m`、`CN-INE-SC → KQ.m@INE.sc`、`CN-GFEX-LC → KQ.m@GFEX.lc`、`CN-CZCE-MA → KQ.m@CZCE.MA`、`CN-CFFEX-IF → KQ.m@CFFEX.IF`（五所逐所 2026-11-16 探针实证有数据——金融期货主连存在性定案）；指数连续（加权）：`KQ.i@<交易所>.<品种>`——`CN-SHFE-BU → KQ.i@SHFE.bu`、`CN-INE-SC → KQ.i@INE.sc`、`CN-CFFEX-IF → KQ.i@CFFEX.IF` 等（同轮实证，品种码大小写与合约同系）；
 - 无效代码行为：无效订阅无响应挂起直至超时（CZCE 4 位码、DCE/INE 大写品种），个别形态 graphql 快速报错（GFEX 大写）——且无效订阅会把共享 TqApi 运行时堵死、殃及后续一切调用（含合法代码，第 13 轮聚焦轮实证）；还原表只收实证条目正是该行为的防线；
 - 股票/指数/ETF（同期货格式，官方文档示例口径）：`CN-SSE-600000 → SSE.600000`、`CN-SZSE-000001 → SZSE.000001`、指数 `CN-SSE-000016 → SSE.000016`、ETF `CN-SSE-510050 → SSE.510050`（指数仅核实 SSE/SZSE 发布的代码）；
-- 拒绝范围：资产类型以能力目录为准（上表九类）；BSE 交易所前缀上游不支持（快速报 non-existent instrument）；期权码式还原见上方「期权补充口径」（品种小写还原仅作用于 commodity-option 的 SHFE/INE/DCE/GFEX 四所，不沿用期货表规则；子类×交易所矛盾组合在域层词汇表即拒绝，见 ../api.md）。
+- 拒绝范围：资产类型以能力目录为准（上表九类）；BSE 交易所前缀上游不支持（快速报 non-existent instrument）；期权结构子类统一式还原见上方「期权补充口径」（SHFE/INE/DCE/GFEX 品种小写、CZCE 4→3 月码、DCE/GFEX/CFFEX 连字符插入，不沿用期货还原表规则；子类×交易所矛盾组合与非统一式符号在域层即拒绝，见 ../api.md）。
 
 ## 周期 / 复权 / 单位映射
 

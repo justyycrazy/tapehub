@@ -203,9 +203,19 @@ class TestRequestValidation:
         for asset_type, instrument in (
             ("commodity-option", "CN-SSE-10012437"),  # SSE 属 etf-option
             ("index-option", "CN-SHFE-CU2701C102000"),  # SHFE 属 commodity-option
-            ("etf-option", "CN-CFFEX-IO2612-C-4000"),  # CFFEX 属 index-option
+            ("etf-option", "CN-CFFEX-IO2612C4000"),  # CFFEX 属 index-option
         ):
             response = self._post(fake_client, asset_type=asset_type, instrument=instrument)
+            assert response.status_code == 422
+            assert response.json()["error"]["code"] == "INVALID_REQUEST"
+
+    def test_option_legacy_symbol_rejected(self, fake_client) -> None:  # type: ignore[no-untyped-def]
+        """结构子类旧符号写法（连字符式 / CZCE 3 位月码，域层统一式校验）：
+        构造期拒绝 → 422 INVALID_REQUEST（2026-11-16 统一式定案前为合法输入）。"""
+        for instrument in ("CN-DCE-M2701-C-3500", "CN-CZCE-SR701C5900"):
+            response = self._post(
+                fake_client, asset_type="commodity-option", instrument=instrument
+            )
             assert response.status_code == 422
             assert response.json()["error"]["code"] == "INVALID_REQUEST"
 

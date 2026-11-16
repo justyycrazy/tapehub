@@ -195,18 +195,18 @@ def test_unsupported_interval_rejected_by_operation_routing(
         (AssetType.INDEX, "CN-SSE-000016", "SSE.000016"),
         (AssetType.ETF, "CN-SSE-510050", "SSE.510050"),
         (AssetType.ETF, "CN-SZSE-159919", "SZSE.159919"),
-        # 期权八所（asset_type 三分：commodity-option / index-option /
-        # etf-option，2026-11-16 聚焦轮探针定案）：SHFE/INE/DCE/GFEX 品种字母
-        # 段小写（全属 commodity-option），SSE/SZSE 数字码（etf-option）与
-        # CFFEX（index-option）/CZCE 大写直通
+        # 期权八所（asset_type 三分 + 符号统一式，2026-11-16 聚焦轮探针定案）：
+        # 统一式 {品种}{YYMM}{C/P}{行权价} 入参 → 逐所原生式出参——SHFE/INE
+        # 品种小写无连字符，DCE/GFEX 品种小写连字符式，CZCE 大写品种 3 位月码
+        # （4→3 还原），CFFEX 大写品种连字符式，SSE/SZSE 数字码直拼
         (AssetType.ETF_OPTION, "CN-SSE-10012437", "SSE.10012437"),
         (AssetType.ETF_OPTION, "CN-SZSE-90008083", "SZSE.90008083"),
-        (AssetType.INDEX_OPTION, "CN-CFFEX-IO2612-C-4000", "CFFEX.IO2612-C-4000"),
+        (AssetType.INDEX_OPTION, "CN-CFFEX-IO2612C4000", "CFFEX.IO2612-C-4000"),
         (AssetType.COMMODITY_OPTION, "CN-SHFE-CU2701C102000", "SHFE.cu2701C102000"),
         (AssetType.COMMODITY_OPTION, "CN-INE-SC2701C550", "INE.sc2701C550"),
-        (AssetType.COMMODITY_OPTION, "CN-DCE-M2701-C-3500", "DCE.m2701-C-3500"),
-        (AssetType.COMMODITY_OPTION, "CN-CZCE-SR701C5900", "CZCE.SR701C5900"),
-        (AssetType.COMMODITY_OPTION, "CN-GFEX-LC2701-C-90000", "GFEX.lc2701-C-90000"),
+        (AssetType.COMMODITY_OPTION, "CN-DCE-M2701C3500", "DCE.m2701-C-3500"),
+        (AssetType.COMMODITY_OPTION, "CN-CZCE-SR2701C5900", "CZCE.SR701C5900"),
+        (AssetType.COMMODITY_OPTION, "CN-GFEX-LC2701C90000", "GFEX.lc2701-C-90000"),
     ],
 )
 def test_kline_symbols(

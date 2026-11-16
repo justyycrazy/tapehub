@@ -208,8 +208,9 @@ targets:
     window: {start: 2026-11-01, end: 2026-11-30}
     min_bars: 3
   index-option@CN-CFFEX:
-    # 沪深300 期权 IO2612-C-4000（连字符式）：同上双证收编；月度合约到期轮换
-    instrument: CN-CFFEX-IO2612-C-4000
+    # 沪深300 期权 IO2612C4000（统一式）→ 原生连字符式 IO2612-C-4000：同上
+    # 双证收编；月度合约到期轮换
+    instrument: CN-CFFEX-IO2612C4000
     window: {start: 2026-11-01, end: 2026-11-30}
     min_bars: 3
   commodity-option@CN-SHFE:
@@ -225,22 +226,22 @@ targets:
     window: {start: 2026-11-01, end: 2026-11-30}
     min_bars: 3
   commodity-option@CN-DCE:
-    # 豆粕期权（品种小写连字符 m2701-C-3500——品种大小写与该所期货同系
-    # 小写，第 13 轮期货聚焦轮互证）：同上双证收编（大写 M2701-C-3500
-    # 快速报错否定）；轮换按 opt_basic 同款口径重选
-    instrument: CN-DCE-M2701-C-3500
+    # 豆粕期权（统一式 M2701C3500 → 原生品种小写连字符 m2701-C-3500——品种
+    # 大小写与该所期货同系小写，第 13 轮期货聚焦轮互证；大写/无连字符原生式
+    # 快速报错否定）：同上双证收编；轮换按 opt_basic 同款口径重选
+    instrument: CN-DCE-M2701C3500
     window: {start: 2026-11-01, end: 2026-11-30}
     min_bars: 3
   commodity-option@CN-CZCE:
-    # 白糖期权（大写品种 3 位月码直通 SR701C5900）：同上双证收编；
-    # 到期 2026-12-11 轮换
-    instrument: CN-CZCE-SR701C5900
+    # 白糖期权（统一式 SR2701C5900 → 原生大写品种 3 位月码 SR701C5900，4→3
+    # 还原与该所期货合约同构）：同上双证收编；到期 2026-12-11 轮换
+    instrument: CN-CZCE-SR2701C5900
     window: {start: 2026-11-01, end: 2026-11-30}
     min_bars: 3
   commodity-option@CN-GFEX:
-    # 碳酸锂期权（品种小写连字符 lc2701-C-90000）：同上双证收编（无连字符
-    # lc2701C90000 快速报错否定）；轮换按挂牌行权价序列重选
-    instrument: CN-GFEX-LC2701-C-90000
+    # 碳酸锂期权（统一式 LC2701C90000 → 原生品种小写连字符 lc2701-C-90000）：
+    # 同上双证收编（无连字符原生式快速报错否定）；轮换按挂牌行权价序列重选
+    instrument: CN-GFEX-LC2701C90000
     window: {start: 2026-11-01, end: 2026-11-30}
     min_bars: 3
 

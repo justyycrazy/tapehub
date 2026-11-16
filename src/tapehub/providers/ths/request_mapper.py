@@ -11,7 +11,7 @@ from typing import Any
 
 from tapehub.domain.errors import UnsupportedCapabilityError
 from tapehub.domain.intervals import Interval
-from tapehub.domain.models import Adjust, BarQuery, QuoteQuery
+from tapehub.domain.models import Adjust, BarQuery, Instrument, QuoteQuery
 from tapehub.domain.timeutil import datetime_to_epoch
 
 # REST 基址（认证经 X-api-key 请求头）
@@ -76,6 +76,34 @@ def _rewrite_czce_symbol(symbol: str) -> str:
     product, year, month = match.groups()
     return f"{product}{year[1]}{month}"
 
+# 期权结构子类统一标准式解析（commodity-option / index-option，域层已
+# fullmatch 校验；etf-option 数字合约码原样透传不走本式）。原生写法逐所
+# 还原（2026-11-16 聚焦轮八所探针定案，出处 docs/providers/ths.md
+# 「标的代码映射」）：SHFE/INE 无连字符直通（CU2701C102000 / SC2701C550）；
+# CZCE 3 位月码（SR701C5900——统一式 4 位年月去年份十位）；DCE/GFEX/CFFEX
+# 连字符式（M2701-C-3500 / LC2701-C-90000 / IO2612-C-4000）。品种一律大写
+# （ths 原生与统一式同为大写）。
+_OPTION_SYMBOL_RE = re.compile(r"^([A-Z]+)(\d{2})(\d{2})([CP])(\d+(?:\.\d+)?)$")
+
+
+def _option_native_symbol(instrument: Instrument) -> str:
+    """统一标准式期权符号 → ths 原生合约符号（逐所还原，见上方码式说明）。"""
+    matched = _OPTION_SYMBOL_RE.match(instrument.symbol)
+    if matched is None:
+        # 域层已校验统一式，此分支仅防 model_construct 绕过路径
+        raise UnsupportedCapabilityError(
+            f"invalid option symbol {instrument.symbol!r}: expected "
+            "'{PRODUCT}{YYMM}{C|P}{STRIKE}' (e.g. CU2701C102000)",
+            details={"provider": "ths", "instrument": instrument.code},
+        )
+    product, year, month, cp, strike = matched.groups()
+    if instrument.exchange == "CZCE":
+        return f"{product}{year[1]}{month}{cp}{strike}"
+    if instrument.exchange in ("DCE", "GFEX", "CFFEX"):
+        return f"{product}{year}{month}-{cp}-{strike}"
+    return f"{product}{year}{month}{cp}{strike}"  # SHFE/INE（无连字符直通）
+
+
 # bars：operation → 端点路径（上游历史 K 线/日 K）
 _BAR_PATHS: dict[str, str] = {
     "a_share_historical": "/api/a-share/prices/historical",
@@ -99,8 +127,9 @@ def ths_symbol(query: BarQuery | QuoteQuery) -> str:
     """标准标的 → 完整 thscode（如 CN-SSE-600519 → "600519.SH"）。
 
     exchange 段按资产类型查后缀表；symbol 段除 CZCE 合约 4→3 年月码还原
-    （``CN-CZCE-MA2701`` → ``MA701.CZC``）外原样透传（期权行权价等结构
-    不做改写）。查表无果属命名空间外请求，明确拒绝。
+    （``CN-CZCE-MA2701`` → ``MA701.CZC``）与期权结构子类统一式还原
+    （``_option_native_symbol``）外原样透传。查表无果属命名空间外请求，
+    明确拒绝。
     """
     asset_type = query.asset_type.value
     suffixes = _SUFFIXES.get(asset_type)
@@ -127,6 +156,8 @@ def ths_symbol(query: BarQuery | QuoteQuery) -> str:
     symbol = query.instrument.symbol
     if query.instrument.exchange == "CZCE" and asset_type == "contract":
         symbol = _rewrite_czce_symbol(symbol)
+    elif asset_type in ("commodity-option", "index-option"):
+        symbol = _option_native_symbol(query.instrument)
     return f"{symbol}.{suffix}"
 
 
