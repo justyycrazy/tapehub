@@ -6,7 +6,6 @@
 #   https://open.futunn.com/zh-cn/api/overview/rate-limit
 #   https://open.futunn.com/zh-cn/api/quote/realtime/stock-quote
 #   https://open.futunn.com/zh-cn/api/quote/basic-data/history-kline
-# 探针运行记录：probes/results/PROBE_LOG.md（本地文件，不入库）。
 provider: futunn
 default_variant: futunn
 

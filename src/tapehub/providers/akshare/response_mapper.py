@@ -1,7 +1,6 @@
 """akshare 响应映射（ResponseMapper）：上游 DataFrame 行 → 统一 Bar 模型。
 
 列名/单位/换算口径见 docs/providers/akshare.md（唯一出处，本文不复述）。
-探针运行记录见 probes/results/PROBE_LOG.md（本地文件，不入库）。
 
 缺失值与 NaN 统一映射为 null；Provider 特有字段仅通过受控白名单进入 extensions。
 """

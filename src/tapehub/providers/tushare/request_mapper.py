@@ -2,7 +2,6 @@
 pro.fund_daily / pro.opt_daily 参数。
 
 映射规则与上游行为定案见 docs/providers/tushare.md（唯一出处，本文不复述）。
-探针运行记录见 probes/results/PROBE_LOG.md（本地文件，不入库）。
 官方文档：https://tushare.pro/document/2。
 """
 

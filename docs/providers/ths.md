@@ -41,9 +41,9 @@ bars 行字段两种形态统一映射（时间键不同、其余同构）：A �
 | index-option | CFFEX→CFE（与该所期货同段） | `CN-CFFEX-IO2612C4000 → IO2612-C-4000.CFE` |
 | etf-option | SSE→SH、SZSE→SZ（数字合约码，与该所证券后缀同段） | `CN-SSE-10012437 → 10012437.SH` |
 
-期权后缀八所（asset_type 三分后按子类拆键，2026-11-16 聚焦轮双候选探针实证收编；各所另一码式 3001 否定证据见 PROBE_LOG 第 10 轮）。
+期权后缀八所（asset_type 三分后按子类拆键，2026-11-16 聚焦轮双候选探针实证收编；各所另一码式候选 3001『Target not found』干净否定，2026-11-16 聚焦轮双候选直测实证）。
 
-期权原生码式矩阵（统一式入参经映射层还原后的上游写法；各所另一码式已 3001 干净否定，双候选证据见聚焦轮报告）：SSE/SZSE 为数字合约码；SHFE/INE「品种4位月C/P行权价」**无连字符**；DCE/GFEX/CFFEX「品种4位月-C/P-行权价」**连字符**；CZCE「品种3位月C/P行权价」无连字符（701=2027-01，统一式 4 位年月去年份十位还原）。与 tushare 侧 INE（无连字符）/GFEX（连字符）同轮互证一致；注意 CFFEX 期权 ths 侧后缀 .CFE、tushare 侧 .CFX。
+期权原生码式矩阵（统一式入参经映射层还原后的上游写法；各所另一码式已 3001 干净否定，2026-11-16 聚焦轮双候选直测实证）：SSE/SZSE 为数字合约码；SHFE/INE「品种4位月C/P行权价」**无连字符**；DCE/GFEX/CFFEX「品种4位月-C/P-行权价」**连字符**；CZCE「品种3位月C/P行权价」无连字符（701=2027-01，统一式 4 位年月去年份十位还原）。与 tushare 侧 INE（无连字符）/GFEX（连字符）同轮互证一致；注意 CFFEX 期权 ths 侧后缀 .CFE、tushare 侧 .CFX。
 
 - CZCE 年月码 4→3 还原：`CN-CZCE-MA2701 → MA701.CZC`（去年份十位，与 tqsdk 同构；4 位码 MA2701.CZC 上游 3001 不识别、3 位 MA701.CZC 可用）；仅匹配「品种 + 2 位年 + 2 位月」形态——主连/加权品种码（无年月段）、3 位旧写法与不规则代码原样透传；
 - contract 的 symbol 段除 CZCE 还原外原样透传；期权结构子类统一式入参经映射层逐所还原（SHFE/INE 无连字符直通、CZCE 4→3 月码、DCE/GFEX/CFFEX 连字符插入）；etf-option 数字码原样透传；
@@ -87,8 +87,8 @@ bars 行字段两种形态统一映射（时间键不同、其余同构）：A �
 
 当前回退链顺序以 `src/tapehub/config/provider_routing.yaml` 为准，本文不复述 order 列表。参与组合与角色：
 
-- bars：CN stock / index / etf / contract 居回退位末位（付费凭据 API、仅日线、窗口受限）；CN 期权三子类（commodity-option/index-option/etf-option）居**缺省首位**（2026-11-16 八所收编后与 tushare 同覆盖，tushare 凭据型兜底居链尾）；
-- quotes：CN stock / index / etf / contract 居回退位末位（个股/指数/ETF 快照直出，期货/期权经分时端点取末点）；CN 期权三子类独占（tushare 不声明快照）；
+- bars：CN stock / index / etf / contract 居回退位末位（付费凭据 API、仅日线、窗口受限）；CN 期权三子类（commodity-option/index-option/etf-option）居**缺省首位**（2026-11-16 八所收编后与 tushare/tqsdk 同覆盖，tushare 凭据型、tqsdk SDK 型依次居后）；
+- quotes：CN stock / index / etf / contract 居回退位末位（个股/指数/ETF 快照直出，期货/期权经分时端点取末点）；CN 期权三子类居**缺省首位**（2026-11-16 与 tqsdk 同覆盖、tqsdk 居次位；tushare 不声明快照）；
 - ETF 特例：仅声明 `qfq`——`adjust=none` 的 auto ETF 请求经六维匹配跳过 ths、不参与该请求的回退。
 
 位次依据一句话：付费凭据 API 置各既有链末尾补位；CN 期权 bars（三子类同链）为八所同覆盖下的缺省首位（先接入居前），quotes 为唯一覆盖该组合的 Provider 故独占。
@@ -102,4 +102,3 @@ bars 行字段两种形态统一映射（时间键不同、其余同构）：A �
 ## 探针依据
 
 - 能力核实与行为实证用例：`probes/cases/ths.yaml`（探针框架规范见 `probes/README.md`）；
-- 各轮运行记录：`probes/results/PROBE_LOG.md`（本地文件，不入库）。

@@ -63,6 +63,7 @@ quotes 为快照能力：interval/adjust 维度无意义，capabilities 与 oper
 - HK/US 日线 `amount` 上游原值 0（无成交额数据，按原值透出、非缺失 null），与 tickflow 口径一致。
 - K 线响应为列式结构（各数组等长、同下标对应同一根 K 线）；缺失值与 NaN 统一映射 null（不用 0 冒充）。
 - CN 指数/ETF 扩容定案（探针 2026-11-15 第 7/8 轮）：统一 klines 端点对指数/ETF 代码不做证券类型路由拒绝——000001.SH/510050.SH 日线 118 根、周/月线均有数；代码映射与 stock 完全共用（后缀表零改动），映射层/适配器零分支。指数/ETF history 未核实保持 null（chain 二分后回填）。
+- HK/US 指数无覆盖定案（目录外诊断 2026-11-15 第 12 轮）：instruments 元数据端点对 10 个候选符号（HK：HSI/HSCEI/HSTECH.HK；US：SPX/INDU/IXIC/NDX/GSPC/DJI/CCMP.US，Bloomberg 与 Yahoo 两套缩写约定全覆盖）均未收录；防御性端点直测 HSI.HK/SPX.US klines 200 空数组、quotes 空 data（适配器如实包装 `UPSTREAM_ERROR`）——元数据收录与端点覆盖一致、无分裂情形，控制组正常（000001.SH type=index、00700.HK type=stock）；港股段仅收录个股、美股段仅收录可交易证券（stock/etf），CN 指数为本源唯一指数覆盖（与 tickflow 同源引擎、行为完全一致），HK/US 指数维持不声明。
 - US ETF 扩容定案（目录外诊断 2026-11-15 第 9 轮）：统一 klines 端点对美股 ETF 标的（SPY.US/QQQ.US，交易所段无关）不做证券类型路由拒绝——P1D 2025 全窗 250 根直测放行；none/qfq/hfq 三复权生效且与 tickflow 侧逐位一致（同源引擎再证）；**复权锚定为上游全序列端点而非查询窗口端点**（hfq 与 qfq 差常数比例 ≈0.5476，同一套分红因子两种锚定，窗口内末根可 ≠ 原始价）；量额同 US stock 日线口径（`amount` 上游原值 0）。history 未核实保持 null（chain 二分后回填）。
 - 截断/分页：上游单次上限 10000 根，达到上限时无法确认是否被截断，诚实标记 `meta.partial=true` 并经 warnings 提示可能截断；统一分页由共享 `paginate_bars` 完成，闭区间 `[start, end]` 在标准化后精确复核（上游按毫秒时间过滤，网关再做区间复核）。
 - 错误指纹：
@@ -104,4 +105,3 @@ quotes 为快照能力：interval/adjust 维度无意义，capabilities 与 oper
 ## 探针依据
 
 - 能力核实与行为实证用例：`probes/cases/alphafeed.yaml`（探针框架规范见 `probes/README.md`）；
-- 各轮运行记录：`probes/results/PROBE_LOG.md`（本地文件，不入库）。

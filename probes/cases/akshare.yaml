@@ -19,10 +19,7 @@ pacing:
                          # 不受东财限流影响 + HK/US stock 各 9）+
                          # adjust_diff 24（P1D 限定）+
                          # history_depth 9 条 × ≤24 + variant_consistency 29
-                         # + raw 1（bse-stock-fingerprint；
-                         # sina-futures-czce-4digit/3digit 均已退役——4 位
-                         # 直通由 chain contract@CN-CZCE 常态复验，3 位全空
-                         # 负对照结论已与 tushare 侧同日互证定案；
+                         # + raw 1（bse-stock-fingerprint）
                          # history_depth 不随逐所扩容——深度是资产类级结论，
                          # 基准目标承载）
   # ⚠ 东财限流恢复态脆弱：封禁期后单次零星调用「预检通过」不代表恢复——
@@ -95,8 +92,7 @@ targets:
     min_bars: 20
   contract@CN-CZCE:
     # 郑商所合约：标准码统一 4 位年月（公开现行约定；3 位码全空已与 tushare
-    # 侧同日互证定案，原 raw 对照 case sina-futures-czce-3digit 随定案退役，
-    # 证据见 probes/results/PROBE_LOG.md）。适配器当前原样透传，本目标
+    # 侧同日互证定案）。适配器当前原样透传，本目标
     # availability 即「4 位直通新浪」的常态复验
     instrument: CN-CZCE-RM2701
     window: {start: 2026-07-01, end: 2026-12-31}
@@ -207,4 +203,4 @@ raw:
     expect: {status: ok, min_rows: 0}
     assert: false
 
-notes: 各轮运行记录见 probes/results/PROBE_LOG.md（不入库）；探针框架规范见 probes/README.md。
+notes: 探针框架规范见 probes/README.md。

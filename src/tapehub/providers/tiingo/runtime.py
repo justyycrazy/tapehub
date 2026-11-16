@@ -1,8 +1,7 @@
 """Tiingo WebSocket 共享运行时（M2 快照缓存 + M3 流式同源）。
 
 asyncio 原生实现，与 twelvedata Runtime 同构；WS 协议行为定案见
-docs/providers/tiingo.md（唯一出处，本文不复述）。探针运行记录见
-probes/results/PROBE_LOG.md（本地文件，不入库）。
+docs/providers/tiingo.md（唯一出处，本文不复述）。
 
 事件通知（listener 回调 ``callback(kind, symbol, snapshot)``）：
 

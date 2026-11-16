@@ -1,7 +1,6 @@
 """AlphaFeed 适配器（已实现）。
 
 映射规则与上游行为定案见 docs/providers/alphafeed.md（唯一出处，本文不复述）。
-探针运行记录见 probes/results/PROBE_LOG.md（本地文件，不入库）。
 """
 
 from datetime import datetime

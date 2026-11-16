@@ -1,7 +1,6 @@
 """Tiingo 响应映射（ResponseMapper）：REST bars 行 / WS 快照数据 → 统一 Bar / Quote 模型。
 
 响应结构与字段口径见 docs/providers/tiingo.md（唯一出处，本文不复述）。
-探针运行记录见 probes/results/PROBE_LOG.md（本地文件，不入库）。
 
 bars 响应按形状统一拍平（crypto 嵌套 / fx 扁平防御兼容），裸时间按 UTC
 解释、统一北京时间归一化由领域层 BarBatch 完成；``date`` 缺失/不可解析

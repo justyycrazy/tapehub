@@ -3,8 +3,7 @@
 asyncio 原生实现（与 tqsdk 的线程模型不同）：``single`` 部署模式下
 Runtime 连接任务运行在主事件循环上，所有状态仅事件循环内访问，无锁、
 无线程桥。WS 协议行为定案见 docs/providers/twelvedata.md（唯一出处，
-本文不复述）。探针运行记录见 probes/results/PROBE_LOG.md（本地文件，
-不入库）。
+本文不复述）。
 
 要点：credit = 当前活跃订阅 symbol 数——退订即时释放、重订免费，上游支持
 逐 symbol 真退订，无休眠订阅累积、无代际回收（不产生 ``recycling`` 事件）。

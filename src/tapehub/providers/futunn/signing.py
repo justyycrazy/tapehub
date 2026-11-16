@@ -2,7 +2,6 @@
 
 签名原文/请求头构造与认证约定见 docs/providers/futunn.md（唯一出处，
 本文不复述）；官方 getting-started URL 见 manifest.yaml 头注释。
-探针运行记录见 probes/results/PROBE_LOG.md（本地文件，不入库）。
 """
 
 import base64

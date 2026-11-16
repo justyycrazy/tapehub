@@ -21,8 +21,7 @@ pacing:
   # etf + etf@CN-SZSE + etf@US，各 1 调）+
   # adjust_diff 28（7 目标 × P1D × 2 pair × 2 调，etf/etf@US 为 ETF 分红
   # 复权复验）+ history_depth 3 条（US × 三周期）× ≤24 + raw 2 case × 2 调
-  # （指纹 2；快照 3 条与 af-period-10m 已随 quotes 入链/定案退役，见 raw 段
-  # 注释）= 最坏 196。
+  # （指纹 2）= 最坏 196。
   max_calls: 220
 
 # 同一 asset_type（stock）跨三市场声明能力：用市场限定目标（stock@MARKET）
@@ -70,8 +69,8 @@ targets:
   index:
     instrument: CN-SSE-000001
     # 上证指数：指数能力 chain 常态复验基准目标——指数/ETF 代码域探测
-    #（af-index-daily-shape 等 7 条 raw，2026-11-15 第 7/8 轮：日线 118 根、
-    # W/M 有数、复权参数框架级判定）实证扩容声明后收敛入链退役，
+    #（2026-11-15 第 7/8 轮：日线 118 根、
+    # W/M 有数、复权参数框架级判定）实证扩容声明，
     # availability 全声明矩阵展开（3 周期 × none）
     window: {start: 2025-01-01, end: 2025-12-31}
     min_bars: 10
@@ -163,14 +162,4 @@ raw:
     expect: {status: error, error_contains: ""}
     assert: false
 
-  # ── 已定案退役的 raw（原始证据见 probes/results/PROBE_LOG.md，不入库）：
-  #    ① af-quote-cn/hk/us 三条快照字段矩阵（2026-11-15 起随 chain
-  #      quote_availability 入链退役）——quotes 声明组合（stock@CN/@HK/@US、
-  #      CN index/etf、US etf）由 chain 经 adapter.fetch_quote 全链路常态
-  #      复验，判定与观测覆盖强于 raw 的 SDK 级字段检查；指数/ETF 快照的
-  #      扩容实证（第 11 轮目录外诊断）已回填 manifest；
-  #    ② af-period-10m-fingerprint（10m 周期实测可用但定案不声明，见
-  #      docs/providers/alphafeed.md）——适配器永不会发出 10m 请求，上游
-  #      该周期行为漂移对链路零影响，持续观察无服务价值；未来若决定声明
-  #      PT10M，扩容后由 chain availability 常态复验（届时重探一轮即可）。
-notes: 各轮运行记录见 probes/results/PROBE_LOG.md（不入库）；探针框架规范见 probes/README.md。
+notes: 探针框架规范见 probes/README.md。

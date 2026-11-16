@@ -1,8 +1,7 @@
 """Twelve Data 响应映射（ResponseMapper）：上游 as_json()/WS price → 统一 Bar / Quote 模型。
 
 字段结构、datetime 墙钟口径与 extensions 白名单见 docs/providers/twelvedata.md
-（唯一出处，本文不复述）。探针运行记录见 probes/results/PROBE_LOG.md
-（本地文件，不入库）。官方文档：https://twelvedata.com/exchanges/stocks。
+（唯一出处，本文不复述）。官方文档：https://twelvedata.com/exchanges/stocks。
 
 bars 的 datetime 为墙钟时间（无时区后缀），解析为对应显示时区的 aware
 datetime，统一北京时间归一化由领域层完成；缺失值与 NaN 统一映射为 null。

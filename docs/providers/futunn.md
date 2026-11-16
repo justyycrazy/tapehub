@@ -94,6 +94,7 @@ history.start 历史覆盖声明（逐所/逐周期，均北京时间）：
 - 分钟 K 线 end 语义：上游 `end` 以该日 00:00 为截止、**不含当日**——适配器对分钟周期（PT1M~PT1H）end 日期 +1 天补偿；日/周/月 K 线 end 含当日不补偿；请求 `start`/`end` 为标的市场时区日历日期（CN=Asia/Shanghai、HK=Asia/Hong_Kong、US=America/New_York），闭区间 `[start, end]` 精确复核在适配器完成；
 - 请求构造约束：查询串由 request_mapper 统一生成（固定键序 start/end/ktype/autype/num/page_token），URL 拼接与签名原文共用同一字符串（签名一致性单点保证；`page_token` 有值时置于末位，续页参数逐字节不变）；GET 显式传 `num`/`autype`，POST 体即签名输入；
 - 客户端超时 20s（应用层整体兜底 `upstream_timeout_seconds` 默认 30s，客户端自身取更小保守值，避免长挂线程占用 worker）。
+- extensions 盘前/盘后不透出定案（2026-11-14 目录外实证 + 人工拍板）：上游 extensions 段含盘前/盘后/夜盘真实成交数据（US.GE 上周五盘后 60.3 万股），快照 extensions 白名单维持 7 键不透出，盘前盘后扩容搁置；
 
 ## 快照与流式
 
@@ -121,4 +122,3 @@ history.start 历史覆盖声明（逐所/逐周期，均北京时间）：
 ## 探针依据
 
 - 能力核实与行为实证用例：`probes/cases/futunn.yaml`（探针框架规范见 `probes/README.md`）；
-- 各轮运行记录：`probes/results/PROBE_LOG.md`（本地文件，不入库）。

@@ -1,4 +1,5 @@
-# TqSdk 数据探针：合约/主连/加权可用性、data_length 上限实测裁决（8000 vs 10000）。
+# TqSdk 数据探针：合约/主连/加权可用性、data_length 上限常态复验（实测
+# 5000 根定案，见 docs/providers/tqsdk.md「上游行为定案」）。
 # TqApi 实例创建较慢，pacing 显著放宽。
 probe: tqsdk
 version: 2
@@ -16,8 +17,8 @@ pacing:
   # 实证（hfq/none 差异显著），复权 case 判定以盘中运行为准；凌晨时段
   # kline 亦不稳定（2026-11-16 00:1x 第 13 轮：合法形态亦挂起，全新实例
   # 直测复验正常——时段与形态因素并存时以全新实例直测判别）；天勤不支持
-  # BSE 前缀（BSE.920000 快速报「non-existent instrument」graphql 错误，
-  # 闸门 case quote-bse-fingerprint）；无效代码订阅会堵死 shared 运行时
+  # BSE 前缀（BSE.920000 快速报「non-existent instrument」graphql 错误）；
+  # 无效代码订阅会堵死 shared 运行时
   #（第 13 轮实证：DCE 大写挂起后同实例一切调用超时，含合法 SHFE）——
   # 遇连续挂起优先用全新实例直测判别形态问题
   # 可用性 168（stock/stock@CN-SZSE/etf/etf@CN-SZSE 各 12：分钟族仅 none +
@@ -34,16 +35,11 @@ pacing:
   # contract/continuous/weighted-index 基准与五所逐所 + stock 基准/SZSE
   # 逐所 + index 基准/SZSE 逐所 + etf 基准/SZSE 逐所；郑商所 4→3 位还原在
   # 快照链路的常态复验由
-  # quote-contract@CN-CZCE 承载）+ raw 1 case×2 调用（郑商所 4 位 kline
-  # 挂起复验负对照；3 位接受度由 chain contract@CN-CZCE 还原链路常态复验；
-  # quote 矩阵 6 条 raw 已随 quotes 入链退役，见 raw 段注释）
+  # quote-contract@CN-CZCE 承载）
   # + 期权三子类八所逐所（asset_type 三分：commodity-option / index-option /
   # etf-option）：availability 8（P1D × none 各 1 调）+
-  # quote_availability 8×1 调（2026-11-16 期权八所回填收编并三分，探测 raw
-  # 11 条 × 3 调已随定案退役）
-  # ≈ 710
-  #（quote-contract-uppercase / quote-bse-fingerprint 已随定案退役，
-  # 见 raw 段注释）
+  # quote_availability 8×1 调（2026-11-16 期权八所回填收编并三分）
+  # ≈ 708
   # （深度探针全周期同轮测量：保留边界随时间前移，矩阵须同一时点；
   #   history_depth/adjust_diff/limit 不随逐所扩容——深度/复权/上限是
   #   资产类级结论，基准目标承载）
@@ -165,8 +161,7 @@ targets:
     # 平安银行（深市主板）：交易所限定追加目标，SZSE. 前缀 chain 级实证
     #（tqsdk 代码格式 {exchange}.{symbol} 直拼）。BSE 不上 chain 目标：
     # 天勤明确不支持 BSE 前缀（BSE.920000 快速报「non-existent instrument」
-    # graphql 错误，2026-11-12 第 8 轮定案；原 quote-bse-fingerprint 闸门
-    # raw 随定案退役，上游扩容时按需复探）
+    # graphql 错误，2026-11-12 第 8 轮定案）
     instrument: CN-SZSE-000001
     window: {start: 2026-07-01, end: 2026-11-30}
     min_bars: 60
@@ -272,7 +267,7 @@ chain:
   limit_truncation:
     targets: [continuous]
     interval: P1D
-    # 40 年窗口确保超过 8000/10000 根日线，实测裁决两种文档口径
+    # 40 年窗口确保触顶；实测单次上限 5000 根（8000/10000 两种文档口径均不符，定案见 docs/providers/tqsdk.md「上游行为定案」）
     max_range: P40Y
 
 connection:
@@ -315,43 +310,4 @@ connection:
     concurrent: 4
 
 raw: []
-  # ── 已定案退役的探索性 raw（原始证据见 probes/results/PROBE_LOG.md，
-  #    不入库）：quote-contract-uppercase（大写品种上游不接受——SHFE.AU2612
-  #    matched=False，2026-11-12 第 8 轮定案，request_mapper 品种大小写还原
-  #    表依据；还原后形态由 chain contract availability 隐含复验）、
-  #    quote-bse-fingerprint（天勤不支持 BSE 前缀定案，见 targets 注释）、
-  #    kline-czce-3digit（3 位接受度由 chain contract@CN-CZCE 常态复验）。
-  #
-  # ── quote 矩阵 6 条 raw 已随 chain quote_availability 入链退役
-  #   （quote-contract / quote-continuous / quote-index-sse50 / quote-stock /
-  #    quote-etf / quote-weighted-index，2026-11-15）：quotes 全部 6 组声明
-  #    （contract/continuous/weighted-index/stock/index/etf，manifest M2）由
-  #    chain 经 adapter.fetch_quote 全链路常态复验——快照链路的二级路由、
-  #    上游订阅、NaN 置空与标准化全部覆盖，判定与观测覆盖强于 raw 的 SDK
-  #    级 min_fields 检查；原 raw 的权限口径差异（免费/专业版、断言 vs
-  #    观察）不再需要——chain 统一实判定，权限不足如实 failed（这正是
-  #    权限边界的证据）。Quote 首包前 NaN 的上游行为由「last/bid/ask 全空
-  #    判 failed」承接（原 min_fields 只验证键存在，弱于该判定）。
-  #
-  # ── 已定案退役的负对照 raw（2026-11-16 非运行轮清退）：kline-czce-4digit
-  #    （郑商所 4 位年月码 get_kline_serial 无响应挂起——TianQin 只认 3 位，
-  #    多轮复现：2026-11-12/13 第 9/10 轮、期货聚焦轮再证）——适配器 4→3
-  #    还原后链路永远发不出 4 位形态，负向结论无决策依赖：上游即使改为
-  #    接受 4 位亦不影响链路行为；正向侧（3 位可用）由 chain
-  #    contract@CN-CZCE 常态复验，上游连 3 位都拒时 chain availability
-  #    响亮失败。原 case 每轮挂起烧满一次调用超时（纯墙钟负收益），与
-  #    ths ths-futures-suffix-zce-4digit 同轮同口径清退。
-
-  # ── 已定案退役的期权八所探测 raw（2026-11-16 聚焦轮一轮全通 + 映射层
-  #    八所回填后，11 条（八所各 1 + DCE/INE/GFEX 对照候选各 1）收敛为
-  #    chain 期权三子类目标（commodity-option@CN-* / index-option@CN-CFFEX /
-  #    etf-option）常态复验（bars availability + quote_availability
-  #    逐所展开），同轮退役。胜出码式：SSE/SZSE 数字码直拼、CFFEX/CZCE 大写
-  #    直通（CZCE 3 位月码）、SHFE/INE/DCE/GFEX 品种字母段小写（与该所期货
-  #    品种大小写同系，第 13 轮互证；DCE/GFEX 连字符）；落选 3 候选（INE
-  #    大写 / DCE 大写 / GFEX 无连字符）graphql「查询合约服务报错」快速
-  #    否定。原始证据：聚焦轮报告 report-tqsdk-20261116T085805+0800.md 与
-  #    tqsdk-options-20261116.log，PROBE_LOG 第 12 轮；码式矩阵规范出处见
-  #    docs/providers/tqsdk.md「标的代码映射」期权补充口径。
-
-notes: 各轮运行记录见 probes/results/PROBE_LOG.md（不入库）；探针框架规范见 probes/README.md。
+notes: 探针框架规范见 probes/README.md。

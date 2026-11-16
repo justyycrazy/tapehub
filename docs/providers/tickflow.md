@@ -64,6 +64,7 @@ history.start（历史覆盖声明，探针二分收敛，早上市基准标的�
 - 时间戳口径：K 线与快照 `timestamp` 均为毫秒，输出统一北京时间 `+08:00`；CN/HK 日线为**北京时间零点**，US 日线为**美东零点**（归一化北京时间随夏令时在 12:00/13:00 漂移）；
 - K 线响应为列式结构（CompactKlineData，各数组等长、同下标对应同一根 K 线）；缺失值与 NaN 统一映射 null（不用 0 冒充）；
 - CN 指数/ETF 扩容定案（探针 2026-11-15 第 7/8 轮）：统一 klines 端点对指数/ETF 代码不做证券类型路由拒绝——000001.SH/510050.SH 日线 118 根、周/月线均有数（与 alphafeed 侧同日同窗互证，两家历史库大概率同源）；代码映射与 stock 完全共用（后缀表零改动），映射层/适配器零分支。指数/ETF history 未核实保持 null（chain 二分后回填）；
+- HK/US 指数无覆盖定案（目录外诊断 2026-11-15 第 12 轮，与 alphafeed 同源引擎再证）：10 个候选符号（两套缩写约定）instruments 全未收录，HSI.HK/SPX.US 防御性直测 klines 空、quotes 空 data（如实包装 `UPSTREAM_ERROR`），控制组正常（000001.SH type=index、00700.HK type=stock）；港股段仅收录个股、美股段仅收录可交易证券（stock/etf），CN 指数为唯一指数覆盖，HK/US 指数维持不声明；
 - US ETF 扩容定案（目录外诊断 2026-11-15 第 9 轮）：统一 klines 端点对美股 ETF 标的（SPY.US/QQQ.US，交易所段无关）不做证券类型路由拒绝——P1D 2025 全窗 250 根直测放行；none/qfq/hfq 三复权生效且与 alphafeed 侧逐位一致（同源引擎再证）；**复权锚定为上游全序列端点而非查询窗口端点**（hfq 与 qfq 差常数比例 ≈0.5476，同一套分红因子两种锚定，窗口内末根可 ≠ 原始价）；量额同 US stock 日线口径（`amount` 上游原值 0）。history 未核实保持 null（chain 二分后回填）；
 - 截断/分页：上游单次上限 **10000 根**，达到上限时无法确认是否被截断，诚实标记 `meta.partial=true` 并经 warnings 提示可能截断；统一分页由共享 `paginate_bars` 完成（跨 Provider 通用分页语义见 ../api.md）；上游按毫秒时间过滤的边界由适配器在标准化后按闭区间 `[start, end]` 精确复核；
 - 错误指纹（探针实证）：免费档分钟线无权限为 SDK `PermissionError`「无分钟K线查询权限」（统一包装 `UPSTREAM_ERROR`）；限频实测以 6.5s 间隔（≈9 次/分钟）全程未触发；`RateLimitError` 类型存在于 SDK，429 指纹待更高频场景核实；限频/无权限等 SDK 异常统一包装 `UPSTREAM_ERROR`，不穿透 API；
@@ -99,4 +100,3 @@ history.start（历史覆盖声明，探针二分收敛，早上市基准标的�
 ## 探针依据
 
 - 能力核实与行为实证用例：`probes/cases/tickflow.yaml`（探针框架规范见 `probes/README.md`）；
-- 各轮运行记录：`probes/results/PROBE_LOG.md`（本地文件，不入库）。

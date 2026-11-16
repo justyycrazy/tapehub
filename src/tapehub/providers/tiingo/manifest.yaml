@@ -6,7 +6,6 @@
 #   https://www.tiingo.com/documentation/forex
 #   https://www.tiingo.com/documentation/websockets/crypto
 #   https://www.tiingo.com/documentation/websockets/forex
-# 探针运行记录：probes/results/PROBE_LOG.md（本地文件，不入库）。
 provider: tiingo
 default_variant: tiingo
 

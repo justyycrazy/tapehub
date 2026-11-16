@@ -21,7 +21,6 @@ pacing:
   # 2（quotes 声明随 include_declared 自动展开：forex + crypto 各 1 调）+
   # history_depth 6 case（forex/crypto × PT1H/PT4H/P1D，逐周期探测）× 16 最坏
   # + raw 1 case × 2 调用 ≈ 70 典型、106 最坏，预算 120 留余量
-  #（tg-resample-2hour/4hour 与 tg-fx-date-shape 已随定案退役，见 raw 段注释）
   max_calls: 120
 
 targets:
@@ -58,15 +57,6 @@ chain:
   # 不限周期、由单测守护（test_crypto_segment_row_cap_partial）
 
 raw:
-  # ── 已定案退役的探索性 raw（原始证据见 probes/results/PROBE_LOG.md，
-  #    不入库）：
-  #    ① tg-resample-2hour/4hour：resampleFreq <n>hour 格式可用性 confirmed
-  #      （多轮复验）——PT4H 已扩容声明、由 chain availability 常态复验；
-  #      PT2H 周期面收窄后不声明，格式证据随收窄留档；
-  #    ② tg-fx-date-shape：fx date 全带 Z、日内 5min 样本无 volume——
-  #      forex UTC 口径与「无 volume」双实证，request_mapper.BOUNDARY_ZONE
-  #      已按此修正（「待实证后修正」前置条件闭合）。
-  #
   # 错误指纹仅观察：采集无效 API Token 的原始报错，供 UPSTREAM 细分错误码
   # 参考（httpx 反射直连；token 走 query 参数为官方支持方式，与适配器的
   # Authorization 头等价，仅探针观察用）
@@ -81,4 +71,4 @@ raw:
     expect: {status: error, error_contains: ""}
     close: {method: close, kwargs: {}}
 
-notes: 各轮运行记录见 probes/results/PROBE_LOG.md（不入库）；探针框架规范见 probes/README.md。
+notes: 探针框架规范见 probes/README.md。

@@ -1,7 +1,6 @@
 # tushare 数据探针：周/月线复权生效性、期货六所合约/主连与单次上限常态复验
-#（交易所限定 chain 目标）、北交所接入复验、期权 INE/GFEX 扩容探测（opt_daily
-# 已声明六所之外的两所未定案，raw 目录+日 K 直测，见 raw 段注释），及错误指纹
-# 采集。
+#（交易所限定 chain 目标）、北交所接入复验、期权八所日 K（opt_daily 已声明
+# 六所、INE/GFEX 未定案两所已扩容），及错误指纹采集。
 probe: tushare
 version: 2
 
@@ -19,10 +18,8 @@ pacing:
   # 3 周期 × 2 pair × 2 调）+ history_depth（stock 三周期 + contract 全量 +
   # continuous + index 三周期 + etf 日线，逐 case 二分自预算 20、实测约
   # 14 调）+ limit 2（contract 结构性 suspect 如实保留 + continuous P16Y）+
-  # raw 4 case 8 调（目录 2：bj 证券目录 + INE/GFEX 期权目录常态留存·标的
-  # 轮换证据来源 + 错误指纹 2——期权 INE/GFEX 日 K 直测 2 条已随映射层八所
-  # 回填收敛为 chain commodity-option@CN-INE/GFEX 目标，2026-11-16 第 17 轮
-  # 聚焦轮后退役，见 raw 段注释），
+  # raw 4 case 8 调（目录 3：bj 证券目录 + INE/GFEX 期权目录常态留存·标的
+  # 轮换证据来源 + 错误指纹 1），
   # 最坏 262（cli list 实测合计，含 history_depth 8 case × 上限 20 调；实测
   # 口径第 15 轮约 166——二分通常提前收敛），预算 300 对齐最坏口径留余量
   max_calls: 300
@@ -47,8 +44,7 @@ targets:
     instrument: CN-BSE-920000
     # 安徽凤凰（精选层存量平移，2020-12-23 上市）：BSE→BJ 后缀经 raw 三证
     # 接入（目录 920 段/daily/adj_factor），chain 级常态复验（availability
-    # × adjust_diff）；原 daily/adj_factor 两条 raw 直测已入链退役，目录
-    # case 保留作标的轮换证据
+    # × adjust_diff）；目录 case 保留作标的轮换证据
     window: {start: 2025-01-01, end: 2025-12-31}
     min_bars: 10
     required_fields: [open, high, low, close, volume, amount]
@@ -60,7 +56,7 @@ targets:
     # 上证指数：指数能力 chain 常态复验基准目标——指数扩容探针先行 4 条
     # raw 直测（2026-11-15 第 13 轮：index_daily/index_weekly/index_monthly
     # 三周期有数 117/26/6 行、1991 全年窗口 255 行下界、字段与股票同列集）
-    # 实证扩容声明后收敛入链退役，availability 全声明矩阵展开（3 周期 × none）
+    # 实证扩容声明，availability 全声明矩阵展开（3 周期 × none）
     window: {start: 2025-01-01, end: 2025-12-31}
     min_bars: 10
     required_fields: [open, high, low, close, volume, amount]
@@ -76,7 +72,7 @@ targets:
     # 华夏上证 50ETF：ETF 能力 chain 常态复验基准目标——FD 探测轮 3 条 raw
     #（fund-daily-shape / fund-daily-early-history / fund-daily-szse-shape，
     # 2026-11-15 第 14/15 轮：沪深双所有数、2005 全年 213 行下界、字段与
-    # 股票日线同列集、量纲自洽）实证扩容声明后收敛入链退役，availability
+    # 股票日线同列集、量纲自洽）实证扩容声明，availability
     # 全声明矩阵展开（P1D × none）
     window: {start: 2025-01-01, end: 2025-12-31}
     min_bars: 10
@@ -91,8 +87,7 @@ targets:
   etf-option:
     instrument: CN-SSE-10012437
     # 50ETF 购 11 月 2800（近月）：期权能力 chain 常态复验基准目标——O 探测
-    # 轮 6 条 raw（六所直测，2026-11-15 第 14/15 轮）实证扩容声明后收敛入链
-    # 退役（asset_type 三分前为裸键 option）。合约会到期：到期轮换按
+    # 轮 6 条（六所直测，2026-11-15 第 14/15 轮）实证扩容声明。合约会到期：到期轮换按
     # opt_basic（exchange=SSE，delist_date 未过筛近月）重选并更新本 target
     window: {start: 2026-11-09, end: 2026-11-13}
     min_bars: 3
@@ -159,9 +154,8 @@ targets:
     window: {start: 2023-09-01, end: 2023-12-29}
     min_bars: 20
   contract@CN-DCE:
-    # 大商所合约：适配器后缀直拼（CN-DCE-M2705 → M2705.DCE）。后缀 raw
-    # 直测实证并扩容声明后，常态复验收敛为 chain 目标（原 fut-dce-suffix
-    # raw 退役）。合约会到期：运行前按大商所挂牌信息核对，失败如实记录，
+    # 大商所合约：适配器后缀直拼（CN-DCE-M2705 → M2705.DCE）。后缀经直测
+    # 实证并扩容声明，常态复验收敛为 chain 目标。合约会到期：运行前按大商所挂牌信息核对，失败如实记录，
     # 到期轮换为当时的现活合约
     instrument: CN-DCE-M2705
     window: {start: 2026-09-01, end: 2026-12-31}
@@ -200,32 +194,30 @@ targets:
     min_bars: 10
   continuous@CN-DCE:
     # DCE 主连：品种+L 由适配器映射（CN-DCE-M → ML.DCE；五所连续代码实证）
-    # ——instrument 写品种码不带 L；原 fut-dce-continuous-l raw 直测退役
+    # ——instrument 写品种码不带 L
     instrument: CN-DCE-M
     window: {start: 2025-01-01, end: 2025-12-31}
     min_bars: 10
   continuous@CN-CZCE:
-    # CZCE 主连：CN-CZCE-SR → SRL.ZCE（4 位年月码体系下品种+L）；
-    # 原 fut-czce-continuous-l raw 直测退役
+    # CZCE 主连：CN-CZCE-SR → SRL.ZCE（4 位年月码体系下品种+L）
     instrument: CN-CZCE-SR
     window: {start: 2025-01-01, end: 2025-12-31}
     min_bars: 10
   continuous@CN-INE:
-    # INE 主连：CN-INE-SC → SCL.INE；原 fut-ine-continuous-l raw 直测退役
+    # INE 主连：CN-INE-SC → SCL.INE
     instrument: CN-INE-SC
     window: {start: 2025-01-01, end: 2025-12-31}
     min_bars: 10
   continuous@CN-CFFEX:
     # CFFEX 例外：主力直拼不加 L（CN-CFFEX-IF → IF.CFX；IFL 为当月连续、
-    # IFL1-3 为次月/当季/下季，均非主连）；原 fut-cffex-main-if 与
-    # fut-shfe-main-cu（SHFE 主力/主连对照）raw 退役
+    # IFL1-3 为次月/当季/下季，均非主连）
     instrument: CN-CFFEX-IF
     window: {start: 2025-01-01, end: 2025-12-31}
     min_bars: 10
   continuous@CN-GFEX:
     # GFEX 主连：品种+L 由适配器映射（CN-GFEX-LC → LCL.GFE；与五所主连
     # 体系同构，2026-11-16 探针实证 LCL.GFE 一周 5 行 × 15 列真实数据）
-    # ——instrument 写品种码不带 L；fut-gfex-directory-probe raw 收编退役
+    # ——instrument 写品种码不带 L
     instrument: CN-GFEX-LC
     window: {start: 2025-01-01, end: 2025-12-31}
     min_bars: 10
@@ -260,32 +252,6 @@ chain:
     documented_max: 2000
 
 raw:
-  # ── raw→chain 收敛：期货五所后缀（.DCE/.ZCE/.INE/.CFX）、连续
-  #    合约五所代码（品种+L 主连、CFFEX 主力直拼）、fut_daily 2000 条上限、
-  #    BSE daily/adj_factor 直测共 12 条 raw 直测 case 退役——均已实证扩容
-  #    声明，由 chain 交易所限定目标、limit_truncation（continuous, P16Y）
-  #    与 adjust_diff 常态复验（targets 注释与 notes 记录原始证据出处）；
-  #    指数扩容探针先行 4 条（index-daily-shape / index-weekly-availability /
-  #    index-monthly-availability / index-early-history-lower-bound，
-  #    2026-11-15 第 13 轮实证：asset='I' 三周期有数 117/26/6 行、1991 全年
-  #    窗口 255 行下界、字段与股票同列集，目录外诊断另定案周月线量额单位
-  #    口径矛盾）扩容声明后由 chain index 基准/SZSE 限定目标与
-  #    history_depth 常态复验，同轮退役（证据指针见
-  #    probes/results/PROBE_LOG.md，本地不入库）；
-  #    FD/O 探测轮 9 条（fund-daily-shape / fund-daily-early-history /
-  #    fund-daily-szse-shape / option-daily-shape / option-daily-szse-shape /
-  #    option-daily-cffex-shape / option-daily-dce-shape / option-daily-shfe-shape /
-  #    option-daily-czce-shape，2026-11-15 第 14/15 轮：ETF 沪深双所有数、
-  #    2005 全年 213 行下界、字段与股票日线同列集；期权六所码格式与数据面；
-  #    目录外诊断另定案 fund_daily 量纲自洽与 opt_daily amount 万元口径）
-#    实证扩容声明后由 chain etf 基准/SZSE 限定、option 六所目标与
-#    history_depth（etf）常态复验，同轮退役。
-#    GFEX 探测 1 条（fut-gfex-directory-probe，2026-11-16 第 16 轮实证：
-#    fut_basic exchange=GFEX 在市 154 行、LC2706.GFE / LCL.GFE 各 5 行真实
-#    数据——.GFE 后缀与主连品种+L 形态定案）随 manifest/映射层回填收敛，
-#    由 chain contract@CN-GFEX / continuous@CN-GFEX 目标常态复验，同轮退役
-#    （目录外复探另 1 调核实 fut_basic ts_code 形态，样本留存见框架证据）。
-#    保留两条：目录（标的轮换证据来源）与错误指纹
   - id: bj-stock-directory-probe
     purpose: 北交所目录核实（stock_basic exchange=BSE 在市列表）：确认 .BJ 标的
       真实存在并记录代码段构成。首轮结论（20261112T172236）：全市场统一 920
@@ -307,16 +273,6 @@ raw:
       - {method: query, kwargs: {api_name: "probe_nonexistent_api_for_fingerprint"}}
     expect: {status: error, error_contains: ""}
 
-  # ── 已定案退役的期权 INE/GFEX 探测 raw：opt-ine-daily-shape（SC2701C550.INE
-  #    5 行）与 opt-gfex-daily-shape（LC2701-C-90000.GFE 5 行实量）随映射层
-  #    八所回填收敛为 chain commodity-option@CN-INE/GFEX 目标常态复验，2026-11-16 第
-  #    17 轮聚焦轮后退役（首轮证据 report-tushare-20261116T080728+0800.md：
-  #    INE 目录 6528 行 + 日 K 5 行；复测 report-tushare-20261116T081112+0800.md：
-  #    GFEX 目录 12000 行、码式连字符式 PS2710-C-30000.GFE + 日 K 5 行实量；
-  #    PROBE_LOG 第 17 轮）。
-  #    保留两条目录探测（常态留存·标的轮换证据来源，与 bj-stock-directory-probe
-  #    同款设计）：opt_basic 单次返回恰 12000 行疑为上游上限（三轮同值，待
-  #    核实，不影响映射与日 K 结论）
   - id: opt-ine-directory-probe
     purpose: 能源中心期权目录常态留存（opt_basic exchange=INE 在市列表，
       2026-11-16 首轮 6528 行）：commodity-option@CN-INE 目标的在市标的轮换
@@ -336,4 +292,4 @@ raw:
       - {method: query, kwargs: {api_name: "opt_basic", exchange: "GFEX"}}
     expect: {status: ok, min_rows: 1}
 
-notes: 各轮运行记录见 probes/results/PROBE_LOG.md（不入库）；探针框架规范见 probes/README.md。
+notes: 探针框架规范见 probes/README.md。

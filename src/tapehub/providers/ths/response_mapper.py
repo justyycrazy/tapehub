@@ -1,7 +1,6 @@
 """同花顺（ths）响应映射（ResponseMapper）：ApiResponse 信封数据 → 统一 Bar / Quote 模型。
 
 字段结构、单位与快照/分时映射口径见 docs/providers/ths.md（唯一出处，本文不复述）。
-探针运行记录见 probes/results/PROBE_LOG.md（本地文件，不入库）。
 
 bars ``turnover`` → 标准 ``amount``，缺失/NaN → null（不用 0 冒充）；行缺失
 时间键属上游契约违背，抛 UPSTREAM_ERROR（时间戳是 bar 的身份键）。quote 按

@@ -7,7 +7,6 @@
 #   https://fuyao.aicubes.cn/docs/api-reference/fund-market/
 #   https://fuyao.aicubes.cn/docs/api-reference/futures-prices/
 #   https://fuyao.aicubes.cn/docs/api-reference/options-prices/
-# 探针运行记录：probes/results/PROBE_LOG.md（本地文件，不入库）。
 provider: ths
 default_variant: ths
 

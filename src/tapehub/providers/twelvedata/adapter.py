@@ -1,7 +1,6 @@
 """Twelve Data 适配器（已实现：历史 K 线 REST + 实时快照/快照流 WS）。
 
 映射规则与上游行为定案见 docs/providers/twelvedata.md（唯一出处，本文不复述）。
-探针运行记录见 probes/results/PROBE_LOG.md（本地文件，不入库）。
 官方文档：https://twelvedata.com/。
 """
 

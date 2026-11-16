@@ -1,8 +1,7 @@
 """TqSdkRuntime：进程内唯一的 TqApi 长连接运行时（``conn_mode=shared``）。
 
 线程模型、代际生命周期与订阅协议的设计定案见 docs/providers/tqsdk.md
-（唯一出处，本文不复述）。探针运行记录见 probes/results/PROBE_LOG.md
-（本地文件，不入库）。
+（唯一出处，本文不复述）。
 
 要点：Runtime 独占一个线程按 tick 驱动 tqsdk 私有事件循环；快照只在线程内
 ``dict(quote)`` 拷贝后发布（外部拿到的是纯 dict）；tqsdk 协议不支持取消

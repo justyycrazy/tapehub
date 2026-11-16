@@ -1,7 +1,6 @@
 """富途（futunn）响应映射（ResponseMapper）：信封业务数据 → 统一 Bar / Quote 模型。
 
 字段结构与单位口径见 docs/providers/futunn.md（唯一出处，本文不复述）。
-探针运行记录见 probes/results/PROBE_LOG.md（本地文件，不入库）。
 
 时间戳统一毫秒 Unix → 北京时间（经 timeutil 纪元算术，Windows 安全）；
 缺失/NaN → null（不用 0 冒充）；时间戳缺失属上游契约违背，抛

@@ -1,7 +1,6 @@
 """TqSdk 请求映射（RequestMapper）：标准请求 → 上游 API 参数。
 
 映射规则与上游行为定案见 docs/providers/tqsdk.md（唯一出处，本文不复述）。
-探针运行记录见 probes/results/PROBE_LOG.md（本地文件，不入库）。
 """
 
 import re

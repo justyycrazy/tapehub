@@ -1,7 +1,6 @@
 # Baostock 数据探针：全声明维度可用性、复权生效性、历史深度与错误指纹
 # 实测（上游「空结果不报错、错误码仅 SDK stderr 打印」语义的适配器分类依据）。
-# 官方文档矛盾点/边界行为与指数分钟族等探索性 raw 已随定案退役（退役清单与
-# 证据出处见 raw 段注释；结论已回填 manifest 与 docs/providers/baostock.md）。
+# 定案结论（边界行为/历史起点等）已回填 manifest 与 docs/providers/baostock.md。
 probe: baostock
 version: 2
 
@@ -19,8 +18,7 @@ pacing:
   # index@CN-SZSE 追加 3 + etf 21 + etf@CN-SZSE 追加 21，含 ETF 分钟族 24）
   # + adjust_diff 12（stock/stock@CN-SZSE/etf 各 2 case × 2 调）+ raw 3 case
   # × 4 调 = 114
-  #（history_depth 六条已收敛全量 skip，不占预算；指数分钟族与文档矛盾点/
-  # 边界行为 one-off raw 已随定案退役，证据见 raw 段注释）。
+  #（history_depth 六条已收敛全量 skip，不占预算）。
   # ⚠ 分钟族重查询可能贴线/超时（属上游瞬时时延非能力缺口），failed 时
   # 重跑复验即可。
   max_calls: 150
@@ -102,8 +100,7 @@ chain:
   adjust_diff:
     # 个股复权生效性（官方「涨跌幅复权法」，与同花顺/通达信口径不同）：
     # 日线足以判定，收敛 interval 控制预算。etf 三复权经 2024 全年逐行对比
-    # 实证（[none,qfq,hfq]）后入链常态复验，原 bs-etf-adjust-observe 单
-    # 窗口观察退役；指数复权为 no-op 维持 [none] 无可比。
+    # 实证（[none,qfq,hfq]）后入链常态复验；指数复权为 no-op 维持 [none] 无可比。
     # stock@CN-SZSE 为逐所细分复验
     targets: [stock, stock@CN-SZSE, etf]
     window: {start: 2024-06-01, end: 2024-08-31}   # 分红除权高发窗口
@@ -114,8 +111,7 @@ chain:
     # 官方口径：个股 1990-12-19 起、指数 2006-01-01 起。earliest 1980 从
     # 1980/1990 纪元快速回溯，二分收敛实证真实库底。分钟族与 ETF 不进
     # history_depth：起点已由 raw 边界定案精确回填（个股分钟 2020-01-02、
-    # ETF 2005-02-23；原 bs-minute-boundary-stock / bs-etf-boundary raw
-    # 随定案退役），chain 无窄窗口目标可常态复验边界，漂移风险低。
+    # ETF 2005-02-23），chain 无窄窗口目标可常态复验边界，漂移风险低。
     targets: [stock, index]
     earliest: 1980-01-01
     era_step_years: 10   # 1980 起共 5 纪元；个股/指数预期 1-2 个空纪元即命中
@@ -128,21 +124,7 @@ raw:
   #    转为 list[dict]，使 min_rows 行数判定可用；样本（≤3 行）即字段矩阵
   #    观察。baostock 的 logout 是模块级函数且适配器不主动登出（懒登录
   #    复用、进程退出即断），探针不设独立 logout case。会话生命周期由
-  #    chain availability 隐含复验（适配器懒登录，原
-  #    bs-lifecycle-login-query raw 已退役）。
-  #
-  # ── 已定案退役的探索性 raw（原始证据见 probes/results/PROBE_LOG.md 各轮
-  #    条目，结论已回填 manifest 与 docs/providers/baostock.md）：
-  #    ① 指数分钟族 10 case（四周期 × 上证指数/沪深 300 × 2025-06/2015-06/
-  #      2026-01/2026-06 窗口累计实证全空，「指数无分钟线」结论稳固，
-  #      2026-11-08 三轮）——manifest 指数能力维持仅日/周/月；
-  #    ② 官方文档矛盾点/边界行为 one-off（2026-11-08 第 1 轮定案）：
-  #      start/end 参数表风格 SDK 签名层 TypeError（start_date/end_date
-  #      唯一合法）、end 闭区间（stock/index 单日窗各 1 行）、分钟 time 为
-  #      bar 终点口径且起点 2020-01-02（官方 2020-01-03 差一天）、ETF 起点
-  #      2005-02-23（逐年+月粒度精确）、指数复权 no-op 维持 [none]、周线
-  #      仅每周最后交易日有数据、停牌行 OHLC=前收/量额 0/turn 空串
-  #      （""→null 映射依据）。
+  #    chain availability 隐含复验（适配器懒登录）。
   #
   # ── 错误指纹（assert: false 仅观察；供适配器错误分类与 README 回填）──
   - id: bs-invalid-code-fingerprint
@@ -188,4 +170,4 @@ raw:
     expect: {status: ok, min_rows: 0}
     assert: false
 
-notes: 各轮运行记录见 probes/results/PROBE_LOG.md（不入库）；探针框架规范见 probes/README.md。
+notes: 探针框架规范见 probes/README.md。

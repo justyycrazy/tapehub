@@ -1,7 +1,7 @@
 """TickFlow 响应映射（ResponseMapper）：上游返回对象 → 统一 Bar / Quote 模型。
 
 字段结构与 extensions 白名单口径见 docs/providers/tickflow.md（唯一出处，
-本文不复述）。探针运行记录见 probes/results/PROBE_LOG.md（本地文件，不入库）。
+本文不复述）。
 
 缺失值与 NaN 统一映射为 null；``timestamp`` 缺失或 ``last_price`` 不可解析
 属上游契约违背，抛 ``UPSTREAM_ERROR``（不伪造）。

@@ -110,4 +110,3 @@ history.start（历史覆盖声明，探针实测回填；二分近似窗口粒�
 ## 探针依据
 
 - 能力核实与行为实证用例：`probes/cases/akshare.yaml`（探针框架规范见 `probes/README.md`）；
-- 各轮运行记录：`probes/results/PROBE_LOG.md`（本地文件，不入库）。

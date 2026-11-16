@@ -1,7 +1,6 @@
 """TqSdk 响应映射（ResponseMapper）：上游数据 → 统一模型。
 
 字段结构与快照白名单口径见 docs/providers/tqsdk.md（唯一出处，本文不复述）。
-探针运行记录见 probes/results/PROBE_LOG.md（本地文件，不入库）。
 
 K 线 datetime 为自 unix epoch 以来的纳秒数，规范为北京时间（+08:00）；
 无成交额字段：标准 ``amount`` 恒为 null；缺失值与 NaN 统一映射为 null

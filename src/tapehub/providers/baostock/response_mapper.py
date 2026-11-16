@@ -1,7 +1,6 @@
 """baostock 响应映射（ResponseMapper）：上游字符串行 → 统一 Bar 模型。
 
 列名/单位/时间戳口径见 docs/providers/baostock.md（唯一出处，本文不复述）。
-探针运行记录见 probes/results/PROBE_LOG.md（本地文件，不入库）。
 官方文档：https://baostock.com/mainContent?file=pythonAPI.md。
 
 上游行值全为字符串，缺失值统一为空串 ``""``，转换时映射为 null；

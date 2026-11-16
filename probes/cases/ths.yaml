@@ -1,12 +1,6 @@
 # 同花顺金融数据 API（ths）数据探针：历史 K 线可用性、复权生效性、历史深度
-# 收敛与隐式截断常态复验，快照/分时形态观察（量额口径核实），ETF 复权口径
-# 留存（fund historical 无 adjust 参数、文档称「价格数据采用前复权口径」，
-# 见 raw 段注释），期权八所扩容探测（2026-11-16 聚焦轮定案：八所胜出候选全
-# 实证、落选码式 3001 否定留档，映射层回填待人工确认，见 raw 段注释）。探索性
-# raw（期货逐所后缀正面形态、CFFEX 期货后缀双候选、BSE→BJ 价格端点、
-# offset 分页行为、已摘牌合约可查性、ETF adjust 字段形态）已随定案退役——
-# 正面形态由 chain contract@CN-* 与 stock@CN-BSE/index@CN-BSE 目标常态复验，
-# 结论与证据出处见 raw 段注释。
+# 收敛与隐式截断常态复验，快照/分时形态观察（量额口径核实）。定案结论已回填
+# manifest 与 docs/providers/ths.md（「标的代码映射」「上游行为定案」）。
 #
 # 上游限频为「约定 QPS」（超限信封 code=4001），具体 QPS 未公布：pacing 2 秒
 # （≤0.5 QPS）保守起步，探针报告中观察 4001 出现情况后收紧。
@@ -30,12 +24,9 @@ pacing:
   # 八所逐所 + BSE/SZSE 逐所）+ adjust_diff 4（stock 1 目标 × 2 pair × 2 调）
   # + history_depth 3 case × 最坏 12 + limit_truncation +
   # quote_availability（quotes 声明随 include_declared 自动展开，与 bars
-  # 同矩阵逐所）+ raw 3 case × 3 调（client + get + json：错误指纹 / ETF
-  # 复权口径留存 / 郑商所 4 位负对照——期权八所探测 7 条已随映射层八所
-  # 回填收敛为 chain 期权三子类目标常态复验，2026-11-16 聚焦轮后退役，
-  # 见 raw 段注释；CFFEX 期货后缀探测 1 条随 chain contract@CN-CFFEX 收编
-  # 同轮退役；快照形态与分时量额 2 条 raw 已随 quotes 入链退役），
-  # 最坏 100（cli list 实测合计：chain 56 case + raw 3 case），预算 150
+  # 同矩阵逐所）+ raw 1 case × 3 调（client + get + json：无效 Key 错误
+  # 指纹），
+  # 最坏 94（cli list 实测合计：chain 56 case + raw 1 case），预算 150
   # 留余量
   max_calls: 150
 
@@ -130,8 +121,7 @@ targets:
     instrument: CN-CFFEX-IF2706
     # 沪深300 股指期货（季月，2026-10-19 挂牌）：CFFEX→CFE 与该所期权同
     # 后缀（2026-11-16 第 9 轮探针实证 IF2706.CFE code=0 真实日线、
-    # IF2706.CFX 3001 不存在——与 tushare 侧该所期货 .CFX 不同），原
-    # ths-futures-suffix-cffex-futures raw 收编退役。合约会到期：运行前按
+    # IF2706.CFX 3001 不存在——与 tushare 侧该所期货 .CFX 不同）。合约会到期：运行前按
     # 中金所挂牌信息核对，失败如实记录，到期轮换为当时的现活合约。
     # 窗口起点避开 2026-10-01（该单一日期触发上游 5003，邻近起点均正常）
     window: {start: 2026-09-01, end: 2026-11-30}
@@ -187,7 +177,7 @@ targets:
     instrument: CN-DCE-M2701C3150
     # 豆粕期权（连字符式，4 位月）：2026-11-16 轮换——原探测目标 M2701C3500
     # 日 K 可用但分时端点 5003 'intraday quote unavailable'（上游逐合约数据
-    # 缺口，与流动性无关，见 PROBE_LOG 第 12 轮归因）。按标的现价锚定 ATM
+    # 缺口，与流动性无关——归因定案见 docs/providers/ths.md「上游行为定案」）。按标的现价锚定 ATM
     # 重选：M2701 期货收盘 3147（tushare fut_daily），行权价间隔 50 → 3150
     # （目录外直测分时 code=0 308 点）。合约会到期：轮换按同款口径重选 ATM
     window: {start: 2026-11-09, end: 2026-11-13}
@@ -205,7 +195,7 @@ targets:
     # 碳酸锂期权（连字符式，与期货主连「品种+L」不同构）：2026-11-16 轮换
     # ——原探测目标 C90000 日 K 可用（tushare opt_daily 当日 vol 1.4 万+）
     # 但分时端点 5003（上游逐合约缺口；LC2701 系列内 5003 散布于行权价，
-    # 与流动性无关，见 PROBE_LOG 第 12 轮归因）。按标的现价锚定 ATM 重选：
+    # 与流动性无关——归因定案见 docs/providers/ths.md「上游行为定案」）。按标的现价锚定 ATM 重选：
     # LC2701 分时末点 87740，行权价间隔 2000 → 88000（目录外直测分时
     # code=0 188 点）。注意：tushare opt_basic GFEX 目录行权价档位
     # （188000+）与现价矛盾，不可作选码依据。合约会到期：轮换按同款口径
@@ -230,8 +220,7 @@ chain:
   # earliest 折中取 2022-01-01：指数端点越界窗口 1003 拒绝且实测口径为
   # 「recent five years only」滚动 5 年、ETF 同为约 5 年滚动但越界整体
   # 返空——earliest=2000 会使指数/ETF 深度 case 全程撞界，三目标统一浅
-  # 边界复验。已摘牌合约可查性已定案（原 ths-delisted-*-historical raw
-  # 探证后随定案退役）：上游移出目录、仅现活合约可查（2026-11-14 第 7 轮
+  # 边界复验。已摘牌合约可查性已定案：上游移出目录、仅现活合约可查（2026-11-14 第 7 轮
   # CU2601.SHF / IO2601-C-4000.CFE 3001 vs CU2706.SHF code=0 对照）→
   # contract/期权三子类 history.start 保持 null，tushare「已摘牌全量锚定」
   # 先例不适用
@@ -248,34 +237,13 @@ chain:
   # （≈2180 行）观测行数触顶；documented_max 不设 → observe，若未来触顶则
   # partial 覆盖判定候选（触顶+末根<end → partial），不触顶则「单窗口完整
   # 返回、partial 恒 false」。offset 分页已定案被上游静默忽略、适配器不启用
-  #（原 ths-historical-offset-behavior raw 探证后随定案退役，2026-11-14
-  # 第 7 轮 2025 全年窗 offset=100 行数与首根均不变）
+  #（2025 全年窗 offset=100 行数与首根均不变）
   limit_truncation:
     targets: [stock]
     interval: P1D
     max_range: P9Y
 
 raw:
-  # ── 已定案退役的快照 raw（原始证据见 probes/results/PROBE_LOG.md，
-  #    不入库；结论均已回填 manifest 与 docs/providers/ths.md）：
-  #    ① ths-snapshot-shape（A 股快照形态：item 字段完整性、data.timestamp
-  #      毫秒口径、name 缺失，2026-11-14 定案）与
-  #    ② ths-futures-intraday-quantity-semantics（分时点量额口径：volume/
-  #      amount=分时全点求和、分时点为逐分钟增量，见 docs「上游行为定案」）——
-  #      两条均为一次性形态/语义定案，回填闭合后由映射层与单测守护
-  #     （futunn quotes「目录外取证+单测覆盖」先例）；2026-11-15 起 quotes
-  #      声明组合（stock/index/etf/contract/option + BSE/期货逐所）经 chain
-  #      quote_availability 常态复验，快照可得性不再依赖 raw；
-  #    ③ ths-etf-dividend-window（ETF 跨除息窗口复权口径证据，2026-11-16
-  #      非运行轮退役）——fund historical 端点无 adjust 请求参数（复权方式
-  #      不可选），官方「价格数据仍采用前复权口径」经受控对比实证属实
-  #      （对照 baostock none/qfq 序列，目录外报告
-  #      etf-adjust-20261114T080423+0800），manifest etf 复权 [qfq] 已回填；
-  #      窗口钉死 2025-01-21 除息日 ±7 自然日、历史 bar 不可变，每轮重跑无
-  #      漂移检测价值（近两轮报告 matched=True 同值）。chain 侧不可表达
-  #      （无 adjust 参数 → adjust_diff 不可用，etf 可得性已由 chain
-  #      availability 覆盖），终态为退役而非升级。
-
   # 错误指纹仅观察：采集无效 API Key 的信封报文（预期 code=2001 未认证，
   # HTTP 恒 200——信封错误走业务码），供 UPSTREAM 细分错误映射参考
   - id: ths-invalid-key-fingerprint
@@ -289,38 +257,6 @@ raw:
     expect: {status: ok, min_fields: [code, message]}
     close: {method: close, kwargs: {}}
 
-  # ── 已定案退役的探索性 raw（原始证据见 probes/results/PROBE_LOG.md，
-  #    不入库；结论均已回填 manifest 头注释与 docs/providers/ths.md）：
-  #    ① 期货五所后缀正面形态（EG2701.DCE / BC2612.INE / LC2701.GFE /
-  #      MA612.CZC 三位年月码，2026-11-14 复探全绿）——chain contract@CN-CZCE/
-  #      DCE/INE/GFEX 目标常态复验同一端点同一代码形态；
-  #    ② BSE→BJ 价格端点（920000.BJ / 899050.BJ 2025 全年 243 行完整）——
-  #      chain stock@CN-BSE / index@CN-BSE 目标常态复验；
-  #    ③ offset 静默忽略（2025 全年窗 offset=100 行数与首根均不变）——
-  #      「不启用」定案，limit_truncation 注释留档；
-  #    ④ 已摘牌合约仅现活可查（CU2601/IO2601 3001 vs CU2706 code=0）——
-  #      contract/期权三子类 history.start 保持 null 定案；
-  #    ⑤ ETF data.adjust=null 字段形态——与 dividend-window 口径留存同源，
-  #      [qfq] 声明已回填；
-  #    ⑥ CFFEX 期货后缀双候选（IF2706.CFE code=0 真实日线、IF2706.CFX
-  #      3001 'Target not found'，2026-11-16 第 9 轮定案回填）——chain
-  #      contract@CN-CFFEX 目标常态复验同一端点同一代码形态；
-  #    ⑦ ths-futures-suffix-zce-4digit（郑商所四位年月码 3001 负对照，
-  #      2026-11-16 非运行轮退役）——4→3 还原依据已定案且无决策依赖：
-  #      适配器还原后链路永远发不出 4 位形态，上游即使改为接受 4 位亦不
-  #      影响链路行为；正向侧（3 位可用）由 chain contract@CN-CZCE 常态
-  #      复验，上游连 3 位都拒时 chain availability 响亮失败（近两轮报告
-  #      3001 同值；与 tqsdk kline-czce-4digit 同轮同口径清退）。
 
-  # ── 已定案退役的期权八所探测 raw（2026-11-16 聚焦轮双候选定案 + 映射层
-  #    八所回填后，7 条胜出候选（SSE/SZSE/SHFE/INE/DCE/CZCE/GFEX）收敛为
-  #    chain 期权三子类目标（commodity-option@CN-* / index-option / 
-  #    etf-option@CN-*）常态复验（bars availability + quotes 分时末点
-  #    逐所展开），同轮退役；落选 5 个码式候选 3001 'Target not found' 干净
-  #    否定（SHFE/INE/CZCE 连字符式、DCE 无连字符式、GFEX 无连字符式）。
-  #    原始证据：聚焦轮报告 report-ths-20261116T080728+0800.md（双候选矩阵）
-  #    与 report-ths-20261116T081312+0800.md（SHFE ATM 实码复测），
-  #    PROBE_LOG 第 10 轮；码式矩阵规范出处见 docs/providers/ths.md
-  #    「标的代码映射」。期权合约会到期：chain 目标轮换规则见 targets 注释。
 
-notes: 各轮运行记录见 probes/results/PROBE_LOG.md（不入库）；探针框架规范见 probes/README.md。
+notes: 探针框架规范见 probes/README.md。

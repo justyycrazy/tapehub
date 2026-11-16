@@ -31,9 +31,9 @@
 | bars | commodity-option（五所）/ index-option / etf-option | P1D | none（adj_type 对期权无效） | start 均为 null（合约级数据随上市起、随摘牌止） | open/high/low/close/volume |
 | quotes | contract/continuous/weighted-index/stock/index/etf/commodity-option/index-option/etf-option | 无周期维度（声明为空） | 无复权维度（声明为空） | 不适用 | timestamp、last_price、五档买卖价量（bid/ask 价量 1..5）、volume、amount |
 
-期权补充口径（asset_type 三分：commodity-option/index-option/etf-option，八所归属见 ../api.md「asset_type 资产类型体系」；2026-11-16 聚焦轮八所探针实证，PROBE_LOG 第 12 轮）：
+期权补充口径（asset_type 三分：commodity-option/index-option/etf-option，八所归属见 ../api.md「asset_type 资产类型体系」；2026-11-16 聚焦轮八所探针实证，原始证据本地留档不入库）：
 
-- **统一式入参 → 原生式还原**（结构子类统一式 {品种}{YYMM}{C/P}{行权价} 见 ../api.md「instrument 标准代码」；tqsdk 原生写法为八所中唯一品种小写源，与该所期货品种大小写同系）：SSE/SZSE 数字合约码直拼（`CN-SSE-10012437 → SSE.10012437`）；SHFE/INE 品种小写无连字符（`CN-SHFE-CU2701C102000 → SHFE.cu2701C102000`、`CN-INE-SC2701C550 → INE.sc2701C550`）；DCE/GFEX 品种小写连字符 4 位月（`CN-DCE-M2701C3500 → DCE.m2701-C-3500`，**与该所期货大写实证相反**；`CN-GFEX-LC2701C90000 → GFEX.lc2701-C-90000`）；CZCE 大写品种 3 位月码（`CN-CZCE-SR2701C5900 → CZCE.SR701C5900`，统一式 4→3 还原与该所期货合约同构）；CFFEX 大写连字符式（`CN-CFFEX-IO2612C4000 → CFFEX.IO2612-C-4000`）；
+- **统一式入参 → 原生式还原**（结构子类统一式 {品种}{YYMM}{C/P}{行权价} 见 ../api.md「instrument 标准代码」；tqsdk 原生写法为八所中唯一品种小写源，与该所期货品种大小写同系）：SSE/SZSE 数字合约码直拼（`CN-SSE-10012437 → SSE.10012437`）；SHFE/INE 品种小写无连字符（`CN-SHFE-CU2701C102000 → SHFE.cu2701C102000`、`CN-INE-SC2701C550 → INE.sc2701C550`）；DCE/GFEX 品种小写连字符 4 位月（`CN-DCE-M2701C3500 → DCE.m2701-C-3500`；`CN-GFEX-LC2701C90000 → GFEX.lc2701-C-90000`）；CZCE 大写品种 3 位月码（`CN-CZCE-SR2701C5900 → CZCE.SR701C5900`，统一式 4→3 还原与该所期货合约同构）；CFFEX 大写连字符式（`CN-CFFEX-IO2612C4000 → CFFEX.IO2612-C-4000`）；
 - 落选候选否定证据（原生式侧，定案时以标准码直测）：INE 大写直通 / DCE 大写直通 / GFEX 无连字符 `lc2701C90000` 均 graphql「查询合约服务报错」快速拒绝——期权写错即快速报错（非期货侧 4 位年月码的挂起行为）；统一式定案后旧连字符/3 位月码写法在域层即拒绝，不再到达上游；
 - 权限口径：官方权限模型免费版账户即含期权实时行情（当前账户专业版）；周期仅核实 P1D（`get_kline_serial` 其余周期对期权未核实，不声明），K 线实证 3 根/标的 × 八所、快照与流式走通用 `get_quote` 订阅链路。
 
@@ -106,4 +106,3 @@
 ## 探针依据
 
 - 能力核实与行为实证用例：`probes/cases/tqsdk.yaml`（探针框架规范见 `probes/README.md`）——覆盖可用性矩阵（CN 证券 SSE/SZSE 逐所，BSE 上游拒绝不上目标）、复权生效性（adjust_diff）、历史深度（history_depth）、单次上限（limit）、错误指纹（raw，含 CZCE 4 位年月码复验；原 BSE 闸门 raw 已随定案退役，拒绝结论由「不设 BSE 目标」承载）、连接时长（connection）；运行时段建议**盘中**（盘后复权 case 会挂满超时，见「上游行为定案」）；
-- 各轮运行记录：`probes/results/PROBE_LOG.md`（本地文件，不入库）。

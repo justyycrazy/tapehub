@@ -171,11 +171,6 @@ chain:
     intervals: [PT1M, PT5M, PT15M, PT30M, PT1H, P1D, P1W, P1M]
 
 raw:
-  # 已定案退役：futunn-server-time-endpoint（GET /api/v1.0/server-time 免签
-  # HTTP 200 可用、server_time_ms 字符串类型，2026-11-14 第 3 轮定案；第一版
-  # 不做自动校时，后续立项自动校时时按需复探；原始证据见
-  # probes/results/PROBE_LOG.md，不入库）。
-  #
   # 错误指纹仅观察：采集无签名请求的 401 报文形态（ret_code/code 封装、
   # 错误码 -12006 等），供鉴权失败路径的防御分支核实（字面量假 Key，
   # 非真实凭据）
@@ -190,4 +185,4 @@ raw:
     expect: {status: error, error_contains: ""}
     close: {method: close, kwargs: {}}
 
-notes: 各轮运行记录见 probes/results/PROBE_LOG.md（不入库）；探针框架规范见 probes/README.md。
+notes: 探针框架规范见 probes/README.md。

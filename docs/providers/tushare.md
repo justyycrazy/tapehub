@@ -67,7 +67,7 @@ ETF ts_code 后缀（fund_daily 场内基金接口，doc_id=127，沪深同构�
 - fut_daily 单次上限 2000 条（主连 CUL.SHF 16 年窗口实测恰 2000）：达到上限时 `meta.partial=true` 且 warnings 提示可能截断；上游截断为「保尾截头」——保留最新 2000 根，partial 时缺的是窗口头部更早数据；该接口要求上游账户 2000 积分。pro_bar 未核实单次行数上限，不启用截断判定（partial 恒 false）。
 - 空结果（DataFrame/None）统一映射为空列表，按空批次返回、不报错。
 - 指数（asset='I'）路由定案：SDK 薄封装直传——pro_bar asset='I' 分支 D→index_daily、W→index_weekly、M→index_monthly（tushare/pro/data_pro.py L151-159，无额外变换，源码定案）；三周期接口直测均有数（探针 2026-11-15 第 13 轮：117/26/6 行）。指数日线要求 2000 积分、数据约 18 点更新（doc_id=95）；指数周/月线要求 600 积分、单次上限 1000 行（doc_id=171/172），pro_bar 未启用截断判定（partial 恒 false），与股票周月线现状一致。
-- ETF/期权（fund_daily/opt_daily）定案（探针 2026-11-15 第 14/15 轮）：fund_daily 单次上限 5000 行（partial 语义与 fut_daily 同）、要求 5000 积分（实测账户通过）、亦含 LOF（上游 issue #1891 口径）；opt_daily 单次上限 15000 行（partial 同）、要求 2000 积分（实测通过）、全部历史每日约 17 点更新；期权覆盖八所（2026-11-16 第 17 轮聚焦收编 INE/GFEX，码式与证据见「标的代码映射」）。目录接口 opt_basic 单次返回恰 12000 行，疑为上游单次上限（第 17 轮 INE/GFEX/SHFE 三次同值，待核实；不影响映射与日 K 结论）。fund_daily/opt_daily 直调 pro 对象方法，量额换算与 extensions 见「周期/复权/单位」节。
+- ETF/期权（fund_daily/opt_daily）定案（探针 2026-11-15 第 14/15 轮）：fund_daily 单次上限 5000 行（partial 语义与 fut_daily 同）、要求 5000 积分（实测账户通过）、亦含 LOF（上游 issue #1891 口径）；opt_daily 单次上限 15000 行（partial 同）、要求 2000 积分（实测通过）、全部历史每日约 17 点更新；期权覆盖八所（2026-11-16 第 17 轮聚焦收编 INE/GFEX，码式与证据见「标的代码映射」）。目录接口 opt_basic 单次返回恰 12000 行，疑为上游单次上限（第 17 轮 INE/GFEX/SHFE 三次同值，待核实；不影响映射与日 K 结论）；opt_basic 的 `trade_date` 请求参数被上游忽略（恒返回全量目录），在市标的筛选须自行按 `delist_date` 过滤。fund_daily/opt_daily 直调 pro 对象方法，量额换算与 extensions 见「周期/复权/单位」节。
 - 错误指纹：上游积分限频/错误码未在文档中核实（40203 等积分错误码待核实后补充），SDK 异常统一包装 `UPSTREAM_ERROR`，不穿透 API。
 
 ## 快照与流式
@@ -95,4 +95,3 @@ ETF ts_code 后缀（fund_daily 场内基金接口，doc_id=127，沪深同构�
 ## 探针依据
 
 - 能力核实与行为实证用例：`probes/cases/tushare.yaml`（探针框架规范见 `probes/README.md`）；
-- 各轮运行记录：`probes/results/PROBE_LOG.md`（本地文件，不入库）。

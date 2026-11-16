@@ -1,7 +1,6 @@
 # AlphaFeed（alphafeed）能力声明与内部操作映射。
 # 映射细则、上游行为定案与历史覆盖依据：docs/providers/alphafeed.md（唯一出处，本文不复述）。
 # 官方文档：https://docs.alphafeed.org/zh-hans/
-# 探针运行记录：probes/results/PROBE_LOG.md（本地文件，不入库）。
 provider: alphafeed
 default_variant: alphafeed
 
