@@ -149,17 +149,21 @@ targets:
     min_bars: 5
     required_fields: [open, high, low, close, volume, amount]
   etf-option@CN-SSE:
-    instrument: CN-SSE-10012437
-    # 50ETF 购近月（数字合约码 + SH）：2026-11-16 聚焦轮 code=0 五行实证
-    # 收编。近月合约 2026-11-25 到期：轮换按交易所挂牌或 tushare opt_basic
-    # 目录（近月、delist_date 未过）重选
+    instrument: CN-SSE-10011427
+    # 50ETF 购 12 月（数字合约码 + SH）：2026-11-16 到期前轮换——原近月
+    # 10012437（购11月2800）2026-11-25 到期，按 tushare opt_basic 目录
+    # （在市 delist_date 未过 + ATM）重选：现价 510050=2.889，行权价 2.90
+    # 最近档（listed 2026-04-23 / delist 2026-12-23）。合约会到期：下次
+    # 轮换按同款口径重选近月/次月 ATM
     window: {start: 2026-11-09, end: 2026-11-13}
     min_bars: 3
     required_fields: [open, high, low, close, volume, amount]
   etf-option@CN-SZSE:
-    instrument: CN-SZSE-90008083
-    # 沪深300ETF 购近月（数字合约码 + SZ）：同上实证收编；2026-11-25 到期，
-    # 轮换同上
+    instrument: CN-SZSE-90008043
+    # 沪深300ETF 购 12 月（数字合约码 + SZ）：同上轮换——原近月 90008083
+    # 2026-11-25 到期，opt_basic 目录 ATM 重选：现价 159919=4.266，行权价
+    # 4.30 最近档（listed 2026-09-16 / delist 2026-12-23；深交所 name 带
+    # 「沪深」前缀，opt_code=159919C 系列同一口径）
     window: {start: 2026-11-09, end: 2026-11-13}
     min_bars: 3
     required_fields: [open, high, low, close, volume, amount]
@@ -180,23 +184,31 @@ targets:
     min_bars: 1
     required_fields: [open, high, low, close, volume, amount]
   commodity-option@CN-DCE:
-    instrument: CN-DCE-M2701C3500
-    # 豆粕期权（连字符式，4 位月）：聚焦轮 code=0 四行实证收编；轮换按
-    # opt_basic（exchange=DCE，name 含豆粕 + delist_date 未过）重选
+    instrument: CN-DCE-M2701C3150
+    # 豆粕期权（连字符式，4 位月）：2026-11-16 轮换——原探测目标 M2701C3500
+    # 日 K 可用但分时端点 5003 'intraday quote unavailable'（上游逐合约数据
+    # 缺口，与流动性无关，见 PROBE_LOG 第 12 轮归因）。按标的现价锚定 ATM
+    # 重选：M2701 期货收盘 3147（tushare fut_daily），行权价间隔 50 → 3150
+    # （目录外直测分时 code=0 308 点）。合约会到期：轮换按同款口径重选 ATM
     window: {start: 2026-11-09, end: 2026-11-13}
     min_bars: 3
     required_fields: [open, high, low, close, volume, amount]
   commodity-option@CN-CZCE:
     instrument: CN-CZCE-SR2701C5900
     # 白糖期权（无连字符，3 位月码 701=2027-01）：聚焦轮 code=0 四行实证
-    # 收编；到期 2026-12-11，轮换按 opt_basic 同款口径重选
+    # 收编；到期 2026-12-11，轮换按 ATM 口径重选
     window: {start: 2026-11-09, end: 2026-11-13}
     min_bars: 3
     required_fields: [open, high, low, close, volume, amount]
   commodity-option@CN-GFEX:
-    instrument: CN-GFEX-LC2701C90000
-    # 碳酸锂期权（连字符式，与期货主连「品种+L」不同构）：聚焦轮 code=0
-    # 五行实证收编；轮换按挂牌行权价序列重选
+    instrument: CN-GFEX-LC2701C88000
+    # 碳酸锂期权（连字符式，与期货主连「品种+L」不同构）：2026-11-16 轮换
+    # ——原探测目标 C90000 日 K 可用（tushare opt_daily 当日 vol 1.4 万+）
+    # 但分时端点 5003（上游逐合约缺口；LC2701 系列内 5003 散布于行权价，
+    # 与流动性无关，见 PROBE_LOG 第 12 轮归因）。按标的现价锚定 ATM 重选：
+    # LC2701 分时末点 87740，行权价间隔 2000 → 88000（目录外直测分时
+    # code=0 188 点）。注意：tushare opt_basic GFEX 目录行权价档位
+    # （188000+）与现价矛盾，不可作选码依据。合约会到期：轮换按同款口径
     window: {start: 2026-11-09, end: 2026-11-13}
     min_bars: 3
     required_fields: [open, high, low, close, volume, amount]

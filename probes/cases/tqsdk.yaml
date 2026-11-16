@@ -196,15 +196,19 @@ targets:
     min_bars: 60
 
   etf-option:
-    # 50ETF 购近月（数字合约码直拼）：2026-11-16 聚焦轮 get_quote + 日 K
-    # 三根双证收编（asset_type 三分前为裸键 option）。近月合约 2026-11-25
-    # 到期：轮换按交易所挂牌或 tushare opt_basic 目录重选近月
-    instrument: CN-SSE-10012437
+    # 50ETF 购 12 月（数字合约码直拼）：2026-11-16 到期前轮换——原近月
+    # 10012437（购11月2800）2026-11-25 到期，按 tushare opt_basic 在市目录
+    # ATM 重选：现价 510050=2.889 / 行权价 2.90（listed 2026-04-23、
+    # delist 2026-12-23；数字合约码与 ths 侧同码，直拼形态由第 12 轮旧码
+    # 同构实证）。合约会到期：轮换按交易所挂牌或 tushare opt_basic 目录重选
+    instrument: CN-SSE-10011427
     window: {start: 2026-11-01, end: 2026-11-30}
     min_bars: 3
   etf-option@CN-SZSE:
-    # 沪深300ETF 购近月（数字合约码直拼）：同上双证收编；2026-11-25 到期轮换
-    instrument: CN-SZSE-90008083
+    # 沪深300ETF 购 12 月（数字合约码直拼）：同上轮换——原近月 90008083
+    # 2026-11-25 到期，ATM 重选：现价 159919=4.266 / 行权价 4.30（listed
+    # 2026-09-16、delist 2026-12-23）；tqsdk 侧首证由下一轮常态复验承担
+    instrument: CN-SZSE-90008043
     window: {start: 2026-11-01, end: 2026-11-30}
     min_bars: 3
   index-option@CN-CFFEX:
