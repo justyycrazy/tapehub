@@ -126,7 +126,7 @@ raw:
   #    复用、进程退出即断），探针不设独立 logout case。会话生命周期由
   #    chain availability 隐含复验（适配器懒登录）。
   #
-  # ── 错误指纹（assert: false 仅观察；供适配器错误分类与 README 回填）──
+  # ── 错误指纹（assert: false 仅观察；供适配器错误分类与文档回填）──
   - id: bs-invalid-code-fingerprint
     purpose: 无效证券代码指纹（预期 10004011；观察错误码或空结果）
     module: baostock
@@ -170,4 +170,4 @@ raw:
     expect: {status: ok, min_rows: 0}
     assert: false
 
-notes: 探针框架规范见 probes/README.md。
+notes: 探针框架规范见 docs/probes.md。

@@ -160,4 +160,4 @@ raw:
     expect: {status: error, error_contains: ""}   # 任意错误：记录指纹
     assert: false
 
-notes: 探针框架规范见 probes/README.md。
+notes: 探针框架规范见 docs/probes.md。

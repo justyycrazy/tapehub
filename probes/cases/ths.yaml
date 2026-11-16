@@ -228,7 +228,7 @@ chain:
     intervals: [P1D]
   # 历史覆盖全部保持 null（文档未公布）：P1D 先行二分收敛；仅对证券类
   # 目标做 depth——合约类有时限标的不统计历史深度（2026-11-16 决议，见
-  # probes/README.md「规范化规则」）：期货/期权合约生命周期有限（到期归档），
+  # docs/probes.md「规范化规则」）：期货/期权合约生命周期有限（到期归档），
   # 「最早可用」语义随合约轮换漂移，不做回溯（待 continuous 主连纳入声明后再议）。
   # earliest 折中取 2022-01-01：指数端点越界窗口 1003 拒绝且实测口径为
   # 「recent five years only」滚动 5 年、ETF 同为约 5 年滚动但越界整体
@@ -272,4 +272,4 @@ raw:
 
 
 
-notes: 探针框架规范见 probes/README.md。
+notes: 探针框架规范见 docs/probes.md。

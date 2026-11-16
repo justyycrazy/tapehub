@@ -23,8 +23,8 @@
 | [docs/api.md](docs/api.md) | API 与数据约定：接口示例、请求规范（instrument/asset_type/variant/adjust/interval/时区/分页）、单位换算总则、错误码表、SSE 事件帧 |
 | [docs/operations.md](docs/operations.md) | 运维与配置：依赖管理、凭据驱动注册、`TAPEHUB_*` 环境变量全表、安全纪律 |
 | [docs/providers/](docs/providers/) | 各 Provider 独立文档（10 份）：上游映射表、标的代码映射、复权/单位换算、上游行为定案、路由参与、探针依据 |
+| [docs/probes.md](docs/probes.md) | 数据探针框架唯一文档：运行规范（用例格式、运行方式、日志与输出、类型语义、结果解读）与设计决策记录 |
 | [AGENTS.md](AGENTS.md) | 开发指南：架构边界、常用命令、新增 Provider 流程、探针规范索引 |
-| [probes/README.md](probes/README.md) | 数据探针框架规范：用例格式、运行方式、日志与输出 |
 | [.env.example](.env.example) | 服务配置模板（复制为 `.env` 使用，不提交版本库） |
 
 内置 Provider（10 个）：akshare、alphafeed、baostock、tickflow、ths、tiingo、tushare、tqsdk、twelvedata、futunn——各自文档见 [docs/providers/](docs/providers/)。
@@ -81,7 +81,7 @@ API 层 → Application 层 → Domain 层
 - **manifest 属于配置**：缺失、格式错误或校验失败直接启动失败（fail-fast）；路由配置同上；适配器导入失败（可选 SDK 未安装等）仍单 Provider 隔离，不影响启动；
 - **公共能力声明 vs 内部 operation 映射**：manifest 的 `capabilities` 面向目录与公共路由（含 `variants` 声明）；`operations` 的 match 键包含全部六个维度且必须显式声明，面向适配器内部；对请求无意义的维度显式声明 `null`（如 quotes 快照的 interval/adjust，两维度在能力目录同样声明为空、路由时跳过），`null` 只与不携带该维度的请求匹配。
 
-数据探针（`probes/`）用真实上游调用实证核实能力目录声明，能力结论回填于各 Provider 文档；探针规范见 [probes/README.md](probes/README.md)。
+数据探针（`probes/`）用真实上游调用实证核实能力目录声明，能力结论回填于各 Provider 文档；探针规范与设计决策记录见 [docs/probes.md](docs/probes.md)。
 
 ## 未来扩展边界（现在不实现）
 

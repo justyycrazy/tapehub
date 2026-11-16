@@ -1,25 +1,47 @@
-# probes — Provider 数据探针规范
+# Provider 数据探针框架
 
-用真实上游调用实证核实能力目录声明（及声明之外的边界），把
-`docs/providers/<name>.md` 中「未核实 / 保持 null / 待核实」的诚实边界
-变成**有据可查的时点证据**。各轮运行记录见 `results/PROBE_LOG.md`
-（不入库，见「结果记录」一节）。
+`probes/` 是 Provider 数据探针子系统：用真实上游调用实证核实能力目录声明
+（及声明之外的边界），把各 Provider 文档中「未核实 / 保持 null / 待核实」的
+诚实边界变成**有据可查的时点证据**。各轮运行记录见
+`probes/results/PROBE_LOG.md`（不入库，见「结果记录」一节）。
 
-设计动机与决策记录见 [PLAN.md](PLAN.md)。**探针不是服务运行时的一部分，
-也不进入 CI 测试**：`uv run pytest` 保持零网络、零真实凭据。
+本文是探针框架的唯一文档：**运行规范**（探针文件格式、类型语义、运行方式、
+结果解读）与**设计动机与决策记录**的唯一出处。各 Provider 探针覆盖范围与
+定案结论的事实记录见 [providers/](providers/)<name>.md「探针依据」与
+`probes/cases/<name>.yaml`。**探针不是服务运行时的一部分，也不进入 CI
+测试**：`uv run pytest` 保持零网络、零真实凭据。
+
+## 设计原则
+
+核心原则（与整体架构对齐，立项即定）：
+
+1. **探针不是服务运行时的一部分**：独立目录、显式命令运行，绝不进入
+   pytest/CI——测试仍然全部 Mock、零网络；
+2. **声明内探针走统一链路**（`adapter.fetch_bars` / `adapter.fetch_quote`），
+   框架完全通用、零 Provider 专属代码；声明外探索与错误指纹走**声明式
+   原始调用**（YAML 里写 SDK 调用，框架反射执行），客户端生命周期用
+   connection 探针表达；
+3. **能力目录仍是唯一事实来源**：探针不自动改 manifest，只产出报告，
+   回填由人工确认后单独提交；
+4. **凭据纪律不破例**：只从环境变量注入，结果文件只记录「凭据是否已
+   配置」（布尔），绝不记录值；行情样本每 case 最多 3 根 bar；
+5. **框架自身的测试同样全部离线**：schema 校验、manifest 矩阵展开、
+   分析算法（合成 fetch 闭包构造已知数据）、raw/connection 执行器
+   （`sys.modules` 注入假 SDK 模块）均在 `tests/unit/probes/`，
+   `uv run pytest` 保持零网络、零真实凭据。
 
 ## 目录结构
 
 ```text
 probes/
-  PLAN.md                # 设计决策（批准时的方案全文）
-  README.md              # 本文件：文件格式、类型语义、运行方式、结果解读
   schema.py / loader.py / runner.py / analysis.py / report.py / cli.py / logging_setup.py
   cases/                 # 探针文件：每 Provider 一个，与 BUILTIN_PROVIDERS 同名
   results/               # 运行产出（.gitignore 整目录，不入库）
     PROBE_LOG.md         # 各轮运行记录（人工追加，见「结果记录」一节）
 tests/unit/probes/       # 框架自身离线测试
 ```
+
+框架文档即本文（`docs/probes.md`）。
 
 ## 运行方式
 
@@ -32,9 +54,9 @@ uv run python -m probes.cli run --provider ths --yes -v --log-file probes/result
 ```
 
 主题聚焦验证（只探某资产类型/某几所等）用 `--cases-dir` 指向聚焦目录
-`results/_cases-focus-<主题>/`：目录须含全部 Provider 同名文件（loader 强制），
-聚焦 Provider 自规范文件裁剪 targets/raw——完整方案见 `../AGENTS.md`
-「数据探针」节「聚焦目录方案」。
+`probes/results/_cases-focus-<主题>/`：目录须含全部 Provider 同名文件
+（loader 强制），聚焦 Provider 自规范文件裁剪 targets/raw——完整方案见
+[AGENTS.md](../AGENTS.md)「数据探针」节「聚焦目录方案」。
 
 真实运行必须显式 `--yes`；退出码：0 正常（允许 skipped/observe）、
 1 存在 failed、2 参数或前提问题。凭据经 `.env` / 环境变量（前缀 `TAPEHUB_`）
@@ -214,8 +236,9 @@ notes: 本探针要回答的问题与已知存疑点。
 
 ## 结果解读
 
-- `results/<provider>/<时间戳>.json`：完整证据（case + 观测 + 判定 + 环境布尔）；
-- `results/report-<provider>-<时间戳>.md`：人读汇总，含「已确认能力 /
+- `probes/results/<provider>/<时间戳>.json`：完整证据（case + 观测 + 判定 +
+  环境布尔）；
+- `probes/results/report-<provider>-<时间戳>.md`：人读汇总，含「已确认能力 /
   声明未通过 / suspect+observe / history.start 建议回填值 / skipped」五张表；
 - 结果是**时点证据**，报告带时间戳，不代表上游当前状态；
 - 探针工具及其报告的时间口径统一北京时间（+08:00）：运行时间戳、结果
@@ -230,7 +253,7 @@ notes: 本探针要回答的问题与已知存疑点。
 
 ## 结果记录
 
-- `results/PROBE_LOG.md` 是全部轮次运行记录的唯一汇总文档（不入库）：
+- `probes/results/PROBE_LOG.md` 是全部轮次运行记录的唯一汇总文档（不入库）：
   **每轮跑完后，把该轮条目追加到对应 Provider 小节最上方**（节内按时间倒序）；
 - 条目格式（见该文件「记录格式」）：日期与轮次、报告产物文件名、
   confirmed/failed/observe 统计与预算、关键结论（保留关键数字与根因结论）、
@@ -246,8 +269,70 @@ notes: 本探针要回答的问题与已知存疑点。
 - pacing + max_calls 预算必须保守设置；探针消耗的是真实上游配额；
 - 日志与结果不记录凭据值、完整行情响应。
 
+## 各 Provider 探针要点
+
+设计层面每个 Provider 探针必须回答的问题（定案结论的规范出处是各
+Provider 文档「上游行为定案」节；覆盖范围与证据出处见「探针依据」节）：
+
+| Provider | 探针焦点 |
+| --- | --- |
+| akshare | 三源（eastmoney/sina/tencent）可用性与同标的一致性、CN 证券逐所（SZSE/BSE）、期货逐所扩容、复权生效性、证券类历史深度（continuous 全量）、variant_consistency、BSE 指数字段语义指纹；无凭据但东财 push2 站点限流敏感 |
+| tushare | 周/月线复权生效性、期货六所合约/主连与单次上限（交易所限定 chain 目标）、北交所接入复验、期权八所日 K、积分/限频错误指纹 |
+| tickflow | 三市场（CN/HK/US）全声明维度可用性、复权生效性、历史深度、单次上限、quotes 字段矩阵 |
+| alphafeed | 同 tickflow 焦点（三市场日线全声明维度 + quotes 字段矩阵）+ 错误指纹 |
+| tqsdk | 合约/主连/加权可用性、data_length 单次上限裁决（定案 5000 根）、复权生效边界（分钟族 no-op）、CZCE 4 位年月码等错误指纹、连接时长（connection） |
+| twelvedata | 外汇/加密货币/美股可用性、历史深度、单次上限、错误指纹；免费档 8 次/分钟限频 |
+| tiingo | 外汇/加密货币可用性、历史深度、单次上限观察、墙钟口径、扩容周期探测、错误指纹；免费档 50 次/小时限额 |
+| ths | 历史 K 线可用性、复权生效性、历史深度收敛、隐式截断常态复验、快照/分时形态（量额口径核实） |
+| baostock | 全声明维度可用性、复权生效性、历史深度、「空结果不报错、错误码仅 SDK stderr 打印」语义的适配器分类依据 |
+| futunn | 三市场全声明维度可用性、逐所细分（SZSE/BSE）、复权生效性、逐周期深度（era 二分）、无签名错误指纹、校时端点形态；历史 K 线每标的额度池特性 |
+
 ## 新增 Provider 时
 
-1. `cases/<name>.yaml` 按 Provider 要核实的问题编写（参考现有八份文件）；
+1. `cases/<name>.yaml` 按 Provider 要核实的问题编写（参考现有十份文件）；
 2. 新增分析探针时先在 `tests/unit/probes/` 补离线测试（合成 fetch 闭包）；
 3. 框架代码保持 Provider 无关：Provider 专属事实只允许出现在 `cases/*.yaml`。
+
+## 关键设计决策
+
+| 决策 | 内容与动机 |
+| --- | --- |
+| 声明内不抄写 | `include_declared: true` 从 manifest 能力矩阵自动展开全部声明组合；manifest 改动探针自动跟随，杜绝规范文件与能力目录的双抄漂移 |
+| 分析探针全量展开（2026-11-03 v2 修订） | 分析探针不再与「声明顺序第一组维度」绑定——adjust_diff 按 (interval × variant × pair)、history_depth / limit_truncation 按 (interval × variant) 在声明矩阵上全量展开；`intervals` 字段可显式收敛 interval 维度以控制预算，variant 维度永不收敛 |
+| variant_consistency（2026-11-03 引入） | 对同一 (interval, adjust) 在跨能力聚合的全部声明 variant 下重放同一查询并两两对比；任何不一致（数值差异 / 无重叠 / 预算中断）判 suspect，并记录 max_abs_diff 与 first_divergence——捕捉跨源/跨 variant 数值漂移的常态化手段 |
+| history_depth 口径演进（2026-11-15 v2 格式） | v1 以 `probe_span_days` 天窗口二分（收敛点为任意日期）→ v2 改**日历边界网格二分**（`snap` 粒度：月/季/半年边界），声明口径变为**保守上界**（首个 ≥ 首根实测的日历边界，查询从声明起点起保证有数据），首根实测另记 `first_bar` 证据；`full_history_targets` 全量模式适配上游无日期参数（每次返回全量历史）的接口——回溯+二分只是重复下载同一份数据，单次全窗口调用更省且无粒度误差；`max_calls` 语义为**每条 case** 的预算 |
+| 合约类不统计历史深度（2026-11-16 决议） | 有时间期限的合约级标的（contract、期权三子类）不入 `history_depth.targets`：合约级「最早可用」随挂牌/摘牌轮换漂移，深度是资产类级结论，由存续性目标（`continuous` 主连、证券类）承载；亦不得为维持深度锚而以已摘牌合约作目标（原「已摘牌稳定锚」机制随之废止） |
+| 早上市基准标的 | 历史深度二分的收敛点可能是标的自身上市日伪影（如 600000 收敛点即其上市月）；各 Provider 的证券类基准统一换用早上市标的，收敛点远离上市日即真实库底而非标的伪影。具体标的选择是 Provider 专属事实，只记录在各 `cases/*.yaml` |
+| 市场/交易所限定目标 | 同一 asset_type 跨多市场声明能力的 Provider（如 tickflow/alphafeed/futunn 的 CN/HK/US stock）用 `asset_type@MARKET` 为每个市场提供独立基准；`asset_type@MARKET-EXCHANGE` 是市场基准之外的**追加**目标，用于逐所细分探测适配器交易所映射分支；限定键与标的失配、市场不被能力覆盖等孤儿键一律展开期硬报错，不静默忽略 |
+| 快照可用性入链（2026-11-15） | quotes 声明组合经 `adapter.fetch_quote` 统一链路探测（quote_availability，全链路二级路由→上游→标准化），快照字段矩阵证据由 raw 探针移交链路；捕捉订阅未就绪 NaN 置空、权限静默降级等失败形态 |
+| connection 探针与 raw close | 客户端型 SDK 资源用 connection 探针表达「创建 → 首次取数 → 释放」的计时与并发共存（rounds × concurrent）；`close` 在 connection 探针必填、客户端型 raw case 建议——case 结束（含调用失败/预算耗尽）后显式释放客户端，防止连接/asyncgen 跨段泄漏；close 是本地释放动作，不消耗调用预算 |
+| limit_truncation 超大 limit | 框架以 100 000 的超大查询 limit 抵消统一分页的切片干扰，让上游/适配器自身的单次上限原样可见 |
+| 证据序列化兜底 | JSON 证据写盘做浅层遍历 + 未识别对象字符串化兜底：观测一旦混入 SDK 内部句柄等不可拷贝对象，证据绝不因序列化失败而丢失整轮运行 |
+| 执行器缺陷修复记录（2026-11-03 v2 实施期） | 离线测试发现并修复两处执行器缺陷：adjust_diff 对比序列曾未使用 compared_adjust（实际抓了两次 baseline）；分析 fetch 闭包未兜底未识别的 SDK 异常（直连适配器绕过了 BarQueryService 的统一包装，已在 fetcher 侧折算为 `UpstreamError`） |
+
+## 主要风险与缓解
+
+| 风险 | 缓解 |
+| --- | --- |
+| 上游配额消耗 | pacing + `max_calls` 预算双闸（探针消耗真实上游配额）；`--dry-run` 预检后再真跑；聚焦目录方案（`--cases-dir`）把一轮运行收窄到单一主题 |
+| 结果时效性 | 报告带时间戳，明示为**时点证据**、不代表上游当前状态；各轮运行事实记录于 `probes/results/PROBE_LOG.md` |
+| 慢实例 Provider（tqsdk） | pacing 显著放宽（数值记录在 `cases/tqsdk.yaml`） |
+| 站点限流脆弱（东财 push2 等） | Provider 专属节流事实只记录在各自 `cases/*.yaml`；限流期内每轮失败调用会延长封禁（越试越封），重试规程见 `cases/akshare.yaml` |
+
+## 决策与变更记录
+
+- **2026-11-03**：探针子系统立项（原 `probes/PLAN.md` v1 批准）；同日 v2
+  修订——分析探针全量展开、variant_consistency 引入、执行器两缺陷修复、
+  history_depth `max_calls` 改为每条 case 预算；
+- **2026-11-05**：时间口径统一北京时间（运行时间戳、结果文件名、观测
+  bar 时间戳均为 +08:00）；
+- **2026-11-14**：文档体系重构，探针运行规范定稿于 `probes/README.md`；
+- **2026-11-15**：history_depth 升级 v2 文件格式（日历边界网格二分、
+  snap 粒度、保守上界口径 + `first_bar` 精确实测、全量模式）；quotes
+  快照入链（quote_availability 展开，raw 字段矩阵退役）；
+- **2026-11-16**：聚焦目录方案入档（AGENTS.md「数据探针」节）；
+  「合约类不统计历史深度」决议与探针目标码跨源统一落地；
+- **2026-11-16（文档统一）**：`probes/PLAN.md`（设计动机）与
+  `probes/README.md`（运行规范）先后退役并入本文——探针框架文档统一为
+  `docs/probes.md` 单一出处；后续设计决策与规范变更增量记录于此
+  （探针文件格式版本迁移说明见「格式版本迁移」节）。

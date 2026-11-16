@@ -3,8 +3,9 @@
 - 探针文件名必须与 ``BUILTIN_PROVIDERS`` 中的 Provider 同名；
 - ``include_declared=true`` 时从 manifest 能力矩阵自动展开可用性 case，
   manifest 变更后探针自动跟随，声明组合不在文件里重复抄写；
-- 分析 case（adjust_diff / history_depth / limit_truncation）按每个 asset_type
-  的「声明顺序第一组维度」生成，控制调用预算；
+- 分析 case（adjust_diff / history_depth / limit_truncation / variant_consistency）
+  在声明矩阵上全量展开（``intervals`` 可显式收敛 interval 维度控制预算，
+  variant 维度永不收敛）；
 - 展开只做静态计算，不访问网络，也不导入任何 SDK。
 """
 

@@ -121,4 +121,4 @@ history.start 历史覆盖声明（逐所/逐周期，均北京时间）：
 
 ## 探针依据
 
-- 能力核实与行为实证用例：`probes/cases/futunn.yaml`（探针框架规范见 `probes/README.md`）；
+- 能力核实与行为实证用例：`probes/cases/futunn.yaml`（探针框架规范见 `docs/probes.md`）；

@@ -198,4 +198,4 @@
 ## 探针依据
 
 - 能力核实与行为实证用例：`probes/cases/tiingo.yaml`（探针框架规范见
-  `probes/README.md`）；
+  `docs/probes.md`）；

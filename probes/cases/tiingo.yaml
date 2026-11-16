@@ -71,4 +71,4 @@ raw:
     expect: {status: error, error_contains: ""}
     close: {method: close, kwargs: {}}
 
-notes: 探针框架规范见 probes/README.md。
+notes: 探针框架规范见 docs/probes.md。

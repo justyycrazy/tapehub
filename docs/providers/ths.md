@@ -101,4 +101,4 @@ bars 行字段两种形态统一映射（时间键不同、其余同构）：A �
 
 ## 探针依据
 
-- 能力核实与行为实证用例：`probes/cases/ths.yaml`（探针框架规范见 `probes/README.md`）；
+- 能力核实与行为实证用例：`probes/cases/ths.yaml`（探针框架规范见 `docs/probes.md`）；

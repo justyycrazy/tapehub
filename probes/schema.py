@@ -7,7 +7,7 @@
 - 本模块只做静态校验，不做环境检查，也不发起任何网络访问。
 
 探针文件格式版本见 ``PROBE_SCHEMA_VERSION``；不兼容变更必须升版本，
-并在 ``probes/README.md`` 记录迁移说明。
+并在 ``docs/probes.md``「格式版本迁移」记录迁移说明。
 """
 
 from __future__ import annotations
@@ -30,7 +30,7 @@ PROBE_SCHEMA_VERSION = 2
 # 区分各市场的基准标的；交易所限定键是市场基准标的之外的追加目标，用于
 # 逐所细分探测（适配器交易所映射分支的 chain 级证据）。
 class CaseVerdict(StrEnum):
-    """探针判定：统一五种结论，语义见 probes/README.md。"""
+    """探针判定：统一五种结论，语义见 docs/probes.md。"""
 
     CONFIRMED = "confirmed"
     FAILED = "failed"
@@ -224,7 +224,7 @@ class ClientSpec(_Strict):
 
     ``module`` 写在 case 顶层；kwargs 支持 ``$ENV`` 环境变量引用、
     ``$ctor``（嵌套 SDK 对象构造，如凭据对象）与 ``$deadline_s``
-    （相对当前时刻的秒数 → unix epoch）三类引用，语义见 probes/README.md。
+    （相对当前时刻的秒数 → unix epoch）三类引用，语义见 docs/probes.md。
     """
 
     attr: str

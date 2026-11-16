@@ -106,4 +106,4 @@
 
 ## 探针依据
 
-- 能力核实与行为实证用例：`probes/cases/tqsdk.yaml`（探针框架规范见 `probes/README.md`）——覆盖可用性矩阵（CN 证券 SSE/SZSE 逐所，BSE 上游拒绝不上目标）、复权生效性（adjust_diff）、历史深度（history_depth）、单次上限（limit）、错误指纹（raw，含 CZCE 4 位年月码复验；原 BSE 闸门 raw 已随定案退役，拒绝结论由「不设 BSE 目标」承载）、连接时长（connection）；运行时段建议**盘中**（盘后复权 case 会挂满超时，见「上游行为定案」）；
+- 能力核实与行为实证用例：`probes/cases/tqsdk.yaml`（探针框架规范见 `docs/probes.md`）——覆盖可用性矩阵（CN 证券 SSE/SZSE 逐所，BSE 上游拒绝不上目标）、复权生效性（adjust_diff）、历史深度（history_depth）、单次上限（limit）、错误指纹（raw，含 CZCE 4 位年月码复验；原 BSE 闸门 raw 已随定案退役，拒绝结论由「不设 BSE 目标」承载）、连接时长（connection）；运行时段建议**盘中**（盘后复权 case 会挂满超时，见「上游行为定案」）；

@@ -99,4 +99,4 @@ history.start（历史覆盖声明，探针二分收敛，早上市基准标的�
 
 ## 探针依据
 
-- 能力核实与行为实证用例：`probes/cases/tickflow.yaml`（探针框架规范见 `probes/README.md`）；
+- 能力核实与行为实证用例：`probes/cases/tickflow.yaml`（探针框架规范见 `docs/probes.md`）；

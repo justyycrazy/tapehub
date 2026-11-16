@@ -164,7 +164,7 @@ chain:
   # 上界，首根实测另记 first_bar 证据）；earliest 1890-01-01
   #（GE 1892 上市，深库下界；触底分支 estimate=earliest 一律不回填——
   # twelvedata 教训）；SZSE/BSE 维持 capability 级以基准标的库底为准、
-  # 不单独 depth（README 注明）
+  # 不单独 depth（Provider 文档注明）
   history_depth:
     targets: [stock@CN, index@CN, etf@CN, stock@HK, stock@US, etf@US, etf@HK]
     earliest: 1890-01-01
@@ -189,4 +189,4 @@ raw:
     expect: {status: error, error_contains: ""}
     close: {method: close, kwargs: {}}
 
-notes: 探针框架规范见 probes/README.md。
+notes: 探针框架规范见 docs/probes.md。

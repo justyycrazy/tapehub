@@ -98,7 +98,7 @@ targets:
     # 铜 2706（现活）：SHFE 基准统一——与 ths/tqsdk 现活基准同码（原
     # RB2410→CU2401 的「已摘牌稳定深度锚」机制随 2026-11-16 决议废止：
     # 合约类有时限标的不统计历史深度，无需为锚定保留已摘牌合约，决议见
-    # probes/README.md「规范化规则」）。合约会到期：运行前按上期所挂牌
+    # docs/probes.md「规范化规则」）。合约会到期：运行前按上期所挂牌
     # 信息核对，失败如实记录，到期轮换为当时的现活合约
     window: {start: 2026-07-01, end: 2026-12-31}
     min_bars: 20
@@ -187,7 +187,7 @@ chain:
     fields: [close]
   history_depth:
     # 合约类有时限标的（contract）不入列——2026-11-16 决议（见
-    # probes/README.md「规范化规则」）：合约级「最早可用」随挂牌/摘牌
+    # docs/probes.md「规范化规则」）：合约级「最早可用」随挂牌/摘牌
     # 轮换漂移，深度是资产类级结论，由存续性目标承载
     targets: [stock, index, etf, continuous, stock@HK, stock@US]
     intervals: [P1D]     # 周/月与日线同端点同数据区间，同值声明（控预算）
@@ -222,4 +222,4 @@ raw:
     expect: {status: ok, min_rows: 0}
     assert: false
 
-notes: 探针框架规范见 probes/README.md。
+notes: 探针框架规范见 docs/probes.md。

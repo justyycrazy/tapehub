@@ -94,4 +94,4 @@ ETF ts_code 后缀（fund_daily 场内基金接口，doc_id=127，沪深同构�
 
 ## 探针依据
 
-- 能力核实与行为实证用例：`probes/cases/tushare.yaml`（探针框架规范见 `probes/README.md`）；
+- 能力核实与行为实证用例：`probes/cases/tushare.yaml`（探针框架规范见 `docs/probes.md`）；

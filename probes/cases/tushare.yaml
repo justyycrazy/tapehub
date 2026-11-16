@@ -169,8 +169,8 @@ targets:
   contract:
     # 铜 2706（现活）：SHFE 基准统一——与 akshare/ths/tqsdk 现活基准同码
     #（原 CU2401「已摘牌稳定深度锚」随 2026-11-16 决议废止：合约类有时限
-    # 标的不统计历史深度，无需为锚定保留已摘牌合约，决议见 probes/
-    # README.md「规范化规则」）。合约会到期：运行前按上期所挂牌信息核对，
+    # 标的不统计历史深度，无需为锚定保留已摘牌合约，决议见
+    # docs/probes.md「规范化规则」）。合约会到期：运行前按上期所挂牌信息核对，
     # 失败如实记录，到期轮换为当时的现活合约
     instrument: CN-SHFE-CU2706
     window: {start: 2026-09-01, end: 2026-12-31}
@@ -262,7 +262,7 @@ chain:
     fields: [close]
   history_depth:
     # 合约类有时限标的（contract 与期权三子类）不入列——2026-11-16 决议
-    #（见 probes/README.md「规范化规则」）：合约级「最早可用」随挂牌/摘牌
+    #（见 docs/probes.md「规范化规则」）：合约级「最早可用」随挂牌/摘牌
     # 轮换漂移，深度是资产类级结论，由存续性目标承载；contract 库级
     # history.start 保持 null 口径不变
     targets: [stock, continuous, index, etf]
@@ -320,4 +320,4 @@ raw:
       - {method: query, kwargs: {api_name: "opt_basic", exchange: "GFEX"}}
     expect: {status: ok, min_rows: 1}
 
-notes: 探针框架规范见 probes/README.md。
+notes: 探针框架规范见 docs/probes.md。

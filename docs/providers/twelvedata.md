@@ -108,6 +108,6 @@
 
 ## 探针依据
 
-- 能力核实与行为实证用例：`probes/cases/twelvedata.yaml`（探针框架规范见 `probes/README.md`）：
+- 能力核实与行为实证用例：`probes/cases/twelvedata.yaml`（探针框架规范见 `docs/probes.md`）：
   - 覆盖可用性矩阵、复权生效性（adjust_diff，stock/etf 持续回归入链）、历史深度（history_depth）、单次上限（limit）、错误指纹（raw）；
   - 免费档限频下 pacing 10 秒；

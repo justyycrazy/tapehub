@@ -10,7 +10,8 @@ Docker、前端（上游内部长连接不受此限，如 twelvedata WS）。
 
 文档体系与总体设计见 `README.md`；API 与数据约定（请求规范、错误码表、单位换算）
 见 `docs/api.md`；运维与配置见 `docs/operations.md`；各 Provider 上游映射与行为
-定案见 `docs/providers/<name>.md`——改动敏感区域前先读对应文档。
+定案见 `docs/providers/<name>.md`；数据探针框架规范与设计决策记录见
+`docs/probes.md`——改动敏感区域前先读对应文档。
 
 ## 常用命令
 
@@ -151,9 +152,9 @@ tests/                                           # 该适配器的 Mock 测试
      文件修订与 manifest 回填照常走人工确认、单独提交；
 - 运行日志统一 logging：默认输出 case 生命周期与每次上游调用的子步骤行，
   `-v` 开调试细节、`--log-file` 全量落盘；级别语义与格式规范见
-  `probes/README.md`「日志与输出」；
-- 探针文件规范与类型语义见 `probes/README.md`；框架代码保持 Provider 无关，
-  Provider 专属事实只允许出现在 cases 文件里；
+  `docs/probes.md`「日志与输出」；
+- 探针文件规范、类型语义与设计决策记录见 `docs/probes.md`；框架代码保持
+  Provider 无关，Provider 专属事实只允许出现在 cases 文件里；
 - **每轮探针跑完后，把该轮条目追加到 `probes/results/PROBE_LOG.md`**
   （对应 Provider 小节最上方，格式见该文件「记录格式」；不入库）；
 - 探针只产出报告；manifest 能力回填必须人工确认后单独提交，回填写入

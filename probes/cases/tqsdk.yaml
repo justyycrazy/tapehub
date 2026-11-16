@@ -272,7 +272,7 @@ chain:
     fields: [close]
   history_depth:
     # 合约类有时限标的（contract 与期权三子类）不入列——2026-11-16 决议
-    #（见 probes/README.md「规范化规则」）；stock 历史深度受专业版权限
+    #（见 docs/probes.md「规范化规则」）；stock 历史深度受专业版权限
     # 直接影响，是权限口径实证的关键探针；
     # snap=month：声明值对齐月边界（保守上界），首根实测记入 first_bar 证据；
     # 分钟级周期一并探测，实测各类资产的滚动保留深度。era 5 年 + 网格月粒度
@@ -328,4 +328,4 @@ connection:
     concurrent: 4
 
 raw: []
-notes: 探针框架规范见 probes/README.md。
+notes: 探针框架规范见 docs/probes.md。

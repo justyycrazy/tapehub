@@ -110,4 +110,4 @@ raw:
       - {method: as_json, kwargs: {}}
     expect: {status: error, error_contains: ""}
 
-notes: 探针框架规范见 probes/README.md。
+notes: 探针框架规范见 docs/probes.md。

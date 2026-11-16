@@ -124,7 +124,7 @@ def _lookup_env(name: str) -> str | None:
     """环境变量查找：进程环境优先，``TAPEHUB_*`` 回退到 Settings（含 ``.env``）。
 
     pydantic-settings 读取 ``.env`` 不会导出到进程环境，而探针凭据的本地
-    注入路径是 ``.env``（见 probes/README.md），因此对 ``TAPEHUB_*`` 前缀的
+    注入路径是 ``.env``（见 docs/probes.md「运行方式」），因此对 ``TAPEHUB_*`` 前缀的
     引用做一次 Settings 回退；值绝不写入结果文件。
     """
     resolved = os.environ.get(name)

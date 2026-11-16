@@ -104,4 +104,4 @@ quotes 为快照能力：interval/adjust 维度无意义，capabilities 与 oper
 
 ## 探针依据
 
-- 能力核实与行为实证用例：`probes/cases/alphafeed.yaml`（探针框架规范见 `probes/README.md`）；
+- 能力核实与行为实证用例：`probes/cases/alphafeed.yaml`（探针框架规范见 `docs/probes.md`）；
