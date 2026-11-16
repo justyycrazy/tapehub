@@ -116,6 +116,8 @@ class TqSdkRuntime:
         self._generation = 0
         # 连续构造失败次数（成功一代归零）：驱动指数退避
         self._attempt = 0
+        # peek 门闩属性缺失告警只记一次（tick 循环高频路径防刷屏）
+        self._peek_attr_missing_logged = False
         # —— 实时快照订阅（M2）——
         # symbol → 订阅引用计数（外部线程增减）
         self._sub_refs: dict[str, int] = {}
@@ -302,6 +304,17 @@ class TqSdkRuntime:
             self._stop_requested = True
         self._jobs.put(_StopSignal())
 
+    def _log_sdk_version_once(self) -> None:
+        """记录 tqsdk SDK 版本（一次）：peek 门闩等私有协议依赖随版本漂移，
+        日志锚定实际运行版本，便于升级后比对（pyproject 已钉 >=3.10,<4）。"""
+        from importlib import metadata
+
+        try:
+            version = metadata.version("tqsdk")
+        except Exception:  # noqa: BLE001 - 元数据读取失败不伤运行时
+            version = "unknown"
+        logger.info("tqsdk runtime starting (tqsdk==%s)", version)
+
     def _sleep_interruptible(self, seconds: float) -> None:
         """退避睡眠：分段检查停止请求，停机不被长退避拖延（封顶 60s）。"""
         remaining = seconds
@@ -347,6 +360,8 @@ class TqSdkRuntime:
 
     def _thread_main_inner(self) -> None:
         from tqsdk import TqApi, TqAuth  # 延迟导入：SDK 未安装时 fatal
+
+        self._log_sdk_version_once()
 
         backoff = 0.0
         while not self._stop_requested:
@@ -465,8 +480,17 @@ class TqSdkRuntime:
                     self._subscription_limit,
                 )
                 raise _GenerationReset("dormant subscription recycle")
-            # peek 门闩复位（见 docstring）
-            api._pending_peek = False
+            # peek 门闩复位（见 docstring）。tqsdk 私有协议属性：版本升级
+            # 改名/移除时静默失效会让连接变聋（推停止滞）——缺失时 ERROR
+            # 只记一次（实例标志位防每 tick 刷屏），升级轮由探针验证推送行为
+            if hasattr(api, "_pending_peek"):
+                api._pending_peek = False
+            elif not self._peek_attr_missing_logged:
+                self._peek_attr_missing_logged = True
+                logger.error(
+                    "tqsdk _pending_peek attribute missing; peek latch reset "
+                    "disabled (tqsdk version changed?) — quote pushes may stall"
+                )
             # 自适应 tick：有在飞请求或活跃订阅 50ms（低延迟收数/快照保鲜）；
             # 数据静默期逐步放宽至 2s（限制静默期 _fetch_msg 残留任务累积，
             # 由每日回收清理）

@@ -2052,7 +2052,7 @@ requires-dist = [
     { name = "pydantic-settings", specifier = ">=2.3" },
     { name = "pyyaml", specifier = ">=6.0.1" },
     { name = "tickflow", marker = "extra == 'tickflow'" },
-    { name = "tqsdk", marker = "extra == 'tqsdk'" },
+    { name = "tqsdk", marker = "extra == 'tqsdk'", specifier = ">=3.10,<4" },
     { name = "tushare", marker = "extra == 'tushare'" },
     { name = "twelvedata", marker = "extra == 'twelvedata'" },
     { name = "tzdata", marker = "sys_platform == 'win32'", specifier = ">=2024.1" },

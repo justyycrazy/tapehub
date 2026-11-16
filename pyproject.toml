@@ -27,7 +27,10 @@ alphafeed = ["alphafeed"]
 tushare = ["tushare"]
 # baostock（证券宝）：免费无凭据数据平台；>=0.9.3 为多节点与 ETF 数据版本
 baostock = ["baostock>=0.9.3"]
-tqsdk = ["tqsdk"]
+# tqsdk：shared Runtime 依赖私有协议属性（_pending_peek 门闩复位，见
+# runtime.py）与实测推送行为——升级可能静默破坏，钉住已实证版本区间
+# （3.10.4 实测；升级需探针轮验证推送行为后放宽上限）
+tqsdk = ["tqsdk>=3.10,<4"]
 # websockets：实时快照/快照流 WS 直连（td.websocket 封装不适配共享连接
 # 动态增删）；>=14 为新 asyncio 实现（websockets.connect 别名）
 twelvedata = ["twelvedata", "websockets>=14"]

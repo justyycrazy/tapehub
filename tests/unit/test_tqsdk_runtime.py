@@ -698,3 +698,25 @@ def test_adapter_stream_quote_requires_shared_mode(fake_tqsdk: types.ModuleType)
     with pytest.raises(UnsupportedCapabilityError):
         adapter.stream_quote(_quote_query())
     adapter.shutdown_runtime()
+
+
+def test_missing_peek_attr_logged_once_and_tick_survives(
+    fake_tqsdk: types.ModuleType, caplog: pytest.LogCaptureFixture
+) -> None:
+    """tqsdk 升级移除 _pending_peek：tick 循环不崩、ERROR 只记一次（防刷屏）。"""
+    import logging
+
+    FakeTqApi.omit_peek_attr = True
+    runtime = _make_runtime()
+    with caplog.at_level(logging.ERROR, logger="tapehub.tqsdk.runtime"):
+        runtime.start()
+        rows = asyncio.run(_fetch(runtime, "SHFE.au2612"))
+        time.sleep(0.3)  # 多个 tick 窗口：验证告警不逐 tick 重复
+        runtime.shutdown()
+    assert len(rows) == FakeTqApi.rows_per_call  # tick 循环未崩，取数正常
+    errors = [
+        r
+        for r in caplog.records
+        if r.levelno == logging.ERROR and "_pending_peek" in r.getMessage()
+    ]
+    assert len(errors) == 1

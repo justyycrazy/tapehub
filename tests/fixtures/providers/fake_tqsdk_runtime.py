@@ -107,6 +107,8 @@ class FakeTqApi:
     # 暂时性构造失败/挂死序列：每次构造消费一格（前 N 次生效）
     construct_fail_times = 0
     construct_hang_times = 0
+    # 私有协议属性缺失模拟（tqsdk 升级移除 _pending_peek 的场景）
+    omit_peek_attr = False
     rows_per_call = 3
     # quote 语义脚本：首包在第 N 次 wait_update 到达；其后每 N 次推送一次增量
     quote_first_packet_ticks = 2
@@ -123,6 +125,9 @@ class FakeTqApi:
         if FakeTqApi.construct_hang_times > 0:
             FakeTqApi.construct_hang_times -= 1
             time.sleep(CONSTRUCT_HANG_SECONDS)
+        if not FakeTqApi.omit_peek_attr:
+            # 模拟真实 SDK 的私有门闩属性（Runtime 每 tick 复位，见 runtime.py）
+            self._pending_peek = True
         self.auth = auth
         self._loop = (
             loop if isinstance(loop, asyncio.AbstractEventLoop) else asyncio.new_event_loop()
@@ -242,6 +247,7 @@ def install(monkeypatch: Any) -> types.ModuleType:
     FakeTqApi.fail_wait_update_times = 0
     FakeTqApi.construct_fail_times = 0
     FakeTqApi.construct_hang_times = 0
+    FakeTqApi.omit_peek_attr = False
     FakeTqApi.quote_first_packet_ticks = 2
     FakeTqApi.quote_update_every_ticks = 0
     global FETCH_DELAY, TICKS_PER_FETCH
