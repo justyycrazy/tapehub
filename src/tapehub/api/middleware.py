@@ -22,6 +22,19 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
         started = time.perf_counter()
         try:
             response = await call_next(request)
+        except Exception:
+            # 未处理异常向上穿透（正常由内层异常处理器兜住转 500，穿到这里
+            # 属处理器自身异常等边缘路径）：补记访问行再重抛，避免 5xx 请求
+            # 在访问日志中缺失（只有异常堆栈、无方法/路径/耗时）
+            elapsed_ms = (time.perf_counter() - started) * 1000
+            logger.info(
+                "%s %s -> 500 (%.1f ms) request_id=%s",
+                request.method,
+                request.url.path,
+                elapsed_ms,
+                request_id,
+            )
+            raise
         finally:
             elapsed_ms = (time.perf_counter() - started) * 1000
         # 未捕获异常会在上面抛出（由最外层处理器统一转换为 500）。
