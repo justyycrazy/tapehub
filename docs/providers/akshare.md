@@ -38,7 +38,7 @@ history.start（历史覆盖声明，探针实测回填；二分近似窗口粒�
 | etf（CN，eastmoney） | P1D/P1W/P1M | 2005-03-20 | 真值≈基准 ETF 上市日 2005-02-23，落在窗口内 |
 | stock（HK，eastmoney） | P1D/P1W/P1M | 1989-01-27 | 基准标的 00002 |
 | stock（US，eastmoney） | P1D/P1W/P1M | 1986-02-21 | 基准标的 GE；浅于 tickflow/alphafeed 独立探测的 ≈1962——东财美股库底确实较浅，两口径互证 |
-| contract（CN，sina） | P1D | 2023-10-17 | 全量模式精确值；capability 为 asset_type 级声明，各合约以自身上市日起、随摘牌止 |
+| contract（CN，sina） | P1D | null（2026-11-16 决议） | 合约级数据随挂牌起、随摘牌止，无资产类级固定起点——原 RB2410 全量锚定值 2023-10-17 随「合约类不统计历史深度」决议废止 |
 | continuous（CN，sina） | P1D | 2009-03-27 | 全量模式精确值；与上期所螺纹钢期货上市日一致，相互印证 |
 
 ## 标的代码映射

@@ -47,18 +47,20 @@ pacing:
 
 targets:
   contract:
-    # au2612 为示例合约：运行前请按上期所挂牌信息核对，探针失败会如实记录。
-    # 标准代码统一大写（AU2612），SHFE 品种小写由适配器还原为上游写法
-    instrument: CN-SHFE-AU2612
+    # 铜 2706：SHFE 品种统一——与 ths 现活基准同码（原 AU2612 黄金为示例
+    # 合约，换统一品种）。标准代码统一大写（CU2706），SHFE 品种小写由
+    # 适配器还原为上游写法。合约会到期：运行前按上期所挂牌信息核对，
+    # 探针失败会如实记录，到期轮换为当时的现活合约
+    instrument: CN-SHFE-CU2706
     window: {start: 2026-07-01, end: 2026-11-30}
     min_bars: 30
   contract@CN-CZCE:
-    # 郑商所合约：标准码统一 4 位年月（公开现行约定；tushare/新浪 侧实证
-    # 4 位可用、3 位全空）。TianQin 只认 3 位（CZCE.RM701 有数据、
-    # 4 位 CZCE.RM2701 无响应挂起），适配器做 4→3 位还原（RM2701 → RM701），
-    # 本目标 availability 即还原链路的常态复验；4 位直传挂起的原始证据见
-    # raw case kline-czce-4digit
-    instrument: CN-CZCE-RM2701
+    # 甲醇 2701：CZCE 品种统一——「甲醇为郑商所持仓王」（原 RM2701 菜粕换
+    # 统一品种）。标准码统一 4 位年月（公开现行约定；tushare/新浪 侧实证
+    # 4 位可用、3 位全空）。TianQin 只认 3 位年月码（RM 侧 CZCE.RM701 有
+    # 数据、4 位 CZCE.RM2701 无响应挂起——还原机制品种无关），适配器做
+    # 4→3 位还原（MA2701 → MA701），本目标 availability 即还原链路的常态复验
+    instrument: CN-CZCE-MA701
     window: {start: 2026-07-01, end: 2026-12-31}
     min_bars: 30
   contract@CN-DCE:
@@ -122,7 +124,9 @@ targets:
     window: {start: 2026-07-01, end: 2026-11-30}
     min_bars: 60
   weighted-index:
-    instrument: CN-SHFE-AU
+    # 铜加权：SHFE 品种统一——与 continuous CU 同品种（原 AU 黄金加权换
+    # 统一品种；KQ.i@SHFE.cu 本目标 availability 即实证）
+    instrument: CN-SHFE-CU
     window: {start: 2026-07-01, end: 2026-11-30}
     min_bars: 60
   weighted-index@CN-CZCE:
@@ -153,8 +157,10 @@ targets:
     window: {start: 2026-07-01, end: 2026-11-30}
     min_bars: 60
   stock:
-    # A股实时与历史行情需专业版账户（权限属账户，与 SDK 无关）：当前账户即专业版
-    instrument: CN-SSE-600000
+    # 云赛智联（老八股）：证券基准统一——与 alphafeed/baostock/futunn/tickflow
+    # 同款「早上市标的」（原 600000，换统一基准）。A股实时与历史行情需
+    # 专业版账户（权限属账户，与 SDK 无关）：当前账户即专业版
+    instrument: CN-SSE-600602
     window: {start: 2026-07-01, end: 2026-11-30}
     min_bars: 60
   stock@CN-SZSE:
@@ -166,8 +172,10 @@ targets:
     window: {start: 2026-07-01, end: 2026-11-30}
     min_bars: 60
   index:
-    # 指数历史权限经专业版实测可用；失败如实记录
-    instrument: CN-SSE-000016
+    # 上证指数：指数基准统一——与 akshare/alphafeed/baostock/futunn/ths/
+    # tickflow/tushare 同款（原 000016 上证 50，换统一基准）。指数历史权限
+    # 经专业版实测可用；失败如实记录
+    instrument: CN-SSE-000001
     window: {start: 2026-07-01, end: 2026-11-30}
     min_bars: 60
   index@CN-SZSE:
@@ -225,22 +233,30 @@ targets:
     window: {start: 2026-11-01, end: 2026-11-30}
     min_bars: 3
   commodity-option@CN-DCE:
-    # 豆粕期权（统一式 M2701C3500 → 原生品种小写连字符 m2701-C-3500——品种
-    # 大小写与该所期货同系小写，第 13 轮期货聚焦轮互证；大写/无连字符原生式
-    # 快速报错否定）：同上双证收编；轮换按 opt_basic 同款口径重选
-    instrument: CN-DCE-M2701C3500
+    # 豆粕期权 M2701C3150（ATM：M2701 期货收盘 3147 锚定，间隔 50）：期权
+    # DCE 码式统一——与 ths/tushare 同码（原 C3500 bars 可用，但 ths 分时
+    # 端点 5003 逐合约缺口，统一取 3150；本目标 availability 即实证）。
+    # 原生品种小写连字符 m2701-C-3150 由适配器映射。合约会到期：轮换按
+    # opt_basic 同款口径重选 ATM
+    instrument: CN-DCE-M2701C3150
     window: {start: 2026-11-01, end: 2026-11-30}
     min_bars: 3
   commodity-option@CN-CZCE:
-    # 白糖期权（统一式 SR2701C5900 → 原生大写品种 3 位月码 SR701C5900，4→3
-    # 还原与该所期货合约同构）：同上双证收编；到期 2026-12-11 轮换
-    instrument: CN-CZCE-SR2701C5900
+    # 甲醇期权（统一式 MA2701C3200 → 原生大写品种 3 位月码 CZCE.MA701C3200，
+    # 4→3 还原与该所期货同构）：CZCE 期权品种统一——「甲醇为郑商所持仓王」
+    #（与 contract/continuous MA 同品种；原 SR2701C5900 白糖换统一品种）。
+    # 行权价 3200 经人工锚定提供（2026-11-16）；本目标 availability 即实证。
+    # 合约会到期：轮换按 opt_basic 同款口径重选 ATM
+    instrument: CN-CZCE-MA2701C3200
     window: {start: 2026-11-01, end: 2026-11-30}
     min_bars: 3
   commodity-option@CN-GFEX:
-    # 碳酸锂期权（统一式 LC2701C90000 → 原生品种小写连字符 lc2701-C-90000）：
-    # 同上双证收编（无连字符原生式快速报错否定）；轮换按挂牌行权价序列重选
-    instrument: CN-GFEX-LC2701C90000
+    # 碳酸锂期权 LC2701C88000（ATM：LC2701 分时末点 87740 锚定，间隔 2000）：
+    # 期权 GFEX 码式统一——与 ths/tushare 同码（原 C90000 订阅快照/K 线可用，
+    # 但 ths 分时端点 5003 逐合约缺口，统一取 88000；本目标 availability 即
+    # 实证）。原生品种小写连字符 lc2701-C-88000 由适配器映射。合约会到期：
+    # 轮换按挂牌行权价序列重选 ATM
+    instrument: CN-GFEX-LC2701C88000
     window: {start: 2026-11-01, end: 2026-11-30}
     min_bars: 3
 
@@ -255,7 +271,9 @@ chain:
     pairs: [[none, qfq], [none, hfq]]
     fields: [close]
   history_depth:
-    # stock 历史深度受专业版权限直接影响，是权限口径实证的关键探针；
+    # 合约类有时限标的（contract 与期权三子类）不入列——2026-11-16 决议
+    #（见 probes/README.md「规范化规则」）；stock 历史深度受专业版权限
+    # 直接影响，是权限口径实证的关键探针；
     # snap=month：声明值对齐月边界（保守上界），首根实测记入 first_bar 证据；
     # 分钟级周期一并探测，实测各类资产的滚动保留深度。era 5 年 + 网格月粒度
     # 二分：最坏 6 纪元 + ~6 网格调 = 12 ≤ 16
@@ -286,7 +304,7 @@ connection:
               user_name: "$TAPEHUB_TQSDK_AUTH_USER"
               password: "$TAPEHUB_TQSDK_AUTH_PASSWORD"
         disable_print: true
-    first_call: {method: get_kline_serial, kwargs: {symbol: "SHFE.au2612", duration_seconds: 86400, data_length: 2}}
+    first_call: {method: get_kline_serial, kwargs: {symbol: "SHFE.cu2706", duration_seconds: 86400, data_length: 2}}
     close: {method: close}
     rounds: 3
   # ── P2：并发实例共存验证（免费账户并发连接上限实证，回答现状每请求
@@ -304,7 +322,7 @@ connection:
               user_name: "$TAPEHUB_TQSDK_AUTH_USER"
               password: "$TAPEHUB_TQSDK_AUTH_PASSWORD"
         disable_print: true
-    first_call: {method: get_kline_serial, kwargs: {symbol: "SHFE.au2612", duration_seconds: 86400, data_length: 2}}
+    first_call: {method: get_kline_serial, kwargs: {symbol: "SHFE.cu2706", duration_seconds: 86400, data_length: 2}}
     close: {method: close}
     rounds: 1
     concurrent: 4

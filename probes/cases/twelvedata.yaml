@@ -10,11 +10,12 @@ requires:
 pacing:
   call_interval_s: 10.0
   timeout_s: 60
-  # 本轮构成：availability 96（forex 12 + crypto 12 + stock 24 + etf 48：
-  # NYSE/SPY 基准与 CBOE/AAAA 逐所追加各 12 周期 × 2 复权）+
-  # quote_availability 2（quotes 声明随 include_declared 自动展开：forex +
-  # crypto 各 1 调）+ adjust_diff 2 case×2 + history_depth 2 case×16 最坏
-  #（forex P1W/P1M 残留收敛）+ limit 2 + raw 3 case×3 = 最坏约 145。
+  # 本轮构成：availability 120（forex 12 + crypto 12 + stock 基准/NASDAQ
+  # 逐所追加各 24 + etf 48：NYSE/SPY 基准与 CBOE/AAAA 逐所追加各 12 周期
+  # × 2 复权）+ quote_availability 2（quotes 声明随 include_declared 自动
+  # 展开：forex + crypto 各 1 调）+ adjust_diff（stock 基准/NASDAQ 逐所/etf
+  # × P1D+PT1H × 1 pair × 2 调 = 12）+ history_depth 2 case×16 最坏
+  #（forex P1W/P1M 残留收敛）+ limit 2 + raw 3 case×3 = 最坏约 177。
   # 免费档 800/天为硬上限：预算 780 保留（单日可完整跑全量 + 截断续跑余量，
   # 框架对截断如实记录）。
   max_calls: 780
@@ -30,11 +31,19 @@ targets:
     instrument: GLOBAL-CRYPTO-BTC/USD
     window: {start: 2024-01-01, end: 2025-12-31}
     min_bars: 20
-  # 美股（目录探针实证免费档 Basic 全量可用）：AAPL/NASDAQ 与
-  # SPY/NYSE 分别覆盖白名单两大交易所；stock 因声明 [none, qfq] 会生成
-  # 24 条 availability case（12 周期 × 2 复权）
+  # 美股（目录探针实证免费档 Basic 全量可用）：基准换 GE（NYSE，1892 上市）
+  # 与 alphafeed/futunn/tickflow 统一「早上市标的」——库底收敛点为真实库底
+  # 而非标的上市日伪影（原 AAPL 1980-12 IPO 落 ≈1981 收敛窗内）。stock@US-
+  # NASDAQ 为交易所段逐所追加目标（参照 stock@CN-SZSE 先例），保持 NASDAQ
+  # 段 stock 覆盖（adjust=all 语义 NASDAQ 段实证）。stock 声明 [none, qfq]：
+  # 基准与逐所各生成 24 条 availability case（12 周期 × 2 复权）
   stock:
+    instrument: US-NYSE-GE
+    window: {start: 2024-01-01, end: 2025-12-31}
+    min_bars: 20
+  stock@US-NASDAQ:
     instrument: US-NASDAQ-AAPL
+    # AAPL：NASDAQ 段逐所复验（原 stock 基准降为逐所目标）
     window: {start: 2024-01-01, end: 2025-12-31}
     min_bars: 20
   etf:
@@ -55,10 +64,10 @@ chain:
   include_declared: true
   skip: []
   adjust_diff:
-    # stock/etf 复权入库回归：qfq=adjust=all（拆股+分红）——stock/etf 均
-    # 实证生效（SPY 除息窗口全 19 交易日差异）并扩容声明后入链；
-    # PT1H 顺带回归日内周期
-    targets: [stock, etf]
+    # stock（基准 + NASDAQ 逐所）/etf 复权入库回归：qfq=adjust=all（拆股+
+    # 分红）——stock/etf 均实证生效（SPY 除息窗口全 19 交易日差异）并扩容
+    # 声明后入链；PT1H 顺带回归日内周期
+    targets: [stock, stock@US-NASDAQ, etf]
     window: {start: 2024-06-01, end: 2024-08-31}   # 分红除权高发窗口
     intervals: [P1D, PT1H]
     pairs: [[none, qfq]]

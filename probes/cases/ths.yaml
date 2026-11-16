@@ -32,7 +32,9 @@ pacing:
 
 targets:
   stock:
-    instrument: CN-SSE-600519
+    instrument: CN-SSE-600602
+    # 云赛智联（老八股）：证券基准统一——与 alphafeed/baostock/futunn/tickflow
+    # 同款「早上市标的」（原 600519 为文档示例标的，换统一基准）
     window: {start: 2025-01-01, end: 2025-12-31}
     # 仅日线声明：一年约 244 根，10 为保守下限
     min_bars: 10
@@ -73,8 +75,10 @@ targets:
     min_bars: 10
     required_fields: [open, high, low, close, volume, amount]
   etf:
-    instrument: CN-SSE-510300
-    # 沪深300ETF（官方文档示例标的；仅 ETF，LOF/场外/REITs 上游返回 3004）
+    instrument: CN-SSE-510050
+    # 华夏上证 50ETF（2004-12-30 上市，最早 CN ETF 之一）：证券基准统一——
+    # 与 akshare/alphafeed/baostock/tickflow/tqsdk/tushare 同款（原 510300 为
+    # 文档示例标的）；仅 ETF，LOF/场外/REITs 上游返回 3004 口径不变
     window: {start: 2025-01-01, end: 2025-12-31}
     min_bars: 10
     required_fields: [open, high, low, close, volume, amount]
@@ -100,20 +104,24 @@ targets:
     min_bars: 20
     required_fields: [open, high, low, close, volume, amount]
   contract@CN-DCE:
-    instrument: CN-DCE-EG2701
-    # 乙二醇 2701（文档示例形态）：DCE→DCE。合约会到期：同上轮换
+    instrument: CN-DCE-M2705
+    # 豆粕 2705：DCE 品种统一——「豆粕为全市场持仓前列品种」（与
+    # akshare/tqsdk/tushare 同款；原 EG2701 乙二醇为文档示例形态）。
+    # 合约会到期：同上轮换
     window: {start: 2026-08-03, end: 2026-11-13}
     min_bars: 20
     required_fields: [open, high, low, close, volume, amount]
   contract@CN-INE:
-    instrument: CN-INE-BC2612
-    # 国际铜 2612（文档示例形态）：INE→INE。合约会到期：同上轮换
+    instrument: CN-INE-SC2706
+    # 原油 2706：INE 品种统一——「原油为该所绝对主力」（与 akshare/tqsdk
+    # 同月同码；原 BC2612 国际铜为文档示例形态）。合约会到期：同上轮换
     window: {start: 2026-08-03, end: 2026-11-13}
     min_bars: 20
     required_fields: [open, high, low, close, volume, amount]
   contract@CN-GFEX:
-    instrument: CN-GFEX-LC2701
-    # 碳酸锂 2701（后缀实为 GFE 非 GFEX）。合约会到期：同上轮换
+    instrument: CN-GFEX-LC2706
+    # 碳酸锂 2706：GFEX 月码统一——与 akshare/tqsdk/tushare 同月同码（2706；
+    # 后缀实为 GFE 非 GFEX；原 LC2701 换统一月码）。合约会到期：同上轮换
     window: {start: 2026-08-03, end: 2026-11-13}
     min_bars: 20
     required_fields: [open, high, low, close, volume, amount]
@@ -184,9 +192,13 @@ targets:
     min_bars: 3
     required_fields: [open, high, low, close, volume, amount]
   commodity-option@CN-CZCE:
-    instrument: CN-CZCE-SR2701C5900
-    # 白糖期权（无连字符，3 位月码 701=2027-01）：聚焦轮 code=0 四行实证
-    # 收编；到期 2026-12-11，轮换按 ATM 口径重选
+    instrument: CN-CZCE-MA2701C3200
+    # 甲醇期权（统一式 {品种}{4位年月}{C/P}{行权价} → 原生大写品种 3 位月码
+    # MA701C3200.CZC，4→3 还原与该所期货同构）：CZCE 期权品种统一——「甲醇
+    # 为郑商所持仓王」（与 contract/continuous MA 同品种；原 SR2701C5900
+    # 白糖换统一品种，原码三家同码互证留档）。行权价 3200 经人工锚定提供
+    #（2026-11-16）；首次探针运行按 availability 即实证。合约会到期：轮换
+    # 按 opt_basic（exchange=CZCE，name 含甲醇 + delist_date 未过）重选 ATM
     window: {start: 2026-11-09, end: 2026-11-13}
     min_bars: 3
     required_fields: [open, high, low, close, volume, amount]
@@ -215,8 +227,9 @@ chain:
     fields: [close]
     intervals: [P1D]
   # 历史覆盖全部保持 null（文档未公布）：P1D 先行二分收敛；仅对证券类
-  # 目标做 depth——期货/期权合约生命周期有限（到期归档），「最早可用」
-  # 语义随合约轮换漂移，不做回溯（待 continuous 主连纳入声明后再议）。
+  # 目标做 depth——合约类有时限标的不统计历史深度（2026-11-16 决议，见
+  # probes/README.md「规范化规则」）：期货/期权合约生命周期有限（到期归档），
+  # 「最早可用」语义随合约轮换漂移，不做回溯（待 continuous 主连纳入声明后再议）。
   # earliest 折中取 2022-01-01：指数端点越界窗口 1003 拒绝且实测口径为
   # 「recent five years only」滚动 5 年、ETF 同为约 5 年滚动但越界整体
   # 返空——earliest=2000 会使指数/ETF 深度 case 全程撞界，三目标统一浅

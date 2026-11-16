@@ -59,9 +59,13 @@ targets:
     min_bars: 10
     required_fields: [open, high, low, close, volume]
   etf@CN:
-    instrument: CN-SSE-510300
-    # 华泰柏瑞沪深300ETF（2012-05-28 上市）：autype 对 ETF 生效性未实证
-    #（能力目录仅声明 none），复权生效性观察留待 raw/后续轮
+    instrument: CN-SSE-510050
+    # 华夏上证 50ETF（2004-12-30 上市，最早 CN ETF 之一）：证券基准统一——
+    # 与 akshare/alphafeed/baostock/tickflow/tqsdk/tushare 同款（原 510300 为
+    # 上市日锚标的）。⚠ manifest etf@CN history.start=2012-05-28 系 510300
+    # count-exact 上市日锚（2026-11-14 第 3 轮），换基准后下一轮 depth 复探
+    # 可能暴露更深库底，修订走人工确认；510050 为新标的将新增占用 1 个历史
+    # 额度（7×24h 释放），原 510300 额度自然过期
     window: {start: 2025-01-01, end: 2025-12-31}
     min_bars: 10
     required_fields: [open, high, low, close, volume]
@@ -154,7 +158,7 @@ chain:
     fields: [close]
   # history_depth 七目标 × 8 周期全跑（逐周期独立探测，机制边界外推不作为
   # 逐周期证据——tiingo 先例）：新目标复用 availability 已占额度标的
-  #（SH.000001/SH.510300/HK.00002/US-NYSE-GE/US-NYSE-SPY/HK.02800），不新增
+  #（SH.000001/SH.510050/HK.00002/US-NYSE-GE/US-NYSE-SPY/HK.02800），不新增
   # 历史额度占用，成本仅 IP 频率；era_step 10 年减半深库回溯调用（HK.00002/
   # US GE 为深库候选，声明值由网格二分收敛到日历边界——snap=month 保守
   # 上界，首根实测另记 first_bar 证据）；earliest 1890-01-01

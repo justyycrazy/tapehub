@@ -125,7 +125,7 @@ chain:                             # ── 统一链路探针 ──
     pairs: [[none, qfq], [none, hfq]]
     fields: [close]
   history_depth:                   # 历史深度：纪元回溯 + 日历边界网格二分
-    targets: [stock]
+    targets: [stock]               # 合约类有时限标的（contract/期权三子类）不入列（见规范化规则）
     earliest: 1991-01-01
     era_step_years: 5
     max_calls: 24
@@ -189,6 +189,7 @@ notes: 本探针要回答的问题与已知存疑点。
 | **市场限定目标** | `targets` 键与各分析探针的 `targets` 列表项支持 `asset_type@MARKET` 与 `asset_type@MARKET-EXCHANGE` 形式；availability 按 (market × asset_type × interval × adjust × variant) 展开，每市场用对应限定键的标的（无限定键时回退不限定键且标的市场一致才命中）。市场限定目标的 case id 带前缀（如 `stock@HK-P1D-none-tickflow`、`history-depth-stock@US-P1D-tickflow`）；不限定键的 id 不变（向后兼容既有 skip 条目与历史报告） |
 | **交易所限定目标** | `asset_type@MARKET-EXCHANGE` 是市场基准标的之外的**追加**目标（不抑制基准目标、不回退裸键），每个交易所目标按同一能力矩阵独立展开全部 case（availability/adjust_diff 等），id 前缀带交易所段（如 `stock@CN-SZSE-P1D-none-tickflow`）；键的 market/exchange 段必须与标的限定段一致（加载期拒绝）；限定键的 market 段不被能力目录覆盖、或分析探针引用无法解析时，展开期硬报错（孤儿目标不静默忽略） |
 | **分析探针全量展开** | adjust_diff 按 (interval × variant × pair)、history_depth / limit_truncation 按 (interval × variant) 在声明矩阵上**全量展开**，不与「声明顺序第一组维度」绑定；`intervals` 字段可显式收敛 interval 维度以控制预算（variant 维度永不收敛） |
+| **合约类不统计历史深度** | 有时间期限的标的合约（`contract`、期权三子类 `commodity-option`/`index-option`/`etf-option` 等合约级目标）不入 `history_depth.targets`（2026-11-16 决议）：合约级「最早可用」随挂牌/摘牌轮换漂移，深度是资产类级结论，由存续性目标（`continuous` 主连、证券类等）承载；亦不得为维持深度锚而以已摘牌合约作目标（原「已摘牌稳定锚」机制随之废止，SHFE contract 基准随之统一为现活合约） |
 | **跨 variant 一致性** | `variant_consistency` 对同一 (asset_type, interval, adjust) 在**跨能力聚合的全部声明 variant** 下重放同一查询；任何不一致（数值差异 / 无重叠 / 预算中断）都判 suspect，并记录差异幅度与首个分歧时间戳 |
 | skip 必须带 reason | 防止静默漏探 |
 | kwargs 引用 | `$TAPEHUB_*` 环境变量（raw/connection 的 kwargs）；`{"$ctor": {attr, module?, kwargs}}` 轻量 SDK 对象构造（如认证对象，仅本地构造不做网络调用，module 缺省继承所在 case）；`{"$deadline_s": 秒数}` 相对当前时刻 → unix epoch。运行时注入，凭据值绝不落盘 |

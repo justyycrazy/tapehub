@@ -18,7 +18,10 @@ pacing:
                          # continuous@CN-CZCE/DCE/INE/GFEX/CFFEX——新浪源
                          # 不受东财限流影响 + HK/US stock 各 9）+
                          # adjust_diff 24（P1D 限定）+
-                         # history_depth 9 条 × ≤24 + variant_consistency 29
+                         # history_depth 10 条（证券类 9 条 × ≤24 +
+                         # continuous 全量 1；contract 深度已随
+                         # 2026-11-16「合约类不统计历史深度」决议移除）+
+                         # variant_consistency 29
                          # + raw 1（bse-stock-fingerprint）
                          # history_depth 不随逐所扩容——深度是资产类级结论，
                          # 基准目标承载）
@@ -30,7 +33,11 @@ pacing:
 
 targets:
   stock:
-    instrument: CN-SSE-600000
+    instrument: CN-SSE-600602
+    # 云赛智联（原真空电子，1990-12-19 上市老八股）：证券基准统一——与
+    # alphafeed/baostock/futunn/tickflow 同款「早上市标的」，库底收敛点为
+    # 真实库底而非标的上市日伪影（原 600000 1999-11 上市，manifest stock
+    # history.start 1999-12-08 疑似上市伪影，待换基准后复探）
     window: {start: 2025-01-01, end: 2025-12-31}
     # 跨周期下限（D≈243 / W≈53 / M≈12 根），只用于拦截空结果；按日线标定会产生周/月假阳性
     min_bars: 10
@@ -87,14 +94,20 @@ targets:
     min_bars: 10
     required_fields: [open, high, low, close, volume]
   contract:
-    instrument: CN-SHFE-RB2410
-    window: {start: 2024-06-01, end: 2024-09-30}
+    instrument: CN-SHFE-CU2706
+    # 铜 2706（现活）：SHFE 基准统一——与 ths/tqsdk 现活基准同码（原
+    # RB2410→CU2401 的「已摘牌稳定深度锚」机制随 2026-11-16 决议废止：
+    # 合约类有时限标的不统计历史深度，无需为锚定保留已摘牌合约，决议见
+    # probes/README.md「规范化规则」）。合约会到期：运行前按上期所挂牌
+    # 信息核对，失败如实记录，到期轮换为当时的现活合约
+    window: {start: 2026-07-01, end: 2026-12-31}
     min_bars: 20
   contract@CN-CZCE:
-    # 郑商所合约：标准码统一 4 位年月（公开现行约定；3 位码全空已与 tushare
-    # 侧同日互证定案）。适配器当前原样透传，本目标
-    # availability 即「4 位直通新浪」的常态复验
-    instrument: CN-CZCE-RM2701
+    # 甲醇 2701：CZCE 品种统一——「甲醇为郑商所持仓王」（与 continuous MA
+    # 同品种；原 RM2701 菜粕换统一品种）。标准码统一 4 位年月（公开现行
+    # 约定；3 位码全空已与 tushare 侧同日互证定案）。适配器当前原样透传，
+    # 本目标 availability 即「4 位直通新浪」的常态复验
+    instrument: CN-CZCE-MA701
     window: {start: 2026-07-01, end: 2026-12-31}
     min_bars: 20
   contract@CN-DCE:
@@ -123,7 +136,10 @@ targets:
     window: {start: 2026-07-01, end: 2026-12-31}
     min_bars: 20
   continuous:
-    instrument: CN-SHFE-RB
+    instrument: CN-SHFE-CU
+    # 铜主连：SHFE 品种统一——与 tqsdk/tushare continuous 同款（原 RB 螺纹
+    # 主连载统一品种）；manifest continuous history.start 2009-03-27 系 RB0
+    # 主连起点，换品种后待复探修订（CU0 起点未知，复探收敛后人工确认回填）
     window: {start: 2025-01-01, end: 2025-06-30}
     min_bars: 60
   continuous@CN-CZCE:
@@ -170,9 +186,12 @@ chain:
     pairs: [[none, qfq], [none, hfq]]
     fields: [close]
   history_depth:
-    targets: [stock, index, etf, contract, continuous, stock@HK, stock@US]
+    # 合约类有时限标的（contract）不入列——2026-11-16 决议（见
+    # probes/README.md「规范化规则」）：合约级「最早可用」随挂牌/摘牌
+    # 轮换漂移，深度是资产类级结论，由存续性目标承载
+    targets: [stock, index, etf, continuous, stock@HK, stock@US]
     intervals: [P1D]     # 周/月与日线同端点同数据区间，同值声明（控预算）
-    full_history_targets: [contract, continuous]
+    full_history_targets: [continuous]
     earliest: 1930-01-01 # HK/US 库底可能深于 1991（对齐 tickflow/alphafeed），避免下限触底误报
     era_step_years: 10
     max_calls: 24        # 每条 case 的预算；按 (interval × variant) 展开（P1D 限定）

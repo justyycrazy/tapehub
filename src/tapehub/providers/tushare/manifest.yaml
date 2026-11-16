@@ -86,14 +86,17 @@ capabilities:
     adjustments: [none]
     fields: [open, high, low, close, volume, amount]
 
-  # 期货单一合约：pro.fut_daily，仅日线、无复权
+  # 期货单一合约：pro.fut_daily，仅日线、无复权。合约级数据随挂牌起、随
+  # 摘牌止，无资产类级固定起点——history.start 保持 null（2026-11-16 决议：
+  # 合约类不统计历史深度，原 CU2401 锚定值 2023-01-17 随「已摘牌稳定锚」
+  # 机制废止；与期权三子类 null 口径对齐）
   - data_type: bars
     markets: [CN]
     asset_types: [contract]
     delivery: [rest]
     variants: [tushare]
     intervals:
-      - {code: P1D, history: {start: 2023-01-17T00:00:00+08:00, end: null}}
+      - {code: P1D, history: {start: null, end: null}}
     adjustments: [none]
     fields: [open, high, low, close, volume, amount]
 

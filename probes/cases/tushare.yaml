@@ -15,18 +15,22 @@ pacing:
   # （stock/SZSE/BSE 基准
   # + 期货交易所限定 contract/continuous 各 5 + index 基准/SZSE 限定
   # + etf 基准/SZSE 限定 + **期权三子类八所逐所**）+ adjust_diff 36（3 目标 ×
-  # 3 周期 × 2 pair × 2 调）+ history_depth（stock 三周期 + contract 全量 +
-  # continuous + index 三周期 + etf 日线，逐 case 二分自预算 20、实测约
-  # 14 调）+ limit 2（contract 结构性 suspect 如实保留 + continuous P16Y）+
+  # 3 周期 × 2 pair × 2 调）+ history_depth（stock 三周期 + continuous +
+  # index 三周期 + etf 日线，逐 case 二分自预算 20、实测约
+  # 14 调；contract 全量已随 2026-11-16「合约类不统计历史深度」决议移除）+
+  # limit 2（contract 结构性 suspect 如实保留 + continuous P16Y）+
   # raw 4 case 8 调（目录 3：bj 证券目录 + INE/GFEX 期权目录常态留存·标的
   # 轮换证据来源 + 错误指纹 1），
-  # 最坏 262（cli list 实测合计，含 history_depth 8 case × 上限 20 调；实测
+  # 最坏 261（cli list 实测合计，含 history_depth 8 case × 上限 20 调；实测
   # 口径第 15 轮约 166——二分通常提前收敛），预算 300 对齐最坏口径留余量
   max_calls: 300
 
 targets:
   stock:
-    instrument: CN-SSE-600000
+    instrument: CN-SSE-600602
+    # 云赛智联（老八股）：证券基准统一——与 alphafeed/baostock/futunn/tickflow
+    # 同款「早上市标的」（原 600000，manifest stock history.start 1999-12-08
+    # 疑似上市伪影，待换基准后复探）
     window: {start: 2025-01-01, end: 2025-12-31}
     # min_bars 跨周期统一生效：月线 2025 年内约 12 根，下限取 10 贴近月线
     # 真实值（对齐 akshare/baostock/tickflow 的跨周期下限口径）；
@@ -85,49 +89,61 @@ targets:
     min_bars: 10
     required_fields: [open, high, low, close, volume, amount]
   etf-option:
-    instrument: CN-SSE-10012437
-    # 50ETF 购 11 月 2800（近月）：期权能力 chain 常态复验基准目标——O 探测
-    # 轮 6 条（六所直测，2026-11-15 第 14/15 轮）实证扩容声明。合约会到期：到期轮换按
-    # opt_basic（exchange=SSE，delist_date 未过筛近月）重选并更新本 target
+    instrument: CN-SSE-10011427
+    # 50ETF 购 12 月 2900（ATM：现价 510050=2.889 / 行权价 2.90，listed
+    # 2026-04-23 / delist 2026-12-23）：2026-11-16 到期前轮换——原近月
+    # 10012437（购11月2800）2026-11-25 到期，按 opt_basic（exchange=SSE，
+    # delist_date 未过筛近月）ATM 重选；码与 ths/tqsdk 侧同码三 Provider 互证。
+    # 合约会到期：下次轮换按同款口径重选近月/次月 ATM
     window: {start: 2026-11-09, end: 2026-11-13}
     min_bars: 3
     required_fields: [open, high, low, close, volume, amount]
   etf-option@CN-SZSE:
-    instrument: CN-SZSE-90008083
-    # 沪深300ETF 购 11 月 4400（近月）：SZ→SZ 后缀逐所复验；到期 2026-11-25，
-    # 到期轮换按 opt_basic（exchange=SZSE，delist_date 未过筛近月）重选
+    instrument: CN-SZSE-90008043
+    # 沪深300ETF 购 12 月 4300（ATM：现价 159919=4.266 / 行权价 4.30，listed
+    # 2026-09-16 / delist 2026-12-23）：2026-11-16 到期前轮换——原近月
+    # 90008083（购11月4400）2026-11-25 到期，按 opt_basic（exchange=SZSE，
+    # delist_date 未过筛近月）ATM 重选；SZ→SZ 后缀逐所复验；码与 ths/tqsdk
+    # 侧同码三 Provider 互证
     window: {start: 2026-11-09, end: 2026-11-13}
     min_bars: 3
     required_fields: [open, high, low, close, volume, amount]
   index-option@CN-CFFEX:
-    instrument: CN-CFFEX-IO2611C4150
-    # 沪深300 购 11 月 4150（IO 主力系列）：CFFEX→CFX 后缀（与该所期货同）
-    # 与带连字符符号直拼复验；到期 2026-11-20，到期轮换按 opt_basic
-    # （exchange=CFFEX，ts_code 前缀 IO 筛主力 + delist_date 未过）重选
+    instrument: CN-CFFEX-IO2612C4000
+    # 沪深300 购 12 月 4000：2026-11 到期前轮换——原 IO2611C4150（11 月主力）
+    # 2026-11-20 到期，按 opt_basic（exchange=CFFEX，ts_code 前缀 IO 筛主力 +
+    # delist_date 未过）重选；CFFEX→CFX 后缀（与该所期货同）与带连字符符号
+    # 直拼复验；码与 ths/tqsdk 侧同码三 Provider 互证
     window: {start: 2026-11-09, end: 2026-11-13}
     min_bars: 3
     required_fields: [open, high, low, close, volume, amount]
   commodity-option@CN-DCE:
-    instrument: CN-DCE-M2612C3500
-    # 豆粕期权 2612 认购 3500（M 主力系列）：DCE 码式「品种4位月-C/P-行权价」
-    # 直拼复验；到期 2026-11-17，到期轮换按 opt_basic（exchange=DCE，name 含
-    # 豆粕 + delist_date 未过）重选
+    instrument: CN-DCE-M2701C3150
+    # 豆粕期权 2701 认购 3150（ATM：M2701 期货收盘 3147 锚定，间隔 50）：
+    # 2026-11 到期前轮换——原 M2612C3500（2612 认购 3500）2026-11-17 到期，
+    # 按 opt_basic（exchange=DCE，name 含豆粕 + delist_date 未过）重选；
+    # DCE 码式「品种4位月-C/P-行权价」直拼复验；码与 ths/tqsdk 侧同码
+    # 三 Provider 互证
     window: {start: 2026-11-09, end: 2026-11-13}
     min_bars: 3
     required_fields: [open, high, low, close, volume, amount]
   commodity-option@CN-SHFE:
-    instrument: CN-SHFE-FU2612C6100
-    # 燃料油购 12 月 6100：SHFE 码式「品种4位月C/P行权价」无连字符直拼复验；
-    # 到期 2026-11-17，到期轮换按 opt_basic（exchange=SHFE，delist_date 未过）
-    # 重选
+    instrument: CN-SHFE-CU2701C102000
+    # 铜期权 2701 认购 102000（ATM：CU2701 期货收盘 102740 锚定，间隔 2000）：
+    # 2026-11 到期前轮换——原 FU2612C6100（燃料油购 12 月 6100）2026-11-17
+    # 到期，按 opt_basic（exchange=SHFE，delist_date 未过）重选；SHFE 码式
+    # 「品种4位月C/P行权价」无连字符直拼复验；码与 ths/tqsdk 侧同码
+    # 三 Provider 互证
     window: {start: 2026-11-09, end: 2026-11-13}
     min_bars: 3
     required_fields: [open, high, low, close, volume, amount]
   commodity-option@CN-CZCE:
-    instrument: CN-CZCE-SR2701C5900
-    # 白糖购 1 月 5900：CZCE 码式「品种3位月C/P行权价」直拼复验（3 位月码
-    # 701=2027-01）；到期 2026-12-11，到期轮换按 opt_basic（exchange=CZCE，
-    # name 含白糖 + delist_date 未过）重选
+    instrument: CN-CZCE-MA2701C3200
+    # 甲醇期权购 1 月 3200：CZCE 期权品种统一——「甲醇为郑商所持仓王」（原
+    # SR2701C5900 白糖换统一品种，原码三家同码互证留档）。CZCE 码式「品种
+    # 3位月C/P行权价」→ 原生 MA701C3200.ZCE（4→3 还原）；行权价 3200 经
+    # 人工锚定提供（2026-11-16）；到期轮换按 opt_basic（exchange=CZCE，
+    # name 含甲醇 + delist_date 未过）重选 ATM
     window: {start: 2026-11-09, end: 2026-11-13}
     min_bars: 3
     required_fields: [open, high, low, close, volume, amount]
@@ -141,17 +157,23 @@ targets:
     min_bars: 3
     required_fields: [open, high, low, close, volume, amount]
   commodity-option@CN-GFEX:
-    instrument: CN-GFEX-LC2701C90000
-    # 碳酸锂期权 2701 认购 90000（连字符式「品种4位月-C/P-行权价.GFE」，与
-    # 该所期货主连「品种+L」不同构）：聚焦轮 opt_basic 目录（12000 行，形态
-    # 样本 PS2710-C-30000.GFE）+ opt_daily 5 行实量（vol 14744~17325）双证
-    # 收编；轮换按 opt_basic（exchange=GFEX，delist_date 未过）重选
+    instrument: CN-GFEX-LC2701C88000
+    # 碳酸锂期权 2701 认购 88000（ATM：LC2701 分时末点 87740 锚定，间隔
+    # 2000；原 C90000 opt_daily 实量已证但 ths 分时端点 5003 逐合约缺口，
+    # 统一取 88000）：连字符式「品种4位月-C/P-行权价.GFE」（与该所期货主连
+    # 「品种+L」不同构）直拼复验；码与 ths/tqsdk 侧同码三 Provider 互证。
+    # 合约会到期：轮换按 opt_basic（exchange=GFEX，delist_date 未过）重选
     window: {start: 2026-11-09, end: 2026-11-13}
     min_bars: 3
     required_fields: [open, high, low, close, volume, amount]
   contract:
-    instrument: CN-SHFE-CU2401
-    window: {start: 2023-09-01, end: 2023-12-29}
+    # 铜 2706（现活）：SHFE 基准统一——与 akshare/ths/tqsdk 现活基准同码
+    #（原 CU2401「已摘牌稳定深度锚」随 2026-11-16 决议废止：合约类有时限
+    # 标的不统计历史深度，无需为锚定保留已摘牌合约，决议见 probes/
+    # README.md「规范化规则」）。合约会到期：运行前按上期所挂牌信息核对，
+    # 失败如实记录，到期轮换为当时的现活合约
+    instrument: CN-SHFE-CU2706
+    window: {start: 2026-09-01, end: 2026-12-31}
     min_bars: 20
   contract@CN-DCE:
     # 大商所合约：适配器后缀直拼（CN-DCE-M2705 → M2705.DCE）。后缀经直测
@@ -161,22 +183,26 @@ targets:
     window: {start: 2026-09-01, end: 2026-12-31}
     min_bars: 20
   contract@CN-INE:
-    # 上期能源合约：后缀直拼（CN-INE-SC2705 → SC2705.INE）；品种码统一大写
-    #（tushare 统一大写，交易所原生小写 sc 无需保留）
-    instrument: CN-INE-SC2705
+    # 原油 2706：INE 月码统一——与 akshare/tqsdk 同月同码（SC2706.INE，原
+    # SC2705 换统一月码）；品种码统一大写（tushare 统一大写，交易所原生
+    # 小写 sc 无需保留）。合约会到期：同上轮换
+    instrument: CN-INE-SC2706
     window: {start: 2026-09-01, end: 2026-12-31}
     min_bars: 20
   contract@CN-CFFEX:
-    # 中金所合约：后缀直拼（CN-CFFEX-IF2703 → IF2703.CFX）；季月合约
-    instrument: CN-CFFEX-IF2703
+    # 沪深300 股指期货 2706（季月，2026-10-19 挂牌）：CFFEX 月码统一——与
+    # akshare/ths/tqsdk 同月同码（IF2706.CFX，原 IF2703 换统一月码）；窗口内
+    # min_bars 20 恰达下限系季月挂牌晚的自然口径（akshare 第 15 轮同款）。
+    # 合约会到期：同上轮换
+    instrument: CN-CFFEX-IF2706
     window: {start: 2026-09-01, end: 2026-12-31}
     min_bars: 20
   contract@CN-CZCE:
-    # 郑商所合约：4 位年月码直通（CN-CZCE-RM2701 → RM2701.ZCE，五所探针
-    # 实证 + akshare 新浪侧同日互证「4 位可用、3 位全空」），本目标补齐
-    # 六所合约矩阵的常态复验。合约会到期：运行前按郑商所挂牌信息核对，
-    # 失败如实记录，到期轮换为当时的现活合约
-    instrument: CN-CZCE-RM2701
+    # 甲醇 2701：CZCE 品种统一——「甲醇为郑商所持仓王」（原 RM2701 菜粕换
+    # 统一品种）。4 位年月码直通（MA701.ZCE，五所探针实证 + akshare 新浪侧
+    # 同日互证「4 位可用、3 位全空」）。合约会到期：运行前按郑商所挂牌信息
+    # 核对，失败如实记录，到期轮换为当时的现活合约
+    instrument: CN-CZCE-MA701
     window: {start: 2026-09-01, end: 2026-12-31}
     min_bars: 20
   contract@CN-GFEX:
@@ -199,8 +225,10 @@ targets:
     window: {start: 2025-01-01, end: 2025-12-31}
     min_bars: 10
   continuous@CN-CZCE:
-    # CZCE 主连：CN-CZCE-SR → SRL.ZCE（4 位年月码体系下品种+L）
-    instrument: CN-CZCE-SR
+    # 甲醇主连：CZCE 品种统一——「甲醇为郑商所持仓王」（与 akshare/tqsdk
+    # continuous MA 同品种；原 SR 白糖换统一品种）。CN-CZCE-MA → MAL.ZCE
+    #（4 位年月码体系下品种+L 主连映射）
+    instrument: CN-CZCE-MA
     window: {start: 2025-01-01, end: 2025-12-31}
     min_bars: 10
   continuous@CN-INE:
@@ -233,11 +261,11 @@ chain:
     pairs: [[none, qfq], [none, hfq]]
     fields: [close]
   history_depth:
-    # contract 走全量模式（已摘牌 CU2401 全量拉取直读最早 bar = 精确上市日，
-    # approx=False）；continuous（CUL.SHF 主连）与 stock/index/etf 走二分估计
-    #（期权三子类不入列：合约级深度≠库级起点，库级保持 null 待专项核实）
-    targets: [stock, contract, continuous, index, etf]
-    full_history_targets: [contract]
+    # 合约类有时限标的（contract 与期权三子类）不入列——2026-11-16 决议
+    #（见 probes/README.md「规范化规则」）：合约级「最早可用」随挂牌/摘牌
+    # 轮换漂移，深度是资产类级结论，由存续性目标承载；contract 库级
+    # history.start 保持 null 口径不变
+    targets: [stock, continuous, index, etf]
     earliest: 1991-01-01
     era_step_years: 5
     max_calls: 20
