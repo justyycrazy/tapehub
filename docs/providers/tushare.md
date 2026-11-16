@@ -1,6 +1,6 @@
 # Tushare（tushare）
 
-Tushare Pro 官方数据源接入：CN 个股日/周/月三复权 K 线 + CN 指数日/周/月 K 线（无复权）+ CN ETF 日线（无复权）+ CN 期权合约日线（无复权）+ 期货单一合约/主力连续日线；期货与主连不参与 auto 路由、仅显式指定可用；无快照/流式。
+Tushare Pro 官方数据源接入：CN 个股日/周/月三复权 K 线 + CN 指数日/周/月 K 线（无复权）+ CN ETF 日线（无复权）+ CN 期权合约日线（无复权，八所全覆盖）+ 期货单一合约/主力连续日线；期货与主连不参与 auto 路由、仅显式指定可用；无快照/流式。
 
 ## 概要
 
@@ -51,9 +51,9 @@ BSE 说明：文档 doc_id=14 后缀表列明 `.BJ`，且经探针双证（全�
 
 ETF ts_code 后缀（fund_daily 场内基金接口，doc_id=127，沪深同构探针实证）：SSE→SH、SZSE→SZ。示例：`CN-SSE-510050 → 510050.SH`（华夏上证 50ETF）、`CN-SZSE-159915 → 159915.SZ`（易方达创业板 ETF）。拒绝范围 {SSE, SZSE}。
 
-期权 ts_code 后缀（opt_daily 六所，doc_id=159 交易所枚举 + 六所探针实证码格式）：合约符号**原样透传**（不做年份猜测与连字符改写）——SSE→SH（`CN-SSE-10012437 → 10012437.SH`）、SZSE→SZ（`90008083.SZ` 式）、CFFEX→CFX（`CN-CFFEX-IO2611-C-4150 → IO2611-C-4150.CFX`，带连字符中段「品种月-C/P-行权价」，**后缀 .CFX 与该所期货同**）、DCE→DCE（`M2612-C-3500.DCE` 式，4 位月）、SHFE→SHF（`FU2612C6100.SHF` 式，无连字符）、CZCE→ZCE（`SR701C5900.ZCE` 式，**3 位月码直通**，701=2027-01）。拒绝范围 {SSE, SZSE, CFFEX, DCE, SHFE, CZCE}；广期所期权不在上游交易所枚举内，不声明。
+期权 ts_code 后缀（opt_daily 八所；六所经 doc_id=159 交易所枚举 + 探针实证，**INE/GFEX 为 2026-11-16 聚焦轮目录+日 K 双证收编**——doc_id=159 文档枚举未列这两所，实测 `opt_basic` 目录可查，文档滞后）：合约符号**原样透传**（不做年份猜测与连字符改写）——SSE→SH（`CN-SSE-10012437 → 10012437.SH`）、SZSE→SZ（`90008083.SZ` 式）、CFFEX→CFX（`CN-CFFEX-IO2611-C-4150 → IO2611-C-4150.CFX`，带连字符中段「品种月-C/P-行权价」，**后缀 .CFX 与该所期货同**）、DCE→DCE（`M2612-C-3500.DCE` 式，4 位月带连字符）、SHFE→SHF（`FU2612C6100.SHF` 式，无连字符）、CZCE→ZCE（`SR701C5900.ZCE` 式，**3 位月码直通**，701=2027-01）、INE→INE（`CN-INE-SC2701C550 → SC2701C550.INE`，无连字符，与 SHFE 同构；目录形态样本 `SC2703P440.INE`）、GFEX→GFE（`CN-GFEX-LC2701-C-90000 → LC2701-C-90000.GFE`，连字符式；目录形态样本 `PS2710-C-30000.GFE`——**期权连字符式与该所期货主连「品种+L」不同构**）。拒绝范围 {SSE, SZSE, CFFEX, DCE, SHFE, CZCE, INE, GFEX} 之外（如 BSE 无期权）。
 
-拒绝范围：股票 {SSE, SZSE, BSE}、指数/ETF {SSE, SZSE}、期权 {SSE, SZSE, CFFEX, DCE, SHFE, CZCE}、期货六所 {SHFE, DCE, INE, CFFEX, CZCE, GFEX} 之外的 exchange 明确拒绝（`UnsupportedCapabilityError`）；绝不预填未核实条目（证伪即移除）。
+拒绝范围：股票 {SSE, SZSE, BSE}、指数/ETF {SSE, SZSE}、期权八所 {SSE, SZSE, CFFEX, DCE, SHFE, CZCE, INE, GFEX} 之外、期货六所 {SHFE, DCE, INE, CFFEX, CZCE, GFEX} 之外的 exchange 明确拒绝（`UnsupportedCapabilityError`）；绝不预填未核实条目（证伪即移除）。
 
 ## 周期 / 复权 / 单位映射
 
@@ -67,7 +67,7 @@ ETF ts_code 后缀（fund_daily 场内基金接口，doc_id=127，沪深同构�
 - fut_daily 单次上限 2000 条（主连 CUL.SHF 16 年窗口实测恰 2000）：达到上限时 `meta.partial=true` 且 warnings 提示可能截断；上游截断为「保尾截头」——保留最新 2000 根，partial 时缺的是窗口头部更早数据；该接口要求上游账户 2000 积分。pro_bar 未核实单次行数上限，不启用截断判定（partial 恒 false）。
 - 空结果（DataFrame/None）统一映射为空列表，按空批次返回、不报错。
 - 指数（asset='I'）路由定案：SDK 薄封装直传——pro_bar asset='I' 分支 D→index_daily、W→index_weekly、M→index_monthly（tushare/pro/data_pro.py L151-159，无额外变换，源码定案）；三周期接口直测均有数（探针 2026-11-15 第 13 轮：117/26/6 行）。指数日线要求 2000 积分、数据约 18 点更新（doc_id=95）；指数周/月线要求 600 积分、单次上限 1000 行（doc_id=171/172），pro_bar 未启用截断判定（partial 恒 false），与股票周月线现状一致。
-- ETF/期权（fund_daily/opt_daily）定案（探针 2026-11-15 第 14/15 轮）：fund_daily 单次上限 5000 行（partial 语义与 fut_daily 同）、要求 5000 积分（实测账户通过）、亦含 LOF（上游 issue #1891 口径）；opt_daily 单次上限 15000 行（partial 同）、要求 2000 积分（实测通过）、全部历史每日约 17 点更新。fund_daily/opt_daily 直调 pro 对象方法，量额换算与 extensions 见「周期/复权/单位」节。
+- ETF/期权（fund_daily/opt_daily）定案（探针 2026-11-15 第 14/15 轮）：fund_daily 单次上限 5000 行（partial 语义与 fut_daily 同）、要求 5000 积分（实测账户通过）、亦含 LOF（上游 issue #1891 口径）；opt_daily 单次上限 15000 行（partial 同）、要求 2000 积分（实测通过）、全部历史每日约 17 点更新；期权覆盖八所（2026-11-16 第 17 轮聚焦收编 INE/GFEX，码式与证据见「标的代码映射」）。目录接口 opt_basic 单次返回恰 12000 行，疑为上游单次上限（第 17 轮 INE/GFEX/SHFE 三次同值，待核实；不影响映射与日 K 结论）。fund_daily/opt_daily 直调 pro 对象方法，量额换算与 extensions 见「周期/复权/单位」节。
 - 错误指纹：上游积分限频/错误码未在文档中核实（40203 等积分错误码待核实后补充），SDK 异常统一包装 `UPSTREAM_ERROR`，不穿透 API。
 
 ## 快照与流式
@@ -81,7 +81,7 @@ ETF ts_code 后缀（fund_daily 场内基金接口，doc_id=127，沪深同构�
 - bars CN stock：参与（凭据型回退候选之一）；
 - bars CN index：参与（链尾追加·凭据型兜底，2026-11-15 指数扩容；凭据缺失自动跳过）；
 - bars CN etf：参与（链尾追加·凭据型兜底，2026-11-15 ETF 扩容）；
-- bars CN option：参与（ths 之后链尾追加·凭据型兜底，2026-11-15 期权扩容）；
+- bars CN option：参与（ths 之后链尾追加·凭据型兜底，2026-11-15 期权扩容 + 2026-11-16 八所收编 INE/GFEX，缺省链凭据缺失自动跳过）；
 - bars CN contract、bars CN continuous：能力已声明，但链上不写即明确不参与 auto 路由——仅显式 `provider=tushare` 可用。
 
 ## extensions 白名单

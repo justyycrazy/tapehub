@@ -13,6 +13,7 @@ from tapehub.domain.intervals import Interval
 from tapehub.domain.models import Adjust, AssetType, BarQuery, DataVariant, Instrument
 from tapehub.providers.manifest import load_builtin_manifest
 from tapehub.providers.registry import build_provider_record
+from tapehub.providers.tushare.request_mapper import option_ts_code
 from tapehub.settings import Settings
 from tests.conftest import make_settings
 from tests.fixtures.providers.stub_tushare import (
@@ -283,18 +284,48 @@ def test_option_request_and_response_mapping(monkeypatch: pytest.MonkeyPatch) ->
     assert bar.extensions["oi"] == 11987.0
 
 
-def test_unsupported_etf_and_option_exchanges(monkeypatch: pytest.MonkeyPatch) -> None:
-    """ETF 拒绝范围 {SSE, SZSE}、期权拒绝范围六所之外：映射层明确拒绝
-    （广期所期权上游枚举未含，绝不预填未核实条目）。"""
+@pytest.mark.parametrize(
+    ("instrument", "expected_ts_code"),
+    [
+        ("CN-SSE-10012437", "10012437.SH"),
+        ("CN-SZSE-90008083", "90008083.SZ"),
+        ("CN-CFFEX-IO2611-C-4150", "IO2611-C-4150.CFX"),  # 与该所期货同后缀
+        ("CN-DCE-M2612-C-3500", "M2612-C-3500.DCE"),  # 连字符 4 位月
+        ("CN-SHFE-FU2612C6100", "FU2612C6100.SHF"),  # 无连字符
+        ("CN-CZCE-SR701C5900", "SR701C5900.ZCE"),  # 3 位月码直通
+        # INE/GFEX：2026-11-16 聚焦轮目录+日 K 双证收编（INE 无连字符与 SHFE
+        # 同构；GFEX 连字符式，与该所期货主连「品种+L」不同构）
+        ("CN-INE-SC2701C550", "SC2701C550.INE"),
+        ("CN-GFEX-LC2701-C-90000", "LC2701-C-90000.GFE"),
+    ],
+)
+def test_option_suffix_mapping(instrument: str, expected_ts_code: str) -> None:
+    """期权八所 ts_code 后缀直拼（合约符号原样透传）。"""
+    query = _query(
+        asset_type=AssetType.OPTION,
+        instrument=Instrument.parse(instrument),
+        adjust=Adjust.NONE,
+    )
+    assert option_ts_code(query) == expected_ts_code
+
+
+@pytest.mark.parametrize(
+    ("asset_type", "code"),
+    [
+        (AssetType.ETF, "CN-BSE-920000"),  # BSE 不在 ETF 拒绝表
+        (AssetType.OPTION, "CN-BSE-IO2601-C-4000"),  # BSE 无期权
+    ],
+)
+def test_unsupported_etf_and_option_exchanges(
+    asset_type: AssetType, code: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """ETF 拒绝范围 {SSE, SZSE}、期权八所（SSE/SZSE/CFFEX/DCE/SHFE/CZCE/
+    INE/GFEX）之外的 exchange 段：映射层明确拒绝，绝不预填未核实条目。"""
     install(monkeypatch)
     adapter = _adapter()
-    for asset_type, code in (
-        (AssetType.ETF, "CN-BSE-920000"),
-        (AssetType.OPTION, "CN-GFEX-LC2601"),
-    ):
-        query = _query(asset_type=asset_type, instrument=Instrument.parse(code), adjust=Adjust.NONE)
-        with pytest.raises(UnsupportedCapabilityError):
-            asyncio.run(adapter.fetch_bars(query))
+    query = _query(asset_type=asset_type, instrument=Instrument.parse(code), adjust=Adjust.NONE)
+    with pytest.raises(UnsupportedCapabilityError):
+        asyncio.run(adapter.fetch_bars(query))
 
 
 def test_futures_request_and_response_mapping(monkeypatch: pytest.MonkeyPatch) -> None:

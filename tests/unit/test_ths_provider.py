@@ -309,6 +309,63 @@ def test_contract_suffix_mapping(
     assert batch.count == 1
 
 
+@pytest.mark.parametrize(
+    ("instrument", "expected_thscode"),
+    [
+        ("CN-SSE-10012437", "10012437.SH"),  # ETF 期权数字合约码，与证券同段 SH
+        ("CN-SZSE-90008083", "90008083.SZ"),
+        ("CN-SHFE-CU2701C102000", "CU2701C102000.SHF"),  # 无连字符
+        ("CN-INE-SC2701C550", "SC2701C550.INE"),  # 无连字符（与 SHFE 同构）
+        ("CN-DCE-M2701-C-3500", "M2701-C-3500.DCE"),  # 连字符 4 位月
+        ("CN-CZCE-SR701C5900", "SR701C5900.CZC"),  # 无连字符 3 位月码
+        ("CN-GFEX-LC2701-C-90000", "LC2701-C-90000.GFE"),  # 连字符
+        ("CN-CFFEX-IO2612-C-4000", "IO2612-C-4000.CFE"),
+    ],
+)
+def test_option_suffix_mapping(
+    instrument: str,
+    expected_thscode: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """期权八所后缀探针实证收编（2026-11-16 聚焦轮双候选定案；码式矩阵与
+    落选否定证据见 docs/providers/ths.md「标的代码映射」）。"""
+    install(monkeypatch)
+    preset_payload(
+        monkeypatch,
+        envelope({"item": bar_rows("timestamp", [START_MS])}),
+    )
+    adapter = _adapter(make_settings(ths_api_key="test-key"))
+    batch = asyncio.run(
+        adapter.fetch_bars(
+            _query(
+                asset_type=AssetType.OPTION,
+                instrument=Instrument.parse(instrument),
+                adjust=Adjust.NONE,
+            )
+        )
+    )
+    assert _last_call()["params"]["thscode"] == expected_thscode
+    assert batch.provider == "ths"
+    assert batch.count == 1
+
+
+def test_option_unverified_exchange_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
+    """期权后缀表八所（SSE/SZSE/SHFE/INE/DCE/CZCE/GFEX/CFFEX）之外的
+    exchange 段（如 BSE——北交所无期权）明确拒绝而非透传上游。"""
+    install(monkeypatch)
+    adapter = _adapter(make_settings(ths_api_key="test-key"))
+    with pytest.raises(UnsupportedCapabilityError):
+        asyncio.run(
+            adapter.fetch_bars(
+                _query(
+                    asset_type=AssetType.OPTION,
+                    instrument=Instrument.parse("CN-BSE-IO2601-C-4000"),
+                    adjust=Adjust.NONE,
+                )
+            )
+        )
+
+
 def test_unverified_exchange_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
     """还原表只收实证条目：六所期货交易所（SHFE/CZCE/DCE/INE/GFEX/CFFEX）
     之外的 exchange 段（如股票交易所）contract 请求明确拒绝而非透传上游

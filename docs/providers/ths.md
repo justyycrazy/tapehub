@@ -37,7 +37,9 @@ bars 行字段两种形态统一映射（时间键不同、其余同构）：A �
 | stock / index | SSE→SH、SZSE→SZ、BSE→BJ | `CN-SSE-600519 → 600519.SH`、`CN-SZSE-000001 → 000001.SZ`、`CN-BSE-920000 → 920000.BJ` |
 | etf | SSE→SH、SZSE→SZ（北交所无 ETF） | |
 | contract | SHFE→SHF、CZCE→CZC、DCE→DCE、INE→INE、GFEX→GFE、CFFEX→CFE（六所实证：MA612.CZC / MA701.CZC / EG2701.DCE / BC2612.INE / LC2701.GFE 均 code=0 正常返回；CFFEX 2026-11-16 探针实证 IF2706.CFE code=0 真实日线、IF2706.CFX 3001 'Target not found'——**与该所期权同后缀 CFE**，与 tushare 侧该所期货 .CFX 不同） | `CN-SHFE-CU2706 → CU2706.SHF`、`CN-CFFEX-IF2706 → IF2706.CFE` |
-| option | CFFEX→CFE（chain 复验；与该所期货同后缀，2026-11-16 实证） | `CN-CFFEX-IO2612-C-4000 → IO2612-C-4000.CFE` |
+| option | 八所（2026-11-16 聚焦轮双候选探针实证收编）：SSE→SH、SZSE→SZ（数字合约码，与该所证券后缀同段）；SHFE→SHF、INE→INE、DCE→DCE、CZCE→CZC、GFEX→GFE、CFFEX→CFE（商品/金融期权后缀与该所期货同段；各所 3001 否定证据见 PROBE_LOG 第 10 轮） | `CN-SSE-10012437 → 10012437.SH`、`CN-CFFEX-IO2612-C-4000 → IO2612-C-4000.CFE`、`CN-SHFE-CU2701C102000 → CU2701C102000.SHF`、`CN-DCE-M2701-C-3500 → M2701-C-3500.DCE`、`CN-GFEX-LC2701-C-90000 → LC2701-C-90000.GFE` |
+
+期权码式矩阵（各所另一码式已 3001 干净否定，双候选证据见聚焦轮报告）：SSE/SZSE 为数字合约码；SHFE/INE「品种4位月C/P行权价」**无连字符**；DCE/GFEX/CFFEX「品种4位月-C/P-行权价」**连字符**；CZCE「品种3位月C/P行权价」无连字符（701=2027-01）。与 tushare 侧 INE（无连字符）/GFEX（连字符）同轮互证一致；注意 CFFEX 期权 ths 侧后缀 .CFE、tushare 侧 .CFX。
 
 - CZCE 年月码 4→3 还原：`CN-CZCE-MA2701 → MA701.CZC`（去年份十位，与 tqsdk 同构；4 位码 MA2701.CZC 上游 3001 不识别、3 位 MA701.CZC 可用）；仅匹配「品种 + 2 位年 + 2 位月」形态——主连/加权品种码（无年月段）、3 位旧写法与不规则代码原样透传；
 - contract/option 的 symbol 段除 CZCE 还原外原样透传（期权行权价等结构不做改写）；
@@ -61,6 +63,7 @@ bars 行字段两种形态统一映射（时间键不同、其余同构）：A �
 - 分页与截断：historical 的 `offset` 参数被上游静默忽略（全年窗 offset=100 实测返回行数与首根均不变），适配器不启用该参数；行数上限未观测到（10 年窗内完整返回 ≥2417 行、无触顶信号），`meta.partial` 恒 false（触顶判定无观测基础，隐式截断行为待探针核实后补充覆盖判定）。
 - 已摘牌合约移出上游目录、仅现活合约可查：已到期文档示例合约（CU2601.SHF / IO2601-C-4000.CFE）存续期窗口返回 3001 'Target not found'，现活同后缀合约 code=0 干净对照、虚构负对照 ZZ9999.SHF 同 3001——这是 contract/option 的 `history.start` 保持 null 的依据（「最早可用」随合约轮换漂移，不支持全量锚定）。
 - 已知上游缺陷：期权日 K 以单一日期作 `start` 触发 `code=5003 'daily quote unavailable'`（邻近起点均正常，与调用频率无关）——窗口避开即可；适配器照常上抛 `UPSTREAM_ERROR` 不归一化（单点缺陷而非稳定边界）。
+- 深虚零成交期权合约：`code=0` 但 `item` 空（2026-11-16 第 10 轮 CU2701C90000.SHF 实证——标的在目录但窗口内零成交），与已摘牌合约的 3001 'Target not found' 语义不同；适配器按空批次返回不报错，探测目标须选流动性合约（ATM/主力系列行权价）。
 - 上游能力边界：历史 K 线仅日线；同花顺板块/行业指数（88xxxx.TI）与商品指数（850002.TI）属同花顺特有 TI 类指数，本期不纳入；ETF 行情仅支持 ETF（LOF/场外/REITs 上游返回 `code=3004`）。
 - 快照 timestamp 口径（探针实证）：`data.timestamp` 为上游响应组装时刻（盘后随墙钟推进、间隔 10s 两次调用精确 +10s），非成交时点；上游快照无独立行情时间字段，按文档「最新上游有效时间」口径透出——盘后请求的快照 timestamp 为请求时刻属预期行为。
 - 期货/期权快照取分时末点：`session=intraday`、`trade_date=0` 显式传参（端外仅当前交易日）；`last_price`=点时间升序排序后末点 `price`、`timestamp`=末点时间；非交易日/盘前 `item=[]` 返回 `UPSTREAM_ERROR`；`item[].timestamp` 官方标明可空（盘前等场景），无时间戳的点不参与排序。
@@ -79,11 +82,11 @@ bars 行字段两种形态统一映射（时间键不同、其余同构）：A �
 
 当前回退链顺序以 `src/tapehub/config/provider_routing.yaml` 为准，本文不复述 order 列表。参与组合与角色：
 
-- bars：CN stock / index / etf / contract 居回退位末位（付费凭据 API、仅日线、窗口受限）；CN option 独占（首个期权 Provider）；
-- quotes：CN stock / index / etf / contract 居回退位末位（个股/指数/ETF 快照直出，期货/期权经分时端点取末点）；CN option 独占；
+- bars：CN stock / index / etf / contract 居回退位末位（付费凭据 API、仅日线、窗口受限）；CN option 居**缺省首位**（2026-11-16 八所收编后与 tushare 同覆盖，tushare 凭据型兜底居链尾）；
+- quotes：CN stock / index / etf / contract 居回退位末位（个股/指数/ETF 快照直出，期货/期权经分时端点取末点）；CN option 独占（tushare 不声明快照）；
 - ETF 特例：仅声明 `qfq`——`adjust=none` 的 auto ETF 请求经六维匹配跳过 ths、不参与该请求的回退。
 
-位次依据一句话：付费凭据 API 置各既有链末尾补位；CN 期权为唯一覆盖该组合的 Provider 故独占。
+位次依据一句话：付费凭据 API 置各既有链末尾补位；CN option bars 为八所同覆盖下的缺省首位（先接入居前），quotes 为唯一覆盖该组合的 Provider 故独占。
 
 ## extensions 白名单
 

@@ -53,9 +53,10 @@ capabilities:
     adjustments: [none]
     fields: [open, high, low, close, volume, amount]
 
-  # 期权单一合约：pro.opt_daily（doc_id=159），仅日线、无复权；六所后缀
-  # 实证（SSE/SZSE/CFFEX/DCE/SHFE/CZCE）；库级历史起点未核实（合约级数据
-  # 随上市起、随摘牌止）
+  # 期权单一合约：pro.opt_daily（doc_id=159），仅日线、无复权；八所后缀
+  # 实证（SSE/SZSE/CFFEX/DCE/SHFE/CZCE + INE/GFEX，2026-11-16 聚焦轮目录
+  # +日 K 双证收编——文档枚举未列 INE/GFEX 属文档滞后）；库级历史起点未
+  # 核实（合约级数据随上市起、随摘牌止）
   - data_type: bars
     markets: [CN]
     asset_types: [option]

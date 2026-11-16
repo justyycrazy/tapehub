@@ -1,10 +1,12 @@
 # 同花顺金融数据 API（ths）数据探针：历史 K 线可用性、复权生效性、历史深度
 # 收敛与隐式截断常态复验，快照/分时形态观察（量额口径核实），ETF 复权口径
 # 留存（fund historical 无 adjust 参数、文档称「价格数据采用前复权口径」，
-# 见 raw 段注释）。探索性 raw（期货逐所后缀正面形态、CFFEX 期货后缀双候选、
-# BSE→BJ 价格端点、offset 分页行为、已摘牌合约可查性、ETF adjust 字段形态）
-# 已随定案退役——正面形态由 chain contract@CN-* 与 stock@CN-BSE/index@CN-BSE
-# 目标常态复验，结论与证据出处见 raw 段注释。
+# 见 raw 段注释），期权八所扩容探测（2026-11-16 聚焦轮定案：八所胜出候选全
+# 实证、落选码式 3001 否定留档，映射层回填待人工确认，见 raw 段注释）。探索性
+# raw（期货逐所后缀正面形态、CFFEX 期货后缀双候选、BSE→BJ 价格端点、
+# offset 分页行为、已摘牌合约可查性、ETF adjust 字段形态）已随定案退役——
+# 正面形态由 chain contract@CN-* 与 stock@CN-BSE/index@CN-BSE 目标常态复验，
+# 结论与证据出处见 raw 段注释。
 #
 # 上游限频为「约定 QPS」（超限信封 code=4001），具体 QPS 未公布：pacing 2 秒
 # （≤0.5 QPS）保守起步，探针报告中观察 4001 出现情况后收紧。
@@ -22,18 +24,19 @@ pacing:
   # 日期触发上游 5003（邻近起点均正常，与调用频率无关）；4001 限频未复现
   call_interval_s: 2.0
   timeout_s: 60
-  # 本轮构成（BSE/期货六所收编后，探索性 raw 随定案退役）：availability
-  # 14（bars 14：stock 三复权 + index + etf + contract + option + BSE 逐所
-  # stock/index + 期货逐所 CZCE/DCE/INE/GFEX/CFFEX）+ adjust_diff 4（stock 1
-  # 目标 × 2 pair × 2 调）+ history_depth 3 case × 最坏 12 +
-  # limit_truncation ≈2 + quote_availability 12×1 调（quotes 声明随
-  # include_declared 自动展开：stock/index/etf 基准 + BSE 逐所 stock/index
-  # + contract 基准/期货逐所 CZCE/DCE/INE/GFEX/CFFEX + option）+ raw 3 case
-  # 各 3 调（client + get + json：错误指纹 / ETF 复权口径留存 / 郑商所 4 位
-  # 负对照；CFFEX 期货后缀探测 1 条随 chain contract@CN-CFFEX 收编同轮
-  # 退役；快照形态与分时量额 2 条 raw 已随 quotes 入链退役，见 raw 段注释），
-  # 最坏约 78，预算 100 留余量（约 5 分钟）
-  max_calls: 100
+  # 本轮构成（BSE/期货六所收编 + SZSE 逐所扩容 + 期权八所回填收编后）：
+  # availability（bars：stock 三复权 + index + etf + contract + option 八所
+  # 逐所 + BSE/SZSE 逐所）+ adjust_diff 4（stock 1 目标 × 2 pair × 2 调）
+  # + history_depth 3 case × 最坏 12 + limit_truncation +
+  # quote_availability（quotes 声明随 include_declared 自动展开，与 bars
+  # 同矩阵逐所）+ raw 3 case × 3 调（client + get + json：错误指纹 / ETF
+  # 复权口径留存 / 郑商所 4 位负对照——期权八所探测 7 条已随映射层八所
+  # 回填收敛为 chain option@CN-* 目标常态复验，2026-11-16 聚焦轮后退役，
+  # 见 raw 段注释；CFFEX 期货后缀探测 1 条随 chain contract@CN-CFFEX 收编
+  # 同轮退役；快照形态与分时量额 2 条 raw 已随 quotes 入链退役），
+  # 最坏 100（cli list 实测合计：chain 56 case + raw 3 case），预算 150
+  # 留余量
+  max_calls: 150
 
 targets:
   stock:
@@ -62,9 +65,31 @@ targets:
     window: {start: 2025-01-01, end: 2025-12-31}
     min_bars: 10
     required_fields: [open, high, low, close, volume, amount]
+  stock@CN-SZSE:
+    instrument: CN-SZSE-000001
+    # 平安银行：交易所限定追加目标，SZSE→SZ 后缀在 _SUFFIXES 白名单
+    # （文档示例条目），逐所 chain 首验轮——声明内 + mapper 放行，首次
+    # 运行即实证。BSE→BJ 逐所（stock/index）已实证收编见上；BSE×ETF 不
+    # 存在（北交所无 ETF），不设该所目标
+    window: {start: 2025-01-01, end: 2025-12-31}
+    min_bars: 10
+    required_fields: [open, high, low, close, volume, amount]
+  index@CN-SZSE:
+    instrument: CN-SZSE-399001
+    # 深证成指：同上首验轮口径（SZSE→SZ 文档示例条目，首次运行即实证）
+    window: {start: 2025-01-01, end: 2025-12-31}
+    min_bars: 10
+    required_fields: [open, high, low, close, volume, amount]
   etf:
     instrument: CN-SSE-510300
     # 沪深300ETF（官方文档示例标的；仅 ETF，LOF/场外/REITs 上游返回 3004）
+    window: {start: 2025-01-01, end: 2025-12-31}
+    min_bars: 10
+    required_fields: [open, high, low, close, volume, amount]
+  etf@CN-SZSE:
+    instrument: CN-SZSE-159915
+    # 易方达创业板 ETF：同上首验轮口径（etf 后缀表仅 SSE/SZSE，SZ 侧首次
+    # 运行即实证）
     window: {start: 2025-01-01, end: 2025-12-31}
     min_bars: 10
     required_fields: [open, high, low, close, volume, amount]
@@ -113,13 +138,65 @@ targets:
     required_fields: [open, high, low, close, volume, amount]
   option:
     instrument: CN-CFFEX-IO2612-C-4000
-    # 沪深300期权（文档示例 IO2601-C-4000.CFE 已到期）：CFFEX→CFE 为唯一
-    # 文档实证后缀。月度合约会到期：运行前按中金所挂牌信息核对（行权价
+    # 沪深300期权：CFFEX→CFE（2026-11-16 聚焦轮后八所收编，本基准目标保留
+    # CFFEX 段）。月度合约会到期：运行前按中金所挂牌信息核对（行权价
     # 4000 需在挂牌行权价序列内），失败如实记录，到期轮换为现活合约。
     # 窗口起点避开 2026-10-01（该单一日期触发上游 5003
     # 'daily quote unavailable'，邻近起点均正常）
     window: {start: 2026-11-01, end: 2026-11-30}
     min_bars: 5
+    required_fields: [open, high, low, close, volume, amount]
+  option@CN-SSE:
+    instrument: CN-SSE-10012437
+    # 50ETF 购近月（数字合约码 + SH）：2026-11-16 聚焦轮 code=0 五行实证
+    # 收编。近月合约 2026-11-25 到期：轮换按交易所挂牌或 tushare opt_basic
+    # 目录（近月、delist_date 未过）重选
+    window: {start: 2026-11-09, end: 2026-11-13}
+    min_bars: 3
+    required_fields: [open, high, low, close, volume, amount]
+  option@CN-SZSE:
+    instrument: CN-SZSE-90008083
+    # 沪深300ETF 购近月（数字合约码 + SZ）：同上实证收编；2026-11-25 到期，
+    # 轮换同上
+    window: {start: 2026-11-09, end: 2026-11-13}
+    min_bars: 3
+    required_fields: [open, high, low, close, volume, amount]
+  option@CN-SHFE:
+    instrument: CN-SHFE-CU2701C102000
+    # 铜期权 ATM 实码（无连字符式）：聚焦轮目录锚定实码 code=0 五行实证
+    # 收编——深虚零成交合约 code=0 但 item 空，轮换须按 opt_basic 挂牌
+    # 行权价序列选 ATM/主力系列（铜期权行权价 2000 间隔）
+    window: {start: 2026-11-09, end: 2026-11-13}
+    min_bars: 3
+    required_fields: [open, high, low, close, volume, amount]
+  option@CN-INE:
+    instrument: CN-INE-SC2701C550
+    # 原油期权（无连字符式，与 SHFE 同构）：聚焦轮 code=0 两行实证收编——
+    # 550 为深虚近零成交（周窗仅 2 行），min_bars 放宽至 1；轮换按挂牌
+    # 行权价序列重选 ATM（原油期权行权价间隔按挂牌序列核对）
+    window: {start: 2026-11-09, end: 2026-11-13}
+    min_bars: 1
+    required_fields: [open, high, low, close, volume, amount]
+  option@CN-DCE:
+    instrument: CN-DCE-M2701-C-3500
+    # 豆粕期权（连字符式，4 位月）：聚焦轮 code=0 四行实证收编；轮换按
+    # opt_basic（exchange=DCE，name 含豆粕 + delist_date 未过）重选
+    window: {start: 2026-11-09, end: 2026-11-13}
+    min_bars: 3
+    required_fields: [open, high, low, close, volume, amount]
+  option@CN-CZCE:
+    instrument: CN-CZCE-SR701C5900
+    # 白糖期权（无连字符，3 位月码 701=2027-01）：聚焦轮 code=0 四行实证
+    # 收编；到期 2026-12-11，轮换按 opt_basic 同款口径重选
+    window: {start: 2026-11-09, end: 2026-11-13}
+    min_bars: 3
+    required_fields: [open, high, low, close, volume, amount]
+  option@CN-GFEX:
+    instrument: CN-GFEX-LC2701-C-90000
+    # 碳酸锂期权（连字符式，与期货主连「品种+L」不同构）：聚焦轮 code=0
+    # 五行实证收编；轮换按挂牌行权价序列重选
+    window: {start: 2026-11-09, end: 2026-11-13}
+    min_bars: 3
     required_fields: [open, high, low, close, volume, amount]
 
 chain:
@@ -240,5 +317,15 @@ raw:
       - {method: json, kwargs: {}, target: result}
     expect: {status: ok, min_fields: [code, message, data]}
     close: {method: close, kwargs: {}}
+
+  # ── 已定案退役的期权八所探测 raw（2026-11-16 聚焦轮双候选定案 + 映射层
+  #    八所回填后，7 条胜出候选（SSE/SZSE/SHFE/INE/DCE/CZCE/GFEX）收敛为
+  #    chain option@CN-* 目标常态复验（bars availability + quotes 分时末点
+  #    逐所展开），同轮退役；落选 5 个码式候选 3001 'Target not found' 干净
+  #    否定（SHFE/INE/CZCE 连字符式、DCE 无连字符式、GFEX 无连字符式）。
+  #    原始证据：聚焦轮报告 report-ths-20261116T080728+0800.md（双候选矩阵）
+  #    与 report-ths-20261116T081312+0800.md（SHFE ATM 实码复测），
+  #    PROBE_LOG 第 10 轮；码式矩阵规范出处见 docs/providers/ths.md
+  #    「标的代码映射」。期权合约会到期：chain 目标轮换规则见 targets 注释。
 
 notes: 各轮运行记录见 probes/results/PROBE_LOG.md（不入库）；探针框架规范见 probes/README.md。

@@ -39,8 +39,10 @@ _STOCK_SUFFIXES = {"SSE": "SH", "SZSE": "SZ", "BSE": "BJ"}
 _INDEX_SUFFIXES = {"SSE": "SH", "SZSE": "SZ"}
 # ETF 后缀：fund_daily 为场内基金接口（doc_id=127，沪深两所同构）
 _ETF_SUFFIXES = {"SSE": "SH", "SZSE": "SZ"}
-# 期权后缀：opt_daily 六所（doc_id=159 交易所枚举 + 五所探针实证码格式）；
-# CFFEX 期权 .CFX 与该所期货同后缀（非 ths 的 CFE）
+# 期权后缀：opt_daily 八所（2026-11-16 聚焦轮目录+日 K 双证收编 INE/GFEX——
+# doc_id=159 文档枚举未列这两所，实测可查，文档滞后；码式矩阵见
+# docs/providers/tushare.md「标的代码映射」）；CFFEX 期权 .CFX 与该所期货
+# 同后缀（非 ths 的 CFE）
 _OPTION_SUFFIXES = {
     "SSE": "SH",
     "SZSE": "SZ",
@@ -48,6 +50,8 @@ _OPTION_SUFFIXES = {
     "DCE": "DCE",
     "SHFE": "SHF",
     "CZCE": "ZCE",
+    "INE": "INE",
+    "GFEX": "GFE",
 }
 _FUTURES_SUFFIXES = {
     "SHFE": "SHF",

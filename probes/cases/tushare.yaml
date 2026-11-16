@@ -1,5 +1,7 @@
 # tushare 数据探针：周/月线复权生效性、期货六所合约/主连与单次上限常态复验
-#（交易所限定 chain 目标）、北交所接入复验，及错误指纹采集。
+#（交易所限定 chain 目标）、北交所接入复验、期权 INE/GFEX 扩容探测（opt_daily
+# 已声明六所之外的两所未定案，raw 目录+日 K 直测，见 raw 段注释），及错误指纹
+# 采集。
 probe: tushare
 version: 2
 
@@ -10,17 +12,19 @@ requires:
 pacing:
   call_interval_s: 1.5
   timeout_s: 60
-  # chain 展开（ETF/期权扩容收敛后）：availability 53（stock/SZSE/BSE 基准 29
-  # + 期货交易所限定目标 10：contract@CN-CZCE/DCE/INE/CFFEX/GFEX +
-  # continuous@CN-CZCE/DCE/INE/CFFEX/GFEX 各 1 + index 基准/SZSE 限定 6
-  # + etf 基准/SZSE 限定 2 + option 六所 6）+ adjust_diff 36（3 目标 × 3 周期
-  # × 2 pair × 2 调）+ history_depth（stock 三周期 + contract 全量 +
-  # continuous + index 三周期 + etf 日线，逐 case 二分实测约 14 调、自预算
-  # 20）+ limit 2（contract 结构性 suspect 如实保留 + continuous P16Y）+
-  # raw 2 case 4 调（目录 2 + 错误指纹 2；GFEX 探测 1 条随 chain
-  # contract@CN-GFEX/continuous@CN-GFEX 收编同轮退役，见 raw 段注释），
-  # 预计约 179（第 15 轮 7 个二分 case 口径实测 166），留余量
-  max_calls: 210
+  # chain 展开（期权八所回填收编后）：availability 55（stock/SZSE/BSE 基准
+  # + 期货交易所限定 contract/continuous 各 5 + index 基准/SZSE 限定
+  # + etf 基准/SZSE 限定 + **option 八所逐所**）+ adjust_diff 36（3 目标 ×
+  # 3 周期 × 2 pair × 2 调）+ history_depth（stock 三周期 + contract 全量 +
+  # continuous + index 三周期 + etf 日线，逐 case 二分自预算 20、实测约
+  # 14 调）+ limit 2（contract 结构性 suspect 如实保留 + continuous P16Y）+
+  # raw 4 case 8 调（目录 2：bj 证券目录 + INE/GFEX 期权目录常态留存·标的
+  # 轮换证据来源 + 错误指纹 2——期权 INE/GFEX 日 K 直测 2 条已随映射层八所
+  # 回填收敛为 chain option@CN-INE/GFEX 目标，2026-11-16 第 17 轮聚焦轮后
+  # 退役，见 raw 段注释），
+  # 最坏 262（cli list 实测合计，含 history_depth 8 case × 上限 20 调；实测
+  # 口径第 15 轮约 166——二分通常提前收敛），预算 300 对齐最坏口径留余量
+  max_calls: 300
 
 targets:
   stock:
@@ -128,6 +132,24 @@ targets:
     # 白糖购 1 月 5900：CZCE 码式「品种3位月C/P行权价」直拼复验（3 位月码
     # 701=2027-01）；到期 2026-12-11，到期轮换按 opt_basic（exchange=CZCE，
     # name 含白糖 + delist_date 未过）重选
+    window: {start: 2026-11-09, end: 2026-11-13}
+    min_bars: 3
+    required_fields: [open, high, low, close, volume, amount]
+  option@CN-INE:
+    instrument: CN-INE-SC2701C550
+    # 原油期权 2701 认购 550（无连字符式，与 SHFE 同构）：2026-11-16 聚焦轮
+    # opt_basic 目录（6528 行，形态样本 SC2703P440.INE）+ opt_daily 5 行双证
+    # 收编；550 为深虚近零成交，到期轮换按 opt_basic（exchange=INE，
+    # delist_date 未过）重选 ATM/主力系列行权价
+    window: {start: 2026-11-09, end: 2026-11-13}
+    min_bars: 3
+    required_fields: [open, high, low, close, volume, amount]
+  option@CN-GFEX:
+    instrument: CN-GFEX-LC2701-C-90000
+    # 碳酸锂期权 2701 认购 90000（连字符式「品种4位月-C/P-行权价.GFE」，与
+    # 该所期货主连「品种+L」不同构）：聚焦轮 opt_basic 目录（12000 行，形态
+    # 样本 PS2710-C-30000.GFE）+ opt_daily 5 行实量（vol 14744~17325）双证
+    # 收编；轮换按 opt_basic（exchange=GFEX，delist_date 未过）重选
     window: {start: 2026-11-09, end: 2026-11-13}
     min_bars: 3
     required_fields: [open, high, low, close, volume, amount]
@@ -283,5 +305,36 @@ raw:
     call:
       - {method: query, kwargs: {api_name: "probe_nonexistent_api_for_fingerprint"}}
     expect: {status: error, error_contains: ""}
+
+  # ── 已定案退役的期权 INE/GFEX 探测 raw：opt-ine-daily-shape（SC2701C550.INE
+  #    5 行）与 opt-gfex-daily-shape（LC2701-C-90000.GFE 5 行实量）随映射层
+  #    八所回填收敛为 chain option@CN-INE/GFEX 目标常态复验，2026-11-16 第
+  #    17 轮聚焦轮后退役（首轮证据 report-tushare-20261116T080728+0800.md：
+  #    INE 目录 6528 行 + 日 K 5 行；复测 report-tushare-20261116T081112+0800.md：
+  #    GFEX 目录 12000 行、码式连字符式 PS2710-C-30000.GFE + 日 K 5 行实量；
+  #    PROBE_LOG 第 17 轮）。
+  #    保留两条目录探测（常态留存·标的轮换证据来源，与 bj-stock-directory-probe
+  #    同款设计）：opt_basic 单次返回恰 12000 行疑为上游上限（三轮同值，待
+  #    核实，不影响映射与日 K 结论）
+  - id: opt-ine-directory-probe
+    purpose: 能源中心期权目录常态留存（opt_basic exchange=INE 在市列表，
+      2026-11-16 首轮 6528 行）：option@CN-INE 目标的在市标的轮换证据来源，
+      到期轮换按本 case 结果重选近月/主力系列
+    assert: false
+    module: tushare
+    client: {attr: pro_api, kwargs: {token: "$TAPEHUB_TUSHARE_TOKEN"}}
+    call:
+      - {method: query, kwargs: {api_name: "opt_basic", exchange: "INE"}}
+    expect: {status: ok, min_rows: 1}
+  - id: opt-gfex-directory-probe
+    purpose: 广期所期权目录常态留存（opt_basic exchange=GFEX，2026-11-16 首轮
+      12000 行——doc_id=159 文档枚举未列 GFEX 属文档滞后）：option@CN-GFEX
+      目标的在市标的轮换证据来源，到期轮换按本 case 结果重选
+    assert: false
+    module: tushare
+    client: {attr: pro_api, kwargs: {token: "$TAPEHUB_TUSHARE_TOKEN"}}
+    call:
+      - {method: query, kwargs: {api_name: "opt_basic", exchange: "GFEX"}}
+    expect: {status: ok, min_rows: 1}
 
 notes: 各轮运行记录见 probes/results/PROBE_LOG.md（不入库）；探针框架规范见 probes/README.md。

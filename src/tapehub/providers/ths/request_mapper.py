@@ -44,7 +44,18 @@ _SUFFIXES: dict[str, dict[str, str]] = {
         "GFEX": "GFE",
         "CFFEX": "CFE",
     },
-    "option": {"CFFEX": "CFE"},
+    "option": {
+        # 期权八所（2026-11-16 聚焦轮双候选探针实证收编，码式矩阵与落选
+        # 否定证据见 docs/providers/ths.md「标的代码映射」）
+        "SSE": "SH",
+        "SZSE": "SZ",
+        "SHFE": "SHF",
+        "INE": "INE",
+        "DCE": "DCE",
+        "CZCE": "CZC",
+        "GFEX": "GFE",
+        "CFFEX": "CFE",
+    },
 }
 
 # CZCE 合约「品种+2 位年+2 位月」形态（与 tqsdk 同构的 4→3 还原规则）；

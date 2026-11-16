@@ -2,7 +2,8 @@
 
 auto 路由说明：bars/quotes CN stock/index/etf/contract 的回退链中 baostock、
 akshare 等免凭据 Provider 会截胡 auto 请求，故显式传 variant=ths 定向路由；
-CN option 组合 ths 为唯一 Provider，auto（无 provider/variant 参数）直达。
+CN option bars 组合 ths 为缺省首位（回退链 ths→tushare，测试环境 tushare
+凭据缺失自动跳过）、quotes 组合 ths 独占，auto（无 provider/variant 参数）直达。
 """
 
 import pytest
@@ -86,7 +87,8 @@ def test_stock_bars_chain(ths_client: TestClient, monkeypatch: pytest.MonkeyPatc
 def test_option_bars_auto_chain(
     ths_client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """CN option 组合 ths 唯一覆盖者：无 provider/variant 参数 auto 直达。"""
+    """CN option bars 组合 ths 缺省首位（tushare 凭据型兜底居链尾，测试环境
+    凭据缺失自动跳过）：无 provider/variant 参数 auto 直达。"""
     preset_payload(monkeypatch, envelope({"item": bar_rows("timestamp", [1767196800000])}))
 
     params = {
