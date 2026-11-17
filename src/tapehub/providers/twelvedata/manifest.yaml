@@ -5,91 +5,102 @@ provider: twelvedata
 default_variant: twelvedata
 
 capabilities:
-  # 外汇（OTC 聚合报价）
+  # 外汇（OTC 聚合报价）。
+  # history.start 统一口径（2026-11-17 人工定案，见 docs）：实测早于
+  # 2000-01-01 的深库统一按 2000-01-01 声明（P1W/P1M），其余取实测估计
+  # 月份的 1 日零点（月首对齐）
   - data_type: bars
     markets: [GLOBAL]
     asset_types: [forex]
     delivery: [rest]
     variants: [twelvedata]
     intervals:
-      - {code: PT1M, history: {start: 2020-04-08T00:00:00+08:00, end: null}}
-      - {code: PT5M, history: {start: 2020-03-19T00:00:00+08:00, end: null}}
-      - {code: PT15M, history: {start: 2020-01-31T00:00:00+08:00, end: null}}
-      - {code: PT30M, history: {start: 2020-01-31T00:00:00+08:00, end: null}}
-      - {code: PT45M, history: {start: 2020-01-31T00:00:00+08:00, end: null}}
-      - {code: PT1H, history: {start: 2020-01-31T00:00:00+08:00, end: null}}
-      - {code: PT2H, history: {start: 2020-01-31T00:00:00+08:00, end: null}}
-      - {code: PT4H, history: {start: 2020-01-31T00:00:00+08:00, end: null}}
-      - {code: PT8H, history: {start: 2020-01-31T00:00:00+08:00, end: null}}
-      - {code: P1D, history: {start: 2003-12-25T00:00:00+08:00, end: null}}
-      - {code: P1W, history: {start: 1975-01-23T00:00:00+08:00, end: null}}
-      - {code: P1M, history: {start: 1975-01-23T00:00:00+08:00, end: null}}
+      - {code: PT1M, history: {start: 2020-04-01T00:00:00+08:00, end: null}}
+      - {code: PT5M, history: {start: 2020-03-01T00:00:00+08:00, end: null}}
+      - {code: PT15M, history: {start: 2020-01-01T00:00:00+08:00, end: null}}
+      - {code: PT30M, history: {start: 2020-01-01T00:00:00+08:00, end: null}}
+      - {code: PT45M, history: {start: 2020-01-01T00:00:00+08:00, end: null}}
+      - {code: PT1H, history: {start: 2020-01-01T00:00:00+08:00, end: null}}
+      - {code: PT2H, history: {start: 2020-01-01T00:00:00+08:00, end: null}}
+      - {code: PT4H, history: {start: 2020-01-01T00:00:00+08:00, end: null}}
+      - {code: PT8H, history: {start: 2020-01-01T00:00:00+08:00, end: null}}
+      - {code: P1D, history: {start: 2003-12-01T00:00:00+08:00, end: null}}
+      - {code: P1W, history: {start: 2000-01-01T00:00:00+08:00, end: null}}
+      - {code: P1M, history: {start: 2000-01-01T00:00:00+08:00, end: null}}
     adjustments: [none]
     fields: [open, high, low, close]
 
-  # 加密货币（聚合对）
+  # 加密货币（聚合对）。
+  # history.start 统一口径（2026-11-17 人工定案，见 docs）：实测早于
+  # 2020-01-01 的统一按 2020-01-01 声明（P1D/P1W/P1M），其余取实测估计
+  # 月份的 1 日零点（月首对齐）
   - data_type: bars
     markets: [GLOBAL]
     asset_types: [crypto]
     delivery: [rest]
     variants: [twelvedata]
     intervals:
-      - {code: PT1M, history: {start: 2020-04-07T00:00:00+08:00, end: null}}
-      - {code: PT5M, history: {start: 2020-03-25T00:00:00+08:00, end: null}}
-      - {code: PT15M, history: {start: 2020-02-19T00:00:00+08:00, end: null}}
-      - {code: PT30M, history: {start: 2020-01-07T00:00:00+08:00, end: null}}
-      - {code: PT45M, history: {start: 2020-01-07T00:00:00+08:00, end: null}}
-      - {code: PT1H, history: {start: 2020-01-07T00:00:00+08:00, end: null}}
-      - {code: PT2H, history: {start: 2020-01-07T00:00:00+08:00, end: null}}
-      - {code: PT4H, history: {start: 2020-01-07T00:00:00+08:00, end: null}}
-      - {code: PT8H, history: {start: 2020-01-07T00:00:00+08:00, end: null}}
-      - {code: P1D, history: {start: 2017-08-29T00:00:00+08:00, end: null}}
-      - {code: P1W, history: {start: 2017-08-29T00:00:00+08:00, end: null}}
-      - {code: P1M, history: {start: 2017-08-02T00:00:00+08:00, end: null}}
+      - {code: PT1M, history: {start: 2020-04-01T00:00:00+08:00, end: null}}
+      - {code: PT5M, history: {start: 2020-03-01T00:00:00+08:00, end: null}}
+      - {code: PT15M, history: {start: 2020-02-01T00:00:00+08:00, end: null}}
+      - {code: PT30M, history: {start: 2020-01-01T00:00:00+08:00, end: null}}
+      - {code: PT45M, history: {start: 2020-01-01T00:00:00+08:00, end: null}}
+      - {code: PT1H, history: {start: 2020-01-01T00:00:00+08:00, end: null}}
+      - {code: PT2H, history: {start: 2020-01-01T00:00:00+08:00, end: null}}
+      - {code: PT4H, history: {start: 2020-01-01T00:00:00+08:00, end: null}}
+      - {code: PT8H, history: {start: 2020-01-01T00:00:00+08:00, end: null}}
+      - {code: P1D, history: {start: 2020-01-01T00:00:00+08:00, end: null}}
+      - {code: P1W, history: {start: 2020-01-01T00:00:00+08:00, end: null}}
+      - {code: P1M, history: {start: 2020-01-01T00:00:00+08:00, end: null}}
     adjustments: [none]
     fields: [open, high, low, close]
 
-  # 美股个股：exchange 段白名单 NYSE/NASDAQ/CBOE；qfq = 上游 adjust=all；volume 有值、amount 恒 null
+  # 美股个股：exchange 段白名单 NYSE/NASDAQ/CBOE；qfq = 上游 adjust=all；volume 有值、amount 恒 null。
+  # history.start 统一口径（2026-11-17 人工定案，见 docs）：实测早于
+  # 2000-01-01 的深库统一按 2000-01-01 声明（P1D/P1W/P1M；1981-01-18 系
+  # 旧 AAPL 基准估计、GE 换基准后待下轮 depth 复探），其余月首对齐
   - data_type: bars
     markets: [US]
     asset_types: [stock]
     delivery: [rest]
     variants: [twelvedata]
     intervals:
-      - {code: PT1M, history: {start: 2020-04-11T00:00:00+08:00, end: null}}
-      - {code: PT5M, history: {start: 2020-02-15T00:00:00+08:00, end: null}}
-      - {code: PT15M, history: {start: 2019-11-06T00:00:00+08:00, end: null}}
-      - {code: PT30M, history: {start: 2019-11-06T00:00:00+08:00, end: null}}
-      - {code: PT45M, history: {start: 2019-11-06T00:00:00+08:00, end: null}}
+      - {code: PT1M, history: {start: 2020-04-01T00:00:00+08:00, end: null}}
+      - {code: PT5M, history: {start: 2020-02-01T00:00:00+08:00, end: null}}
+      - {code: PT15M, history: {start: 2019-11-01T00:00:00+08:00, end: null}}
+      - {code: PT30M, history: {start: 2019-11-01T00:00:00+08:00, end: null}}
+      - {code: PT45M, history: {start: 2019-11-01T00:00:00+08:00, end: null}}
       - {code: PT1H, history: {start: 2019-02-01T00:00:00+08:00, end: null}}
-      - {code: PT2H, history: {start: 2019-07-18T00:00:00+08:00, end: null}}
-      - {code: PT4H, history: {start: 2019-07-18T00:00:00+08:00, end: null}}
-      - {code: PT8H, history: {start: 2019-07-18T00:00:00+08:00, end: null}}
-      - {code: P1D, history: {start: 1981-01-18T00:00:00+08:00, end: null}}
-      - {code: P1W, history: {start: 1981-01-18T00:00:00+08:00, end: null}}
-      - {code: P1M, history: {start: 1981-01-18T00:00:00+08:00, end: null}}
+      - {code: PT2H, history: {start: 2019-07-01T00:00:00+08:00, end: null}}
+      - {code: PT4H, history: {start: 2019-07-01T00:00:00+08:00, end: null}}
+      - {code: PT8H, history: {start: 2019-07-01T00:00:00+08:00, end: null}}
+      - {code: P1D, history: {start: 2000-01-01T00:00:00+08:00, end: null}}
+      - {code: P1W, history: {start: 2000-01-01T00:00:00+08:00, end: null}}
+      - {code: P1M, history: {start: 2000-01-01T00:00:00+08:00, end: null}}
     adjustments: [none, qfq]
     fields: [open, high, low, close, volume]
 
-  # 美股 ETF：qfq = 上游 adjust=all（复权生效），hfq 上游无等价物不声明
+  # 美股 ETF：qfq = 上游 adjust=all（复权生效），hfq 上游无等价物不声明。
+  # history.start 统一口径（2026-11-17 人工定案，见 docs）：实测早于
+  # 2000-01-01 的深库统一按 2000-01-01 声明（P1D/P1W/P1M），其余月首对齐
   - data_type: bars
     markets: [US]
     asset_types: [etf]
     delivery: [rest]
     variants: [twelvedata]
     intervals:
-      - {code: PT1M, history: {start: 2020-04-11T00:00:00+08:00, end: null}}
-      - {code: PT5M, history: {start: 2020-02-15T00:00:00+08:00, end: null}}
-      - {code: PT15M, history: {start: 2020-02-15T00:00:00+08:00, end: null}}
-      - {code: PT30M, history: {start: 2020-02-15T00:00:00+08:00, end: null}}
-      - {code: PT45M, history: {start: 2020-02-15T00:00:00+08:00, end: null}}
-      - {code: PT1H, history: {start: 2020-02-15T00:00:00+08:00, end: null}}
-      - {code: PT2H, history: {start: 2020-02-15T00:00:00+08:00, end: null}}
-      - {code: PT4H, history: {start: 2020-02-15T00:00:00+08:00, end: null}}
-      - {code: PT8H, history: {start: 2020-02-15T00:00:00+08:00, end: null}}
-      - {code: P1D, history: {start: 1993-03-17T00:00:00+08:00, end: null}}
-      - {code: P1W, history: {start: 1993-03-17T00:00:00+08:00, end: null}}
-      - {code: P1M, history: {start: 1993-01-20T00:00:00+08:00, end: null}}
+      - {code: PT1M, history: {start: 2020-04-01T00:00:00+08:00, end: null}}
+      - {code: PT5M, history: {start: 2020-02-01T00:00:00+08:00, end: null}}
+      - {code: PT15M, history: {start: 2020-02-01T00:00:00+08:00, end: null}}
+      - {code: PT30M, history: {start: 2020-02-01T00:00:00+08:00, end: null}}
+      - {code: PT45M, history: {start: 2020-02-01T00:00:00+08:00, end: null}}
+      - {code: PT1H, history: {start: 2020-02-01T00:00:00+08:00, end: null}}
+      - {code: PT2H, history: {start: 2020-02-01T00:00:00+08:00, end: null}}
+      - {code: PT4H, history: {start: 2020-02-01T00:00:00+08:00, end: null}}
+      - {code: PT8H, history: {start: 2020-02-01T00:00:00+08:00, end: null}}
+      - {code: P1D, history: {start: 2000-01-01T00:00:00+08:00, end: null}}
+      - {code: P1W, history: {start: 2000-01-01T00:00:00+08:00, end: null}}
+      - {code: P1M, history: {start: 2000-01-01T00:00:00+08:00, end: null}}
     adjustments: [none, qfq]
     fields: [open, high, low, close, volume]
 

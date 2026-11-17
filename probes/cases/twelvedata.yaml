@@ -14,8 +14,8 @@ pacing:
   # 逐所追加各 24 + etf 48：NYSE/SPY 基准与 CBOE/AAAA 逐所追加各 12 周期
   # × 2 复权）+ quote_availability 2（quotes 声明随 include_declared 自动
   # 展开：forex + crypto 各 1 调）+ adjust_diff（stock 基准/NASDAQ 逐所/etf
-  # × P1D+PT1H × 1 pair × 2 调 = 12）+ history_depth 2 case×16 最坏
-  #（forex P1W/P1M 残留收敛）+ limit 2 + raw 3 case×3 = 最坏约 177。
+  # × P1D+PT1H × 1 pair × 2 调 = 12）+ limit 2 + raw 2 case×3 = 最坏约
+  # 142（history_depth 已收口移除，见 chain 注记）。
   # 免费档 800/天为硬上限：预算 780 保留（单日可完整跑全量 + 截断续跑余量，
   # 框架对截断如实记录）。
   max_calls: 780
@@ -72,16 +72,12 @@ chain:
     intervals: [P1D, PT1H]
     pairs: [[none, qfq]]
     fields: [close]
-  history_depth:
-    # 精化后仅 forex P1W/P1M 残留待收敛：1970 下限仍触底（周/月档案深于
-    # 1970——官方轨迹 [1970,1980) 档 262 根周线 ≈5 年量级，真实起点 ≈1975），
-    # 下限再外推至 1950 收敛；stock/etf 粗周期与 forex P1D（≈2003-12-25）、
-    # crypto 已收敛——均不再重探
-    targets: [forex]
-    earliest: 1950-01-01
-    era_step_years: 10   # 1950→2026 共 8 档（回溯至 1960-70 空档止）+ 二分
-    max_calls: 16
-    intervals: [P1W, P1M]
+  # history_depth 已收口（2026-11-17 第 1 轮）：forex P1W 干净收敛（est
+  # 1975-01-01 / 实测首根 1974-12-29）、P1M 月线档案 2010 年以前稀疏碎片
+  # 二分不可定案（详见 docs/providers/twelvedata.md 与 PROBE_LOG 第 1 轮）
+  # ——两项已按人工确认的统一口径归入 2000-01-01 声明，不重复消耗配额；
+  # stock/etf 粗周期与 forex P1D、crypto 早已收敛（GE 换基准后的 stock
+  # 深库复探待另行专项）
   limit_truncation:
     targets: [forex, stock]
     interval: PT1M

@@ -20,15 +20,17 @@
 
 | data_type | 资产类型（市场，变体 twelvedata） | 周期 | adjust | history.start（北京时间零点，探针二分估计 approx） | 标准字段 |
 | --- | --- | --- | --- | --- | --- |
-| bars | forex（GLOBAL） | 全 12 周期（见下） | none | 1m 2020-04-08；5m 2020-03-19；15m/30m/45m/1h/2h/4h/8h 2020-01-31；P1D 2003-12-25；P1W/P1M 1975-01-23 | open/high/low/close（无 volume/amount） |
-| bars | crypto（GLOBAL） | 全 12 周期 | none | 1m 2020-04-07；5m 2020-03-25；15m 2020-02-19；30m/45m/1h/2h/4h/8h 2020-01-07；P1D/P1W 2017-08-29；P1M 2017-08-02 | open/high/low/close（无 amount） |
-| bars | stock（US） | 全 12 周期 | none/qfq | 1m 2020-04-11；5m 2020-02-15；15m/30m/45m 2019-11-06；1h 2019-02-01；2h/4h/8h 2019-07-18；P1D/P1W/P1M 1981-01-18 | OHLCV（amount 恒 null） |
-| bars | etf（US） | 全 12 周期 | none/qfq | 1m 2020-04-11；5m/15m/30m/45m/1h/2h/4h/8h 2020-02-15；P1D/P1W 1993-03-17；P1M 1993-01-20 | OHLCV（amount 恒 null） |
+| bars | forex（GLOBAL） | 全 12 周期（见下） | none | 1m 2020-04-01；5m 2020-03-01；15m/30m/45m/1h/2h/4h/8h 2020-01-01；P1D 2003-12-01；P1W/P1M 2000-01-01 | open/high/low/close（无 volume/amount） |
+| bars | crypto（GLOBAL） | 全 12 周期 | none | 1m 2020-04-01；5m 2020-03-01；15m 2020-02-01；30m/45m/1h/2h/4h/8h 2020-01-01；P1D/P1W/P1M 2020-01-01 | open/high/low/close（无 amount） |
+| bars | stock（US） | 全 12 周期 | none/qfq | 1m 2020-04-01；5m 2020-02-01；15m/30m/45m 2019-11-01；1h 2019-02-01；2h/4h/8h 2019-07-01；P1D/P1W/P1M 2000-01-01 | OHLCV（amount 恒 null） |
+| bars | etf（US） | 全 12 周期 | none/qfq | 1m 2020-04-01；5m/15m/30m/45m/1h/2h/4h/8h 2020-02-01；P1D/P1W/P1M 2000-01-01 | OHLCV（amount 恒 null） |
 | quotes | forex/crypto（GLOBAL） | 无周期维度（声明为空） | 无复权维度（声明为空） | 不适用 | timestamp、last_price |
 
 - 「全 12 周期」＝ `PT1M/PT5M/PT15M/PT30M/PT45M/PT1H/PT2H/PT4H/PT8H/P1D/P1W/P1M`（对应上游完整枚举 1min/5min/15min/30min/45min/1h/2h/4h/8h/1day/1week/1month）；
 - 上游 values 元素字段（datetime/open/high/low/close/volume）均为**字符串**，标准化为数值；缺失/NaN → `null`；
-- history.start 为全量深度探针的二分估计（approx，回填取估计日零点）；真值与代表性标的互证（US stock ≈ AAPL IPO、US etf ≈ SPY 上市，均落在估计窗口内）；
+- history.start 统一口径（探针二分估计 + 2026-11-17 人工定案归一）：实测早于 **2000-01-01** 的 forex/US 深库统一按 2000-01-01 声明（深库不精确锚定、保守上界）；实测早于 **2020-01-01** 的 crypto 统一按 2020-01-01 声明；其余取实测估计月份的 **1 日零点**（月首对齐）；
+- forex 深库实测依据（探针 2026-11-17 第 1 轮）：P1W 干净收敛（est 1975-01-01、实测首根 1974-12-29）；P1M 月线档案 2010 年以前为稀疏碎片（[1970,1980) 纪元 60 根与 1975-1979 月窗全空并存、90/00 年代仅 54/73 根）——二分不可定案，旧声明 1975-01-23 与「1975-1979 月窗全空」实测矛盾（过度声明），随统一口径归入 2000-01-01；
+- US stock/etf 深库（1981-01-18 / 1993 系估计）本源未再复探：stock 基准已换 GE（旧 1981 估计落 AAPL IPO 收敛窗内、存在标的伪影嫌疑，GE 基准 depth 复探待另行专项）——统一按 2000-01-01 保守声明；「真值与代表性标的互证」旧注记随之退役；
 - crypto 的 volume 上游可能缺失 → `null`（能力 fields 不含 volume）。
 
 ## 标的代码映射
