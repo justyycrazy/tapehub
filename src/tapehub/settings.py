@@ -1,6 +1,6 @@
 """服务配置（pydantic-settings，环境变量前缀 TAPEHUB_）。"""
 
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -15,7 +15,10 @@ class Settings(BaseSettings):
     - ``max_limit``：统一分页最大 limit；
     - ``provider_enabled_overrides``：按 provider 名覆盖启用状态（两级裁决：显式覆盖 > 凭据推断）；
     - ``routing_config_path``：缺省路由顺序配置文件路径；None 用包内内置版本
-      （外部文件整体替换内置版本，不做合并）。
+      （外部文件整体替换内置版本，不做合并）；
+    - ``thread_pool_size_map``：按 Provider 分组线程池容量（JSON 对象）；
+      非空即开启分组隔离（空则全部线程型上游调用共享 ``thread_pool_size``
+      全局池，行为与历史版本一致）。
     """
 
     model_config = SettingsConfigDict(env_prefix="TAPEHUB_", env_file=".env", extra="ignore")
@@ -62,11 +65,22 @@ class Settings(BaseSettings):
     # （其余 Provider 与 tqsdk per_request）经 call_in_thread 的可放弃语义
     # 取消即时返回，工作线程在后台跑完当前上游调用后自行退出
     upstream_timeout_seconds: float = Field(default=30.0, gt=0)
-    # 线程池容量（anyio 默认 limiter 的 total_tokens）：全部线程型上游调用
-    # 共享该容量；akshare/baostock 等 SDK 上游 socket 无超时，挂死调用会
-    # 占用容量至自然结束——调大是缓解手段，根治需上游超时或按 Provider
-    # 分组限流（当前依赖上游报错与监控告警兜底）
+    # 全局线程池容量（anyio 默认 limiter 的 total_tokens）：分组关闭
+    # （thread_pool_size_map 为空）时全部线程型上游调用共享该容量。上游
+    # 挂死时名额仅占用至应用层超时（abandon 取消即释放名额，孤儿线程
+    # 不占名额但 OS 线程不被回收）；分组隔离见 thread_pool_size_map
     thread_pool_size: int = Field(default=40, ge=1)
+    # 按 Provider 分组线程池容量（JSON 对象，如 '{"akshare": 8}'）：
+    # 非空即开启分组——每家 Provider 独享 CapacityLimiter（列出者用配置
+    # 容量，未列出的内置 Provider 用统一默认 4，10 家合计恰为全局默认
+    # 40，开启分组不改变总在飞预算，只改变分配方式），单家上游挂死/
+    # 慢响应的名额压力隔离在本家池内，其余 Provider 照常服务；本家池满
+    # 快速返回 CONCURRENCY_LIMIT（429，可重试），应用层
+    # upstream_timeout_seconds 兜底 UPSTREAM_TIMEOUT（504）。
+    # 空（默认）= 关闭分组，行为与历史版本完全一致
+    thread_pool_size_map: dict[str, Annotated[int, Field(ge=1)]] = Field(
+        default_factory=dict
+    )
     version: str = "0.1.0"
     api_version: str = "v1"
     catalog_version: str = "1"

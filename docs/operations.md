@@ -97,7 +97,8 @@ uv run uvicorn tapehub.api.app:app --reload   # 启动服务（默认 127.0.0.1:
 | `TAPEHUB_STREAM_HEARTBEAT_SECONDS` | `15`（秒） | 空闲心跳间隔：无事件时按该周期发送保活帧 |
 | `TAPEHUB_STREAM_IDLE_TIMEOUT_SECONDS` | `300`（秒） | 流空闲超时：该窗口内无行情事件（心跳不算）则本地退订并结束流 |
 | `TAPEHUB_UPSTREAM_TIMEOUT_SECONDS` | `30`（秒） | bars/quotes 单次请求从发起到返回的上限，超时返回 `UPSTREAM_TIMEOUT`（504）；SSE 流为长驻设计不适用此值 |
-| `TAPEHUB_THREAD_POOL_SIZE` | `40` | 线程池容量：全部线程型上游调用共享（anyio 默认 limiter）；akshare/baostock 等 SDK 上游 socket 无超时，挂死调用占用容量至自然结束——调大是缓解手段，根治需上游超时或按 Provider 分组限流 |
+| `TAPEHUB_THREAD_POOL_SIZE` | `40` | 全局线程池容量（anyio 默认 limiter）：`TAPEHUB_THREAD_POOL_SIZE_MAP` 为空时全部线程型上游调用共享；非空时该值仅覆盖不经适配器分组路径的线程调用 |
+| `TAPEHUB_THREAD_POOL_SIZE_MAP` | `{}`（空 = 关闭） | 按 Provider 分组线程池容量（JSON 对象，如 `{"akshare": 8}`）：非空即开启分组隔离——每家 Provider 独享名额池（列出者用配置容量，未列出者统一默认 4；10 家合计恰为全局默认 40，开启分组不改变总在飞预算，只改变分配方式）。单家上游挂死/慢响应的名额压力隔离在本家池内，其余 Provider 照常服务；本家池满快速返回 `CONCURRENCY_LIMIT`（429，可重试），应用层 `TAPEHUB_UPSTREAM_TIMEOUT_SECONDS` 兜底 `UPSTREAM_TIMEOUT`（504）。未知 Provider 名仅启动告警不阻断。注：挂死调用被取消/超时后名额立即释放，孤儿线程不占名额但 OS 线程不被回收（上游 socket 无超时属 SDK 限制） |
 
 ## 测试与本地环境解耦
 

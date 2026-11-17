@@ -12,12 +12,47 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from tapehub.domain.capabilities import Capability
-from tapehub.domain.errors import ProviderNotImplementedError, UnsupportedCapabilityError
+from tapehub.domain.errors import (
+    ConcurrencyLimitError,
+    ProviderNotImplementedError,
+    UnsupportedCapabilityError,
+)
 from tapehub.domain.models import BarBatch, BarQuery, DataType, Quote, QuoteQuery
 from tapehub.providers.manifest import ProviderManifest
 
 if TYPE_CHECKING:
+    from anyio import CapacityLimiter
+
     from tapehub.settings import Settings
+
+
+# 分组线程池的统一默认容量：thread_pool_size_map 开启分组后，未显式配置的
+# 内置 Provider 用该值（10 家合计 40，恰等于全局默认 thread_pool_size——
+# 开启分组默认不改变总在飞预算，只改变分配方式）
+DEFAULT_THREAD_POOL_CAPACITY = 4
+
+
+def resolve_thread_capacity(
+    name: str, settings: "Settings | None"
+) -> "CapacityLimiter | None":
+    """按 Provider 名解析分组线程池容量；分组未开启返回 None。
+
+    ``Settings.thread_pool_size_map`` 非空即分组开启：map 列出的 Provider
+    用配置容量（≥1，pydantic 启动期校验），未列出的用统一默认容量
+    （``DEFAULT_THREAD_POOL_CAPACITY``）。返回 None 表示分组未开启，
+    ``call_in_thread`` 沿用 anyio 全局默认 limiter（与分组机制引入前的
+    行为完全一致）。
+
+    ``CapacityLimiter`` 是普通对象（anyio 实测可在事件循环外构造），
+    适配器在注册表构建期为进程内单例，实例级持有即覆盖进程生命周期。
+    """
+    size_map = getattr(settings, "thread_pool_size_map", None) or {}
+    if not size_map:
+        return None
+    capacity = int(size_map.get(name, DEFAULT_THREAD_POOL_CAPACITY))
+    import anyio
+
+    return anyio.CapacityLimiter(capacity)
 
 
 class BaseProviderAdapter:
@@ -39,6 +74,53 @@ class BaseProviderAdapter:
         self.name = name
         self.manifest = manifest
         self.settings = settings
+        # 分组线程池 limiter：适配器为进程内单例，实例级持有覆盖生命周期
+        # （与实例级共享 httpx 客户端同构）；None = 分组未开启（全局默认池）
+        self._thread_limiter = resolve_thread_capacity(name, settings)
+
+    @property
+    def thread_limiter(self) -> "CapacityLimiter | None":
+        """本 Provider 的分组线程池 limiter（只读暴露：可观测性与测试挂钩）。
+
+        非 None 时可读 ``total_tokens``（容量）与 ``borrowed_tokens``（在飞
+        占用）；None 表示分组未开启（全部线程型调用共享 anyio 全局默认池）。
+        """
+        return self._thread_limiter
+
+    def call_in_thread(
+        self,
+        func: Callable[..., Any],
+        /,
+        *args: Any,
+        abandon_on_cancel: bool = False,
+        **kwargs: Any,
+    ) -> Any:
+        """以本 Provider 的分组线程池执行同步调用（模块级 ``call_in_thread``
+        的实例方法包装）。
+
+        分组未开启（limiter 为 None）：行为与模块级函数完全一致（anyio
+        全局默认池）。分组开启：
+        - 名额已满：同步抛 ``ConcurrencyLimitError``（HTTP 429，可重试，
+          details 携带 provider 与 limit）——快速背压，不无限排队；
+        - 名额未满：经自家 limiter 进入线程池，容量独享、与他家互不影响
+          （单家上游挂死的名额压力被隔离在本家池内）。
+        check-then-act 存在无害竞态：检查与占用间隙中的超额调用进入
+        run_sync 内部 acquire 排队（不产生超额线程），由应用层
+        upstream_timeout_seconds 兜底为 UPSTREAM_TIMEOUT（504）。
+        """
+        limiter = self._thread_limiter
+        if limiter is not None and limiter.borrowed_tokens >= limiter.total_tokens:
+            raise ConcurrencyLimitError(
+                "Provider thread pool capacity reached, retry later.",
+                details={"provider": self.name, "limit": limiter.total_tokens},
+            )
+        return call_in_thread(
+            func,
+            *args,
+            abandon_on_cancel=abandon_on_cancel,
+            limiter=limiter,
+            **kwargs,
+        )
 
     @property
     def capabilities(self) -> list[Capability]:
@@ -117,9 +199,16 @@ async def call_in_thread(
     /,
     *args: Any,
     abandon_on_cancel: bool = False,
+    limiter: "CapacityLimiter | None" = None,
     **kwargs: Any,
 ) -> Any:
     """把同步阻塞型 SDK 调用隔离到线程池，避免阻塞事件循环。
+
+    ``limiter``：显式 ``CapacityLimiter``（Provider 分组线程池，见
+    ``BaseProviderAdapter.call_in_thread``）；None 用 anyio 全局默认
+    limiter（历史行为）。名额占用语义：无论 abandon 分支，limiter 名额
+    都随调用方取消即时释放（run_sync 以 ``async with limiter`` 包裹执行），
+    被弃置的工作线程继续在后台跑完但不占用名额。
 
     ``abandon_on_cancel=False``（默认，shield）：调用方取消延迟到线程内调用
     完成后才送达——适用于必须完整执行的启动类操作（如 tqsdk runtime 启动，
@@ -128,7 +217,7 @@ async def call_in_thread(
     跑完当前上游调用、结果丢弃）——适用于数据取数：请求级超时（应用层
     wait_for → 504）与客户端断开即时生效，不等 SDK 自然结束。线程不被
     强杀，SDK 调用按自身节奏完成（baostock/akshare 等上游 socket 无超时
-    属 SDK 限制，最坏占用一个 worker 线程至调用自然结束）。
+    属 SDK 限制，最坏留下一个后台孤儿线程至调用自然结束，但不占用名额）。
     """
     import functools
 
@@ -137,6 +226,7 @@ async def call_in_thread(
     return await anyio.to_thread.run_sync(
         functools.partial(func, *args, **kwargs),
         abandon_on_cancel=abandon_on_cancel,
+        limiter=limiter,
     )
 
 

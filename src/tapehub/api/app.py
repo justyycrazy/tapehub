@@ -44,6 +44,8 @@ def create_app(
         # 线程池容量：call_in_thread（全部线程型上游调用）共享 anyio 默认
         # limiter。anyio 默认 limiter 是 per-event-loop 的 RunVar，必须在本
         # loop 的 lifespan 启动阶段设置（create_app 模块级无 loop 可用）；
+        # 分组开启（thread_pool_size_map 非空）时适配器调用经各家自有
+        # CapacityLimiter，不经此默认 limiter（见 providers/base.py）；
         # 挂死上游调用占满容量会拖垮全部线程型 Provider，见
         # settings.thread_pool_size 注释
         anyio.to_thread.current_default_thread_limiter().total_tokens = (
