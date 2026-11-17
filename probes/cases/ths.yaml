@@ -97,9 +97,12 @@ targets:
     min_bars: 20
     required_fields: [open, high, low, close, volume, amount]
   contract@CN-CZCE:
-    instrument: CN-CZCE-MA701
-    # 甲醇 2701（2027-01 交割）：CZCE→CZC + 年月码 4→3 还原。合约会到期：
-    # 运行前按郑商所挂牌信息核对并轮换
+    instrument: CN-CZCE-MA2701
+    # 甲醇 2701（2027-01 交割）：标准式 4 位年月经映射层 4→3 还原为
+    # MA701.CZC（2026-11-16 双候选直测定案：4 位 MA2701.CZC 上游 3001 拒、
+    # 3 位可用），本目标 availability 即还原链路常态复验（2026-11-17 起
+    # 字面量由 3 位 MA701 修正为标准式，此前还原路径未被用例覆盖；域层
+    # 3 位旧写法构造期拒绝）。合约会到期：运行前按郑商所挂牌信息核对并轮换
     window: {start: 2026-08-03, end: 2026-11-13}
     min_bars: 20
     required_fields: [open, high, low, close, volume, amount]

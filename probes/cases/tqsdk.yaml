@@ -56,11 +56,13 @@ targets:
     min_bars: 30
   contract@CN-CZCE:
     # 甲醇 2701：CZCE 品种统一——「甲醇为郑商所持仓王」（原 RM2701 菜粕换
-    # 统一品种）。标准码统一 4 位年月（公开现行约定；tushare/新浪 侧实证
-    # 4 位可用、3 位全空）。TianQin 只认 3 位年月码（RM 侧 CZCE.RM701 有
-    # 数据、4 位 CZCE.RM2701 无响应挂起——还原机制品种无关），适配器做
-    # 4→3 位还原（MA2701 → MA701），本目标 availability 即还原链路的常态复验
-    instrument: CN-CZCE-MA701
+    # 统一品种）。标准码统一 4 位年月（tushare 侧实证 4 位可用、3 位全空；
+    # 域层自 2026-11-17 起 3 位旧写法构造期拒绝）。TianQin 只认 3 位年月码
+    # （RM 侧 CZCE.RM701 有数据、4 位 CZCE.RM2701 无响应挂起——还原机制
+    # 品种无关），适配器做 4→3 位还原（标准式 MA2701 进 → CZCE.MA701 发出），
+    # 本目标 availability 即还原链路的常态复验（2026-11-17 起用例字面量由
+    # 3 位 MA701 修正为标准式 MA2701——此前 3 位直通架空了还原路径）
+    instrument: CN-CZCE-MA2701
     window: {start: 2026-07-01, end: 2026-12-31}
     min_bars: 30
   contract@CN-DCE:
