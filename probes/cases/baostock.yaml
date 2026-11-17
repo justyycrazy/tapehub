@@ -13,14 +13,21 @@ pacing:
   # baostock.com/blacklist）：2s 间隔保守节流；适配器为全局单连接
   # （懒登录复用），探针链路与 raw 共享同一会话。
   call_interval_s: 2.0
-  timeout_s: 60
+  # 120：2026-11-17 实证分钟族重查询时延波动大（同 case 轮间 8.4s→62s→
+  # 7.5s，单轮 5 次贴 60s 线超时、各 case 在另一轮均 confirmed）——60s
+  # 余量不足（docs/providers/baostock.md「上游行为定案」）
+  timeout_s: 120
   # 预算：availability 90（stock 基准 21 + stock@CN-SZSE 追加 21 + index 3 +
   # index@CN-SZSE 追加 3 + etf 21 + etf@CN-SZSE 追加 21，含 ETF 分钟族 24）
   # + adjust_diff 12（stock/stock@CN-SZSE/etf 各 2 case × 2 调）+ raw 3 case
   # × 4 调 = 114
   #（history_depth 六条已收敛全量 skip，不占预算）。
-  # ⚠ 分钟族重查询可能贴线/超时（属上游瞬时时延非能力缺口），failed 时
-  # 重跑复验即可。
+  # ⚠ 分钟族重查询时延波动大、可能贴线/超时（属上游瞬时时延非能力缺口），
+  # failed 时重跑复验即可（2026-11-17：timeout 120 下单轮全绿）。
+  # ⚠ 分钟族 availability 计数解读：裸日期窗口按零点解释（_to_beijing），
+  # end 当日盘中 bar 全部晚于零点被闭区间过滤——分钟族计数天然比日线族
+  # 少 end 当日（2026-11-17 第 2 轮「末日前日截断」误判的根因，见 docs
+  # 「上游行为定案」与 PROBE_LOG 当日条目；上游宽窗口交付实证完整）。
   max_calls: 150
 
 # 基准标的沿用 tickflow/alphafeed 探针定稿的「早上市标的」原则（破除二分

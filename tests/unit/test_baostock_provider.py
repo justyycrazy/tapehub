@@ -405,3 +405,60 @@ def test_upstream_error_msg_truncated_in_details(
         r for r in caplog.records if r.name == "tapehub.providers.baostock.adapter"
     ]
     assert any(long_message in r.getMessage() for r in warnings)  # 全文留在日志
+
+
+def test_minute_window_end_semantics_pinned(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """窗口 end 时域语义钉住（2026-11-17「末日前日截断」误判的教训固化）：
+    零点 end（裸日期口径）下当日分钟 bar（09:35 起）晚于 end、被闭区间复核
+    正确过滤且 partial 不置位（数据在其有效窗口内完整）；全日时域 end 下
+    当日 bar 正常入窗——上游宽窗口分钟交付实证完整（docs「上游行为定案」）。"""
+    stub = _install_stub(monkeypatch)
+    # 上游返回末日前后两日各 2 根 15 分钟 bar（含 12-31 全日数据）
+    stub.result = minute_rows(
+        [
+            ("2025-12-30", "20251230144500000"),
+            ("2025-12-30", "20251230150000000"),
+            ("2025-12-31", "20251231144500000"),
+            ("2025-12-31", "20251231150000000"),
+        ]
+    )
+
+    # 零点 end：末日 bar 全部晚于 end → 过滤、partial 不置位
+    batch = asyncio.run(
+        _adapter().fetch_bars(
+            _query(
+                interval=Interval.parse("PT15M"),
+                start=datetime(2025, 12, 1, tzinfo=CN),
+                end=datetime(2025, 12, 31, 0, 0, 0, tzinfo=CN),
+            )
+        )
+    )
+    assert [bar.timestamp for bar in batch.bars] == [
+        datetime(2025, 12, 30, 14, 45, tzinfo=CN),
+        datetime(2025, 12, 30, 15, 0, tzinfo=CN),
+    ]
+    assert batch.partial is False
+
+    # 全日时域 end：末日 bar 正常入窗（上游完整交付口径）；桩结果集为
+    # 一次性游标，第二次 fetch 前重新预置
+    stub.result = minute_rows(
+        [
+            ("2025-12-30", "20251230144500000"),
+            ("2025-12-30", "20251230150000000"),
+            ("2025-12-31", "20251231144500000"),
+            ("2025-12-31", "20251231150000000"),
+        ]
+    )
+    batch = asyncio.run(
+        _adapter().fetch_bars(
+            _query(
+                interval=Interval.parse("PT15M"),
+                start=datetime(2025, 12, 1, tzinfo=CN),
+                end=datetime(2025, 12, 31, 23, 59, 59, tzinfo=CN),
+            )
+        )
+    )
+    assert [bar.timestamp.day for bar in batch.bars] == [30, 30, 31, 31]
+    assert batch.partial is False
