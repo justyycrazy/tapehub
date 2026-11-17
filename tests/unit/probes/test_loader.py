@@ -1,5 +1,6 @@
 """探针文件加载与 chain 矩阵展开测试（离线，使用 Fake Provider manifest）。"""
 
+import datetime as dt
 from pathlib import Path
 
 import pytest
@@ -44,6 +45,20 @@ def test_availability_matrix_expansion() -> None:
     assert case.adjust == Adjust.NONE
     assert case.skip_reason is None
     assert case.window_start.year == 2025
+
+
+def test_bare_date_window_normalized_start_midnight_end_end_of_day() -> None:
+    """裸日期窗口语义（2026-11-17 口径修订）：start 取当日零点、end 取当日
+    末 23:59:59.999999。零点 end 会把末个交易日全部盘中 bar（分钟族时间戳
+    为盘中时刻）排除在闭区间外，制造「缺末日」计数错觉（当日历 end 恰为
+    交易日时恰差一天，见 docs/probes.md「决策与变更记录」）。"""
+    expanded = expand_probe(_probe(), _manifest())  # type: ignore[arg-type]
+    case = next(c for c in expanded.chain_cases if c.kind == "availability")
+    assert case.window_start == dt.datetime(2025, 1, 1, tzinfo=case.window_start.tzinfo)
+    assert case.window_end == dt.datetime(
+        2025, 3, 31, 23, 59, 59, 999999, tzinfo=case.window_end.tzinfo
+    )
+    assert case.window_start.tzinfo is not None and case.window_end.tzinfo is not None
 
 
 def test_market_mismatch_skipped() -> None:

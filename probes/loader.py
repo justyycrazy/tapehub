@@ -231,8 +231,17 @@ def _id_prefix(base: ChainCase) -> str:
     return base.target_ref or base.asset_type.value
 
 
-def _to_beijing(day: dt.date) -> dt.datetime:
-    """裸日期统一按北京时间零点解释（项目内部时间约定）。"""
+def _to_beijing(day: dt.date, *, end_of_day: bool = False) -> dt.datetime:
+    """裸日期统一按北京时间解释（项目内部时间约定，2026-11-17 口径修订）：
+    起点侧取当日零点；终点侧取当日末 23:59:59.999999——裸日期 end 按零点时，
+    分钟族 bar（盘中时刻）晚于 end、被适配器闭区间复核排除末个交易日全部
+    盘中 bar（2026-11-17 baostock「缺末日」误判的根因，口径详见
+    docs/probes.md「决策与变更记录」）。日/周/月线 bar 零点戳在两种口径下
+    行为一致。"""
+    if end_of_day:
+        return dt.datetime(
+            day.year, day.month, day.day, 23, 59, 59, 999999, tzinfo=CN_TIMEZONE
+        )
     return dt.datetime(day.year, day.month, day.day, tzinfo=CN_TIMEZONE)
 
 
@@ -291,7 +300,7 @@ def _adjust_diff_cases(
                             compared_adjust=compared,
                             compare_fields=tuple(config.fields),
                             window_start=_to_beijing(config.window.start),
-                            window_end=_to_beijing(config.window.end),
+                            window_end=_to_beijing(config.window.end, end_of_day=True),
                             expected_calls=2,
                             skip_reason=skip_reason,
                         )
@@ -405,7 +414,7 @@ def _variant_consistency_cases(
                 compare_fields=tuple(config.fields),
                 tolerance=config.tolerance,
                 window_start=_to_beijing(config.window.start),
-                window_end=_to_beijing(config.window.end),
+                window_end=_to_beijing(config.window.end, end_of_day=True),
                 expected_calls=len(ordered),
                 skip_reason=skip_reason,
             )
@@ -471,7 +480,8 @@ def _market_mismatch_case(
             else dt.date(2025, 1, 1)
         ),
         window_end=_to_beijing(
-            target.window.end if target is not None else dt.date(2025, 12, 31)
+            target.window.end if target is not None else dt.date(2025, 12, 31),
+            end_of_day=True,
         ),
         skip_reason=reason,
     )
@@ -507,7 +517,7 @@ def _availability_case(
         variant=variant,
         instrument=target.instrument,
         window_start=_to_beijing(target.window.start),
-        window_end=_to_beijing(target.window.end),
+        window_end=_to_beijing(target.window.end, end_of_day=True),
         min_bars=target.min_bars,
         required_fields=tuple(target.required_fields),
         declared_history_start=next(
@@ -733,7 +743,7 @@ def expand_probe(probe: ProbeFile, manifest: ProviderManifest) -> ExpandedProbe:
                 variant=caps[0].variants[0],
                 instrument=target.instrument,
                 window_start=_to_beijing(target.window.start),
-                window_end=_to_beijing(target.window.end),
+                window_end=_to_beijing(target.window.end, end_of_day=True),
                 target_ref=target_key,
             )
             return base, caps
