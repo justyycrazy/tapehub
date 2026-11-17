@@ -205,6 +205,9 @@ notes: 本探针要回答的问题与已知存疑点。
 
 | 规则 | 说明 |
 | --- | --- |
+| **碎片区判据（history_depth 可回填条件）** | 稀疏碎片档案的处置（2026-11-18 定案）：**多周期互证干净收敛 → 可回填**（各声明周期独立探测收敛于同一 floor、complete）；bisect 出现全空窗/无法收敛 → 不可定案，维持 null 或按全局统一口径归一，不得以单周期观测回填 |
+| **探测目标轮换优先** | 探测目标因档案过浅/数据缺口/到期失效时，**轮换成熟标的优先**（目录外直测定案后换码；期权按现价锚定 ATM、ETF 选成熟标的），**不为个别目标放宽 min_bars**（2026-11-18 定案） |
+| **周线/月线键位跨源差异** | 周线根标注（周首日 vs 周内最后交易日）、月线根标注（自然月首日 vs 月末交易日）跨源不同——已在各 Provider docs「上游行为定案」记录（futunn/alphafeed/tickflow 等），跨源周/月线根日期不可直比；探针框架 bisect 月窗键位校准**待单独立项**（2026-11-18） |
 | **history.start 全局统一口径** | 探针实测/二分估计回填 `history.start` 按四条规则归一（2026-11-17 人工定案，全 Provider 统一遵守）：① GLOBAL forex 与 US stock/etf 实测早于 2000-01-01 → 统一声明 2000-01-01（深库不精确锚定、保守上界）；② GLOBAL crypto 实测早于 2020-01-01 → 统一声明 2020-01-01；③ CN 实测到上市/开业日期 → 按上市日期锚回填；④ 其余取实测估计月份的 1 日零点（月首对齐）。null（未核实）不适用；精确实测证据在各 Provider docs 注记落档，不做跨 Provider 值同步 |
 | 文件名 = Provider 名 | loader 只认 `BUILTIN_PROVIDERS` 同名文件，缺失/多余即报错 |
 | case ID | bars 自动生成 `{asset_type}-{interval}-{adjust}-{variant}`（快照为 `quote-{asset_type}-{variant}`，市场/交易所限定键带前缀，如 `quote-stock@HK-tickflow`）；分析类为 `adjust-diff-<at>-<interval>-<a>-vs-<b>-<variant>`、`history-depth-<at>-<interval>-<variant>`、`limit-<at>-<interval>-<variant>`、`variant-consistency-<at>-<interval>-<adjust>`；raw 自定义 `^[A-Za-z][A-Za-z0-9._-]*$` 且全局唯一 |
@@ -322,6 +325,17 @@ Provider 文档「上游行为定案」节；覆盖范围与证据出处见「�
 
 ## 决策与变更记录
 
+- **2026-11-18（回填规则三条补充成文）**：碎片区判据（多周期互证干净收敛
+  → 可回填）、探测目标轮换优先（成熟标的优先、不为个别目标放宽
+  min_bars）、周/月线键位跨源差异（已记录 docs；框架校准待单独立项）
+  成文入「规范化规则」；
+- **2026-11-17（history.start 全局统一口径 + 七条补充裁决）**：回填规则从
+  「按 Provider 各自实测首根精化」改为四条统一规则（2000/2020 深库归一、
+  CN 上市/基日锚、其余月首对齐），全 Provider 90+ 处落地；补充裁决：统一
+  北京时间零点、开始时间之前的数据状态不入 docs、R3 判定=实测首根精确
+  等于基日/上市日、同源互证不可作他家 R3 依据、index 同款基日/上市日锚、
+  HK 同 US 归一、alphafeed/tickflow 算法统一——alphafeed CN stock 首根
+  自证聚焦补测（1990-12-19=开业日，与 tickflow 一致）；证据留档探针日志；
 - **2026-11-17（窗口 end 时域口径修订）**：探针 targets/分析探针的裸日期
   `end` 归一由「当日零点」改为「当日末 23:59:59.999999」（`start` 仍取
   零点）。原因：分钟族 bar 时间戳为盘中时刻，零点 end 经适配器闭区间复核
