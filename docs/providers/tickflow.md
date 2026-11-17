@@ -26,13 +26,13 @@
 - bars 能力按 CN/HK/US **三市场拆块逐市场声明**（三市场周期集与复权相同、历史深度不同，合并声明会以跨市场最早值对历史较浅的市场过度声明；capabilities 与 history.start 一一对应，operations 本就按市场枚举、不受块拆分影响）；
 - quotes 为快照能力：interval/adjust 维度无意义，capabilities 与 operations match 中显式空/null，路由跳过对应维度。
 
-history.start（历史覆盖声明，探针二分收敛，早上市基准标的，90 天窗口粒度、complete=True；取估计窗口右端零点，approx ±90 天——真实最早可能更早；日/周/月三周期同上游端点同数据区间，同值声明）：
+history.start（历史覆盖声明，探针二分收敛，早上市基准标的，90 天窗口粒度、complete=True；取估计窗口右端零点，approx ±90 天——真实最早可能更早；三市场已按实测首根日精度精化，探针 2026-11-17 第 1 轮 history_depth，见下表；日/周/月三周期同上游端点同数据区间，同值声明）：
 
-| 市场 | history.start（北京时间零点） | 二分真值带 |
+| 市场 | history.start（北京时间零点） | 依据 |
 | --- | --- | --- |
-| CN | 1991-01-18 | [1990-12-19, 1991-01-18]（不早于上交所开业日） |
-| HK | 1980-02-15 | (1979-08-19, 1980-02-15] |
-| US | 1962-02-17 | (1961-09-23, 1962-02-17] |
+| CN | 1990-12-19 | 实测首根直测（三周期一致）——恰为上交所开业日（旧二分闭区间带 [1990-12-19, 1991-01-18] 左端） |
+| HK | 1980-01-02 | 实测首根直测（三周期一致）——早于旧二分带右端 1980-02-15、落于旧带 (1979-08-19, 1980-02-15] 内 |
+| US | 1962-01-02 | 实测首根直测（三周期一致，首根 P1D 1962-01-02T13:00+08:00 美东零点）——与 alphafeed 侧逐位一致（同源库底），与旧带 (1961-09-23, 1962-02-17] 相容 |
 
 基准标的：CN 600602（上交所开业首批）、HK 00002、US GE（1892 年上市）——基准标的为早上市标的，二分收敛点若远离其上市日即为真实库底。
 
@@ -56,7 +56,7 @@ history.start（历史覆盖声明，探针二分收敛，早上市基准标的�
 - 不声明的周期及原因：
   - 分钟族（上游枚举 `1m/5m/10m/15m/30m/60m`）：免费档无分钟 K 线权限；tickflow 是 CN stock bars 的回退候选，声明无权限的周期会 403 打断本可由其他 Provider 服务的请求——去掉声明后 US 分钟 K 由 twelvedata 服务，CN/HK 分钟 K 无人声明、auto 路由诚实返回 `NO_PROVIDER_AVAILABLE`；升档后按探针流程实测再回填；
   - 季线 `1Q`：无法用 ISO 8601 Duration 表达；年线 `1Y`：超出项目「最大支持到月线」的周期上界。均不声明；
-- 复权映射：`qfq→forward`（比例前复权）、`hfq→backward`（后复权）、`none→none`；上游另有 `forward_additive`/`backward_additive` 差值加法变体，不对外暴露；SDK 自身默认 forward，适配器始终显式传参；**ETF 复权生效**（探针 2026-11-15 目录外诊断：forward vs none 全窗 360 根差异、与 alphafeed 侧逐根一致；chain adjust_diff 常态复验）；**US ETF 三复权生效**（目录外诊断 2026-11-15：none/qfq/hfq 两两全窗差异、与 alphafeed 侧逐位一致，见「上游行为定案」）；**指数无复权**仅声明 none（复权对指数无意义，与 baostock/tushare/alphafeed 先例同口径）；港股/美股**个股**复权语义未经探针实证，生效性以探针实证为准；
+- 复权映射：`qfq→forward`（比例前复权）、`hfq→backward`（后复权）、`none→none`；上游另有 `forward_additive`/`backward_additive` 差值加法变体，不对外暴露；SDK 自身默认 forward，适配器始终显式传参；**ETF 复权生效**（探针 2026-11-15 目录外诊断：forward vs none 全窗 360 根差异、与 alphafeed 侧逐根一致；chain adjust_diff 常态复验）；**US ETF 三复权生效**（目录外诊断 2026-11-15：none/qfq/hfq 两两全窗差异、与 alphafeed 侧逐位一致，见「上游行为定案」）；**指数无复权**仅声明 none（复权对指数无意义，与 baostock/tushare/alphafeed 先例同口径）。**港股/美股个股复权生效已实证**（探针 2026-11-17 第 1 轮 adjust_diff：none vs qfq/hfq 全窗差异 confirmed，HK 00002 / US GE 各 63 根全 divergence，first_divergence 均为窗口首根 2024-06-03；chain 常态复验）；
 - 单位：无换算，volume/amount 原值透出；HK/US 日线 `amount` 上游原值 0（无成交额数据，按原值透出、非缺失 null）。CN 指数/ETF 与 tushare 同窗互证定案口径：`vol` 手、`amount` 元（与 CN stock 日线一致，探针 2026-11-15 第 7/8 轮）。
 
 ## 上游行为定案
@@ -67,7 +67,7 @@ history.start（历史覆盖声明，探针二分收敛，早上市基准标的�
 - HK/US 指数无覆盖定案（目录外诊断 2026-11-15 第 12 轮，与 alphafeed 同源引擎再证）：10 个候选符号（两套缩写约定）instruments 全未收录，HSI.HK/SPX.US 防御性直测 klines 空、quotes 空 data（如实包装 `UPSTREAM_ERROR`），控制组正常（000001.SH type=index、00700.HK type=stock）；港股段仅收录个股、美股段仅收录可交易证券（stock/etf），CN 指数为唯一指数覆盖，HK/US 指数维持不声明；
 - US ETF 扩容定案（目录外诊断 2026-11-15 第 9 轮）：统一 klines 端点对美股 ETF 标的（SPY.US/QQQ.US，交易所段无关）不做证券类型路由拒绝——P1D 2025 全窗 250 根直测放行；none/qfq/hfq 三复权生效且与 alphafeed 侧逐位一致（同源引擎再证）；**复权锚定为上游全序列端点而非查询窗口端点**（hfq 与 qfq 差常数比例 ≈0.5476，同一套分红因子两种锚定，窗口内末根可 ≠ 原始价）；量额同 US stock 日线口径（`amount` 上游原值 0）。history 未核实保持 null（chain 二分后回填）；
 - 截断/分页：上游单次上限 **10000 根**，达到上限时无法确认是否被截断，诚实标记 `meta.partial=true` 并经 warnings 提示可能截断；统一分页由共享 `paginate_bars` 完成（跨 Provider 通用分页语义见 ../api.md）；上游按毫秒时间过滤的边界由适配器在标准化后按闭区间 `[start, end]` 精确复核；
-- 错误指纹（探针实证）：免费档分钟线无权限为 SDK `PermissionError`「无分钟K线查询权限」（统一包装 `UPSTREAM_ERROR`）；限频实测以 6.5s 间隔（≈9 次/分钟）全程未触发；`RateLimitError` 类型存在于 SDK，429 指纹待更高频场景核实；限频/无权限等 SDK 异常统一包装 `UPSTREAM_ERROR`，不穿透 API；
+- 错误指纹（探针实证）：免费档分钟线无权限为 SDK `PermissionError`「无分钟K线查询权限」（统一包装 `UPSTREAM_ERROR`）；限频实测以 6.5s 间隔（≈9 次/分钟）全程未触发；`RateLimitError` 类型存在于 SDK，429 指纹待更高频场景核实；无效标的快照上游返回 200 空数组、不报错（探针 2026-11-17 第 1 轮实测，与 alphafeed 同款），适配器按契约违背抛 `UPSTREAM_ERROR`（见「快照契约违背」）；限频/无权限等 SDK 异常统一包装 `UPSTREAM_ERROR`，不穿透 API；
 - 快照响应实测（SDK 0.1.25）：返回 `list[dict]`——文档与实测不符（以实测为准，文档描述为 data 包装结构）；实测未观察到 `session` 字段（文档声明存在；防御性映射，存在才透出）；比例字段为**小数比例（1% = 0.01**，如 change_pct 0.0162 = 1.62%）；上游支持逗号分隔批量（本项目为单标的快照，单标的单次调用）；
 - 快照契约违背：`timestamp`（毫秒）缺失/非法、`last_price` 不可解析抛 `UPSTREAM_ERROR`（不伪造时间或价格）；data 数组为空同样抛 `UPSTREAM_ERROR`（不静默返回）。
 

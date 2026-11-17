@@ -5,15 +5,18 @@ provider: tickflow
 default_variant: tickflow
 
 capabilities:
+  # 三市场 history.start 均按实测首根日精度精化（探针 2026-11-17 第 1 轮
+  # history_depth；CN 首根 = 上交所开业日 1990-12-19，HK 首根 1980-01-02，
+  # US 首根 1962-01-02 与 alphafeed 侧逐位一致——同源库底）
   - data_type: bars
     markets: [CN]
     asset_types: [stock]
     delivery: [rest]
     variants: [tickflow]
     intervals:
-      - {code: P1D, history: {start: 1991-01-18T00:00:00+08:00, end: null}}
-      - {code: P1W, history: {start: 1991-01-18T00:00:00+08:00, end: null}}
-      - {code: P1M, history: {start: 1991-01-18T00:00:00+08:00, end: null}}
+      - {code: P1D, history: {start: 1990-12-19T00:00:00+08:00, end: null}}
+      - {code: P1W, history: {start: 1990-12-19T00:00:00+08:00, end: null}}
+      - {code: P1M, history: {start: 1990-12-19T00:00:00+08:00, end: null}}
     adjustments: [none, qfq, hfq]
     fields: [open, high, low, close, volume, amount]
   # 指数：与 stock 共用统一 klines 端点（探针 2026-11-15 第 7/8 轮直测
@@ -51,9 +54,9 @@ capabilities:
     delivery: [rest]
     variants: [tickflow]
     intervals:
-      - {code: P1D, history: {start: 1980-02-15T00:00:00+08:00, end: null}}
-      - {code: P1W, history: {start: 1980-02-15T00:00:00+08:00, end: null}}
-      - {code: P1M, history: {start: 1980-02-15T00:00:00+08:00, end: null}}
+      - {code: P1D, history: {start: 1980-01-02T00:00:00+08:00, end: null}}
+      - {code: P1W, history: {start: 1980-01-02T00:00:00+08:00, end: null}}
+      - {code: P1M, history: {start: 1980-01-02T00:00:00+08:00, end: null}}
     adjustments: [none, qfq, hfq]
     fields: [open, high, low, close, volume, amount]
   - data_type: bars
@@ -62,9 +65,9 @@ capabilities:
     delivery: [rest]
     variants: [tickflow]
     intervals:
-      - {code: P1D, history: {start: 1962-02-17T00:00:00+08:00, end: null}}
-      - {code: P1W, history: {start: 1962-02-17T00:00:00+08:00, end: null}}
-      - {code: P1M, history: {start: 1962-02-17T00:00:00+08:00, end: null}}
+      - {code: P1D, history: {start: 1962-01-02T00:00:00+08:00, end: null}}
+      - {code: P1W, history: {start: 1962-01-02T00:00:00+08:00, end: null}}
+      - {code: P1M, history: {start: 1962-01-02T00:00:00+08:00, end: null}}
     adjustments: [none, qfq, hfq]
     fields: [open, high, low, close, volume, amount]
   # ETF：与 stock 共用统一 klines 端点（目录外诊断直测 SPY.US/QQQ.US 日线
