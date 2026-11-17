@@ -11,6 +11,9 @@ default_variant:
 
 capabilities:
   # 个股（A 股）· 东方财富：日/周/月线，支持不复权/前复权/后复权
+  #（市场段 [CN] 覆盖 SSE/SZSE/BSE——BSE 920 段 2026-11-17 探针实证已收录，
+  # 纯 6 位代码直通上游按市场判定；BSE 标的均 2020 年后上市，各标的数据以
+  # 自身上市日起。sina/tencent 变体不含 BSE，未探针不声明）
   - data_type: bars
     markets: [CN]
     asset_types: [stock]

@@ -93,9 +93,11 @@ def _prefixed_symbol(query: BarQuery, allowed_exchanges: tuple[str, ...]) -> str
 
 
 def stock_symbol(query: BarQuery) -> str:
-    """个股符号：eastmoney 用纯 6 位代码；sina/tencent 用带市场前缀符号。"""
+    """个股符号：eastmoney 用纯 6 位代码（SSE/SZSE/BSE——BSE 920 段 2026-11-17
+    探针实证已收录，纯 6 位直通上游按市场判定）；sina/tencent 用带市场前缀
+    符号。"""
     if query.variant == DataVariant.EASTMONEY:
-        if query.instrument.exchange not in ("SSE", "SZSE"):
+        if query.instrument.exchange not in ("SSE", "SZSE", "BSE"):
             raise _unsupported(
                 query, f"exchange {query.instrument.exchange!r} is not supported here"
             )
