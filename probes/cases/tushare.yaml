@@ -199,10 +199,13 @@ targets:
     min_bars: 20
   contract@CN-CZCE:
     # 甲醇 2701：CZCE 品种统一——「甲醇为郑商所持仓王」（原 RM2701 菜粕换
-    # 统一品种）。4 位年月码直通（MA701.ZCE，五所探针实证 + akshare 新浪侧
-    # 同日互证「4 位可用、3 位全空」）。合约会到期：运行前按郑商所挂牌信息
-    # 核对，失败如实记录，到期轮换为当时的现活合约
-    instrument: CN-CZCE-MA701
+    # 统一品种）。tushare 只认 4 位年月码：2026-11-17 主轮 failed（0 根）+
+    # 聚焦诊断轮裁决——3 位 MA701.ZCE 0 行、4 位 MA2701.ZCE 49 行（同窗
+    # RM2701.ZCE 49 行对照、MAL.ZCE 当前窗有数），与 api.md「标准 symbol
+    # 恒为 4 位年月」一致，用例字面量由 MA701 修正为 MA2701（其余 Provider
+    # 的 CZCE 期货字面量统一问题另列 PROBE_LOG 待办）。合约会到期：运行前
+    # 按郑商所挂牌信息核对，失败如实记录，到期轮换为当时的现活合约
+    instrument: CN-CZCE-MA2701
     window: {start: 2026-09-01, end: 2026-12-31}
     min_bars: 20
   contract@CN-GFEX:
@@ -266,7 +269,11 @@ chain:
     # 轮换漂移，深度是资产类级结论，由存续性目标承载；contract 库级
     # history.start 保持 null 口径不变
     targets: [stock, continuous, index, etf]
-    earliest: 1991-01-01
+    # earliest 1980：2026-11-17 主轮实证 floor(1991-01-01) 太浅——era#7
+    # [1991,1996) 1261 行（600602 数据早于 1991），7 条深度 case 触底退化
+    # first_bar=None；raw 裁决 stock 真实库底 1990-12-19（1990-12-19 窗
+    # 3 行）。1980 为 baostock 同款口径，下限余量覆盖沪市开业
+    earliest: 1980-01-01
     era_step_years: 5
     max_calls: 20
   limit_truncation:
