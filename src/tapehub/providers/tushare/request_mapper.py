@@ -146,8 +146,9 @@ def futures_ts_code(query: BarQuery) -> str:
     """期货 ts_code：单一合约原样（CN-SHFE-CU2401 → CU2401.SHF；CZCE 与统一
     标准码同为 4 位年月，CN-CZCE-SR2601 → SR2601.ZCE 直通）；主力连续
     多数交易所品种+L（CN-SHFE-CU → CUL.SHF、CN-GFEX-LC → LCL.GFE）、
-    CFFEX 直拼（CN-CFFEX-IF → IF.CFX）。非 4 位年月的 CZCE 合约输入
-    （3 位旧写法等）如实透传给上游，查空/报错如实表现，不做静默年份猜测。"""
+    CFFEX 直拼（CN-CFFEX-IF → IF.CFX）。CZCE 3 位旧写法与不规则形态自
+    2026-11-17 起由域层构造期拒绝（contract×CZCE 4 位年月校验，见
+    domain/models.py），不再到达本映射；不做年份猜测，映射层亦不设二次校验。"""
     suffix = _suffix(query, _FUTURES_SUFFIXES)
     symbol = query.instrument.symbol
     if (

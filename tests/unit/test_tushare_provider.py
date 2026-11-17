@@ -7,6 +7,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 import pytest
+from pydantic import ValidationError
 
 from tapehub.domain.errors import ProviderNotImplementedError, UnsupportedCapabilityError
 from tapehub.domain.intervals import Interval
@@ -399,10 +400,9 @@ def test_futures_partial_on_row_limit(monkeypatch: pytest.MonkeyPatch) -> None:
         # GFEX 在市 154 行）
         ("CN-GFEX-LC2706", AssetType.CONTRACT, "LC2706.GFE"),
         # CZCE 与统一标准码同为 4 位年月，直通（探针实证 SR2601.ZCE 有数据、
-        # 3 位旧写法全空）
+        # 3 位旧写法全空；3 位旧写法自 2026-11-17 起域层构造期拒绝，
+        # 不再到达映射层——拒绝行为由 test_models.py 覆盖）
         ("CN-CZCE-RM2701", AssetType.CONTRACT, "RM2701.ZCE"),
-        # 3 位旧写法输入不做年份猜测，如实透传给上游（查空如实表现）
-        ("CN-CZCE-SR601", AssetType.CONTRACT, "SR601.ZCE"),
         # 主力连续：多数交易所品种+L（XXL 主连），CFFEX 主力直拼（探针实证）
         ("CN-SHFE-CU", AssetType.CONTINUOUS, "CUL.SHF"),
         ("CN-CZCE-SR", AssetType.CONTINUOUS, "SRL.ZCE"),
@@ -445,20 +445,17 @@ def test_unsupported_futures_exchange(monkeypatch: pytest.MonkeyPatch) -> None:
         asyncio.run(adapter.fetch_bars(query))
 
 
-def test_czce_irregular_symbol_passthrough(monkeypatch: pytest.MonkeyPatch) -> None:
-    """CZCE 不规则合约代码（位数不足等）不做映射层拒绝或年份猜测，
-    如实透传给上游——上游查空/报错即最诚实的行为表现。"""
-    stub = install(monkeypatch)
-    stub.set_rows("fut_daily", futures_rows(["2026-01-05"]))
-    adapter = _adapter()
-    query = _query(
-        asset_type=AssetType.CONTRACT,
-        instrument=Instrument.parse("CN-CZCE-SR60"),
-        adjust=Adjust.NONE,
-    )
-    asyncio.run(adapter.fetch_bars(query))
-    _, kwargs = stub.last_pro.calls[0]
-    assert kwargs["ts_code"] == "SR60.ZCE"
+def test_czce_irregular_symbol_rejected() -> None:
+    """CZCE 不规则合约代码（位数不足等）自 2026-11-17 起由域层构造期拒绝
+    （contract×CZCE 4 位年月校验，见 domain/models.py），不再到达映射层；
+    映射层自身不设二次校验、不做年份猜测——域层放行的 4 位标准式直通
+    （行为由 test_futures_ts_code_mapping 覆盖）。"""
+    with pytest.raises(ValidationError):
+        _query(
+            asset_type=AssetType.CONTRACT,
+            instrument=Instrument.parse("CN-CZCE-SR60"),
+            adjust=Adjust.NONE,
+        )
 
 
 def test_unsupported_stock_exchange(monkeypatch: pytest.MonkeyPatch) -> None:
