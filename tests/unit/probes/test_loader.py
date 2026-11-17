@@ -61,6 +61,79 @@ def test_bare_date_window_normalized_start_midnight_end_end_of_day() -> None:
     assert case.window_start.tzinfo is not None and case.window_end.tzinfo is not None
 
 
+def test_market_mismatch_placeholder_ids_market_qualified(tmp_path: Path) -> None:
+    """市场失配占位 case id 带能力市场段限定且互不重复（2026-11-17 修复）。
+
+    复现 akshare 型清单（同变体按市场拆 CN/HK/US 三块）+ 聚焦目录只保留
+    交易所限定目标的形态：旧占位 id 裸 asset_type 前缀，HK/US 两块占位互相
+    撞 id（duplicate chain case id: stock-P1D-none-eastmoney）致加载失败。
+    """
+    manifest_yaml = (Path(__file__).parents[2] / "fixtures" / "manifests").joinpath(
+        "fake_provider_multi_market.yaml"
+    )
+    manifest = load_manifest_file(manifest_yaml)
+    probe = ProbeFile.model_validate(
+        {
+            "probe": "fake-provider-multi-market",
+            "version": 2,
+            "targets": {
+                "stock@CN-SZSE": {
+                    "instrument": "CN-SZSE-000001",
+                    "window": {"start": "2025-01-01", "end": "2025-03-31"},
+                }
+            },
+            "chain": {"include_declared": True},
+        }
+    )
+    expanded = expand_probe(probe, manifest)
+    by_id = {c.case_id: c for c in expanded.chain_cases}
+    # 真实限定 case（唯一）+ 两块市场失配占位（id 各带能力市场段，互不重复）
+    assert "stock@CN-SZSE-P1D-none-eastmoney" in by_id
+    assert by_id["stock@CN-SZSE-P1D-none-eastmoney"].skip_reason is None
+    hk = by_id["stock@HK-P1D-none-eastmoney"]
+    us = by_id["stock@US-P1D-none-eastmoney"]
+    assert hk.kind == "availability" and hk.skip_reason is not None
+    assert us.kind == "availability" and us.skip_reason is not None
+    assert "not in capability markets ['HK']" in hk.skip_reason
+    assert "not in capability markets ['US']" in us.skip_reason
+
+
+def test_market_mismatch_placeholder_no_collision_with_real_bare_case(
+    tmp_path: Path,
+) -> None:
+    """裸基准真实 case 与失配占位并存时不撞 id（旧占位裸前缀会撞真实
+    stock-P1D-none-eastmoney）。"""
+    manifest_yaml = (Path(__file__).parents[2] / "fixtures" / "manifests").joinpath(
+        "fake_provider_multi_market.yaml"
+    )
+    manifest = load_manifest_file(manifest_yaml)
+    probe = ProbeFile.model_validate(
+        {
+            "probe": "fake-provider-multi-market",
+            "version": 2,
+            "targets": {
+                "stock": {
+                    "instrument": "CN-SSE-600000",
+                    "window": {"start": "2025-01-01", "end": "2025-03-31"},
+                }
+            },
+            "chain": {"include_declared": True},
+        }
+    )
+    expanded = expand_probe(probe, manifest)
+    real = next(
+        c
+        for c in expanded.chain_cases
+        if c.case_id == "stock-P1D-none-eastmoney" and c.skip_reason is None
+    )
+    assert real.instrument == "CN-SSE-600000"
+    assert {
+        c.case_id
+        for c in expanded.chain_cases
+        if c.skip_reason is not None and "not in capability markets" in c.skip_reason
+    } == {"stock@HK-P1D-none-eastmoney", "stock@US-P1D-none-eastmoney"}
+
+
 def test_market_mismatch_skipped() -> None:
     data = _probe().model_dump()
     data["targets"]["stock"]["instrument"] = "GLOBAL-OTC-EUR/USD"
@@ -603,7 +676,7 @@ def test_quote_availability_mismatch_skipped() -> None:
     probe = ProbeFile.model_validate(data)
     expanded = expand_probe(probe, _manifest())  # type: ignore[arg-type]
     quotes = [c for c in expanded.chain_cases if c.kind == "quote_availability"]
-    assert [c.case_id for c in quotes] == ["quote-stock-eastmoney"]
+    assert [c.case_id for c in quotes] == ["quote-stock@CN-eastmoney"]
     assert quotes[0].skip_reason is not None and "market" in quotes[0].skip_reason
 
 

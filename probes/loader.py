@@ -451,12 +451,18 @@ def _market_mismatch_case(
     adjust: Adjust,
     variant: DataVariant,
 ) -> ChainCase:
-    """声明了 target 但其市场不在能力市场内：生成显式跳过的 case（进报告）。"""
+    """声明了 target 但其市场不在能力市场内：生成显式跳过的 case（进报告）。
+
+    占位 case id 带能力市场段限定（``stock@HK-P1D-none-eastmoney``）：裸
+    asset_type 前缀会与真实基准 case 撞 id，多市场能力块（如 eastmoney
+    stock 的 CN/HK/US 块）的占位之间也会互相撞 id（聚焦目录裁剪目标键场景
+    实测，2026-11-17）。"""
     target = _first_target(probe, asset_type)
     market = (
         Instrument.parse(target.instrument).market if target is not None else "unknown"
     )
-    case_id = f"{asset_type.value}-{interval.code}-{adjust.value}-{variant.value}"
+    id_prefix = f"{asset_type.value}@{'-'.join(capability.markets)}"
+    case_id = f"{id_prefix}-{interval.code}-{adjust.value}-{variant.value}"
     for skip in probe.chain.skip if probe.chain else []:
         if skip.case == case_id:
             reason = f"explicit skip: {skip.reason}"
@@ -586,12 +592,15 @@ def _quote_mismatch_case(
     asset_type: AssetType,
     variant: DataVariant,
 ) -> ChainCase:
-    """声明了 target 但其市场不在 quotes 能力市场内：显式跳过的 case（进报告）。"""
+    """声明了 target 但其市场不在 quotes 能力市场内：显式跳过的 case（进报告）。
+
+    占位 case id 带能力市场段限定——裸前缀会与真实 case 及其它市场能力块
+    的占位互相撞 id（同 bars 占位，2026-11-17）。"""
     target = _first_target(probe, asset_type)
     market = (
         Instrument.parse(target.instrument).market if target is not None else "unknown"
     )
-    case_id = f"quote-{asset_type.value}-{variant.value}"
+    case_id = f"quote-{asset_type.value}@{'-'.join(capability.markets)}-{variant.value}"
     for skip in probe.chain.skip if probe.chain else []:
         if skip.case == case_id:
             reason = f"explicit skip: {skip.reason}"

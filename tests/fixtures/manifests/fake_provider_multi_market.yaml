@@ -1,0 +1,51 @@
+# 测试专用 Fake Provider（多市场变体拆块）：模拟 akshare 型清单结构——
+# 同一变体（eastmoney）按市场拆多个 stock 能力块（CN/HK/US）。只用于验证
+# 市场失配占位 case 的 id 限定与唯一性，不代表任何真实数据源的能力。
+provider: fake-provider-multi-market
+default_variant: eastmoney
+
+capabilities:
+  - data_type: bars
+    markets: [CN]
+    asset_types: [stock]
+    delivery: [rest]
+    variants: [eastmoney]
+    intervals:
+      - code: P1D
+        history:
+          start: null
+          end: null
+    adjustments: [none]
+    fields: [open, high, low, close, volume, amount]
+  - data_type: bars
+    markets: [HK]
+    asset_types: [stock]
+    delivery: [rest]
+    variants: [eastmoney]
+    intervals:
+      - code: P1D
+        history:
+          start: null
+          end: null
+    adjustments: [none]
+    fields: [open, high, low, close, volume, amount]
+  - data_type: bars
+    markets: [US]
+    asset_types: [stock]
+    delivery: [rest]
+    variants: [eastmoney]
+    intervals:
+      - code: P1D
+        history:
+          start: null
+          end: null
+    adjustments: [none]
+    fields: [open, high, low, close, volume, amount]
+
+operations:
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: P1D, adjust: none, variant: eastmoney}
+    operation: fake_stock_daily_cn
+  - match: {data_type: bars, market: HK, asset_type: stock, interval: P1D, adjust: none, variant: eastmoney}
+    operation: fake_stock_daily_hk
+  - match: {data_type: bars, market: US, asset_type: stock, interval: P1D, adjust: none, variant: eastmoney}
+    operation: fake_stock_daily_us
