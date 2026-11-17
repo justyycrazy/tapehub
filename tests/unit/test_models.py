@@ -224,6 +224,35 @@ class TestBarQuery:
         with pytest.raises(ValidationError, match="does not apply to exchange"):
             self._query(asset_type=asset_type, instrument=instrument)
 
+    @pytest.mark.parametrize(
+        ("asset_type", "instrument"),
+        [
+            ("contract", "CN-CZCE-MA2701"),  # 4 位年月标准式
+            ("contract", "CN-CZCE-RM2701"),
+            ("contract", "CN-SHFE-CU2607"),  # 其它所不受 CZCE 形态校验
+            ("continuous", "CN-CZCE-MA"),  # 主连品种码（无年月段）
+            ("weighted-index", "CN-CZCE-MA"),  # 加权品种码同上
+        ],
+    )
+    def test_czce_futures_symbol_valid(self, asset_type: str, instrument: str) -> None:
+        """CZCE 单一合约 4 位年月标准式与品种码类请求：正常构造。"""
+        query = self._query(asset_type=asset_type, instrument=instrument)
+        assert query.instrument.code == instrument
+
+    @pytest.mark.parametrize(
+        ("asset_type", "instrument"),
+        [
+            ("contract", "CN-CZCE-MA701"),  # 3 位年月旧写法
+            ("contract", "CN-CZCE-SR705"),
+            ("contract", "CN-CZCE-TA501"),  # 历史老合约写法同拒（10 年循环歧义）
+        ],
+    )
+    def test_czce_futures_symbol_rejected(self, asset_type: str, instrument: str) -> None:
+        """CZCE 单一合约 3 位年月旧写法构造期拒绝（10 年循环歧义，不做世纪
+        猜测），不透传映射层。"""
+        with pytest.raises(ValidationError, match="requires CZCE instrument symbol"):
+            self._query(asset_type=asset_type, instrument=instrument)
+
 
 class TestQuoteQuery:
     @pytest.mark.parametrize(
@@ -243,6 +272,11 @@ class TestQuoteQuery:
         """快照查询矛盾组合（commodity-option + CN-SSE）构造期拒绝。"""
         with pytest.raises(ValidationError, match="does not apply to exchange"):
             QuoteQuery(asset_type="commodity-option", instrument="CN-SSE-10012437")
+
+    def test_czce_futures_symbol_rejected(self) -> None:
+        """快照查询同受 CZCE 期货 4 位年月约束：3 位旧写法构造期拒绝。"""
+        with pytest.raises(ValidationError, match="requires CZCE instrument symbol"):
+            QuoteQuery(asset_type="contract", instrument="CN-CZCE-MA701")
 
 
 class TestBarBatch:

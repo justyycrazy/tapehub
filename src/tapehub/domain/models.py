@@ -129,6 +129,36 @@ def _validate_option_request(asset_type: AssetType, instrument: "Instrument") ->
         )
 
 
+# CZCE 期货单一合约统一符号形态（契约级）：symbol 段为 {品种}{4位年月YYMM}
+# （CN-CZCE-MA2701）。郑商所 3 位年月旧写法（MA701）存在 10 年循环歧义
+# （同一写法 2007/2017/2027 三度存在），不做世纪猜测，构造期即拒绝
+# （2026-11-17 定案，与期权侧 3 位月码拒绝同构）；上游原生 3 位写法由各
+# Provider 映射层统一还原（tqsdk/ths 4→3，见 docs/providers/<name>.md
+# 「标的代码映射」）。主连/加权（continuous/weighted-index）symbol 为
+# 品种码（MA，无年月段），不受本式约束；其它交易所未经实证不在本式范围。
+_CZCE_FUTURES_CONTRACT_RE = re.compile(r"^[A-Z]{1,2}\d{4}$")
+
+
+def _validate_futures_request(asset_type: AssetType, instrument: "Instrument") -> None:
+    """期货单一合约请求校验（构造期拒绝，经 API 层统一映射 ``INVALID_REQUEST``）：
+
+    ``contract`` × CZCE 的 symbol 段必须为「品种+4 位年月」——郑商所 3 位
+    年月旧写法（``MA701``，10 年循环歧义：2007/2017/2027 三度存在）不再
+    合法，不做世纪猜测（与期权侧 3 位月码拒绝定案同构，2026-11-17）。
+    主连/加权品种码与其它所不受本函数约束。
+    """
+    if (
+        asset_type is AssetType.CONTRACT
+        and instrument.exchange == "CZCE"
+        and not _CZCE_FUTURES_CONTRACT_RE.match(instrument.symbol)
+    ):
+        raise ValueError(
+            f"invalid request: asset type 'contract' requires CZCE instrument symbol "
+            f"{instrument.symbol!r} to match '{{PRODUCT}}{{YYMM}}' (e.g. MA2701); "
+            "legacy 3-digit-month forms are no longer accepted"
+        )
+
+
 class DataVariant(StrEnum):
     """数据源变体：同一 Provider 下同一资产类型的多个上游接口。
 
@@ -315,10 +345,11 @@ class BarQuery(BaseModel):
         return self
 
     @model_validator(mode="after")
-    def _option_exchange_matches_asset_type(self) -> "BarQuery":
-        # 期权子类校验（交易所词汇表 + 结构子类统一符号式，语义见
-        # _validate_option_request）
+    def _request_symbol_form(self) -> "BarQuery":
+        # 请求形态校验（期权子类词汇表+统一式、CZCE 期货 4 位年月，语义见
+        # _validate_option_request / _validate_futures_request）
         _validate_option_request(self.asset_type, self.instrument)
+        _validate_futures_request(self.asset_type, self.instrument)
         return self
 
 
@@ -445,9 +476,11 @@ class QuoteQuery(BaseModel):
     variant: DataVariant | None = None
 
     @model_validator(mode="after")
-    def _option_exchange_matches_asset_type(self) -> "QuoteQuery":
-        # 期权子类校验（与 BarQuery 同语义，见 _validate_option_request）
+    def _request_symbol_form(self) -> "QuoteQuery":
+        # 请求形态校验（与 BarQuery 同语义，见 _validate_option_request /
+        # _validate_futures_request）
         _validate_option_request(self.asset_type, self.instrument)
+        _validate_futures_request(self.asset_type, self.instrument)
         return self
 
 

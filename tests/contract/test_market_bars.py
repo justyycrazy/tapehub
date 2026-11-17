@@ -219,6 +219,17 @@ class TestRequestValidation:
             assert response.status_code == 422
             assert response.json()["error"]["code"] == "INVALID_REQUEST"
 
+    def test_czce_futures_legacy_symbol_rejected(self, fake_client) -> None:  # type: ignore[no-untyped-def]
+        """CZCE 期货 3 位年月旧写法（域层 4 位年月校验，10 年循环歧义不做
+        世纪猜测）：构造期拒绝 → 422 INVALID_REQUEST，不进入路由链
+        （2026-11-17 定案，与期权侧 3 位月码拒绝同构）。"""
+        for instrument in ("CN-CZCE-MA701", "CN-CZCE-SR705"):
+            response = self._post(
+                fake_client, asset_type="contract", instrument=instrument
+            )
+            assert response.status_code == 422
+            assert response.json()["error"]["code"] == "INVALID_REQUEST"
+
     def test_offset_negative(self, fake_client) -> None:  # type: ignore[no-untyped-def]
         assert self._post(fake_client, offset=-1).status_code == 422
 
