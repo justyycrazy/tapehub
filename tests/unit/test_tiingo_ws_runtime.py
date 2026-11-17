@@ -18,6 +18,7 @@
 import asyncio
 import logging
 import sys
+import time
 from datetime import datetime
 from typing import Any
 
@@ -397,6 +398,9 @@ def test_second_live_runtime_same_endpoint_warns(
 def test_fetch_quote_cold_subscription_and_cache_hit(monkeypatch: pytest.MonkeyPatch) -> None:
     """冷订阅等首包 → 标准 Quote；linger 窗口内再次请求读缓存（免重订）。"""
     install(monkeypatch)
+    # 冻结墙钟：到达戳（runtime）与新鲜度计算（mapper）取同一时刻，
+    # snapshot_age_ms 恒 0——真实墙钟跨毫秒 tick 时该值非确定地取 1
+    monkeypatch.setattr(time, "time", lambda: 1_700_000_000.0)
 
     async def scenario() -> tuple[Any, Any, int]:
         adapter = _adapter(make_settings(tiingo_api_key="test-key"))
