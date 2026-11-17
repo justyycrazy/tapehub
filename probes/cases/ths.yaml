@@ -154,7 +154,9 @@ targets:
     # 50ETF 购 12 月（数字合约码 + SH）：2026-11-16 到期前轮换——原近月
     # 10012437（购11月2800）2026-11-25 到期，按 tushare opt_basic 目录
     # （在市 delist_date 未过 + ATM）重选：现价 510050=2.889，行权价 2.90
-    # 最近档（listed 2026-04-23 / delist 2026-12-23）。合约会到期：下次
+    # 最近档（listed 2026-04-23 / delist 2026-12-23）。2026-11-17 第 2 轮
+    # 探针日 K+分时双 5003（上游逐合约暂时性缺口）：同日目录外复测双端点
+    # code=0（日 K 5 行、分时 241 点），人工确认保留重验。合约会到期：下次
     # 轮换按同款口径重选近月/次月 ATM
     window: {start: 2026-11-09, end: 2026-11-13}
     min_bars: 3
@@ -177,12 +179,15 @@ targets:
     min_bars: 3
     required_fields: [open, high, low, close, volume, amount]
   commodity-option@CN-INE:
-    instrument: CN-INE-SC2701C550
-    # 原油期权（无连字符式，与 SHFE 同构）：聚焦轮 code=0 两行实证收编——
-    # 550 为深虚近零成交（周窗仅 2 行），min_bars 放宽至 1；轮换按挂牌
-    # 行权价序列重选 ATM（原油期权行权价间隔按挂牌序列核对）
+    instrument: CN-INE-SC2701C580
+    # 原油期权（无连字符式，与 SHFE 同构）：2026-11-17 轮换——原探测目标
+    # C550 为深虚近零成交（周窗仅 2 行，min_bars 曾放宽至 1），第 2 轮
+    # 探针分时末点无有效价（深虚无成交日伪影，违反「探测目标须选流动性
+    # 合约」口径）。SC2701 现价 581.4（2026-11-17 分时末点）：按现价锚定
+    # ATM 重选 580（目录外直测日 K 3 行 + 分时 556 点末点 34.35 均
+    # code=0），min_bars 恢复 3。合约会到期：轮换按同款口径重选 ATM
     window: {start: 2026-11-09, end: 2026-11-13}
-    min_bars: 1
+    min_bars: 3
     required_fields: [open, high, low, close, volume, amount]
   commodity-option@CN-DCE:
     instrument: CN-DCE-M2701C3150
@@ -206,14 +211,14 @@ targets:
     min_bars: 3
     required_fields: [open, high, low, close, volume, amount]
   commodity-option@CN-GFEX:
-    instrument: CN-GFEX-LC2701C88000
-    # 碳酸锂期权（连字符式，与期货主连「品种+L」不同构）：2026-11-16 轮换
-    # ——原探测目标 C90000 日 K 可用（tushare opt_daily 当日 vol 1.4 万+）
-    # 但分时端点 5003（上游逐合约缺口；LC2701 系列内 5003 散布于行权价，
-    # 与流动性无关——归因定案见 docs/providers/ths.md「上游行为定案」）。按标的现价锚定 ATM 重选：
-    # LC2701 分时末点 87740，行权价间隔 2000 → 88000（目录外直测分时
-    # code=0 188 点）。注意：tushare opt_basic GFEX 目录行权价档位
-    # （188000+）与现价矛盾，不可作选码依据。合约会到期：轮换按同款口径
+    instrument: CN-GFEX-LC2701C93000
+    # 碳酸锂期权（连字符式，与期货主连「品种+L」不同构）：2026-11-17 轮换
+    # ——原探测目标 C88000 日 K 5 日窗 5003 'daily quote unavailable'
+    # （上游逐合约缺口新形态：多日窗口亦可触发，与流动性无关——归因定案
+    # 见 docs/providers/ths.md「上游行为定案」；分时端点同日 code=0 正常）。
+    # LC2701 现价大涨（分时末点 87740 → 93180），C88000 已偏档：按现价
+    # 锚定 ATM 重选 93000（目录外直测日 K 5 行 + 分时 226 点末点 4400
+    # 均 code=0）。合约会到期：轮换按同款口径重选 ATM
     window: {start: 2026-11-09, end: 2026-11-13}
     min_bars: 3
     required_fields: [open, high, low, close, volume, amount]
@@ -260,8 +265,9 @@ chain:
     max_range: P9Y
 
 raw:
-  # 错误指纹仅观察：采集无效 API Key 的信封报文（预期 code=2001 未认证，
-  # HTTP 恒 200——信封错误走业务码），供 UPSTREAM 细分错误映射参考
+  # 错误指纹仅观察：采集无效 API Key 的信封报文（实测 code=2003 'Invalid
+  # or revoked API key'，2026-11-17 第 2 轮钉码；HTTP 恒 200——信封错误
+  # 走业务码），供 UPSTREAM 细分错误映射参考
   - id: ths-invalid-key-fingerprint
     purpose: 采集无效 API Key 的错误指纹（字面量假 Key，非真实凭据；仅观察）
     assert: false

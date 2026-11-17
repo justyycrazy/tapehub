@@ -61,14 +61,14 @@ bars 行字段两种形态统一映射（时间键不同、其余同构）：A �
 
 ## 上游行为定案
 
-- 统一 ApiResponse 信封：业务结果（含错误）HTTP 恒 200，经 `code` 字段表达（0=成功）；`code=4001`（频率超限）映射 `UPSTREAM_RATE_LIMITED`；其余非 0（1001-1004 参数类 / 2001-2003 凭据权限 / 3001-3004 标的类 / 5001-5003 服务端）统一 `UPSTREAM_ERROR`（details 携 `upstream_code`/`upstream_message`）；非 2xx 与 JSON 解析失败为防御性 `UPSTREAM_ERROR`（官方约定业务错误走信封，HTTP 恒 200）；上游异常不穿透 API。
+- 统一 ApiResponse 信封：业务结果（含错误）HTTP 恒 200，经 `code` 字段表达（0=成功）；`code=4001`（频率超限）映射 `UPSTREAM_RATE_LIMITED`；其余非 0（1001-1004 参数类 / 2001-2003 凭据权限 / 3001-3004 标的类 / 5001-5003 服务端）统一 `UPSTREAM_ERROR`（details 携 `upstream_code`/`upstream_message`）；非 2xx 与 JSON 解析失败为防御性 `UPSTREAM_ERROR`（官方约定业务错误走信封，HTTP 恒 200）；上游异常不穿透 API。无效 API Key 实测指纹为 `code=2003 'Invalid or revoked API key'`（探针 2026-11-17 第 2 轮钉码）。
 - 时间戳口径：上游统一毫秒 Unix、Asia/Shanghai，适配器负责北京时间归一化；时间戳是 bar 的身份键，行缺失时间键抛 `UPSTREAM_ERROR`（loud 失败优于静默丢行）；bars 合法无数据（`item=[]`）返回空批次，快照/分时无有效 item 属无有效行情、抛 `UPSTREAM_ERROR`。
 - 窗口口径（文档与实测不符，以实测为准）：指数文档写「≤10 年」，实测仅支持最近约 5 年滚动窗口（越界 `code=1003 'recent five years only'` 拒绝）；A 股个股窗口跨度 ≤10 年（>10 年窗 `code=1003 'must span at most 10 years'` 拒绝——起点可早于 10 年前，上限约束的是窗口跨度）；ETF ≤5 自然年吻合（越界返空不报错）。
 - 分页与截断：historical 的 `offset` 参数被上游静默忽略（全年窗 offset=100 实测返回行数与首根均不变），适配器不启用该参数；行数上限未观测到（10 年窗内完整返回 ≥2417 行、无触顶信号），`meta.partial` 恒 false（触顶判定无观测基础，隐式截断行为待探针核实后补充覆盖判定）。
 - 已摘牌合约移出上游目录、仅现活合约可查：已到期文档示例合约（CU2601.SHF / IO2601-C-4000.CFE）存续期窗口返回 3001 'Target not found'，现活同后缀合约 code=0 干净对照、虚构负对照 ZZ9999.SHF 同 3001——这是 contract/option 的 `history.start` 保持 null 的依据（「最早可用」随合约轮换漂移，不支持全量锚定）。
-- 已知上游缺陷：期权日 K 以单一日期作 `start` 触发 `code=5003 'daily quote unavailable'`（邻近起点均正常，与调用频率无关）——窗口避开即可；适配器照常上抛 `UPSTREAM_ERROR` 不归一化（单点缺陷而非稳定边界）。
+- 已知上游缺陷：期权日 K 以单一日期作 `start` 触发 `code=5003 'daily quote unavailable'`（邻近起点均正常，与调用频率无关）——窗口避开即可；适配器照常上抛 `UPSTREAM_ERROR` 不归一化（单点缺陷而非稳定边界）。**多日窗口的逐合约缺口亦可 5003**（探针 2026-11-17 第 2 轮：LC2701-C-88000 与 10011427 的 11-09..11-13 五日窗均 5003 'daily quote unavailable'，前者分时同日正常、后者日 K+分时双缺；且 10011427 同日目录外复测双端点 code=0——缺口具**暂时性**，探测目标可保留重验）；
 - 深虚零成交期权合约：`code=0` 但 `item` 空（2026-11-16 第 10 轮 CU2701C90000.SHF 实证——标的在目录但窗口内零成交），与已摘牌合约的 3001 'Target not found' 语义不同；适配器按空批次返回不报错，探测目标须选流动性合约（ATM/主力系列行权价）。
-- 期权分时端点逐合约缺口：分时可用性与日 K 可用性相互独立——日 K 有量的合约分时端点也可返回 `code=5003 'intraday quote unavailable'`（2026-11-16 第 12 轮实证：LC2701-C-90000 当日 opt_daily vol 1.4 万+ 仍 5003；LC2701 系列 30 档扫描中 7 档 5003、散布于行权价之间，与流动性无关）。适配器照常上抛 `UPSTREAM_ERROR` 不归一化（逐合约数据缺口而非稳定边界）；探测目标的 quotes 可用性须逐合约直测定案（M2701C3150 / LC2701C88000 直测 code=0 后收编轮换）。
+- 期权分时端点逐合约缺口：分时可用性与日 K 可用性相互独立——日 K 有量的合约分时端点也可返回 `code=5003 'intraday quote unavailable'`（2026-11-16 第 12 轮实证：LC2701-C-90000 当日 opt_daily vol 1.4 万+ 仍 5003；LC2701 系列 30 档扫描中 7 档 5003、散布于行权价之间，与流动性无关）。适配器照常上抛 `UPSTREAM_ERROR` 不归一化（逐合约数据缺口而非稳定边界）；探测目标的 quotes 可用性须逐合约直测定案（M2701C3150 / LC2701C88000 直测 code=0 后收编轮换）；缺口可暂时性出现又消失（10011427.SH 分时 2026-11-17 第 2 轮 5003、同日目录外复测 code=0）。
 - 上游能力边界：历史 K 线仅日线；同花顺板块/行业指数（88xxxx.TI）与商品指数（850002.TI）属同花顺特有 TI 类指数，本期不纳入；ETF 行情仅支持 ETF（LOF/场外/REITs 上游返回 `code=3004`）。
 - 快照 timestamp 口径（探针实证）：`data.timestamp` 为上游响应组装时刻（盘后随墙钟推进、间隔 10s 两次调用精确 +10s），非成交时点；上游快照无独立行情时间字段，按文档「最新上游有效时间」口径透出——盘后请求的快照 timestamp 为请求时刻属预期行为。
 - 期货/期权快照取分时末点：`session=intraday`、`trade_date=0` 显式传参（端外仅当前交易日）；`last_price`=点时间升序排序后末点 `price`、`timestamp`=末点时间；非交易日/盘前 `item=[]` 返回 `UPSTREAM_ERROR`；`item[].timestamp` 官方标明可空（盘前等场景），无时间戳的点不参与排序。
