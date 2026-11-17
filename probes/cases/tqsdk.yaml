@@ -52,6 +52,7 @@ targets:
     # 适配器还原为上游写法。合约会到期：运行前按上期所挂牌信息核对，
     # 探针失败会如实记录，到期轮换为当时的现活合约
     instrument: CN-SHFE-CU2706
+    expires: 2027-06-30
     window: {start: 2026-07-01, end: 2026-11-30}
     min_bars: 30
   contract@CN-CZCE:
@@ -63,6 +64,7 @@ targets:
     # 本目标 availability 即还原链路的常态复验（2026-11-17 起用例字面量由
     # 3 位 MA701 修正为标准式 MA2701——此前 3 位直通架空了还原路径）
     instrument: CN-CZCE-MA2701
+    expires: 2027-01-31
     window: {start: 2026-07-01, end: 2026-12-31}
     min_bars: 30
   contract@CN-DCE:
@@ -71,12 +73,14 @@ targets:
     # 本目标 availability 即映射链路常态复验。合约会到期：运行前按大商所
     # 挂牌信息核对，失败如实记录，到期轮换为当时的现活合约
     instrument: CN-DCE-M2705
+    expires: 2027-05-31
     window: {start: 2026-07-01, end: 2026-12-31}
     min_bars: 30
   contract@CN-INE:
     # 上期能源合约（原油为该所绝对主力）：INE 品种小写（INE.SC2706 →
     # INE.sc2706，2026-11-16 定案；大写无响应挂起）。合约会到期：同上轮换
     instrument: CN-INE-SC2706
+    expires: 2027-06-30
     window: {start: 2026-07-01, end: 2026-12-31}
     min_bars: 30
   contract@CN-GFEX:
@@ -84,6 +88,7 @@ targets:
     #（GFEX.LC2706 → GFEX.lc2706，2026-11-16 定案；大写 graphql 快速报错）。
     # 合约会到期：同上轮换
     instrument: CN-GFEX-LC2706
+    expires: 2027-06-30
     window: {start: 2026-07-01, end: 2026-12-31}
     min_bars: 30
   contract@CN-CFFEX:
@@ -92,6 +97,7 @@ targets:
     #（IF2706 2026-10-19 挂牌，窗口内仅约 21 根），对齐挂牌窗口口径。
     # 合约会到期：同上轮换
     instrument: CN-CFFEX-IF2706
+    expires: 2027-06-30
     window: {start: 2026-07-01, end: 2026-12-31}
     min_bars: 20
   continuous:
@@ -207,6 +213,7 @@ targets:
     # delist 2026-12-23；数字合约码与 ths 侧同码，直拼形态由第 12 轮旧码
     # 同构实证）。合约会到期：轮换按交易所挂牌或 tushare opt_basic 目录重选
     instrument: CN-SSE-10011427
+    expires: 2026-12-23
     window: {start: 2026-11-01, end: 2026-11-30}
     min_bars: 3
   etf-option@CN-SZSE:
@@ -214,24 +221,28 @@ targets:
     # 2026-11-25 到期，ATM 重选：现价 159919=4.266 / 行权价 4.30（listed
     # 2026-09-16、delist 2026-12-23）；tqsdk 侧首证由下一轮常态复验承担
     instrument: CN-SZSE-90008043
+    expires: 2026-12-23
     window: {start: 2026-11-01, end: 2026-11-30}
     min_bars: 3
   index-option@CN-CFFEX:
     # 沪深300 期权 IO2612C4000（统一式）→ 原生连字符式 IO2612-C-4000：同上
     # 双证收编；月度合约到期轮换
     instrument: CN-CFFEX-IO2612C4000
+    expires: 2026-12-31
     window: {start: 2026-11-01, end: 2026-11-30}
     min_bars: 3
   commodity-option@CN-SHFE:
     # 铜期权 ATM 实码（品种小写混合大小写 cu2701C102000）：同上双证收编；
     # 深虚零成交合约快照/K 线可得性未核实，轮换按挂牌行权价序列选 ATM
     instrument: CN-SHFE-CU2701C102000
+    expires: 2026-12-31
     window: {start: 2026-11-01, end: 2026-11-30}
     min_bars: 3
   commodity-option@CN-INE:
     # 原油期权（品种小写无连字符 sc2701C550）：同上双证收编（大写直通
     # SC2701C550 graphql 快速报错否定）；轮换按挂牌行权价序列重选
     instrument: CN-INE-SC2701C550
+    expires: 2026-12-31
     window: {start: 2026-11-01, end: 2026-11-30}
     min_bars: 3
   commodity-option@CN-DCE:
@@ -241,6 +252,7 @@ targets:
     # 原生品种小写连字符 m2701-C-3150 由适配器映射。合约会到期：轮换按
     # opt_basic 同款口径重选 ATM
     instrument: CN-DCE-M2701C3150
+    expires: 2026-12-31
     window: {start: 2026-11-01, end: 2026-11-30}
     min_bars: 3
   commodity-option@CN-CZCE:
@@ -250,6 +262,7 @@ targets:
     # 行权价 3200 经人工锚定提供（2026-11-16）；本目标 availability 即实证。
     # 合约会到期：轮换按 opt_basic 同款口径重选 ATM
     instrument: CN-CZCE-MA2701C3200
+    expires: 2026-12-31
     window: {start: 2026-11-01, end: 2026-11-30}
     min_bars: 3
   commodity-option@CN-GFEX:
@@ -259,6 +272,7 @@ targets:
     # 实证）。原生品种小写连字符 lc2701-C-88000 由适配器映射。合约会到期：
     # 轮换按挂牌行权价序列重选 ATM
     instrument: CN-GFEX-LC2701C88000
+    expires: 2026-12-31
     window: {start: 2026-11-01, end: 2026-11-30}
     min_bars: 3
 

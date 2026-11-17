@@ -135,6 +135,10 @@ class TargetSpec(_Strict):
     # 可用性判定期望：bars 少于 min_bars 判 failed；required_fields 全 null 判 failed
     min_bars: int | None = Field(default=None, ge=0)
     required_fields: list[str] = Field(default_factory=list)
+    # 合约/期权目标到期边界（YYYY-MM-DD，可选）：过期 → 该目标全部 chain
+    # case 加载期 skip（带原因进报告）；临期 30 天内 → 运行前告警。
+    # 取值=上游不可查的保守月末（注释已知摘牌日用精确日）；未声明视为不受限
+    expires: dt.date | None = Field(default=None)
 
 
 class SkipSpec(_Strict):

@@ -90,6 +90,7 @@ targets:
     required_fields: [open, high, low, close, volume, amount]
   etf-option:
     instrument: CN-SSE-10011427
+    expires: 2026-12-23
     # 50ETF 购 12 月 2900（ATM：现价 510050=2.889 / 行权价 2.90，listed
     # 2026-04-23 / delist 2026-12-23）：2026-11-16 到期前轮换——原近月
     # 10012437（购11月2800）2026-11-25 到期，按 opt_basic（exchange=SSE，
@@ -100,6 +101,7 @@ targets:
     required_fields: [open, high, low, close, volume, amount]
   etf-option@CN-SZSE:
     instrument: CN-SZSE-90008043
+    expires: 2026-12-23
     # 沪深300ETF 购 12 月 4300（ATM：现价 159919=4.266 / 行权价 4.30，listed
     # 2026-09-16 / delist 2026-12-23）：2026-11-16 到期前轮换——原近月
     # 90008083（购11月4400）2026-11-25 到期，按 opt_basic（exchange=SZSE，
@@ -110,6 +112,7 @@ targets:
     required_fields: [open, high, low, close, volume, amount]
   index-option@CN-CFFEX:
     instrument: CN-CFFEX-IO2612C4000
+    expires: 2026-12-31
     # 沪深300 购 12 月 4000：2026-11 到期前轮换——原 IO2611C4150（11 月主力）
     # 2026-11-20 到期，按 opt_basic（exchange=CFFEX，ts_code 前缀 IO 筛主力 +
     # delist_date 未过）重选；CFFEX→CFX 后缀（与该所期货同）与带连字符符号
@@ -119,6 +122,7 @@ targets:
     required_fields: [open, high, low, close, volume, amount]
   commodity-option@CN-DCE:
     instrument: CN-DCE-M2701C3150
+    expires: 2026-12-31
     # 豆粕期权 2701 认购 3150（ATM：M2701 期货收盘 3147 锚定，间隔 50）：
     # 2026-11 到期前轮换——原 M2612C3500（2612 认购 3500）2026-11-17 到期，
     # 按 opt_basic（exchange=DCE，name 含豆粕 + delist_date 未过）重选；
@@ -129,6 +133,7 @@ targets:
     required_fields: [open, high, low, close, volume, amount]
   commodity-option@CN-SHFE:
     instrument: CN-SHFE-CU2701C102000
+    expires: 2026-12-31
     # 铜期权 2701 认购 102000（ATM：CU2701 期货收盘 102740 锚定，间隔 2000）：
     # 2026-11 到期前轮换——原 FU2612C6100（燃料油购 12 月 6100）2026-11-17
     # 到期，按 opt_basic（exchange=SHFE，delist_date 未过）重选；SHFE 码式
@@ -139,6 +144,7 @@ targets:
     required_fields: [open, high, low, close, volume, amount]
   commodity-option@CN-CZCE:
     instrument: CN-CZCE-MA2701C3200
+    expires: 2026-12-31
     # 甲醇期权购 1 月 3200：CZCE 期权品种统一——「甲醇为郑商所持仓王」（原
     # SR2701C5900 白糖换统一品种，原码三家同码互证留档）。CZCE 码式「品种
     # 3位月C/P行权价」→ 原生 MA701C3200.ZCE（4→3 还原）；行权价 3200 经
@@ -149,6 +155,7 @@ targets:
     required_fields: [open, high, low, close, volume, amount]
   commodity-option@CN-INE:
     instrument: CN-INE-SC2701C550
+    expires: 2026-12-31
     # 原油期权 2701 认购 550（无连字符式，与 SHFE 同构）：2026-11-16 聚焦轮
     # opt_basic 目录（6528 行，形态样本 SC2703P440.INE）+ opt_daily 5 行双证
     # 收编；550 为深虚近零成交，到期轮换按 opt_basic（exchange=INE，
@@ -158,6 +165,7 @@ targets:
     required_fields: [open, high, low, close, volume, amount]
   commodity-option@CN-GFEX:
     instrument: CN-GFEX-LC2701C88000
+    expires: 2026-12-31
     # 碳酸锂期权 2701 认购 88000（ATM：LC2701 分时末点 87740 锚定，间隔
     # 2000；原 C90000 opt_daily 实量已证但 ths 分时端点 5003 逐合约缺口，
     # 统一取 88000）：连字符式「品种4位月-C/P-行权价.GFE」（与该所期货主连
@@ -173,6 +181,7 @@ targets:
     # docs/probes.md「规范化规则」）。合约会到期：运行前按上期所挂牌信息核对，
     # 失败如实记录，到期轮换为当时的现活合约
     instrument: CN-SHFE-CU2706
+    expires: 2027-06-30
     window: {start: 2026-09-01, end: 2026-12-31}
     min_bars: 20
   contract@CN-DCE:
@@ -180,6 +189,7 @@ targets:
     # 实证并扩容声明，常态复验收敛为 chain 目标。合约会到期：运行前按大商所挂牌信息核对，失败如实记录，
     # 到期轮换为当时的现活合约
     instrument: CN-DCE-M2705
+    expires: 2027-05-31
     window: {start: 2026-09-01, end: 2026-12-31}
     min_bars: 20
   contract@CN-INE:
@@ -187,6 +197,7 @@ targets:
     # SC2705 换统一月码）；品种码统一大写（tushare 统一大写，交易所原生
     # 小写 sc 无需保留）。合约会到期：同上轮换
     instrument: CN-INE-SC2706
+    expires: 2027-06-30
     window: {start: 2026-09-01, end: 2026-12-31}
     min_bars: 20
   contract@CN-CFFEX:
@@ -195,6 +206,7 @@ targets:
     # min_bars 20 恰达下限系季月挂牌晚的自然口径（akshare 第 15 轮同款）。
     # 合约会到期：同上轮换
     instrument: CN-CFFEX-IF2706
+    expires: 2027-06-30
     window: {start: 2026-09-01, end: 2026-12-31}
     min_bars: 20
   contract@CN-CZCE:
@@ -206,6 +218,7 @@ targets:
     # 的 CZCE 期货字面量统一问题另列 PROBE_LOG 待办）。合约会到期：运行前
     # 按郑商所挂牌信息核对，失败如实记录，到期轮换为当时的现活合约
     instrument: CN-CZCE-MA2701
+    expires: 2027-01-31
     window: {start: 2026-09-01, end: 2026-12-31}
     min_bars: 20
   contract@CN-GFEX:
@@ -215,6 +228,7 @@ targets:
     #——原「.GFE 未核实不声明」空档回填收编。合约会到期：运行前按广期所
     # 挂牌信息核对，失败如实记录，到期轮换为当时的现活合约
     instrument: CN-GFEX-LC2706
+    expires: 2027-06-30
     window: {start: 2026-09-01, end: 2026-12-31}
     min_bars: 20
   continuous:

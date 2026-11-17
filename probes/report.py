@@ -77,6 +77,22 @@ class RunResult:
         return counts
 
 
+# 合约/期权资产类型：failed 时标注「疑似到期/摘牌或逐合约缺口」（2026-11-18
+# 决议）——LC2701-C-88000 前例证明缺口形态多样（日 K/分时/暂时性），只能标
+# 疑似、不断言，处置一律走目标轮换流程核实
+CONTRACT_ASSET_TYPES = frozenset(
+    {"contract", "commodity-option", "index-option", "etf-option"}
+)
+
+
+def _is_contract_failure(case: CaseResult) -> bool:
+    """合约/期权目标的 failed case：报告行附轮换提示。"""
+    return (
+        case.verdict == "failed"
+        and case.dims.get("asset_type") in CONTRACT_ASSET_TYPES
+    )
+
+
 def sample_bars_of(bars: list[Bar], limit: int = SAMPLE_BAR_LIMIT) -> list[dict[str, Any]]:
     """样本 bar（首部最多 3 根），JSON 安全，供人工核验。"""
     return [json.loads(bar.model_dump_json()) for bar in bars[:limit]]
@@ -189,7 +205,10 @@ def render_markdown(run: RunResult) -> str:
         lines.append("| case | 原因 |")
         lines.append("| --- | --- |")
         for case in failed:
-            lines.append(f"| {case.case_id} | {case.reason} |")
+            reason = case.reason
+            if _is_contract_failure(case):
+                reason += "；合约/期权目标：疑似到期/摘牌或上游逐合约缺口，按目标轮换流程核实"
+            lines.append(f"| {case.case_id} | {reason} |")
     else:
         lines.append("（无）")
     lines.append("")

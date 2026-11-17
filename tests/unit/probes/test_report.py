@@ -120,3 +120,44 @@ def test_render_quote_availability_section() -> None:
     # bars confirmed 表不含 quote case
     bars_section = content.split("## 已确认能力")[1].split("## 快照可用性")[0]
     assert "quote-stock-eastmoney" not in bars_section
+
+
+def test_failed_contract_case_annotated_with_rotation_hint() -> None:
+    """合约/期权目标 failed：报告行标注疑似到期/摘牌或逐合约缺口（2026-11-18
+    决议；只标疑似不断言——LC2701-C-88000 前例证明缺口形态多样）。"""
+    started = datetime(2026, 11, 17, tzinfo=CN_TIMEZONE)
+    run = RunResult(
+        provider="fake-provider",
+        started_at=started,
+        finished_at=started,
+        environment={},
+        call_budget={"max": 10, "used": 2},
+        notes="",
+        cases=[
+            CaseResult(
+                case_id="contract-P1D-none-eastmoney",
+                kind="availability",
+                verdict="failed",
+                reason="adapter call failed: UPSTREAM_ERROR",
+                dims={"asset_type": "contract", "instrument": "CN-SHFE-CU2706"},
+            ),
+            CaseResult(
+                case_id="stock-P1D-none-eastmoney",
+                kind="availability",
+                verdict="failed",
+                reason="adapter call failed: UPSTREAM_ERROR",
+                dims={"asset_type": "stock"},
+            ),
+        ],
+    )
+    text = render_markdown(run)
+    assert "疑似到期/摘牌或上游逐合约缺口" in text
+    # stock 失败不标注
+    contract_row = next(line for line in text.splitlines() if "contract-P1D-none" in line)
+    stock_row = next(
+        line
+        for line in text.splitlines()
+        if "stock-P1D-none" in line
+    )
+    assert "疑似到期" in contract_row
+    assert "疑似到期" not in stock_row

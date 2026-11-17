@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import dataclasses
 import datetime as dt
+import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -644,6 +645,56 @@ def _apply_explicit_skips(probe: ProbeFile, chain_cases: list[ChainCase]) -> Non
     ]
 
 
+# 目标到期临期告警窗口（天）：进入窗口即告警提示按轮换流程策划换码
+_EXPIRY_WARN_DAYS = 30
+
+logger = logging.getLogger(__name__)
+
+
+def _beijing_today() -> dt.date:
+    """探针运行时域统一北京时间（时间口径见 docs/probes.md）。"""
+    return dt.datetime.now(CN_TIMEZONE).date()
+
+
+def _apply_target_expiry(probe: ProbeFile, chain_cases: list[ChainCase]) -> None:
+    """目标到期检查（2026-11-18 决议，合约到期无自动感知的处置方案）：
+
+    - ``expires`` 已过 → 该目标全部 chain case 加载期 skip（带原因进报告，
+      与「skip 必须带 reason」同款防静默漏探纪律）；不硬错误拒绝运行——
+      探针为开发服务、非巡检，skip 留痕即可，且避免单 Provider 过期目标
+      阻断其余 Provider 的全量运行；
+    - 临期（≤30 天）→ 警告，提示先完成「目录外直测 → 改用例」轮换流程；
+    - 未声明 ``expires`` 视为不受限（证券类目标不设该字段）。
+
+    只处理未带跳过原因的 case（显式 skip / 市场不匹配等原因优先级更高）。
+    """
+    today = _beijing_today()
+    expired: dict[str, str] = {}
+    for key, spec in probe.targets.items():
+        if spec.expires is None:
+            continue
+        days = (spec.expires - today).days
+        if days < 0:
+            expired[key] = (
+                f"target expired: expiry boundary {spec.expires.isoformat()} has "
+                "passed; rotate the target (direct-probe then update cases) "
+                "before rerunning"
+            )
+        elif days <= _EXPIRY_WARN_DAYS:
+            logger.warning(
+                "target %s near expiry: %s (%d days left); plan rotation "
+                "(direct-probe then update cases) per probe policy",
+                key,
+                spec.expires.isoformat(),
+                days,
+            )
+    if not expired:
+        return
+    for i, case in enumerate(chain_cases):
+        if case.skip_reason is None and case.target_ref in expired:
+            chain_cases[i] = dataclasses.replace(case, skip_reason=expired[case.target_ref])
+
+
 def expand_probe(probe: ProbeFile, manifest: ProviderManifest) -> ExpandedProbe:
     """把探针文件与 manifest 能力矩阵合并展开。"""
     capabilities = manifest.to_domain_capabilities()
@@ -773,6 +824,7 @@ def expand_probe(probe: ProbeFile, manifest: ProviderManifest) -> ExpandedProbe:
                 chain_cases.extend(builder(base, config, caps))
 
     _apply_explicit_skips(probe, chain_cases)
+    _apply_target_expiry(probe, chain_cases)
 
     raw_cases = [
         RawPlan(spec=case, expected_calls=len(case.call) + (1 if case.client else 0))

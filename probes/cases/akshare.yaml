@@ -110,6 +110,7 @@ targets:
     required_fields: [open, high, low, close, volume]
   contract:
     instrument: CN-SHFE-CU2706
+    expires: 2027-06-30
     # 铜 2706（现活）：SHFE 基准统一——与 ths/tqsdk 现活基准同码（原
     # RB2410→CU2401 的「已摘牌稳定深度锚」机制随 2026-11-16 决议废止：
     # 合约类有时限标的不统计历史深度，无需为锚定保留已摘牌合约，决议见
@@ -125,6 +126,7 @@ targets:
     # MA2701（2026-11-17 聚焦复验 93 根）均可用，适配器纯直通无需还原——
     # 本目标 availability 即 4 位直通的常态复验
     instrument: CN-CZCE-MA2701
+    expires: 2027-01-31
     window: {start: 2026-07-01, end: 2026-12-31}
     min_bars: 20
   contract@CN-DCE:
@@ -132,24 +134,28 @@ targets:
     #（M2705），大商所收录性未实证，本目标 availability 即实证。合约会到期：
     # 运行前按大商所挂牌信息核对，失败如实记录，到期轮换为当时的现活合约
     instrument: CN-DCE-M2705
+    expires: 2027-05-31
     window: {start: 2026-07-01, end: 2026-12-31}
     min_bars: 20
   contract@CN-INE:
     # 上期能源合约（原油为该所绝对主力）：新浪收录性未实证（SC2706），
     # 本目标 availability 即实证。合约会到期：同上轮换
     instrument: CN-INE-SC2706
+    expires: 2027-06-30
     window: {start: 2026-07-01, end: 2026-12-31}
     min_bars: 20
   contract@CN-GFEX:
     # 广期所合约（碳酸锂为该所上市以来活跃度第一品种）：新浪对广期所的
     # 收录性未知（LC2706），本目标 availability 即实证。合约会到期：同上轮换
     instrument: CN-GFEX-LC2706
+    expires: 2027-06-30
     window: {start: 2026-07-01, end: 2026-12-31}
     min_bars: 20
   contract@CN-CFFEX:
     # 中金所合约（沪深300 历史最久、代表性强）：新浪股指期货符号形态未实证
     #（IF2706 季月），本目标 availability 即实证。合约会到期：同上轮换
     instrument: CN-CFFEX-IF2706
+    expires: 2027-06-30
     window: {start: 2026-07-01, end: 2026-12-31}
     min_bars: 20
   continuous:

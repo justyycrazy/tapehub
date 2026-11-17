@@ -685,3 +685,52 @@ def test_quote_availability_explicit_skip() -> None:
     expanded = expand_probe(probe, _manifest())  # type: ignore[arg-type]
     quotes = [c for c in expanded.chain_cases if c.kind == "quote_availability"]
     assert quotes[0].skip_reason == "explicit skip: 快照停机维护"
+
+
+def test_target_expired_skips_all_cases() -> None:
+    """合约目标 expires 已过：该目标全部 chain case 加载期 skip（带原因进
+    报告，防静默漏探；2026-11-18 决议——探针非巡检，不硬错误拒绝运行）。"""
+    probe = _probe()
+    data = probe.model_dump(mode="json")
+    data["targets"]["stock"]["expires"] = "2026-01-01"
+    expanded = expand_probe(ProbeFile.model_validate(data), _manifest())  # type: ignore[arg-type]
+    cases = [c for c in expanded.chain_cases if c.target_ref == "stock"]
+    assert cases
+    for case in cases:
+        assert case.skip_reason is not None
+        assert "target expired" in case.skip_reason
+        assert "2026-01-01" in case.skip_reason
+        assert "rotate the target" in case.skip_reason
+
+
+def test_target_expiry_future_no_skip() -> None:
+    """expires 未到：不跳过、不留 skip 原因。"""
+    probe = _probe()
+    data = probe.model_dump(mode="json")
+    data["targets"]["stock"]["expires"] = "2099-12-31"
+    expanded = expand_probe(ProbeFile.model_validate(data), _manifest())  # type: ignore[arg-type]
+    for case in expanded.chain_cases:
+        assert case.skip_reason is None
+
+
+def test_target_expiry_near_warns(caplog: pytest.LogCaptureFixture) -> None:
+    """临期（≤30 天）→ 运行前告警，提示按轮换流程策划换码。"""
+    import logging
+
+    soon = (dt.datetime.now(dt.UTC) + dt.timedelta(days=10)).date().isoformat()
+    probe = _probe()
+    data = probe.model_dump(mode="json")
+    data["targets"]["stock"]["expires"] = soon
+    with caplog.at_level(logging.WARNING, logger="probes.loader"):
+        expand_probe(ProbeFile.model_validate(data), _manifest())  # type: ignore[arg-type]
+    assert any("near expiry" in r.message for r in caplog.records)
+
+
+def test_target_expiry_never_overrides_other_skip_reasons() -> None:
+    """显式 skip 优先于到期 skip（到期后处理只补未带原因的 case）。"""
+    probe = _probe(skip=[{"case": "stock-P1D-none-eastmoney", "reason": "旧码退役"}])
+    data = probe.model_dump(mode="json")
+    data["targets"]["stock"]["expires"] = "2026-01-01"
+    expanded = expand_probe(ProbeFile.model_validate(data), _manifest())  # type: ignore[arg-type]
+    case = next(c for c in expanded.chain_cases if c.case_id == "stock-P1D-none-eastmoney")
+    assert case.skip_reason == "explicit skip: 旧码退役"
