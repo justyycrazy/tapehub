@@ -51,12 +51,14 @@ targets:
     window: {start: 2024-01-01, end: 2025-12-31}
     min_bars: 20
   etf@US-CBOE:
-    instrument: US-CBOE-AAAA
+    instrument: US-CBOE-IEFA
     # CBOE 上市 ETF：exchange 白名单分支（NYSE/NASDAQ/CBOE，US 段三候选见
-    # domain instrument_resolver）的 chain 级常态复验目标——原 td-cboe-etf
+    # domain instrument_resolver）的 chain 级常态复验目标——原 raw td-cboe-etf
     # raw 准入闸门升级入链，availability 全声明矩阵展开（12 周期 × 2 复权），
-    # 参照 stock@CN-SZSE 逐所细分先例。AAAA 为 CBOE 在市 ETF（原 raw 同款
-    # 标的）
+    # 参照 stock@CN-SZSE 逐所细分先例。2026-11-17 轮换——原目标 AAAA 月线
+    # 档案自 2025-07 起（两年窗口仅 6 根月线，第 1 轮 P1M×2 撞 min_bars=20
+    # 门槛 failed），按人工确认换成熟标的 IEFA：目录外直测全档案 P1D 3535
+    # 根（起点 2012-10-24）/ P1W 738 / P1M 170，窗口内月线 ≈24 根正常过闸
     window: {start: 2024-01-01, end: 2025-12-31}
     min_bars: 20
 
