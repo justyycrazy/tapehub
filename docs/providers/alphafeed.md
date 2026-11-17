@@ -23,13 +23,13 @@
 | quotes | CN | index/etf | alphafeed | `af.quotes.get(symbols=[...])` | —（快照无周期） | —（快照无复权） | timestamp/last_price/volume/amount |
 | quotes | US | etf | alphafeed | `af.quotes.get(symbols=[...])` | —（快照无周期） | —（快照无复权） | timestamp/last_price/volume/amount |
 
-历史覆盖（history.start，探针二分收敛，取估计窗口右端零点，approx ±90 天、真实最早可能更早；三市场周期集相同但历史深度不同，故 bars 能力拆 CN/HK/US 三块逐市场声明，operations 不受块拆分影响）：
+历史覆盖（history.start，探针二分收敛，取估计窗口右端零点，approx ±90 天、真实最早可能更早；US 例外——已按实测首根日精度精化，见下表；三市场周期集相同但历史深度不同，故 bars 能力拆 CN/HK/US 三块逐市场声明，operations 不受块拆分影响）：
 
-| 市场 | history.start（北京时间零点） | 二分真值带 | 备注 |
+| 市场 | history.start（北京时间零点） | 依据 | 备注 |
 | --- | --- | --- | --- |
-| CN | 1991-01-14 | (1990-10-16, 1991-01-14] | 含上交所开业日 1990-12-19 |
-| HK | 1980-02-15 | (1979-11-17, 1980-02-15] | 与 tickflow 独立探测结果同日一致，两家上游历史库大概率同源 |
-| US | 1962-02-17 | (1961-11-19, 1962-02-17] | 同上 |
+| CN | 1991-01-14 | 二分带 (1990-10-16, 1991-01-14] | 含上交所开业日 1990-12-19 |
+| HK | 1980-02-15 | 二分带 (1979-11-17, 1980-02-15] | 与 tickflow 独立探测结果同日一致，两家上游历史库大概率同源 |
+| US | 1962-01-02 | 实测首根直测（探针 2026-11-17 第 1 轮 history_depth 三周期一致，首根 P1D 1962-01-02T13:00+08:00 美东零点） | 与 tickflow 旧二分带 (1961-09-23, 1962-02-17] 及本侧旧二分带 (1961-11-19, 1962-02-17] 相容——实测首根均落于两家带内，同源再证；tickflow 侧声明未精化，维持其自身证据口径 |
 
 quotes 为快照能力：interval/adjust 维度无意义，capabilities 与 operations match 中显式空/null，路由跳过对应维度。
 
@@ -54,7 +54,7 @@ quotes 为快照能力：interval/adjust 维度无意义，capabilities 与 oper
   - 分钟族（上游枚举 1m~60m）：需上游套餐单独开通「分钟K线权限」，账户套餐未包含；且 alphafeed 是 CN stock bars 的缺省 Provider，路由执行失败不回退，声明无权限的周期会 403 打断本可由其他 Provider 服务的请求；
   - `10m`：官方文档周期枚举无 10m，但上游实测接受并返回数据（文档与实测不符，以实测为准），仍维持不声明；
   - 季线 `1Q`：无法用 ISO 8601 Duration 表达；年线 `1Y`：超出项目「最大支持到月线」的周期上界。均不声明。
-- 复权映射：`qfq→forward`（前复权）、`hfq→backward`（后复权）、`none→none`；上游另有 `forward_additive`/`backward_additive` 差值加法变体，不对外暴露。上游自身默认 forward、period 默认 1d，均与网关声明默认值无关，适配器始终显式传参。**ETF 复权生效**（探针 2026-11-15 目录外诊断：forward vs none 全窗 360 根差异、与 tickflow 侧逐根一致；chain adjust_diff 常态复验）；**US ETF 三复权生效**（目录外诊断 2026-11-15：none/qfq/hfq 两两全窗差异、与 tickflow 侧逐位一致，见「上游行为定案」）；**指数无复权**仅声明 none（复权对指数无意义，与 baostock/tushare 先例同口径）。港股/美股**个股**复权语义尚未探针实证。
+- 复权映射：`qfq→forward`（前复权）、`hfq→backward`（后复权）、`none→none`；上游另有 `forward_additive`/`backward_additive` 差值加法变体，不对外暴露。上游自身默认 forward、period 默认 1d，均与网关声明默认值无关，适配器始终显式传参。**ETF 复权生效**（探针 2026-11-15 目录外诊断：forward vs none 全窗 360 根差异、与 tickflow 侧逐根一致；chain adjust_diff 常态复验）；**US ETF 三复权生效**（目录外诊断 2026-11-15：none/qfq/hfq 两两全窗差异、与 tickflow 侧逐位一致，见「上游行为定案」）；**指数无复权**仅声明 none（复权对指数无意义，与 baostock/tushare 先例同口径）。**港股/美股个股复权生效已实证**（探针 2026-11-17 第 1 轮 adjust_diff：none vs qfq/hfq 全窗差异 confirmed，HK 00002 / US GE 各 63 根全 divergence，first_divergence 均为窗口首根 2024-06-03；chain 常态复验）。
 - 单位：无换算，上游 volume/amount 原值透出。CN 指数/ETF 与 tushare 同窗互证定案口径：`vol` 手、`amount` 元（与 CN stock 日线一致，探针 2026-11-15 第 7/8 轮）。
 
 ## 上游行为定案
