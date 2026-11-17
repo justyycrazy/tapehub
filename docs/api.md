@@ -160,6 +160,7 @@ Accept: text/event-stream
 - **market/exchange 组合一致性**：exchange 段必须属于 market 段的规范词汇（CN：SSE/SZSE/BSE/SHFE/DCE/CZCE/INE/GFEX/CFFEX/CSI；HK：HKEX；US：NYSE/NASDAQ/CBOE/AMEX/OTC/IEX；GLOBAL：OTC/CRYPTO），矛盾组合（如 `CN-NYSE-…`）在参数校验期拒绝（`INVALID_REQUEST`），不会透传到 Provider 映射层；各 Provider 的接入范围是词汇表的更窄子集，由映射层白名单自行收窄；
 - **期权子类 × 交易所归属**：`commodity-option` 仅适用于 SHFE/INE/DCE/CZCE/GFEX、`index-option` 仅 CFFEX、`etf-option` 仅 SSE/SZSE（CN 期权八所，2026-11 探针实证）；矛盾组合（如 `commodity-option` + `CN-SSE-…`）与 market/exchange 矛盾同层在参数校验期拒绝（`INVALID_REQUEST`）；
 - **期权结构子类统一符号式**：`commodity-option` / `index-option` 的 symbol 段为 `{品种}{4位年月YYMM}{C/P}{行权价}`（如 `CN-SHFE-CU2701C102000`、`CN-CFFEX-IO2612C4000`、`CN-CZCE-SR2701C5900`），在参数校验期严格校验（`INVALID_REQUEST`）；各交易所原生写法（SHFE/INE 品种小写无连字符、DCE/GFEX/CFFEX 连字符式、CZCE 3 位月码）由 Provider 适配器统一还原。`etf-option`（SSE/SZSE）为交易所指派数字合约码（如 `CN-SSE-10012437`），无结构不受本式约束。诚实边界：行权价样本全为整数（八所探针实证），小数未观测但放行不拒绝；P 方向码式未直测、与 C 同构处理。历史连字符式（`M2701-C-3500`）与 3 位月码写法自 2026-11-16 统一式定案起不再合法；
+- **CZCE 期货合约年月形态**：`contract` × `CN-CZCE-…` 的 symbol 段为 `{品种}{4位年月YYMM}`（如 `CN-CZCE-MA2701`），在参数校验期严格校验（`INVALID_REQUEST`）；郑商所 3 位年月旧写法（`MA701`）存在 10 年循环歧义（同一写法 2007/2017/2027 三度存在），不做世纪猜测、不再合法（2026-11-17 定案，与期权侧 3 位月码拒绝同构）。上游原生写法由 Provider 适配器统一换算：tqsdk/ths 为 4→3 还原（`MA2701` → `MA701`），akshare 新浪与 tushare 直通 4 位（见对应 Provider 文档「标的代码映射」）；主连/加权品种码（`CN-CZCE-MA`，无年月段）与其它交易所合约不受本条约束；
 - 第一版不通过标的元数据验证真实资产类型（「解析 ≠ 验证存在」：标的是否真实存在由 bars/quotes 请求经上游验证）。
 
 ### 标的解析（模糊查询）
