@@ -232,10 +232,10 @@ def test_capability_catalog(alphafeed_client: TestClient) -> None:  # type: igno
         assert cap["variants"] == ["alphafeed"]
         assert [i["code"] for i in cap["intervals"]] == ["P1D", "P1W", "P1M"]
         assert cap["adjustments"] == ["none", "qfq", "hfq"]
-    # HK/US history.start 按全局统一口径（HK 月首对齐；US 实测 1962-01-02
-    # 早于 2000-01-01 → 归一 2000-01-01）
+    # HK/US history.start 按全局统一口径（裁决 6：HK 同 US；实测早于
+    # 2000-01-01 → 归一 2000-01-01）
     assert [cap["intervals"][0]["history"]["start"] for cap in caps[3:5]] == [
-        "1980-02-01T00:00:00+08:00",
+        "2000-01-01T00:00:00+08:00",
         "2000-01-01T00:00:00+08:00",
     ]
     # US etf（2026-11-15 扩容）：三复权（目录外诊断实证），history 未核实保持 null

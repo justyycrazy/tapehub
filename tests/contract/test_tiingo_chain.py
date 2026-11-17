@@ -113,11 +113,11 @@ def test_capability_catalog(tiingo_client: TestClient) -> None:
     for cap in bars_caps:
         assert cap["variants"] == ["tiingo"]
         assert cap["adjustments"] == ["none"]
-    # history 全局统一口径回填：fx 三周期 2020-01-01T08:00 档案硬边界
-    # 锚保持（已月首）；crypto 实测早于 2020-01-01 统一归一 2020-01-01
-    # （P1D 旧实测 ≈2011-08-25、分钟族 ≈2018-01-01 落档）
+    # history 全局统一口径回填：fx 三周期 2020-01-01（裁决 1 统一北京
+    # 时间零点，档案硬边界 08:00 键位语义落档探针日志）；crypto 实测早于
+    # 2020-01-01 统一归一 2020-01-01（裁决 2：实测细节落档探针日志）
     for interval in forex_cap["intervals"]:
-        assert interval["history"]["start"] == "2020-01-01T08:00:00+08:00"
+        assert interval["history"]["start"] == "2020-01-01T00:00:00+08:00"
         assert interval["history"]["end"] is None
     for interval in crypto_cap["intervals"]:
         expected = "2020-01-01T00:00:00+08:00"

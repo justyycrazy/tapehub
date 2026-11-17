@@ -17,9 +17,9 @@ capabilities:
     delivery: [rest]
     variants: [tiingo]
     intervals:
-      - {code: PT1H, history: {start: 2020-01-01T08:00:00+08:00, end: null}}
-      - {code: PT4H, history: {start: 2020-01-01T08:00:00+08:00, end: null}}
-      - {code: P1D, history: {start: 2020-01-01T08:00:00+08:00, end: null}}
+      - {code: PT1H, history: {start: 2020-01-01T00:00:00+08:00, end: null}}
+      - {code: PT4H, history: {start: 2020-01-01T00:00:00+08:00, end: null}}
+      - {code: P1D, history: {start: 2020-01-01T00:00:00+08:00, end: null}}
     adjustments: [none]
     fields: [open, high, low, close]
 

@@ -21,13 +21,13 @@
 | data_type | 资产类型（市场 CN，变体 tqsdk） | 周期 | adjust | history（北京时间，探针二分估计 approx） | 标准字段 |
 | --- | --- | --- | --- | --- | --- |
 | bars | contract | PT1M/PT5M/PT15M/PT30M/PT1H/P1D | none | 各周期 start 均为 null（随挂牌期限，不编造固定起点） | open/high/low/close/volume |
-| bars | continuous | 同上 6 周期 | none | 分钟级滚动保留：1m 14 / 5m 84 / 15m 240 / 30m 450 / 1h 840 天；P1D start 2016-01-01（统一口径月首对齐） | 同上 |
-| bars | weighted-index | 同上 6 周期 | none | 分钟级滚动保留：1m 14 / 5m 70 / 15m 180 / 30m 390 / 1h 690 天；P1D start 2016-01-01（统一口径月首对齐） | 同上 |
+| bars | continuous | 同上 6 周期 | none | 分钟级滚动保留：1m 14 / 5m 84 / 15m 240 / 30m 450 / 1h 840 天；P1D start 2016-01-01（R4） | 同上 |
+| bars | weighted-index | 同上 6 周期 | none | 分钟级滚动保留：1m 14 / 5m 70 / 15m 180 / 30m 390 / 1h 690 天；P1D start 2016-01-01（R4） | 同上 |
 | bars | stock（分钟族 ≤PT15M） | PT1M/PT5M/PT15M | none（复权 no-op） | 滚动保留：1m 28 / 5m 150 / 15m 450 天 | 同上 |
-| bars | stock（PT30M 起） | PT30M/PT1H/P1D | none/qfq/hfq | 滚动保留：30m 930 / 1h 1500 天；P1D start 2018-01-01（统一口径月首对齐） | 同上 |
-| bars | index | PT1M/PT5M/PT15M/PT30M/PT1H/P1D | none（adj_type 对指数无效） | 滚动保留：1m 28 / 5m 150 / 15m 450 / 30m 930 / 1h 1500 天；P1D start 2018-01-01（统一口径月首对齐） | 同上 |
+| bars | stock（PT30M 起） | PT30M/PT1H/P1D | none/qfq/hfq | 滚动保留：30m 930 / 1h 1500 天；P1D start 2018-01-01（R4） | 同上 |
+| bars | index | PT1M/PT5M/PT15M/PT30M/PT1H/P1D | none（adj_type 对指数无效） | 滚动保留：1m 28 / 5m 150 / 15m 450 / 30m 930 / 1h 1500 天；P1D start 2018-01-01（R4） | 同上 |
 | bars | etf（分钟族 ≤PT15M） | PT1M/PT5M/PT15M | none（复权 no-op） | 滚动保留：1m 28 / 5m 150 / 15m 450 天 | 同上 |
-| bars | etf（PT30M 起） | PT30M/PT1H/P1D | none/qfq/hfq | 滚动保留：30m 930 / 1h 1500 天；P1D start 2018-01-01（统一口径月首对齐） | 同上 |
+| bars | etf（PT30M 起） | PT30M/PT1H/P1D | none/qfq/hfq | 滚动保留：30m 930 / 1h 1500 天；P1D start 2018-01-01（R4） | 同上 |
 | bars | commodity-option（五所）/ index-option / etf-option | P1D | none（adj_type 对期权无效） | start 均为 null（合约级数据随上市起、随摘牌止） | open/high/low/close/volume |
 | quotes | contract/continuous/weighted-index/stock/index/etf/commodity-option/index-option/etf-option | 无周期维度（声明为空） | 无复权维度（声明为空） | 不适用 | timestamp、last_price、五档买卖价量（bid/ask 价量 1..5）、volume、amount |
 

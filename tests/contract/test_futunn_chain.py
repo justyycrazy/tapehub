@@ -199,7 +199,7 @@ def test_capability_catalog(futunn_client: TestClient) -> None:
         # 五周期干净互证收敛（2010-09-01，「碎片区不可定案」旧定案被推翻）
         assert hk_history[code]["start"] == "2010-09-01T00:00:00+08:00"
     for code in ("P1D", "P1W", "P1M"):
-        assert hk_history[code]["start"] == "1991-01-01T00:00:00+08:00"
+        assert hk_history[code]["start"] == "2000-01-01T00:00:00+08:00"
     us_history = {
         i["code"]: i["history"] for i in by_key[("US", "stock")]["intervals"]
     }
@@ -219,12 +219,12 @@ def test_capability_catalog(futunn_client: TestClient) -> None:
     hk_etf_history = {
         i["code"]: i["history"] for i in by_key[("HK", "etf")]["intervals"]
     }
-    # HK etf：统一口径月首 1999-11-01（02800 上市日实测 1999-11-12
-    # 落档）+ 分钟族 2015-04-01
+    # HK etf：裁决 6 归一 2000-01-01（02800 上市日实测 1999-11-12
+    # 落档探针日志）+ 分钟族 2015-04-01
     for code in ("PT1M", "PT5M", "PT15M", "PT30M", "PT1H"):
         assert hk_etf_history[code]["start"] == "2015-04-01T00:00:00+08:00"
     for code in ("P1D", "P1W", "P1M"):
-        assert hk_etf_history[code]["start"] == "1999-11-01T00:00:00+08:00"
+        assert hk_etf_history[code]["start"] == "2000-01-01T00:00:00+08:00"
 
     adjustments = {
         (tuple(cap["markets"])[0], tuple(cap["asset_types"])[0]): cap["adjustments"]

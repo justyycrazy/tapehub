@@ -131,11 +131,11 @@ def test_capability_catalog(tickflow_client: TestClient) -> None:  # type: ignor
         ("quotes", ["US"]),
     ]
     # 三市场 history.start 按全局统一口径：CN 开业日锚保留（实测首根
-    # = 开业日）；HK/US 月首对齐（US 实测 1962-01-02 早于 2000-01-01 →
-    # 归一 2000-01-01）
+    # = 开业日，R3）；HK 同 US（裁决 6，实测早于 2000-01-01 → 归一
+    # 2000-01-01）
     expected_starts = {
         "CN": "1990-12-19T00:00:00+08:00",
-        "HK": "1980-01-01T00:00:00+08:00",
+        "HK": "2000-01-01T00:00:00+08:00",
         "US": "2000-01-01T00:00:00+08:00",
     }
     assert [cap["asset_types"] for cap in caps[:3]] == [["stock"], ["index"], ["etf"]]
