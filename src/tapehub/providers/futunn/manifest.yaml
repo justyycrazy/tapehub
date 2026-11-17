@@ -11,7 +11,11 @@ default_variant: futunn
 
 capabilities:
   # —— 历史 K 线（8 核心周期）——
-  # A 股个股：唯一有复权语义的 CN 资产类型（autype 0/1/2 直映）
+  # A 股个股：唯一有复权语义的 CN 资产类型（autype 0/1/2 直映）。
+  # D/W/M 逐周期实测键位回填（探针 2026-11-17 第 1 轮：上游日线库缺
+  # 1990 年 12 月——[1990-12] 月窗 count=0、P1D 首根 1991-01-02；P1W
+  # 首根键位 1990-12-31 跨周根、P1M 首根键位 1991-01-01 自然月首日，
+  # 见 docs time_key 口径）
   - data_type: bars
     markets: [CN]
     asset_types: [stock]
@@ -23,13 +27,16 @@ capabilities:
       - {code: PT15M, history: {start: 2014-01-21T09:45:00+08:00, end: null}}
       - {code: PT30M, history: {start: 2014-01-21T09:45:00+08:00, end: null}}
       - {code: PT1H, history: {start: 2014-01-21T09:45:00+08:00, end: null}}
-      - {code: P1D, history: {start: 1990-12-19T00:00:00+08:00, end: null}}
-      - {code: P1W, history: {start: 1990-12-19T00:00:00+08:00, end: null}}
-      - {code: P1M, history: {start: 1990-12-19T00:00:00+08:00, end: null}}
+      - {code: P1D, history: {start: 1991-01-02T00:00:00+08:00, end: null}}
+      - {code: P1W, history: {start: 1990-12-31T00:00:00+08:00, end: null}}
+      - {code: P1M, history: {start: 1991-01-01T00:00:00+08:00, end: null}}
     adjustments: [none, qfq, hfq]
     fields: [open, high, low, close, volume, amount]
 
-  # 指数（沪深北交易所标准指数）：无复权语义
+  # 指数（沪深北交易所标准指数）：无复权语义。
+  # D/W/M 开业日锚回填（探针 2026-11-17 第 1 轮：P1D 首根 1990-12-19
+  # 精确吻合——「与 CN stock 同库界」旧假设被推翻，index 库深于 stock
+  # 日线库）；分钟族 est 上界维持（实测首根 2015-04-01，相容）
   - data_type: bars
     markets: [CN]
     asset_types: [index]
@@ -41,13 +48,16 @@ capabilities:
       - {code: PT15M, history: {start: 2015-05-15T23:37:30+08:00, end: null}}
       - {code: PT30M, history: {start: 2015-05-15T23:37:30+08:00, end: null}}
       - {code: PT1H, history: {start: 2015-05-15T23:37:30+08:00, end: null}}
-      - {code: P1D, history: {start: 1991-01-18T16:52:30+08:00, end: null}}
-      - {code: P1W, history: {start: 1991-01-18T16:52:30+08:00, end: null}}
-      - {code: P1M, history: {start: 1991-01-18T16:52:30+08:00, end: null}}
+      - {code: P1D, history: {start: 1990-12-19T00:00:00+08:00, end: null}}
+      - {code: P1W, history: {start: 1990-12-19T00:00:00+08:00, end: null}}
+      - {code: P1M, history: {start: 1990-12-19T00:00:00+08:00, end: null}}
     adjustments: [none]
     fields: [open, high, low, close, volume, amount]
 
-  # 场内基金（仅 ETF）：autype 三值复权生效
+  # 场内基金（仅 ETF）：autype 三值复权生效。
+  # D/W/M 上市日锚换基准随探针目标更新（探针 2026-11-17 第 1 轮 depth
+  # 复探：510050 P1D 首根 2005-02-23 上市日精确吻合，替代旧锚 510300
+  # →2012-05-28）；分钟族 est 上界维持（实测首根 2015-05-20，相容）
   - data_type: bars
     markets: [CN]
     asset_types: [etf]
@@ -59,24 +69,27 @@ capabilities:
       - {code: PT15M, history: {start: 2015-07-11T08:26:15+08:00, end: null}}
       - {code: PT30M, history: {start: 2015-07-11T08:26:15+08:00, end: null}}
       - {code: PT1H, history: {start: 2015-07-11T08:26:15+08:00, end: null}}
-      - {code: P1D, history: {start: 2012-05-28T00:00:00+08:00, end: null}}
-      - {code: P1W, history: {start: 2012-05-28T00:00:00+08:00, end: null}}
-      - {code: P1M, history: {start: 2012-05-28T00:00:00+08:00, end: null}}
+      - {code: P1D, history: {start: 2005-02-23T00:00:00+08:00, end: null}}
+      - {code: P1W, history: {start: 2005-02-23T00:00:00+08:00, end: null}}
+      - {code: P1M, history: {start: 2005-02-23T00:00:00+08:00, end: null}}
     adjustments: [none, qfq, hfq]
     fields: [open, high, low, close, volume, amount]
 
-  # 港股个股（正股）：分钟族 history.start 保持 null
+  # 港股个股（正股）：分钟族 2010-09-01 回填（探针 2026-11-17 第 1 轮
+  # 五周期干净互证收敛，era×3 bisect×7 complete——「碎片区不可定案」
+  # 旧定案被推翻）；P1D 库底聚焦补测首根 1991-01-02（[1990-12] 月窗
+  # count=0），est 上界 1991-01-18 相容维持
   - data_type: bars
     markets: [HK]
     asset_types: [stock]
     delivery: [rest]
     variants: [futunn]
     intervals:
-      - {code: PT1M, history: {start: null, end: null}}
-      - {code: PT5M, history: {start: null, end: null}}
-      - {code: PT15M, history: {start: null, end: null}}
-      - {code: PT30M, history: {start: null, end: null}}
-      - {code: PT1H, history: {start: null, end: null}}
+      - {code: PT1M, history: {start: 2010-09-01T00:00:00+08:00, end: null}}
+      - {code: PT5M, history: {start: 2010-09-01T00:00:00+08:00, end: null}}
+      - {code: PT15M, history: {start: 2010-09-01T00:00:00+08:00, end: null}}
+      - {code: PT30M, history: {start: 2010-09-01T00:00:00+08:00, end: null}}
+      - {code: PT1H, history: {start: 2010-09-01T00:00:00+08:00, end: null}}
       - {code: P1D, history: {start: 1991-01-18T16:52:30+08:00, end: null}}
       - {code: P1W, history: {start: 1991-01-18T16:52:30+08:00, end: null}}
       - {code: P1M, history: {start: 1991-01-18T16:52:30+08:00, end: null}}
@@ -85,22 +98,24 @@ capabilities:
 
   # 港股 ETF：与 stock 共用统一端点（目录外诊断 2026-11-15 第 6/7 轮：
   # HK-HKEX-02800 P1D 三复权两两 246/246 根差异、W/M/分钟直测放行、快照
-  # 完整）；量额上游真实成交额（非 alphafeed/tickflow HK 口径原值 0）；
-  # history 未核实保持 null（chain 二分后回填）
+  # 完整）；量额上游真实成交额（非 alphafeed/tickflow HK 口径原值 0）。
+  # history 全 8 周期回填（探针 2026-11-17 第 1 轮 chain 二分收敛）：
+  # P1D 首根 1999-11-12（02800 上市日精确吻合）、W 1999-11-08、M
+  # 1999-11-01、分钟族 2015-04-01 系五周期互证
   - data_type: bars
     markets: [HK]
     asset_types: [etf]
     delivery: [rest]
     variants: [futunn]
     intervals:
-      - {code: PT1M, history: {start: null, end: null}}
-      - {code: PT5M, history: {start: null, end: null}}
-      - {code: PT15M, history: {start: null, end: null}}
-      - {code: PT30M, history: {start: null, end: null}}
-      - {code: PT1H, history: {start: null, end: null}}
-      - {code: P1D, history: {start: null, end: null}}
-      - {code: P1W, history: {start: null, end: null}}
-      - {code: P1M, history: {start: null, end: null}}
+      - {code: PT1M, history: {start: 2015-04-01T00:00:00+08:00, end: null}}
+      - {code: PT5M, history: {start: 2015-04-01T00:00:00+08:00, end: null}}
+      - {code: PT15M, history: {start: 2015-04-01T00:00:00+08:00, end: null}}
+      - {code: PT30M, history: {start: 2015-04-01T00:00:00+08:00, end: null}}
+      - {code: PT1H, history: {start: 2015-04-01T00:00:00+08:00, end: null}}
+      - {code: P1D, history: {start: 1999-11-12T00:00:00+08:00, end: null}}
+      - {code: P1W, history: {start: 1999-11-12T00:00:00+08:00, end: null}}
+      - {code: P1M, history: {start: 1999-11-12T00:00:00+08:00, end: null}}
     adjustments: [none, qfq, hfq]
     fields: [open, high, low, close, volume, amount]
 
@@ -125,22 +140,24 @@ capabilities:
   # 美股 ETF：与 stock 共用统一端点（目录外诊断 2026-11-15 第 4/5 轮：
   # SPY.US/QQQ.US P1D 三复权生效、W/M/分钟直测放行，raw 与 alphafeed 侧
   # 逐位互证；hfq 锚定基准与 alphafeed 不同——各家语义自洽、不可跨源直
-  # 比）；量额同 US stock（amount 上游真实成交额，非原值 0）；history
-  # 未核实保持 null（chain 二分后回填）
+  # 比）；量额同 US stock（amount 上游真实成交额，非原值 0）。
+  # history 全 8 周期回填（探针 2026-11-17 第 1 轮 chain 二分收敛）：
+  # P1D 首根 1993-01-29（SPY 上市日精确吻合）、W 1993-01-25、M
+  # 1993-01-01、分钟族 2015-04-01 系五周期互证
   - data_type: bars
     markets: [US]
     asset_types: [etf]
     delivery: [rest]
     variants: [futunn]
     intervals:
-      - {code: PT1M, history: {start: null, end: null}}
-      - {code: PT5M, history: {start: null, end: null}}
-      - {code: PT15M, history: {start: null, end: null}}
-      - {code: PT30M, history: {start: null, end: null}}
-      - {code: PT1H, history: {start: null, end: null}}
-      - {code: P1D, history: {start: null, end: null}}
-      - {code: P1W, history: {start: null, end: null}}
-      - {code: P1M, history: {start: null, end: null}}
+      - {code: PT1M, history: {start: 2015-04-01T00:00:00+08:00, end: null}}
+      - {code: PT5M, history: {start: 2015-04-01T00:00:00+08:00, end: null}}
+      - {code: PT15M, history: {start: 2015-04-01T00:00:00+08:00, end: null}}
+      - {code: PT30M, history: {start: 2015-04-01T00:00:00+08:00, end: null}}
+      - {code: PT1H, history: {start: 2015-04-01T00:00:00+08:00, end: null}}
+      - {code: P1D, history: {start: 1993-01-29T00:00:00+08:00, end: null}}
+      - {code: P1W, history: {start: 1993-01-29T00:00:00+08:00, end: null}}
+      - {code: P1M, history: {start: 1993-01-29T00:00:00+08:00, end: null}}
     adjustments: [none, qfq, hfq]
     fields: [open, high, low, close, volume, amount]
 

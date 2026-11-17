@@ -60,12 +60,11 @@ targets:
     required_fields: [open, high, low, close, volume]
   etf@CN:
     instrument: CN-SSE-510050
-    # 华夏上证 50ETF（2004-12-30 上市，最早 CN ETF 之一）：证券基准统一——
+    # 华夏上证 50ETF（2005-02-23 上市，最早 CN ETF 之一）：证券基准统一——
     # 与 akshare/alphafeed/baostock/tickflow/tqsdk/tushare 同款（原 510300 为
-    # 上市日锚标的）。⚠ manifest etf@CN history.start=2012-05-28 系 510300
-    # count-exact 上市日锚（2026-11-14 第 3 轮），换基准后下一轮 depth 复探
-    # 可能暴露更深库底，修订走人工确认；510050 为新标的将新增占用 1 个历史
-    # 额度（7×24h 释放），原 510300 额度自然过期
+    # 上市日锚标的）。⚠ 预告已兑现（2026-11-17 第 1 轮）：depth 复探实测
+    # 510050 P1D 首根 2005-02-23 上市日精确吻合，manifest etf@CN 锚定值
+    # 已按人工确认由 2012-05-28（510300 锚）回填为 2005-02-23
     window: {start: 2025-01-01, end: 2025-12-31}
     min_bars: 10
     required_fields: [open, high, low, close, volume]

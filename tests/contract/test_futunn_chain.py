@@ -154,13 +154,17 @@ def test_capability_catalog(futunn_client: TestClient) -> None:
         ]
         assert cap["fields"] == ["open", "high", "low", "close", "volume", "amount"]
 
-    # history.start（depth 探针实证回填）：CN stock 日/周/月 1990-12-19
-    # （上市日锚）、分钟族 2014-01-21（连续可查起点）；CN index 日/周/月
-    # ≈1991-01-18、分钟族 ≈2015-05-15；CN etf 日/周/月 2012-05-28（上市日
-    # 锚 count-exact）、分钟族 ≈2015-07-11；HK stock 日/周/月 ≈1991-01-18、
-    # 分钟族碎片区保持 null；US stock 日/周/月 ≈1997-01-25、分钟族
-    # ≈2015-05-15（除锚定值外均 approx 90 天粒度）；US etf 2026-11-15
-    # 扩容，全周期未核实保持 null
+    # history.start（depth 探针实证回填，2026-11-17 第 1 轮全量深度 +
+    # HK P1D 聚焦补测）：CN stock 日/周/月逐周期实测键位（P1D 1991-01-02
+    # ——上游日线库缺 1990 年 12 月；P1W 1990-12-31 / P1M 1991-01-01）、
+    # 分钟族 2014-01-21（连续可查起点）；CN index 日/周/月 1990-12-19
+    # （开业日锚）、分钟族 ≈2015-05-15；CN etf 日/周/月 2005-02-23
+    # （上市日锚，基准标的 510050）、分钟族 ≈2015-07-11；HK stock
+    # 日/周/月 ≈1991-01-18（聚焦补测实测首根 1991-01-02）、分钟族
+    # 2010-09-01（五周期互证收敛，「碎片区不可定案」旧定案被推翻）；
+    # US stock 日/周/月 ≈1997-01-25、分钟族 ≈2015-05-15（除锚定值外均
+    # approx 90 天粒度）；US etf 1993-01-29（SPY 上市日锚）+ 分钟族
+    # 2015-04-01；HK etf 1999-11-12（02800 上市日锚）+ 分钟族 2015-04-01
     by_key = {
         (tuple(cap["markets"])[0], tuple(cap["asset_types"])[0]): cap
         for cap in bars_caps
@@ -172,29 +176,30 @@ def test_capability_catalog(futunn_client: TestClient) -> None:
         assert stock_history[code]["start"] == "2014-01-21T09:45:00+08:00"
         assert stock_history[code]["end"] is None
         assert stock_history[code]["retention_days"] is None
-    for code in ("P1D", "P1W", "P1M"):
-        assert stock_history[code]["start"] == "1990-12-19T00:00:00+08:00"
+    # 逐周期实测键位（[1990-12] 月窗显式探测 count=0，日线库缺 1990-12）
+    assert stock_history["P1D"]["start"] == "1991-01-02T00:00:00+08:00"
+    assert stock_history["P1W"]["start"] == "1990-12-31T00:00:00+08:00"
+    assert stock_history["P1M"]["start"] == "1991-01-01T00:00:00+08:00"
     index_history = {
         i["code"]: i["history"] for i in by_key[("CN", "index")]["intervals"]
     }
     for code in ("PT1M", "PT5M", "PT15M", "PT30M", "PT1H"):
         assert index_history[code]["start"] == "2015-05-15T23:37:30+08:00"
     for code in ("P1D", "P1W", "P1M"):
-        assert index_history[code]["start"] == "1991-01-18T16:52:30+08:00"
+        assert index_history[code]["start"] == "1990-12-19T00:00:00+08:00"
     etf_history = {
         i["code"]: i["history"] for i in by_key[("CN", "etf")]["intervals"]
     }
     for code in ("PT1M", "PT5M", "PT15M", "PT30M", "PT1H"):
         assert etf_history[code]["start"] == "2015-07-11T08:26:15+08:00"
     for code in ("P1D", "P1W", "P1M"):
-        assert etf_history[code]["start"] == "2012-05-28T00:00:00+08:00"
+        assert etf_history[code]["start"] == "2005-02-23T00:00:00+08:00"
     hk_history = {
         i["code"]: i["history"] for i in by_key[("HK", "stock")]["intervals"]
     }
     for code in ("PT1M", "PT5M", "PT15M", "PT30M", "PT1H"):
-        # 碎片区（era 宽窗静默返空 + 稀疏碎片数据使连续性假设失效）：
-        # 二分法不可定案，保持 null 待专项方法重探
-        assert hk_history[code]["start"] is None
+        # 五周期干净互证收敛（2010-09-01，「碎片区不可定案」旧定案被推翻）
+        assert hk_history[code]["start"] == "2010-09-01T00:00:00+08:00"
     for code in ("P1D", "P1W", "P1M"):
         assert hk_history[code]["start"] == "1991-01-18T16:52:30+08:00"
     us_history = {
@@ -207,15 +212,19 @@ def test_capability_catalog(futunn_client: TestClient) -> None:
     us_etf_history = {
         i["code"]: i["history"] for i in by_key[("US", "etf")]["intervals"]
     }
-    # US etf（2026-11-15 扩容）：history 未核实保持 null（chain 二分后回填）
-    for code in ("PT1M", "PT5M", "PT15M", "PT30M", "PT1H", "P1D", "P1W", "P1M"):
-        assert us_etf_history[code]["start"] is None
+    # US etf：P1D 1993-01-29（SPY 上市日锚）+ 分钟族 2015-04-01
+    for code in ("PT1M", "PT5M", "PT15M", "PT30M", "PT1H"):
+        assert us_etf_history[code]["start"] == "2015-04-01T00:00:00+08:00"
+    for code in ("P1D", "P1W", "P1M"):
+        assert us_etf_history[code]["start"] == "1993-01-29T00:00:00+08:00"
     hk_etf_history = {
         i["code"]: i["history"] for i in by_key[("HK", "etf")]["intervals"]
     }
-    # HK etf（2026-11-15 扩容）：history 未核实保持 null（chain 二分后回填）
-    for code in ("PT1M", "PT5M", "PT15M", "PT30M", "PT1H", "P1D", "P1W", "P1M"):
-        assert hk_etf_history[code]["start"] is None
+    # HK etf：P1D 1999-11-12（02800 上市日锚）+ 分钟族 2015-04-01
+    for code in ("PT1M", "PT5M", "PT15M", "PT30M", "PT1H"):
+        assert hk_etf_history[code]["start"] == "2015-04-01T00:00:00+08:00"
+    for code in ("P1D", "P1W", "P1M"):
+        assert hk_etf_history[code]["start"] == "1999-11-12T00:00:00+08:00"
 
     adjustments = {
         (tuple(cap["markets"])[0], tuple(cap["asset_types"])[0]): cap["adjustments"]
