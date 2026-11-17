@@ -137,7 +137,7 @@ def test_capability_catalog(tqsdk_client: TestClient) -> None:  # type: ignore[n
     assert pt1m["history"] == {
         "start": None,
         "end": None,
-        "retention_days": 35,
+        "retention_days": 28,
     }
 
 

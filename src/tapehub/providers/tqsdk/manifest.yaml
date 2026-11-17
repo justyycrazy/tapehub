@@ -42,7 +42,7 @@ capabilities:
     delivery: [rest]
     variants: [tqsdk]
     intervals:
-      - {code: PT1M, history: {retention_days: 7, end: null}}
+      - {code: PT1M, history: {retention_days: 14, end: null}}
       - {code: PT5M, history: {retention_days: 70, end: null}}
       - {code: PT15M, history: {retention_days: 180, end: null}}
       - {code: PT30M, history: {retention_days: 390, end: null}}
@@ -57,7 +57,7 @@ capabilities:
     delivery: [rest]
     variants: [tqsdk]
     intervals:
-      - {code: PT1M, history: {retention_days: 35, end: null}}
+      - {code: PT1M, history: {retention_days: 28, end: null}}
       - {code: PT5M, history: {retention_days: 150, end: null}}
       - {code: PT15M, history: {retention_days: 450, end: null}}
     adjustments: [none]
@@ -81,7 +81,7 @@ capabilities:
     delivery: [rest]
     variants: [tqsdk]
     intervals:
-      - {code: PT1M, history: {retention_days: 35, end: null}}
+      - {code: PT1M, history: {retention_days: 28, end: null}}
       - {code: PT5M, history: {retention_days: 150, end: null}}
       - {code: PT15M, history: {retention_days: 450, end: null}}
       - {code: PT30M, history: {retention_days: 930, end: null}}
@@ -97,7 +97,7 @@ capabilities:
     delivery: [rest]
     variants: [tqsdk]
     intervals:
-      - {code: PT1M, history: {retention_days: 35, end: null}}
+      - {code: PT1M, history: {retention_days: 28, end: null}}
       - {code: PT5M, history: {retention_days: 150, end: null}}
       - {code: PT15M, history: {retention_days: 450, end: null}}
     adjustments: [none]

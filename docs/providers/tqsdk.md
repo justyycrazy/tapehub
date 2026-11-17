@@ -22,11 +22,11 @@
 | --- | --- | --- | --- | --- | --- |
 | bars | contract | PT1M/PT5M/PT15M/PT30M/PT1H/P1D | none | 各周期 start 均为 null（随挂牌期限，不编造固定起点） | open/high/low/close/volume |
 | bars | continuous | 同上 6 周期 | none | 分钟级滚动保留：1m 14 / 5m 84 / 15m 240 / 30m 450 / 1h 840 天；P1D start 2016-01-05 | 同上 |
-| bars | weighted-index | 同上 6 周期 | none | 分钟级滚动保留：1m 7 / 5m 70 / 15m 180 / 30m 390 / 1h 690 天；P1D start 2016-01-05 | 同上 |
-| bars | stock（分钟族 ≤PT15M） | PT1M/PT5M/PT15M | none（复权 no-op） | 滚动保留：1m 35 / 5m 150 / 15m 450 天 | 同上 |
+| bars | weighted-index | 同上 6 周期 | none | 分钟级滚动保留：1m 14 / 5m 70 / 15m 180 / 30m 390 / 1h 690 天；P1D start 2016-01-05 | 同上 |
+| bars | stock（分钟族 ≤PT15M） | PT1M/PT5M/PT15M | none（复权 no-op） | 滚动保留：1m 28 / 5m 150 / 15m 450 天 | 同上 |
 | bars | stock（PT30M 起） | PT30M/PT1H/P1D | none/qfq/hfq | 滚动保留：30m 930 / 1h 1500 天；P1D start 2018-01-02 | 同上 |
-| bars | index | PT1M/PT5M/PT15M/PT30M/PT1H/P1D | none（adj_type 对指数无效） | 滚动保留：1m 35 / 5m 150 / 15m 450 / 30m 930 / 1h 1500 天；P1D start 2018-01-02 | 同上 |
-| bars | etf（分钟族 ≤PT15M） | PT1M/PT5M/PT15M | none（复权 no-op） | 滚动保留：1m 35 / 5m 150 / 15m 450 天 | 同上 |
+| bars | index | PT1M/PT5M/PT15M/PT30M/PT1H/P1D | none（adj_type 对指数无效） | 滚动保留：1m 28 / 5m 150 / 15m 450 / 30m 930 / 1h 1500 天；P1D start 2018-01-02 | 同上 |
+| bars | etf（分钟族 ≤PT15M） | PT1M/PT5M/PT15M | none（复权 no-op） | 滚动保留：1m 28 / 5m 150 / 15m 450 天 | 同上 |
 | bars | etf（PT30M 起） | PT30M/PT1H/P1D | none/qfq/hfq | 滚动保留：30m 930 / 1h 1500 天；P1D start 2018-01-02 | 同上 |
 | bars | commodity-option（五所）/ index-option / etf-option | P1D | none（adj_type 对期权无效） | start 均为 null（合约级数据随上市起、随摘牌止） | open/high/low/close/volume |
 | quotes | contract/continuous/weighted-index/stock/index/etf/commodity-option/index-option/etf-option | 无周期维度（声明为空） | 无复权维度（声明为空） | 不适用 | timestamp、last_price、五档买卖价量（bid/ask 价量 1..5）、volume、amount |
@@ -58,7 +58,7 @@
 
 - 周期映射：上游接受不超过 1 日的任意秒数——`PT1M→60`、`PT5M→300`、`PT15M→900`、`PT30M→1800`、`PT1H→3600`、`P1D→86400`；适配器只声明这 6 个周期，其余周期抛 `UNSUPPORTED_CAPABILITY`；周期代码之间不做换算（`PT1M` ≠ `P1M`）；
 - 复权映射（上游参数 `adj_type` 仅对股票/基金类型有效）：`qfq→F`、`hfq→B`、`none→None`；期货/指数无复权概念恒传 `None`；全部参数显式传递，不依赖上游默认值；
-- 复权生效边界（探针实证）：分钟族（≤PT15M）qfq/hfq 与 none 零差异（no-op），能力声明收窄为仅 none；PT30M/PT1H/P1D 复权真实生效（三值声明）；上游「暂不支持复权获取多合约 K 线」与本适配器的单合约调用方式不冲突；
+- 复权生效边界（探针实证）：分钟族（≤PT15M）qfq/hfq 与 none 零差异（no-op），能力声明收窄为仅 none；PT30M/PT1H/P1D 复权真实生效（三值声明；2026-11-17 盘中复验确认 etf 同窗 hfq 生效——adjust_diff 窗口须与各周期序列基点（P1D start / 分钟族保留边界）之间跨过至少一个除权事件：旧窗 2024-06~08 紧邻 etf PT30M 保留边界（≈2024-05）且该区间无除权事件，hfq 因子恒 1 曾致零差异伪影 suspect（同窗 P1D/PT1H 因基点更早、中间含分红故有差异），窗口已前移至 2025-01 起）；上游「暂不支持复权获取多合约 K 线」与本适配器的单合约调用方式不冲突；
 - 单位换算：期货 `volume` 保持**手**（不换算）；股票/ETF `volume` 经量级对照实证判定为**股**，原样透出；bars 的 `amount` 上游无字段；快照 `amount` 为元。所有数值原值透出，不做二次换算。
 
 ## 上游行为定案

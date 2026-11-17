@@ -265,9 +265,16 @@ chain:
   skip: []
   adjust_diff:
     # 股票/ETF adj_type F/B 实证：前/后复权序列应与不复权存在差异（分红除权期）。
-    # stock@CN-SZSE 为逐所细分复验
+    # stock@CN-SZSE 为逐所细分复验。
+    # 窗口口径（2026-11-17 修订）：窗口须与各目标各周期的序列基点（P1D start /
+    # 分钟族保留边界）之间跨过至少一个除权事件——旧窗 2024-06~08 紧邻 etf
+    # PT30M 保留边界（≈2024-05）且该区间无除权事件，hfq 因子恒 1 曾产生
+    # no-op suspect 伪影（同窗 P1D/PT1H 基点更早、中间含分红故有差异；
+    # 2026-11-17 聚焦复验轮实证：前移至本窗口后三目标 18 case 全 confirmed，
+    # 零 suspect）；窗内除权事件为历史事实不随时间漂移，更换目标/周期时按
+    # 同口径核对
     targets: [stock, stock@CN-SZSE, etf]
-    window: {start: 2024-06-01, end: 2024-08-31}
+    window: {start: 2025-01-01, end: 2026-11-30}
     pairs: [[none, qfq], [none, hfq]]
     fields: [close]
   history_depth:
