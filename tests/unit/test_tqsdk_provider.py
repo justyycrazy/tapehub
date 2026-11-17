@@ -402,15 +402,22 @@ def _quote(**overrides: Any) -> Any:
 
 
 def _install_shared_stubs(monkeypatch: pytest.MonkeyPatch) -> type[_StubRuntime]:
+    import tapehub.providers.base as base_module
     import tapehub.providers.tqsdk.adapter as adapter_module
 
     _StubRuntime.instances.clear()
     monkeypatch.setattr(adapter_module, "TqSdkRuntime", _StubRuntime)
-    monkeypatch.setattr(adapter_module, "call_in_thread", _startup_with_checkpoint)
+    # 适配器经 self.call_in_thread（分组线程池路径）做 runtime 启动：
+    # 桩打基类方法（签名含 self），仅覆盖本批 shared 测试的启动调用
+    monkeypatch.setattr(
+        base_module.BaseProviderAdapter, "call_in_thread", _startup_with_checkpoint
+    )
     return _StubRuntime
 
 
-async def _startup_with_checkpoint(func: Any, *args: Any, **kwargs: Any) -> None:
+async def _startup_with_checkpoint(
+    self: Any, func: Any, *args: Any, **kwargs: Any
+) -> None:
     """启动完成后留取消检查点：模拟 anyio shield 下「取消在赋值前送达」。"""
     func()  # runtime.start（stub 同步完成）
     await asyncio.sleep(0.05)

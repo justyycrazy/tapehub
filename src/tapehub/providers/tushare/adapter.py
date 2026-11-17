@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any
 
 from tapehub.domain.errors import ProviderNotImplementedError
 from tapehub.domain.models import CN_TIMEZONE, BarBatch, BarQuery
-from tapehub.providers.base import BaseProviderAdapter, call_in_thread
+from tapehub.providers.base import BaseProviderAdapter
 from tapehub.providers.pagination import paginate_bars
 from tapehub.providers.tushare.request_mapper import (
     FUND_DAILY_MAX_ROWS,
@@ -39,7 +39,7 @@ class ProviderAdapter(BaseProviderAdapter):
     async def fetch_bars(self, query: BarQuery) -> BarBatch:
         operation = self.resolve_operation(query)
         self._ensure_ready()
-        return await call_in_thread(self._fetch_sync, operation, query, abandon_on_cancel=True)
+        return await self.call_in_thread(self._fetch_sync, operation, query, abandon_on_cancel=True)
 
     def _ensure_ready(self) -> str:
         """校验运行前提：Token 配置。"""

@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING, Protocol, TypeGuard
 from tapehub.domain.capabilities import Capability
 from tapehub.domain.intervals import Interval
 from tapehub.domain.models import Adjust, AssetType, DataType, DataVariant
+from tapehub.providers.base import DEFAULT_THREAD_POOL_CAPACITY
 from tapehub.providers.manifest import ProviderManifest, load_builtin_manifest
 from tapehub.providers.routing import RoutingKey, RoutingTable, load_routing_config
 
@@ -327,7 +328,36 @@ def build_default_registry(settings: object) -> ProviderRegistry:
             continue
         _apply_enable_decision(record, name, override, settings)
         records.append(record)
+    _log_thread_grouping(settings)
     return ProviderRegistry(records, routing)
+
+
+def _log_thread_grouping(settings: object) -> None:
+    """分组线程池配置诊断（启动期一次）：分组状态汇总 + 未知键告警。
+
+    未知 Provider 名（拼写错误）只告警不阻断：配置失误的危害是「以为
+    隔离了实际没有」，告警足以暴露，阻断启动反而扩大失误影响面。
+    """
+    size_map = getattr(settings, "thread_pool_size_map", None) or {}
+    if not size_map:
+        logger.info(
+            "provider thread pool grouping disabled "
+            "(TAPEHUB_THREAD_POOL_SIZE_MAP empty); threaded upstream calls "
+            "share the anyio default limiter"
+        )
+        return
+    unknown = sorted(set(size_map) - set(BUILTIN_PROVIDERS))
+    if unknown:
+        logger.warning(
+            "TAPEHUB_THREAD_POOL_SIZE_MAP contains unknown provider names: %s "
+            "(ignored; check spelling)",
+            unknown,
+        )
+    capacities = {
+        name: int(size_map.get(name, DEFAULT_THREAD_POOL_CAPACITY))
+        for name in BUILTIN_PROVIDERS
+    }
+    logger.info("provider thread pool grouping enabled: %s", capacities)
 
 
 def _apply_enable_decision(

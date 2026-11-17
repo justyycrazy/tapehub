@@ -13,7 +13,7 @@ from tapehub.domain.errors import ProviderNotImplementedError, UpstreamError
 from tapehub.domain.models import CN_TIMEZONE, BarBatch, BarQuery
 from tapehub.providers.baostock.request_mapper import build_request
 from tapehub.providers.baostock.response_mapper import to_standard_bars
-from tapehub.providers.base import BaseProviderAdapter, call_in_thread, truncate_upstream_message
+from tapehub.providers.base import BaseProviderAdapter, truncate_upstream_message
 from tapehub.providers.pagination import paginate_bars
 
 logger = logging.getLogger(__name__)
@@ -104,7 +104,7 @@ class ProviderAdapter(BaseProviderAdapter):
 
     async def fetch_bars(self, query: BarQuery) -> BarBatch:
         operation = self.resolve_operation(query)
-        return await call_in_thread(self._fetch_sync, operation, query, abandon_on_cancel=True)
+        return await self.call_in_thread(self._fetch_sync, operation, query, abandon_on_cancel=True)
 
     def _fetch_sync(self, operation: str, query: BarQuery) -> BarBatch:
         # 先完成参数映射（能力/标的映射错误优先于 SDK 检查，与 akshare 一致）

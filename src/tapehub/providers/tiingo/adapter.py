@@ -27,7 +27,7 @@ from tapehub.domain.models import (
     QuoteStreamEvent,
     StreamStatusKind,
 )
-from tapehub.providers.base import BaseProviderAdapter, call_in_thread
+from tapehub.providers.base import BaseProviderAdapter
 from tapehub.providers.pagination import paginate_bars
 from tapehub.providers.stream_buffer import StreamBuffer
 from tapehub.providers.tiingo.request_mapper import (
@@ -77,7 +77,7 @@ class ProviderAdapter(BaseProviderAdapter):
     async def fetch_bars(self, query: BarQuery) -> BarBatch:
         operation = self.resolve_operation(query)
         api_key = self._ensure_ready()
-        return await call_in_thread(
+        return await self.call_in_thread(
             self._fetch_sync, api_key, operation, query, abandon_on_cancel=True
         )
 

@@ -10,7 +10,7 @@ from tapehub.domain.errors import ProviderNotImplementedError
 from tapehub.domain.models import CN_TIMEZONE, BarBatch, BarQuery
 from tapehub.providers.akshare.request_mapper import build_request
 from tapehub.providers.akshare.response_mapper import to_standard_bars
-from tapehub.providers.base import BaseProviderAdapter, call_in_thread
+from tapehub.providers.base import BaseProviderAdapter
 from tapehub.providers.pagination import paginate_bars
 
 
@@ -21,7 +21,7 @@ class ProviderAdapter(BaseProviderAdapter):
 
     async def fetch_bars(self, query: BarQuery) -> BarBatch:
         operation = self.resolve_operation(query)
-        return await call_in_thread(self._fetch_sync, operation, query, abandon_on_cancel=True)
+        return await self.call_in_thread(self._fetch_sync, operation, query, abandon_on_cancel=True)
 
     def _fetch_sync(self, operation: str, query: BarQuery) -> BarBatch:
         frame = self._call_upstream(operation, query)

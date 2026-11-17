@@ -14,7 +14,7 @@ from tapehub.domain.errors import (
     UpstreamRateLimitedError,
 )
 from tapehub.domain.models import CN_TIMEZONE, Bar, BarBatch, BarQuery, Quote, QuoteQuery
-from tapehub.providers.base import BaseProviderAdapter, call_in_thread, truncate_upstream_message
+from tapehub.providers.base import BaseProviderAdapter, truncate_upstream_message
 from tapehub.providers.futunn.request_mapper import (
     PAGE_SIZE,
     UpstreamRequest,
@@ -62,14 +62,14 @@ class ProviderAdapter(BaseProviderAdapter):
     async def fetch_bars(self, query: BarQuery) -> BarBatch:
         operation = self.resolve_operation(query)
         app_key, signing_key = self._ensure_ready()
-        return await call_in_thread(
+        return await self.call_in_thread(
             self._fetch_sync, app_key, signing_key, operation, query, abandon_on_cancel=True
         )
 
     async def fetch_quote(self, query: QuoteQuery) -> Quote:
         operation = self.resolve_quote_operation(query)
         app_key, signing_key = self._ensure_ready()
-        return await call_in_thread(
+        return await self.call_in_thread(
             self._fetch_quote_sync, app_key, signing_key, operation, query, abandon_on_cancel=True
         )
 

@@ -24,7 +24,7 @@ from tapehub.domain.models import (
     QuoteStreamEvent,
     StreamStatusKind,
 )
-from tapehub.providers.base import BaseProviderAdapter, call_in_thread
+from tapehub.providers.base import BaseProviderAdapter
 from tapehub.providers.pagination import paginate_bars
 from tapehub.providers.stream_buffer import StreamBuffer
 from tapehub.providers.tqsdk.request_mapper import (
@@ -69,7 +69,7 @@ class ProviderAdapter(BaseProviderAdapter):
         if self._conn_mode() == "shared":
             rows = await self._shared_rows(auth, kwargs)
         else:
-            rows = await call_in_thread(
+            rows = await self.call_in_thread(
                 self._fetch_rows_per_request, auth, kwargs, abandon_on_cancel=True
             )
         bars = to_standard_bars(rows)
@@ -108,7 +108,7 @@ class ProviderAdapter(BaseProviderAdapter):
             finally:
                 runtime.unsubscribe(symbol)
         else:
-            snapshot = await call_in_thread(
+            snapshot = await self.call_in_thread(
                 self._fetch_quote_per_request, auth, symbol, abandon_on_cancel=True
             )
         return to_standard_quote(
@@ -251,7 +251,7 @@ class ProviderAdapter(BaseProviderAdapter):
                 )
                 # start 阻塞至构造完成（实测 ~1s），放到线程里避免冻结事件循环
                 try:
-                    await call_in_thread(runtime.start)
+                    await self.call_in_thread(runtime.start)
                 except BaseException:
                     # 取消（客户端断开/请求超时）或构造失败：anyio shield 下
                     # 线程已完成 start——TqApi 连接与 runtime 线程可能已带起

@@ -14,7 +14,7 @@ from tapehub.providers.alphafeed.request_mapper import (
     build_request,
 )
 from tapehub.providers.alphafeed.response_mapper import to_standard_bars, to_standard_quote
-from tapehub.providers.base import BaseProviderAdapter, call_in_thread
+from tapehub.providers.base import BaseProviderAdapter
 from tapehub.providers.pagination import paginate_bars
 
 
@@ -26,12 +26,12 @@ class ProviderAdapter(BaseProviderAdapter):
     async def fetch_bars(self, query: BarQuery) -> BarBatch:
         operation = self.resolve_operation(query)
         self._ensure_ready()
-        return await call_in_thread(self._fetch_sync, operation, query, abandon_on_cancel=True)
+        return await self.call_in_thread(self._fetch_sync, operation, query, abandon_on_cancel=True)
 
     async def fetch_quote(self, query: QuoteQuery) -> Quote:
         operation = self.resolve_quote_operation(query)
         self._ensure_ready()
-        return await call_in_thread(
+        return await self.call_in_thread(
             self._fetch_quote_sync, operation, query, abandon_on_cancel=True
         )
 
