@@ -11,9 +11,9 @@ capabilities:
     delivery: [rest]
     variants: [alphafeed]
     intervals:
-      - {code: P1D, history: {start: 1991-01-14T00:00:00+08:00, end: null}}
-      - {code: P1W, history: {start: 1991-01-14T00:00:00+08:00, end: null}}
-      - {code: P1M, history: {start: 1991-01-14T00:00:00+08:00, end: null}}
+      - {code: P1D, history: {start: 1990-12-19T00:00:00+08:00, end: null}}
+      - {code: P1W, history: {start: 1990-12-19T00:00:00+08:00, end: null}}
+      - {code: P1M, history: {start: 1990-12-19T00:00:00+08:00, end: null}}
     adjustments: [none, qfq, hfq]
     fields: [open, high, low, close, volume, amount]
   # 指数：与 stock 共用统一 klines 端点（探针 2026-11-15 第 7/8 轮直测
@@ -51,9 +51,9 @@ capabilities:
     delivery: [rest]
     variants: [alphafeed]
     intervals:
-      - {code: P1D, history: {start: 1980-02-15T00:00:00+08:00, end: null}}
-      - {code: P1W, history: {start: 1980-02-15T00:00:00+08:00, end: null}}
-      - {code: P1M, history: {start: 1980-02-15T00:00:00+08:00, end: null}}
+      - {code: P1D, history: {start: 1980-02-01T00:00:00+08:00, end: null}}
+      - {code: P1W, history: {start: 1980-02-01T00:00:00+08:00, end: null}}
+      - {code: P1M, history: {start: 1980-02-01T00:00:00+08:00, end: null}}
     adjustments: [none, qfq, hfq]
     fields: [open, high, low, close, volume, amount]
   # US history.start 按实测首根日精度精化（探针 2026-11-17 第 1 轮
@@ -64,9 +64,9 @@ capabilities:
     delivery: [rest]
     variants: [alphafeed]
     intervals:
-      - {code: P1D, history: {start: 1962-01-02T00:00:00+08:00, end: null}}
-      - {code: P1W, history: {start: 1962-01-02T00:00:00+08:00, end: null}}
-      - {code: P1M, history: {start: 1962-01-02T00:00:00+08:00, end: null}}
+      - {code: P1D, history: {start: 2000-01-01T00:00:00+08:00, end: null}}
+      - {code: P1W, history: {start: 2000-01-01T00:00:00+08:00, end: null}}
+      - {code: P1M, history: {start: 2000-01-01T00:00:00+08:00, end: null}}
     adjustments: [none, qfq, hfq]
     fields: [open, high, low, close, volume, amount]
   # ETF：与 stock 共用统一 klines 端点（目录外诊断直测 SPY.US/QQQ.US 日线

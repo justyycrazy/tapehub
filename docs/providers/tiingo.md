@@ -32,7 +32,7 @@
 | data_type | 市场 | asset_type | 变体 | 上游接口 | 周期 | adjust | 标准字段 | history.start（end 无界） |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | bars | GLOBAL | forex | tiingo（默认） | `GET /tiingo/fx/<ticker>/prices`（每 ticker 独立路径端点） | PT1H、PT4H、P1D | none | open/high/low/close（无 volume/amount） | 三周期同值 `2020-01-01T08:00:00+08:00`（上游档案硬边界） |
-| bars | GLOBAL | crypto | tiingo（默认） | `GET /tiingo/crypto/prices`（ticker 走查询参数） | PT1H、PT4H、P1D | none | open/high/low/close/volume（base 币计；无 amount） | PT1H/PT4H `2018-01-01T00:00:00+08:00`；P1D `2011-08-25T00:00:00+08:00` |
+| bars | GLOBAL | crypto | tiingo（默认） | `GET /tiingo/crypto/prices`（ticker 走查询参数） | PT1H、PT4H、P1D | none | open/high/low/close/volume（base 币计；无 amount） | PT1H/PT4H/P1D `2020-01-01T00:00:00+08:00`（统一口径 R2 归一；旧实测 ≈2018-01-01 / ≈2011-08-25 落档） |
 | quotes | GLOBAL | forex、crypto | tiingo（默认） | WS `wss://api.tiingo.com/fx`（thresholdLevel 5）与 `wss://api.tiingo.com/crypto`（thresholdLevel 2） | —（快照无周期） | —（快照无复权） | timestamp、last_price、bid_price1、ask_price1、bid_volume1、ask_volume1 | 不适用 |
 
 - operations 内部二级路由：`fx_prices`（外汇三周期同端点）、`crypto_prices`
@@ -97,10 +97,9 @@
   直接空批不发请求；
 - crypto 历史外窗口：上游优雅返回 200 `[]`（正常空批），无需特殊处理；
 - 历史覆盖依据：fx 三周期 depth 独立收敛一致且与档案边界相符（越界窗口 400
-  拒绝经受控复现实证）；crypto P1D depth 二分收敛 `2011-08-25T00:00:00+08:00`
-  （窗口右端零点，真值可能更早，粒度约 90 天；显著深于 twelvedata crypto
-  ≈2017-08）；crypto PT1H/PT4H 独立收敛 ≈2017-12-28、两周期一致（比日线
-  浅 6.4 年），声明保守取整季初 `2018-01-01T00:00:00+08:00`；
+  拒绝经受控复现实证）；crypto P1D depth 二分收敛 ≈2011-08-25（实测落档；显著深于 twelvedata crypto
+  ≈2017-08）；crypto PT1H/PT4H 独立收敛 ≈2017-12-28——两项实测均早于
+  2020-01-01，按全局统一口径 R2 归一声明 `2020-01-01T00:00:00+08:00`；
 - 分段/截断语义：单次请求仅返回窗口起点首个连续段（保头截尾、静默缺失，
   段后分段查询可行）。fx PT1M 段长按时间 ≈6 自然日（段行数随窗口起点漂移，
   不可硬编码 cap）→ 末根距请求 end 超 7 天（段长 + 周末/假日余量）标记

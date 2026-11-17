@@ -205,6 +205,7 @@ notes: 本探针要回答的问题与已知存疑点。
 
 | 规则 | 说明 |
 | --- | --- |
+| **history.start 全局统一口径** | 探针实测/二分估计回填 `history.start` 按四条规则归一（2026-11-17 人工定案，全 Provider 统一遵守）：① GLOBAL forex 与 US stock/etf 实测早于 2000-01-01 → 统一声明 2000-01-01（深库不精确锚定、保守上界）；② GLOBAL crypto 实测早于 2020-01-01 → 统一声明 2020-01-01；③ CN 实测到上市/开业日期 → 按上市日期锚回填；④ 其余取实测估计月份的 1 日零点（月首对齐）。null（未核实）不适用；精确实测证据在各 Provider docs 注记落档，不做跨 Provider 值同步 |
 | 文件名 = Provider 名 | loader 只认 `BUILTIN_PROVIDERS` 同名文件，缺失/多余即报错 |
 | case ID | bars 自动生成 `{asset_type}-{interval}-{adjust}-{variant}`（快照为 `quote-{asset_type}-{variant}`，市场/交易所限定键带前缀，如 `quote-stock@HK-tickflow`）；分析类为 `adjust-diff-<at>-<interval>-<a>-vs-<b>-<variant>`、`history-depth-<at>-<interval>-<variant>`、`limit-<at>-<interval>-<variant>`、`variant-consistency-<at>-<interval>-<adjust>`；raw 自定义 `^[A-Za-z][A-Za-z0-9._-]*$` 且全局唯一 |
 | 声明内不抄写 | `include_declared: true` 从 manifest 矩阵展开，manifest 改动探针自动跟随 |

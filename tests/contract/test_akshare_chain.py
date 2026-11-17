@@ -335,11 +335,12 @@ def test_capability_catalog(akshare_client: TestClient) -> None:
         [i["history"]["start"] for i in index_em_cap["intervals"]]
         == ["1991-01-01T00:00:00+08:00"] * 3
     )
-    # history.start 探针实证回填（approx ±90 天；P1W/P1M 与 P1D 同上游端点
-    # 同数据区间，同值声明）
-    etf_start = "2005-03-20T00:00:00+08:00"
-    hk_start = "1989-01-27T00:00:00+08:00"
-    us_start = "1986-02-21T00:00:00+08:00"
+    # history.start 全局统一口径回填（CN etf/HK/continuous 月首对齐；
+    # US 实测 1986-02-21 早于 2000-01-01 → 归一 2000-01-01；P1W/P1M 与
+    # P1D 同上游端点同数据区间，同值声明）
+    etf_start = "2005-03-01T00:00:00+08:00"
+    hk_start = "1989-01-01T00:00:00+08:00"
+    us_start = "2000-01-01T00:00:00+08:00"
     assert [i["history"]["start"] for i in etf_cap["intervals"]] == [etf_start] * 3
     hk_cap, us_cap = caps[7], caps[8]
     assert [i["history"]["start"] for i in hk_cap["intervals"]] == [hk_start] * 3

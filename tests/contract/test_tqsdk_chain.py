@@ -130,7 +130,7 @@ def test_capability_catalog(tqsdk_client: TestClient) -> None:  # type: ignore[n
         c for c in entry["capabilities"] if c["asset_types"] == ["continuous"]
     )
     p1d = next(i for i in continuous_cap["intervals"] if i["code"] == "P1D")
-    assert p1d["history"]["start"] == "2016-01-05T00:00:00+08:00"
+    assert p1d["history"]["start"] == "2016-01-01T00:00:00+08:00"
     # 分钟级滚动保留以 retention_days 声明（探针实测向下取整）
     stock_cap = next(c for c in entry["capabilities"] if c["asset_types"] == ["stock"])
     pt1m = next(i for i in stock_cap["intervals"] if i["code"] == "PT1M")

@@ -220,9 +220,9 @@ def test_capability_catalog(alphafeed_client: TestClient) -> None:  # type: igno
         ("quotes", ["US"]),
     ]
     assert [cap["asset_types"] for cap in caps[:3]] == [["stock"], ["index"], ["etf"]]
-    # CN stock history 逐市场回填（二分收敛估计窗口右端零点，approx ±90 天）；
-    # 指数/ETF history 未核实保持 null（chain 二分后回填）
-    assert caps[0]["intervals"][0]["history"]["start"] == "1991-01-14T00:00:00+08:00"
+    # CN stock history 统一口径回填（同源 tickflow 开业日实测互证 →
+    # 上市/开业日锚 1990-12-19）；指数/ETF history 未核实保持 null
+    assert caps[0]["intervals"][0]["history"]["start"] == "1990-12-19T00:00:00+08:00"
     assert all(i["history"]["start"] is None for i in caps[1]["intervals"])
     assert all(i["history"]["start"] is None for i in caps[2]["intervals"])
     assert caps[1]["adjustments"] == ["none"]  # 指数无复权
@@ -232,10 +232,11 @@ def test_capability_catalog(alphafeed_client: TestClient) -> None:  # type: igno
         assert cap["variants"] == ["alphafeed"]
         assert [i["code"] for i in cap["intervals"]] == ["P1D", "P1W", "P1M"]
         assert cap["adjustments"] == ["none", "qfq", "hfq"]
-    # US history.start 按实测首根日精度精化（探针 2026-11-17 第 1 轮 history_depth）
+    # HK/US history.start 按全局统一口径（HK 月首对齐；US 实测 1962-01-02
+    # 早于 2000-01-01 → 归一 2000-01-01）
     assert [cap["intervals"][0]["history"]["start"] for cap in caps[3:5]] == [
-        "1980-02-15T00:00:00+08:00",
-        "1962-01-02T00:00:00+08:00",
+        "1980-02-01T00:00:00+08:00",
+        "2000-01-01T00:00:00+08:00",
     ]
     # US etf（2026-11-15 扩容）：三复权（目录外诊断实证），history 未核实保持 null
     assert caps[5]["asset_types"] == ["etf"]

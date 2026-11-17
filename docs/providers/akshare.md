@@ -34,14 +34,14 @@ history.start（历史覆盖声明，探针实测回填；二分近似窗口粒�
 
 | 资产类型（市场 / 变体） | 周期 | history.start（北京时间零点） | 说明 |
 | --- | --- | --- | --- |
-| stock（CN，三源） | eastmoney P1D/P1W/P1M；sina/tencent P1D | 1991-01-01 | 日历边界保守上界口径——三源二分收敛一致，first_bar 1990-12-19（上交所开业/老八股 600602 上市日，与 tushare/baostock 库底互证；2026-11-17 聚焦复探）。旧值 1999-12-08 系旧基准 600000（浦发银行 1999-11-10 上市）伪影，已被本轮复探推翻 |
+| stock（CN，三源） | eastmoney P1D/P1W/P1M；sina/tencent P1D | 1990-12-19 | 全局统一口径 R3 上市/开业日锚（first_bar 1990-12-19 实测，与 tushare/baostock 库底互证；2026-11-17 聚焦复探；旧「日历边界保守上界 1991-01-01」口径随统一口径退役）。旧值 1999-12-08 系旧基准 600000（浦发银行 1999-11-10 上市）伪影，已被本轮复探推翻 |
 | index（CN，三源） | eastmoney P1D/P1W/P1M；sina/tencent P1D | 1991-01-01 | 探针下限触底；1991 年周线 52 根实测确认 |
-| etf（CN，eastmoney） | P1D/P1W/P1M | 2005-03-20 | 真值≈基准 ETF 上市日 2005-02-23，落在窗口内 |
-| stock（HK，eastmoney） | P1D/P1W/P1M | 1989-01-27 | 基准标的 00002 |
-| stock（US，eastmoney） | P1D/P1W/P1M | 1986-02-21 | 基准标的 GE；浅于 tickflow/alphafeed 独立探测的 ≈1962——东财美股库底确实较浅，两口径互证 |
+| etf（CN，eastmoney） | P1D/P1W/P1M | 2005-03-01 | 统一口径月首对齐（真值≈基准 ETF 上市日 2005-02-23，落在窗口内） |
+| stock（HK，eastmoney） | P1D/P1W/P1M | 1989-01-01 | 统一口径月首对齐（实测 1989-01-27 落档；基准标的 00002） |
+| stock（US，eastmoney） | P1D/P1W/P1M | 2000-01-01 | 全局统一口径 R1 归一（实测 1986-02-21 早于 2000-01-01 落档；基准标的 GE；浅于 tickflow/alphafeed 独立探测的 ≈1962——东财美股库底确实较浅，两口径互证） |
 | contract（CN，sina） | P1D | null（2026-11-16 决议） | 合约级数据随挂牌起、随摘牌止，无资产类级固定起点——原 RB2410 全量锚定值 2023-10-17 随「合约类不统计历史深度」决议废止 |
-| stock（CN，BSE） | eastmoney P1D/P1W/P1M | 1991-01-01 | 库级口径沿用 CN stock 声明——BSE 标的均 2020 年后上市，各标的数据以自身上市日起（基准 920000 实测自上市日 2020-12-23 起 1429 行；2026-11-17 聚焦证据轮收编：daily/weekly/monthly × 三复权全实证。仅 eastmoney 变体，sina/tencent 未探针不声明） |
-| continuous（CN，sina） | P1D | 2009-03-27 | 全量模式精确值；与上期所螺纹钢期货上市日一致，相互印证 |
+| stock（CN，BSE） | eastmoney P1D/P1W/P1M | 1990-12-19 | 库级口径沿用 CN stock 声明（统一口径 R3 随主块）——BSE 标的均 2020 年后上市，各标的数据以自身上市日起（基准 920000 实测自上市日 2020-12-23 起 1429 行；2026-11-17 聚焦证据轮收编：daily/weekly/monthly × 三复权全实证。仅 eastmoney 变体，sina/tencent 未探针不声明） |
+| continuous（CN，sina） | P1D | 2009-03-01 | 统一口径月首对齐（实测 2009-03-27 精确落档；与上期所螺纹钢期货上市日一致，相互印证） |
 
 ## 标的代码映射
 

@@ -12,9 +12,9 @@ capabilities:
     delivery: [rest]
     variants: [tushare]
     intervals:
-      - {code: P1D, history: {start: 1991-01-01T00:00:00+08:00, end: null}}
-      - {code: P1W, history: {start: 1991-01-01T00:00:00+08:00, end: null}}
-      - {code: P1M, history: {start: 1991-01-01T00:00:00+08:00, end: null}}
+      - {code: P1D, history: {start: 1990-12-19T00:00:00+08:00, end: null}}
+      - {code: P1W, history: {start: 1990-12-19T00:00:00+08:00, end: null}}
+      - {code: P1M, history: {start: 1990-12-19T00:00:00+08:00, end: null}}
     adjustments: [none, qfq, hfq]
     fields: [open, high, low, close, volume, amount]
 

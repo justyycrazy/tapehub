@@ -145,14 +145,14 @@ def test_capability_catalog(ths_client: TestClient) -> None:
         assert [i["code"] for i in cap["intervals"]] == ["P1D"]
         assert cap["fields"] == ["open", "high", "low", "close", "volume", "amount"]
 
-    # 历史覆盖（探针实证回填）：stock 固定起点 ≈2005-01-15（聚焦二分
-    # ±30 天粒度 approx）；
+    # 历史覆盖（探针实证回填 + 全局统一口径月首对齐）：stock 起点
+    # 实测 ≈2005-01-15（聚焦二分 ±30 天粒度 approx）→ 2005-01-01；
     # index/etf 为滚动窗口语义（retention_days，指数端点实测
     # 'recent five years only'）
     hist_by_asset = {
         tuple(cap["asset_types"])[0]: cap["intervals"][0]["history"] for cap in bars_caps
     }
-    assert hist_by_asset["stock"]["start"] == "2005-01-15T00:00:00+08:00"
+    assert hist_by_asset["stock"]["start"] == "2005-01-01T00:00:00+08:00"
     assert hist_by_asset["stock"]["end"] is None
     assert hist_by_asset["stock"]["retention_days"] is None
     for asset in ("index", "etf"):

@@ -15,7 +15,7 @@
 
 | data_type | asset_type | 上游端点 | adjust | history 声明 | 标准字段 |
 | --- | --- | --- | --- | --- | --- |
-| bars | stock | `GET /api/a-share/prices/historical` | none/qfq/hfq | start ≈ 2005-01-15T00:00:00+08:00 | open/high/low/close/volume/amount |
+| bars | stock | `GET /api/a-share/prices/historical` | none/qfq/hfq | start 2005-01-01T00:00:00+08:00（实测 ≈2005-01-15，统一口径月首对齐） | open/high/low/close/volume/amount |
 | bars | index | `GET /api/a-share-index/prices/historical` | none | retention_days=1825（滚动窗口） | 同上 |
 | bars | etf | `GET /api/fund/market/historical` | qfq（上游固定前复权，不可选） | retention_days=1825（滚动窗口） | 同上 |
 | bars | contract | `GET /api/futures/prices/daily` | none | start=null（随合约轮换漂移，不锚定） | 同上 |
