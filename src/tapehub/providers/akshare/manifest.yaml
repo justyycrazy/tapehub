@@ -17,9 +17,9 @@ capabilities:
     delivery: [rest]
     variants: [eastmoney]
     intervals:
-      - {code: P1D, history: {start: 1999-12-08T00:00:00+08:00, end: null}}
-      - {code: P1W, history: {start: 1999-12-08T00:00:00+08:00, end: null}}
-      - {code: P1M, history: {start: 1999-12-08T00:00:00+08:00, end: null}}
+      - {code: P1D, history: {start: 1991-01-01T00:00:00+08:00, end: null}}
+      - {code: P1W, history: {start: 1991-01-01T00:00:00+08:00, end: null}}
+      - {code: P1M, history: {start: 1991-01-01T00:00:00+08:00, end: null}}
     adjustments: [none, qfq, hfq]
     fields: [open, high, low, close, volume, amount]
 
@@ -30,7 +30,7 @@ capabilities:
     delivery: [rest]
     variants: [sina]
     intervals:
-      - {code: P1D, history: {start: 1999-12-08T00:00:00+08:00, end: null}}
+      - {code: P1D, history: {start: 1991-01-01T00:00:00+08:00, end: null}}
     adjustments: [none, qfq, hfq]
     fields: [open, high, low, close, volume, amount]
 
@@ -41,7 +41,7 @@ capabilities:
     delivery: [rest]
     variants: [tencent]
     intervals:
-      - {code: P1D, history: {start: 1999-12-08T00:00:00+08:00, end: null}}
+      - {code: P1D, history: {start: 1991-01-01T00:00:00+08:00, end: null}}
     adjustments: [none, qfq, hfq]
     fields: [open, high, low, close, volume, amount]
 

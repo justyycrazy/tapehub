@@ -33,7 +33,7 @@ history.start（历史覆盖声明，探针实测回填；二分近似窗口粒�
 
 | 资产类型（市场 / 变体） | 周期 | history.start（北京时间零点） | 说明 |
 | --- | --- | --- | --- |
-| stock（CN，三源） | eastmoney P1D/P1W/P1M；sina/tencent P1D | 1999-12-08 | 真值≈标的上市日（落在估算窗口内） |
+| stock（CN，三源） | eastmoney P1D/P1W/P1M；sina/tencent P1D | 1991-01-01 | 日历边界保守上界口径——三源二分收敛一致，first_bar 1990-12-19（上交所开业/老八股 600602 上市日，与 tushare/baostock 库底互证；2026-11-17 聚焦复探）。旧值 1999-12-08 系旧基准 600000（浦发银行 1999-11-10 上市）伪影，已被本轮复探推翻 |
 | index（CN，三源） | eastmoney P1D/P1W/P1M；sina/tencent P1D | 1991-01-01 | 探针下限触底；1991 年周线 52 根实测确认 |
 | etf（CN，eastmoney） | P1D/P1W/P1M | 2005-03-20 | 真值≈基准 ETF 上市日 2005-02-23，落在窗口内 |
 | stock（HK，eastmoney） | P1D/P1W/P1M | 1989-01-27 | 基准标的 00002 |
