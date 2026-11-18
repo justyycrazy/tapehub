@@ -24,13 +24,19 @@ def require_api_key(request: Request) -> None:
     - 未配置（空列表）：直接放行——single 单用户模式默认无鉴权，行为与
       历史版本完全一致；
     - 已配置：头缺失或不匹配返回 401（统一错误结构）；比较经
-      ``secrets.compare_digest`` 防时序侧信道。
+      ``secrets.compare_digest`` 防时序侧信道。比较在 bytes 上进行：
+      ``compare_digest`` 的 str 形态要求 ASCII（非 ASCII 输入抛 TypeError，
+      会被兜底处理器误转为 500），而请求头字节经 latin-1 解码可产生任意
+      非 ASCII 字符串，bytes 化保证任意客户端输入都收敛为 401。
     """
     keys = request.app.state.settings.api_keys
     if not keys:
         return
     supplied = request.headers.get("X-Api-Key", "")
-    if not any(secrets.compare_digest(supplied, key) for key in keys):
+    supplied_bytes = supplied.encode("utf-8", errors="replace")
+    if not any(
+        secrets.compare_digest(supplied_bytes, key.encode("utf-8")) for key in keys
+    ):
         raise StarletteHTTPException(status_code=401)
 
 

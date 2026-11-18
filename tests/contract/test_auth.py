@@ -91,6 +91,9 @@ def test_health_stays_unauthenticated() -> None:
         "/v1/market/bars?provider=fake-provider&asset_type=stock&instrument=CN-SSE-600000"
         "&interval=P1D&start=2026-01-01T00:00:00%2B08:00&end=2026-01-02T00:00:00%2B08:00",
         "/v1/market/quotes?provider=fake-provider&asset_type=stock&instrument=CN-SSE-600000",
+        # SSE 流受理：认证依赖在 service.open() 之前执行，401 于响应头前返回
+        "/v1/market/quotes/stream?provider=fake-provider&asset_type=stock"
+        "&instrument=CN-SSE-600000",
     ],
 )
 def test_all_business_endpoints_require_key(path: str) -> None:
@@ -98,3 +101,17 @@ def test_all_business_endpoints_require_key(path: str) -> None:
     with TestClient(_registry_with_api_keys()) as client:
         resp = client.get(path)
         assert resp.status_code == 401
+
+
+def test_non_ascii_key_rejected_401_not_500() -> None:
+    """非 ASCII 头值收敛为 401（compare_digest 的 str 形态要求 ASCII，
+    str 直比会抛 TypeError 被兜底处理器误转 500——见 dependencies.py）。
+
+    输入经 bytes 头值携带原始高位字节（\\xe9）：真实客户端可在 wire 上
+    发送任意头字节，服务端 Starlette 按 latin-1 解码为非 ASCII str；测试
+    客户端的 str 头值会被 httpx2 以 ASCII 编码拒绝（到不了服务端），
+    bytes 是抵达服务端非 ASCII 解码结果的唯一通路。"""
+    with TestClient(_registry_with_api_keys()) as client:
+        resp = client.get("/v1/capabilities", headers={"X-Api-Key": b"k\xe9y"})
+        assert resp.status_code == 401
+        assert resp.json()["error"]["code"] != "INTERNAL_ERROR"
