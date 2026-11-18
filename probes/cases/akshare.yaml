@@ -236,7 +236,6 @@ chain:
     # 轮换漂移，深度是资产类级结论，由存续性目标承载
     targets: [stock, stock@CN-BSE, index, etf, continuous, stock@HK, stock@US]
     intervals: [P1D]     # 周/月与日线同端点同数据区间，同值声明（控预算）
-    full_history_targets: [continuous]
     earliest: 1930-01-01 # HK/US 库底可能深于 1991（对齐 tickflow/alphafeed），避免下限触底误报
     era_step_years: 10
     max_calls: 24        # 每条 case 的预算；按 (interval × variant) 展开（P1D 限定）

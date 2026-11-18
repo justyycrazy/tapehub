@@ -324,7 +324,6 @@ def _history_depth_cases(
                 if case_id in seen:
                     continue
                 seen.add(case_id)
-                full_history = base.asset_type in config.full_history_targets
                 cases.append(
                     dataclasses.replace(
                         base,
@@ -336,7 +335,6 @@ def _history_depth_cases(
                         window_start=_to_beijing(config.earliest),
                         era_step_years=config.era_step_years,
                         snap=config.snap,
-                        full_history=full_history,
                         # 声明复核输入（2026-11-18 裁决：相容性只看 first_bar；
                         # 声明值从该能力该周期的 history.start 读）
                         declared_history_start=next(
@@ -347,8 +345,7 @@ def _history_depth_cases(
                             ),
                             None,
                         ),
-                        # 全量模式单次调用即得精确值，预算声明按实际计
-                        expected_calls=1 if full_history else config.max_calls,
+                        expected_calls=config.max_calls,
                     )
                 )
     return cases

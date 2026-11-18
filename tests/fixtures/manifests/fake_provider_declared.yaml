@@ -1,0 +1,22 @@
+# 测试专用 Fake Provider（带 history.start 声明版）：用于声明抽验快路径
+# 测试——与 fake_provider.yaml 唯一差异是 P1D history.start 非 null。
+provider: fake-provider
+default_variant: eastmoney
+
+capabilities:
+  - data_type: bars
+    markets: [CN]
+    asset_types: [stock]
+    delivery: [rest]
+    variants: [eastmoney]
+    intervals:
+      - code: P1D
+        history:
+          start: "2020-01-01T00:00:00+08:00"
+          end: null
+    adjustments: [none]
+    fields: [open, high, low, close, volume, amount]
+
+operations:
+  - match: {data_type: bars, market: CN, asset_type: stock, interval: P1D, adjust: none, variant: eastmoney}
+    operation: fake_stock_daily

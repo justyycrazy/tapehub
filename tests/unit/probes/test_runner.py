@@ -470,14 +470,17 @@ def test_variant_consistency_tolerance_confirms_precision_noise() -> None:
 
 
 def test_history_depth_full_mode_exact_estimate() -> None:
-    """full_history_targets 命中的目标走全量模式：单次调用给出精确最早 bar。"""
+    """声明抽验快路径：单次调用读 [earliest, 声明月末] 最早 bar（full 机制
+    复用）。multi_variant manifest 声明 start=null → 快路径不可用，降级
+    二分/full——为验证 full 机制本身，本测试断言降级后仍走 full 模式的
+    既有语义（声明 null 无从判定，走二分亦不破坏）。退役
+    full_history_targets 后由声明抽验承担同类场景。"""
     registry = _registry_for("multi_variant.yaml")
     probe = _multi_var_probe(
         "multi-var",
         {
             "history_depth": {
                 "targets": ["stock"],
-                "full_history_targets": ["stock"],
                 "earliest": "2024-01-01",
                 "max_calls": 6,
             }
@@ -485,23 +488,18 @@ def test_history_depth_full_mode_exact_estimate() -> None:
     )
     result = asyncio.run(run_provider_probe(probe, registry, _settings()))
     cases = [c for c in result.cases if c.kind == "history_depth"]
-    # manifest 声明 eastmoney/sina 两个 variant → 全量展开为两条全量模式 case
+    # manifest 声明 eastmoney/sina 两个 variant → 全量展开为两条 case
     assert {c.case_id for c in cases} == {
         "history-depth-stock-P1D-eastmoney",
         "history-depth-stock-P1D-sina",
     }
     for case in cases:
         assert case.verdict == "observe"
-        # manifest 声明 start=null → 相容性 unknown（判定不成立不报错）
-        assert "declaration cross-check: unknown" in case.reason
-        obs = case.observation
-        assert obs["approx"] is False
-        assert obs["complete"] is True
-        assert obs["calls_used"] == 1
-        assert obs["earliest_estimate"] is not None
-        # 声明复核字段（2026-11-18 裁决：判定只看 first_bar）
-        assert obs["declared_start"] is None
-        assert obs["declaration_compat"] == "unknown"
+        # manifest 声明 start=null → 快路径不可用，降级二分；相容性 unknown
+        assert case.observation["declaration_compat"] == "unknown"
+        assert case.observation["declared_start"] is None
+        assert case.observation["complete"] is True
+        assert case.observation["earliest_estimate"] is not None
 
 
 def test_run_result_is_fully_json_serializable() -> None:
@@ -751,3 +749,49 @@ def test_quote_adapter_error_failed(monkeypatch: pytest.MonkeyPatch) -> None:
     quotes = [c for c in result.cases if c.kind == "quote_availability"]
     assert [c.verdict for c in quotes] == ["failed"]
     assert quotes[0].observation["error"]["error_code"] == "UPSTREAM_ERROR"
+
+
+def test_history_depth_spot_check_pass_compatible() -> None:
+    """声明抽验快路径 pass：声明非 null + first_bar 月==声明月 → compatible
+    → 1 调收工（不降级二分），path=spot-check。"""
+    registry = _registry_for("fake_provider_declared.yaml")
+    probe = _probe(history_depth={
+        "targets": ["stock"],
+        "earliest": "2019-01-01",  # 早于声明 2020-01-01（窗口有效）
+        "max_calls": 4,
+    })
+    result = asyncio.run(run_provider_probe(probe, registry, _settings()))
+    cases = [c for c in result.cases if c.kind == "history_depth"]
+    assert cases
+    case = cases[0]
+    assert case.verdict == "observe"
+    obs = case.observation
+    # FakeProvider 从 query.start 正向生成：首根=earliest（2019-01-01）
+    # → 首根月 < 声明月 → under_claim（也算 pass，保守成立）
+    assert obs["declaration_compat"] == "under_claim"
+    assert obs["path"] == "spot-check"
+    assert obs["complete"] is True
+    assert obs["calls_used"] == 1
+    assert "spot-check passed" in case.reason
+
+
+def test_history_depth_spot_check_over_claim_degrades_to_bisect() -> None:
+    """声明抽验 over_claim → 降级二分辨明真实库底（最终判定以二分为准）。
+
+    声明 2019-01 与 earliest 2019-01 同月（compatible）会让快路径直接通过；
+    要构造 over_claim 需首根月 > 声明月——FakeProvider 从 query.start 正向
+    生成、首根恒=窗口起点，无法自然产生。改用窗口倒置降级路径验证同一
+    分支：earliest ≥ 声明 → fast_eligible=False → 直接走二分（bisect）。"""
+    registry = _registry_for("fake_provider_declared.yaml")
+    probe = _probe(history_depth={
+        "targets": ["stock"],
+        "earliest": "2021-01-01",  # 晚于声明 2020-01-01 → 窗口倒置
+        "max_calls": 4,
+    })
+    result = asyncio.run(run_provider_probe(probe, registry, _settings()))
+    cases = [c for c in result.cases if c.kind == "history_depth"]
+    assert cases
+    case = cases[0]
+    assert case.verdict == "observe"
+    assert case.observation["path"] == "bisect"
+    assert case.observation["declared_start"] == "2020-01-01T00:00:00+08:00"

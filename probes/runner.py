@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import asyncio
+import datetime as dt
 import importlib
 import importlib.util
 import itertools
@@ -636,42 +637,91 @@ async def _run_history_depth(ctx: RunContext, case: ChainCase, base: CaseResult)
     # 超出 now 的搜索区间对「窗口非空」谓词不单调（未来与边界前同样为空），
     # 会把二分诱入未来空窗而误报「无数据」——搜索终点裁剪到 now。
     latest = min(case.window_end, datetime.now(CN_TIMEZONE))
-    try:
-        if case.full_history:
-            # 全量模式：上游无日期过滤（每次返回全量历史），单次调用直接读最早 bar
-            result = await analysis.run_history_depth_full(
-                fetch, earliest=case.window_start, latest=latest, snap=case.snap
-            )
-        else:
-            # 二分模式：analysis 经 on_step 回传每轮探测条目（含 phase 阶段
-            # 标签），此处转成子步骤日志行实时可见（预算水位读共享预算）
-            step_no = 0
 
-            def _on_step(entry: dict[str, Any]) -> None:
-                nonlocal step_no
-                step_no += 1
-                _log_step(
-                    case.kind, case.case_id,
-                    f"{entry['phase']}#{step_no} "
-                    f"[{entry['start']}, {entry['end']}] count={entry['count']} "
-                    f"(预算 {ctx.budget.used}/{ctx.budget.max_calls})",
+    # ── 快路径（声明抽验，2026-11-18 裁决）：声明非 null 且抽验窗口有效
+    # 时，单次调用读 [earliest, 声明月末] 的最早 bar，与声明做月粒度相容
+    # 性判定——compatible/under_claim 即通过收工（1 调）；over_claim/窗口
+    # 倒置/空结果/调用异常降级慢路径以二分辨明真实库底。判定矩阵见
+    # docs/probes.md「规范化规则·depth 声明复核」。──
+    fast_eligible = (
+        case.declared_history_start is not None
+        and case.window_start < case.declared_history_start
+    )
+    if fast_eligible:
+        declared_end = _month_end_of_declared(case.declared_history_start)
+        try:
+            spot = await analysis.run_history_depth_full(
+                fetch, earliest=case.window_start, latest=declared_end, snap=case.snap
+            )
+        except BudgetExhausted:
+            spot = None  # 预算耗尽：降级慢路径（二分受同一预算约束，同样会停）
+        except TapehubError as exc:
+            return _failed_from(base, {"error_code": exc.code.value, "error_text": exc.message})
+
+        if spot is not None and spot.complete and spot.first_bar is not None:
+            compat = analysis.history_declaration_compat(
+                case.declared_history_start, spot.first_bar
+            )
+            if compat in ("compatible", "under_claim"):
+                base.verdict = CaseVerdict.OBSERVE.value
+                base.observation = {
+                    "earliest_estimate": spot.earliest_estimate.isoformat()
+                    if spot.earliest_estimate
+                    else None,
+                    "first_bar": spot.first_bar.isoformat() if spot.first_bar else None,
+                    "declared_start": case.declared_history_start.isoformat(),
+                    "declaration_compat": compat,
+                    "approx": spot.approx,
+                    "snap": spot.snap,
+                    "calls_used": spot.calls_used,
+                    "complete": True,
+                    "path": "spot-check",
+                    "probes": spot.probes,
+                }
+                passed = "pass" if compat == "compatible" else "pass (under-claim: "
+                passed += (
+                    "declaration is a conservative upper bound, floor depth "
+                    "not anchored per unified policy)"
+                    if compat == "under_claim"
+                    else ")"
                 )
+                base.reason = (
+                    "spot-check passed: first-bar floor within declared month "
+                    f"or earlier; declaration cross-check {passed}"
+                )
+                return base
+            # over_claim / 空结果：降级慢路径（证据保留在 spot.probes，慢路径
+            # probes 重新累计——最终判定以二分为准）
 
-            result = await analysis.run_history_depth(
-                fetch,
-                earliest=case.window_start,
-                latest=latest,
-                era_step_years=case.era_step_years,
-                snap=case.snap,
-                max_calls=case.expected_calls,
-                on_step=_on_step,
-            )
+    # ── 慢路径：纪元回溯 + 网格二分（analysis 经 on_step 回传每轮探测条
+    # 目，转成子步骤日志行实时可见；预算水位读共享预算）──
+    step_no = 0
+
+    def _on_step(entry: dict[str, Any]) -> None:
+        nonlocal step_no
+        step_no += 1
+        _log_step(
+            case.kind, case.case_id,
+            f"{entry['phase']}#{step_no} "
+            f"[{entry['start']}, {entry['end']}] count={entry['count']} "
+            f"(预算 {ctx.budget.used}/{ctx.budget.max_calls})",
+        )
+
+    try:
+        result = await analysis.run_history_depth(
+            fetch,
+            earliest=case.window_start,
+            latest=latest,
+            era_step_years=case.era_step_years,
+            snap=case.snap,
+            max_calls=case.expected_calls,
+            on_step=_on_step,
+        )
     except TapehubError as exc:
         return _failed_from(base, {"error_code": exc.code.value, "error_text": exc.message})
     base.verdict = CaseVerdict.OBSERVE.value
-    # 声明相容性月粒度方向判定（2026-11-18 裁决：只看 first_bar 实测首根，
-    # earliest_estimate 二分估计不参与判定；over_claim 按复探差异处置——
-    # 报告并等待人工确认是否回填，不自动改判定）
+    # 声明相容性月粒度方向判定（以二分实测 first_bar 为准；earliest_estimate
+    # 不参与判定；over_claim 按复探差异处置——报告并等待人工确认是否回填）
     compat = analysis.history_declaration_compat(
         case.declared_history_start, result.first_bar
     )
@@ -690,6 +740,7 @@ async def _run_history_depth(ctx: RunContext, case: ChainCase, base: CaseResult)
         "snap": result.snap,
         "calls_used": result.calls_used,
         "complete": result.complete,
+        "path": "bisect",
         "probes": result.probes,
     }
     if result.earliest_estimate is None:
@@ -707,6 +758,16 @@ async def _run_history_depth(ctx: RunContext, case: ChainCase, base: CaseResult)
             f"{compat} (informational)"
         )
     return base
+
+
+def _month_end_of_declared(declared: dt.datetime) -> dt.datetime:
+    """声明月的月末（含当日末 23:59:59.999999）——快路径抽验窗口终点。"""
+    year, month = declared.year, declared.month
+    if month == 12:
+        next_month = dt.datetime((year + 1), 1, 1, tzinfo=declared.tzinfo)
+    else:
+        next_month = dt.datetime(year, month + 1, 1, tzinfo=declared.tzinfo)
+    return next_month - dt.timedelta(microseconds=1)
 
 
 async def _run_limit_truncation(ctx: RunContext, case: ChainCase, base: CaseResult) -> CaseResult:

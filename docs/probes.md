@@ -157,7 +157,6 @@ chain:                             # ── 统一链路探针 ──
     max_calls: 24
     snap: month                    # 可选：声明值对齐的日历边界粒度
                                    #（month=每月 1 日 / quarter=季初 / half_year=半年初，默认 month）
-    full_history_targets: []       # 可选：这些目标单次全窗口调用直接读最早 bar
   variant_consistency:             # 跨 variant 一致性
     targets: [stock, index]
     window: {start: 2025-01-01, end: 2025-12-31}
@@ -238,7 +237,7 @@ notes: 本探针要回答的问题与已知存疑点。
 | availability | chain | 对 bars 每个声明组合查一次（fetch_bars） | 0 bars / 低于 min_bars / required 字段全 null → failed；否则 confirmed |
 | quote_availability | chain | 对 quotes 每个声明组合查一次（fetch_quote，全链路二级路由→上游→标准化）；无周期/复权维度，`include_declared: true` 自动展开，`quote-` 前缀 case id | 适配器失败（含上游「无有效行情」语义）→ failed；last/bid1/ask1 全 null → failed（捕捉订阅未就绪 NaN 置空、权限静默降级）；否则 confirmed。volume/amount 的 null（如外汇无量）不判定、如实记录进 observation |
 | adjust_diff | chain | 同窗口 none vs qfq/hfq 对比（按 interval × variant × pair 全量展开） | 序列完全一致 → **suspect**（adjust_no_op_suspect）；有差异 → confirmed；无重叠 → suspect |
-| history_depth | chain | 纪元回溯 + 日历边界网格二分（`snap` 粒度，默认月边界；按 interval × variant 全量展开）：收敛到最小非空边界 B*，B* 之前逐窗实测无数据 + B* 窗口实测有数据；`full_history_targets` 中的目标改走全量模式：单次全窗口调用直接读最早 bar，适用于上游无日期参数（每次返回全量历史，适配器内存过滤）或全量拉取代价可忽略的接口 | 恒为 observe；`first_bar` 为首根实测（二分模式 = 验证窗返回首根；全量模式 = 精确最早 bar，approx=False）；**声明复核**（2026-11-18）：判定只看 first_bar，与 manifest `history.start` 声明做日历月粒度方向判定（相容/over-claim/under-claim/unknown），结果入 observation 与报告复核表；`earliest_estimate` 仅为收敛机制中间产物、不参与判定；触底/预算中断/未收敛一律不回填 |
+| history_depth | chain | 纪元回溯 + 日历边界网格二分（`snap` 粒度，默认月边界；按 interval × variant 全量展开）：收敛到最小非空边界 B*，B* 之前逐窗实测无数据 + B* 窗口实测有数据；声明非 null 时走**声明抽验快路径**（单次调用读 [earliest, 声明月末] 最早 bar，月粒度相容判定通过即收工——2026-11-18），否则二分 | 恒为 observe；`first_bar` 为首根实测（二分模式 = 验证窗返回首根；全量模式 = 精确最早 bar，approx=False）；**声明复核**（2026-11-18）：判定只看 first_bar，与 manifest `history.start` 声明做日历月粒度方向判定（相容/over-claim/under-claim/unknown），结果入 observation 与报告复核表；`earliest_estimate` 仅为收敛机制中间产物、不参与判定；触底/预算中断/未收敛一律不回填 |
 | limit_truncation | chain | 最小周期 + 超长窗口数 bar（按 variant 全量展开） | 实测 = documented_max → confirmed；不等 → suspect；未设 → observe |
 | variant_consistency | chain | 同一 (interval, adjust) 查询在跨能力聚合的全部 variant 下重放并两两对比 | 差异 ≤ `tolerance` → confirmed（差异幅度如实记录）；超出 → suspect，记录 max_abs_diff 与 first_divergence；无重叠 / 预算中断 → suspect |
 | raw | SDK 反射 | 声明外能力探测与错误指纹（`min_fields` 验证 mapping 字段存在性；已声明能力的快照字段矩阵自 quote_availability 入链后不再经 raw） | 期望匹配 → confirmed / 不匹配 → failed；`assert: false` → observe |
@@ -313,7 +312,7 @@ Provider 文档「上游行为定案」节；覆盖范围与证据出处见「�
 | 声明内不抄写 | `include_declared: true` 从 manifest 能力矩阵自动展开全部声明组合；manifest 改动探针自动跟随，杜绝规范文件与能力目录的双抄漂移 |
 | 分析探针全量展开（2026-11-03 v2 修订） | 分析探针不再与「声明顺序第一组维度」绑定——adjust_diff 按 (interval × variant × pair)、history_depth / limit_truncation 按 (interval × variant) 在声明矩阵上全量展开；`intervals` 字段可显式收敛 interval 维度以控制预算，variant 维度永不收敛 |
 | variant_consistency（2026-11-03 引入） | 对同一 (interval, adjust) 在跨能力聚合的全部声明 variant 下重放同一查询并两两对比；任何不一致（数值差异 / 无重叠 / 预算中断）判 suspect，并记录 max_abs_diff 与 first_divergence——捕捉跨源/跨 variant 数值漂移的常态化手段 |
-| history_depth 口径演进（2026-11-15 v2 格式） | v1 以 `probe_span_days` 天窗口二分（收敛点为任意日期）→ v2 改**日历边界网格二分**（`snap` 粒度：月/季/半年边界），声明口径变为**保守上界**（首个 ≥ 首根实测的日历边界，查询从声明起点起保证有数据），首根实测另记 `first_bar` 证据；`full_history_targets` 全量模式适配上游无日期参数（每次返回全量历史）的接口——回溯+二分只是重复下载同一份数据，单次全窗口调用更省且无粒度误差；`max_calls` 语义为**每条 case** 的预算 |
+| history_depth 口径演进（2026-11-15 v2 格式） | v1 以 `probe_span_days` 天窗口二分（收敛点为任意日期）→ v2 改**日历边界网格二分**（`snap` 粒度：月/季/半年边界），声明口径变为**保守上界**（首个 ≥ 首根实测的日历边界，查询从声明起点起保证有数据），首根实测另记 `first_bar` 证据；全量模式（单次全窗口调用读最早 bar）此后被声明抽验快路径吸收（2026-11-18 退役 full_history_targets）；`max_calls` 语义为**每条 case** 的预算 |
 | 合约类不统计历史深度（2026-11-16 决议） | 有时间期限的合约级标的（contract、期权三子类）不入 `history_depth.targets`：合约级「最早可用」随挂牌/摘牌轮换漂移，深度是资产类级结论，由存续性目标（`continuous` 主连、证券类）承载；亦不得为维持深度锚而以已摘牌合约作目标（原「已摘牌稳定锚」机制随之废止） |
 | 早上市基准标的 | 历史深度二分的收敛点可能是标的自身上市日伪影（如 600000 收敛点即其上市月）；各 Provider 的证券类基准统一换用早上市标的，收敛点远离上市日即真实库底而非标的伪影。具体标的选择是 Provider 专属事实，只记录在各 `cases/*.yaml` |
 | 市场/交易所限定目标 | 同一 asset_type 跨多市场声明能力的 Provider（如 tickflow/alphafeed/futunn 的 CN/HK/US stock）用 `asset_type@MARKET` 为每个市场提供独立基准；`asset_type@MARKET-EXCHANGE` 是市场基准之外的**追加**目标，用于逐所细分探测适配器交易所映射分支；限定键与标的失配、市场不被能力覆盖等孤儿键一律展开期硬报错，不静默忽略 |
@@ -334,6 +333,14 @@ Provider 文档「上游行为定案」节；覆盖范围与证据出处见「�
 
 ## 决策与变更记录
 
+- **2026-11-18（history_depth 两段式：声明抽验快路径 + full_history_targets
+  退役）**：抽验通过（compatible/under_claim）→ 单调用收工不跑二分
+  （depth 常驻成本降至 1 调/条，「收敛后移除」不再必要，声明每轮都有
+  抽验守护）；抽验不通过（over_claim）或窗口倒置/空结果/调用异常 →
+  降级二分辨明真实库底（最终判定以二分为准）；声明 null 直接二分
+  （收敛即首次回填证据）。full_history_targets 退役（快路径吸收其
+  场景）；判定矩阵与快/慢路径语义见「规范化规则·depth 声明复核」与
+  「探针类型语义·history_depth」；
 - **2026-11-18（depth 声明复核：判定只看 first_bar）**：history_depth
   展开时从 manifest 读 `history.start` 声明，判定后与实测首根做日历月
   粒度方向判定（相容/over-claim/under-claim/unknown）；**earliest_estimate
