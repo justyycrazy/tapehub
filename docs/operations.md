@@ -126,3 +126,24 @@ uv run uvicorn tapehub.api.app:app --reload   # 启动服务（默认 127.0.0.1:
   `/redoc`、`/openapi.json` 默认开启且不走鉴权，完整 API 结构会向任何可达
   主体披露；
 - `/health` 保持无鉴权（连接测试用途，不访问上游）。
+
+## 可观测性备忘（cluster 立项时规划，Info 级）
+
+当前 `single` 模式的可观测性仅访问日志（request_id/方法/路径/状态码/耗时，
+见 `api/middleware.py`）与 Provider 级 warning，无指标暴露——单进程单用户
+最小运行模式下可接受，**不属当前范围**；以下备忘在 cluster 模式立项时作为
+设计输入启动，不提前实施：
+
+- **触发条件**：多实例部署 / 对外生产暴露（与 `deployment_mode` 扩展同步立项）；
+- **暴露面**：`/metrics`（Prometheus 格式）或结构化日志采集，二选一先定采集栈；
+- **指标清单**：请求量与错误率（按端点 × 错误码）、上游调用延迟（按 Provider）、
+  上游 429/超时率、`CLIENT_RATE_LIMITED` 命中数、SSE 活跃客户端数、各 Provider
+  线程池占用（`adapter.thread_limiter` 已有只读挂点：`total_tokens` /
+  `borrowed_tokens`）、tqsdk Runtime 生命周期状态与代际（`runtime_status` 已可
+  经能力目录读取）、WS Runtime 存活；
+- **标签纪律**：不以证券代码、用户 ID、完整 URL 等做高基数标签；
+- **告警候选**：上游错误率突增、入站限流持续打满、启动期 Provider 静默下线
+  （`load_error` / 缺凭据 warning）；
+- **cluster 联动决策点**：入站限流计数为进程内存（固定窗口不跨进程，
+  见 `TAPEHUB_CLIENT_RATE_LIMIT_PER_MINUTE`）——多实例下每实例独立窗口，
+  届时需一并决策集中式限流或按实例配额。
