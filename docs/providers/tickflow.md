@@ -71,6 +71,12 @@ history.start（历史覆盖声明，全局统一口径——四条规则见 doc
 - 快照响应实测（SDK 0.1.25）：返回 `list[dict]`——文档与实测不符（以实测为准，文档描述为 data 包装结构）；实测未观察到 `session` 字段（文档声明存在；防御性映射，存在才透出）；比例字段为**小数比例（1% = 0.01**，如 change_pct 0.0162 = 1.62%）；上游支持逗号分隔批量（本项目为单标的快照，单标的单次调用）；
 - 快照契约违背：`timestamp`（毫秒）缺失/非法、`last_price` 不可解析抛 `UPSTREAM_ERROR`（不伪造时间或价格）；data 数组为空同样抛 `UPSTREAM_ERROR`（不静默返回）。
 
+## SDK 客户端生命周期
+
+- 适配器对 `TickFlow(api_key=...)` 做**实例级缓存复用**（懒创建 + 锁串行化；apikey 或 SDK 入口身份变更即重建），停机钩子调用 SDK `close()` 关闭；
+- 线程安全依据（SDK 0.1.25 源码实证，`tickflow/_base_client.py`）：客户端持有 `httpx.Client`——httpx 官方声明 Client 可跨线程共享（`httpx/_client.py` "It can be shared between threads."）；`_request` 请求路径无实例状态写入（全部局部变量）；
+- 缓存收益为连接池复用（每请求新建客户端会丢弃 `httpx.Client` 连接池）；`SyncAPIClient` 提供 `close()`（context manager 同源），停机钩子显式关闭。
+
 ## 快照与流式
 
 - 快照：无状态 REST 单标的单次 `tf.quotes.get` 调用，无订阅/缓存语义（与订阅-推送类 Provider 不同）；不产生 `QUOTE_NOT_READY`——要么返回快照，要么返回上游错误；

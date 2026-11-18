@@ -51,6 +51,10 @@ class StubTickFlow:
         self.klines = StubKlines(self)
         self.quotes = StubQuotes(self)
 
+    def close(self) -> None:
+        """对齐真实 SDK 的 SyncAPIClient.close（停机钩子路径）。"""
+        self.closed = True
+
 
 def set_payload(client: StubTickFlow, payload: Any) -> None:
     client.payload = payload

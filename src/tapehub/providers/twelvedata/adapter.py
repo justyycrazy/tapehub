@@ -5,6 +5,7 @@
 """
 
 import asyncio
+import threading
 from collections.abc import AsyncIterator
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
@@ -48,6 +49,15 @@ class ProviderAdapter(BaseProviderAdapter):
         super().__init__(name, manifest, settings)
         self._runtime: TwelvedataWsRuntime | None = None
         self._runtime_lock = asyncio.Lock()
+        # REST 客户端实例级缓存（懒创建，锁串行化首次构建）：TDClient 持有
+        # requests.Session 连接池（SDK 源码实证可跨线程共享，见
+        # docs/providers/twelvedata.md「SDK 客户端生命周期」）；apikey 进程内
+        # 不变，apikey 或 SDK 入口身份变更即重建——后者保证测试经 sys.modules
+        # 替换桩模块后缓存自动失效（生产进程内恒定，零失效开销）
+        self._rest_client: Any = None
+        self._rest_apikey: str | None = None
+        self._rest_entry: Any = None
+        self._rest_lock = threading.Lock()
 
     async def fetch_bars(self, query: BarQuery) -> BarBatch:
         operation = self.resolve_operation(query)
@@ -120,11 +130,17 @@ class ProviderAdapter(BaseProviderAdapter):
         )
 
     def shutdown_runtime(self) -> object | None:
-        """停机钩子（由应用 lifespan 调用）：关闭 WS Runtime（若已启动）。
+        """停机钩子（由应用 lifespan 调用）：关闭 WS Runtime（若已启动）
+        并释放 REST 客户端引用。
 
         有运行循环时返回异步停机任务由 lifespan await 到完成；无运行循环
-        的兜底路径同步执行并返回 None。
+        的兜底路径同步执行并返回 None。TDClient 无公开 close API（SDK 源码
+        实证）：释放引用交由 GC 关闭其底层 requests.Session。
         """
+        with self._rest_lock:
+            self._rest_client = None
+            self._rest_apikey = None
+            self._rest_entry = None
         runtime = self._runtime
         if runtime is None:
             return None
@@ -239,8 +255,22 @@ class ProviderAdapter(BaseProviderAdapter):
             partial=partial,
         )
 
+    def _rest_tdclient(self, td_client: Any, api_key: str) -> Any:
+        """REST 客户端懒创建缓存（apikey 或 SDK 入口身份变更即重建）。"""
+        with self._rest_lock:
+            if (
+                self._rest_client is None
+                or self._rest_apikey != api_key
+                or self._rest_entry is not td_client
+            ):
+                self._rest_client = td_client(apikey=api_key)
+                self._rest_apikey = api_key
+                self._rest_entry = td_client
+            return self._rest_client
+
     def _fetch_rows(self, api_key: str, query: BarQuery) -> list[dict[str, Any]]:
-        """先完成参数映射，再延迟导入官方库调用 td.time_series(...).as_json()。"""
+        """先完成参数映射，再延迟导入官方库调用 td.time_series(...).as_json()；
+        TDClient 为实例级缓存复用（连接池复用与线程安全依据见模块注释）。"""
         kwargs = build_request(query)
         try:
             from twelvedata import TDClient
@@ -249,7 +279,7 @@ class ProviderAdapter(BaseProviderAdapter):
                 "Provider SDK 'twelvedata' is not installed.",
                 details={"provider": self.name, "sdk": "twelvedata"},
             ) from exc
-        client = TDClient(apikey=api_key)
+        client = self._rest_tdclient(TDClient, api_key)
         series = client.time_series(**kwargs)
         try:
             payload = series.as_json()

@@ -3,8 +3,9 @@
 映射规则与上游行为定案见 docs/providers/alphafeed.md（唯一出处，本文不复述）。
 """
 
+import threading
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from tapehub.domain.errors import ProviderNotImplementedError, UpstreamRateLimitedError
 from tapehub.domain.models import CN_TIMEZONE, BarBatch, BarQuery, Quote, QuoteQuery
@@ -17,16 +18,41 @@ from tapehub.providers.alphafeed.response_mapper import to_standard_bars, to_sta
 from tapehub.providers.base import BaseProviderAdapter
 from tapehub.providers.pagination import paginate_bars
 
+if TYPE_CHECKING:
+    from tapehub.settings import Settings
+
 
 class ProviderAdapter(BaseProviderAdapter):
     """AlphaFeed 适配器。"""
 
     implemented = True
 
+    def __init__(self, name: str, manifest: Any, settings: "Settings | None" = None) -> None:
+        super().__init__(name, manifest, settings)
+        # SDK 客户端实例级缓存（懒创建，锁串行化首次构建）：AlphaFeed 持有
+        # httpx.Client 连接池（httpx 官方声明可跨线程共享）与自持锁的
+        # InstrumentNameCache（SDK docstring 自证 thread-safe，见
+        # docs/providers/alphafeed.md「SDK 客户端生命周期」）；apikey 进程内
+        # 不变，apikey 或 SDK 入口身份变更即重建——后者保证测试经 sys.modules
+        # 替换桩模块后缓存自动失效
+        self._client: Any = None
+        self._client_apikey: str | None = None
+        self._client_entry: Any = None
+        self._client_lock = threading.Lock()
+
     async def fetch_bars(self, query: BarQuery) -> BarBatch:
         operation = self.resolve_operation(query)
         self._ensure_ready()
         return await self.call_in_thread(self._fetch_sync, operation, query, abandon_on_cancel=True)
+
+    def shutdown_runtime(self) -> None:
+        """停机钩子（由应用 lifespan 调用）：关闭共享 SDK 客户端。"""
+        with self._client_lock:
+            if self._client is not None:
+                self._client.close()
+                self._client = None
+                self._client_apikey = None
+                self._client_entry = None
 
     async def fetch_quote(self, query: QuoteQuery) -> Quote:
         operation = self.resolve_quote_operation(query)
@@ -69,8 +95,21 @@ class ProviderAdapter(BaseProviderAdapter):
             partial=partial,
         )
 
+    def _sdk_client(self, alphafeed_client: Any, api_key: str) -> Any:
+        """SDK 客户端懒创建缓存（apikey 或 SDK 入口身份变更即重建）。"""
+        with self._client_lock:
+            if (
+                self._client is None
+                or self._client_apikey != api_key
+                or self._client_entry is not alphafeed_client
+            ):
+                self._client = alphafeed_client(api_key=api_key)
+                self._client_apikey = api_key
+                self._client_entry = alphafeed_client
+            return self._client
+
     def _call_upstream(self, api_key: str, query: BarQuery) -> Any:
-        """延迟导入官方 SDK 并调用 af.klines.get（原始列式返回）。"""
+        """延迟导入官方 SDK 并调用 af.klines.get（客户端实例级缓存复用）。"""
         try:
             from alphafeed import AlphaFeed, RateLimitError
         except ImportError as exc:
@@ -79,7 +118,7 @@ class ProviderAdapter(BaseProviderAdapter):
                 details={"provider": self.name, "sdk": "alphafeed"},
             ) from exc
         kwargs = build_request(query)
-        client = AlphaFeed(api_key=api_key)
+        client = self._sdk_client(AlphaFeed, api_key)
         try:
             return client.klines.get(**kwargs)
         except RateLimitError as exc:
@@ -92,7 +131,7 @@ class ProviderAdapter(BaseProviderAdapter):
         )
 
     def _call_quote_upstream(self, api_key: str, query: QuoteQuery) -> Any:
-        """延迟导入官方 SDK 并调用 af.quotes.get（list[Quote dict] 默认返回）。"""
+        """延迟导入官方 SDK 并调用 af.quotes.get（客户端缓存复用）。"""
         try:
             from alphafeed import AlphaFeed, RateLimitError
         except ImportError as exc:
@@ -101,7 +140,7 @@ class ProviderAdapter(BaseProviderAdapter):
                 details={"provider": self.name, "sdk": "alphafeed"},
             ) from exc
         kwargs = build_quote_request(query)
-        client = AlphaFeed(api_key=api_key)
+        client = self._sdk_client(AlphaFeed, api_key)
         try:
             return client.quotes.get(**kwargs)
         except RateLimitError as exc:

@@ -4,6 +4,7 @@
 官方文档：https://tushare.pro/document/2。
 """
 
+import threading
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
@@ -20,7 +21,7 @@ from tapehub.providers.tushare.request_mapper import (
 from tapehub.providers.tushare.response_mapper import to_standard_bars
 
 if TYPE_CHECKING:
-    pass
+    from tapehub.settings import Settings
 
 # 各接口单次返回上限（达到即无法确认是否截断）
 _ROW_LIMITS = {
@@ -35,6 +36,19 @@ class ProviderAdapter(BaseProviderAdapter):
     """Tushare 适配器。"""
 
     implemented = True
+
+    def __init__(self, name: str, manifest: Any, settings: "Settings | None" = None) -> None:
+        super().__init__(name, manifest, settings)
+        # pro 客户端实例级缓存（懒创建，锁串行化首次构建）：pro_api 返回的
+        # DataApi 为无状态薄配置对象（仅 token/timeout 只读属性，query 每次
+        # 模块级 requests.post、无实例状态写入，SDK 源码实证可跨线程共享，
+        # 见 docs/providers/tushare.md「SDK 客户端生命周期」）；token 进程内
+        # 不变，token 或 SDK 入口身份变更即重建——后者保证测试经 sys.modules
+        # 替换桩模块后缓存自动失效（生产进程内 SDK 模块恒定，零失效开销）
+        self._pro: Any = None
+        self._pro_token: str | None = None
+        self._pro_module: Any = None
+        self._pro_lock = threading.Lock()
 
     async def fetch_bars(self, query: BarQuery) -> BarBatch:
         operation = self.resolve_operation(query)
@@ -75,11 +89,24 @@ class ProviderAdapter(BaseProviderAdapter):
             partial=partial,
         )
 
+    def _pro_client(self, ts_module: Any, token: str) -> Any:
+        """pro 客户端懒创建缓存（token 或 SDK 入口身份变更即重建）。"""
+        with self._pro_lock:
+            if (
+                self._pro is None
+                or self._pro_token != token
+                or self._pro_module is not ts_module
+            ):
+                self._pro = ts_module.pro_api(token)
+                self._pro_token = token
+                self._pro_module = ts_module
+            return self._pro
+
     def _call_upstream(self, token: str, operation: str, query: BarQuery) -> Any:
         """先完成参数映射，再延迟导入官方 SDK 调用对应接口。
 
         pro_bar 为模块级函数（股票/指数），fut_daily/fund_daily/opt_daily
-        为 pro 对象方法（期货/ETF/期权）。
+        为 pro 对象方法（期货/ETF/期权）；pro 客户端为实例级缓存复用。
         """
         kwargs = build_request(operation, query)
         try:
@@ -89,7 +116,7 @@ class ProviderAdapter(BaseProviderAdapter):
                 "Provider SDK 'tushare' is not installed.",
                 details={"provider": self.name, "sdk": "tushare"},
             ) from exc
-        pro = ts.pro_api(token)
+        pro = self._pro_client(ts, token)
         if operation == "pro_bar":
             return ts.pro_bar(api=pro, **kwargs)
         if operation in ("fut_daily", "fund_daily", "opt_daily"):

@@ -71,6 +71,12 @@
 - 免费档配额：REST 限频 8 次/分钟、800 次/天（探针 pacing 据此放宽）；WS credit 口径见「快照与流式」；
 - 显式传参原则：`interval`/`outputsize`/`start_date`/`end_date`（及美股 `exchange`/`adjust`）全部显式传递，不依赖上游默认值——上游 interval 缺省行为未知、outputsize 默认 30、美股 adjust 缺省 splits。
 
+## SDK 客户端生命周期
+
+- REST 链路对 `TDClient` 做**实例级缓存复用**（懒创建 + 锁串行化；apikey 或 SDK 入口身份变更即重建）；WS Runtime 生命周期见「快照与流式」，不受本节影响；
+- 线程安全依据（SDK 1.4.0 源码实证，`twelvedata/client.py` + `http_client.py`）：`TDClient` 构造期写入 `ctx` 后只读；`DefaultHttpClient.get` 无实例状态写入；其内部 `requests.Session` 连接池为 requests/urllib3 生态通行并发模式；
+- 缓存收益为连接池复用（每请求新建 TDClient 会丢弃 `Session` 连接池）；TDClient **无公开 close API**，停机钩子仅释放引用（Session 由 GC 关闭）。
+
 ## 快照与流式
 
 参与实时快照（M2，`GET /v1/market/quotes`）与 SSE 快照流（M3，`GET /v1/market/quotes/stream`），**同源**：均来自 WS 共享单连接的实时 price 事件订阅缓存。

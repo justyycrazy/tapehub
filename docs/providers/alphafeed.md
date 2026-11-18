@@ -72,6 +72,12 @@ quotes 为快照能力：interval/adjust 维度无意义，capabilities 与 oper
   - 无效标的上游返回 200 空数组，适配器按契约违背抛 `UPSTREAM_ERROR`（不静默返回空结果）。
 - 快照契约违背：`timestamp`（毫秒）缺失/非法、`last_price` 不可解析抛 `UPSTREAM_ERROR`（不伪造时间或价格）；批量包装形态含多个 symbol 条目时无法判定唯一标的，显式拒绝（不静默取第一个）。
 
+## SDK 客户端生命周期
+
+- 适配器对 `AlphaFeed(api_key=...)` 做**实例级缓存复用**（懒创建 + 锁串行化；apikey 或 SDK 入口身份变更即重建），停机钩子调用 SDK `close()` 关闭；
+- 线程安全依据（SDK 0.1.4 源码实证）：客户端与 tickflow 同构（`alphafeed/_base_client.py` 持有 `httpx.Client`，httpx 官方声明可跨线程共享；`_request` 无实例状态写入）；`Klines` 的 `InstrumentNameCache` docstring 自证 "Thread-safe local cache"（自持 `threading.Lock`，全部方法持锁）；
+- 缓存收益为连接池复用；`SyncAPIClient` 提供 `close()`，停机钩子显式关闭。
+
 ## 快照与流式
 
 - 快照（`af.quotes.get(symbols=[...])`）：上游支持 5 标的/次批量与标的池（universes），网关为单标的快照语义、单元素 symbols 调用（套餐限频 10 次/分钟才是实际约束）；

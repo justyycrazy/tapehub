@@ -72,6 +72,10 @@ class StubAlphaFeed:
         self.klines = StubKlines(self)
         self.quotes = StubQuotes(self)
 
+    def close(self) -> None:
+        """对齐真实 SDK 的 SyncAPIClient.close（停机钩子路径）。"""
+        self.closed = True
+
 
 def install(monkeypatch: Any) -> list[StubAlphaFeed]:
     """把桩模块注入 sys.modules，返回实例记录列表。"""

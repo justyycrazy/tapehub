@@ -70,6 +70,12 @@ ETF ts_code 后缀（fund_daily 场内基金接口，doc_id=127，沪深同构�
 - ETF/期权（fund_daily/opt_daily）定案（探针 2026-11-15 第 14/15 轮）：fund_daily 单次上限 5000 行（partial 语义与 fut_daily 同）、要求 5000 积分（实测账户通过）、亦含 LOF（上游 issue #1891 口径）；opt_daily 单次上限 15000 行（partial 同）、要求 2000 积分（实测通过）、全部历史每日约 17 点更新；期权覆盖八所（2026-11-16 第 17 轮聚焦收编 INE/GFEX，码式与证据见「标的代码映射」）。目录接口 opt_basic 单次返回恰 12000 行，疑为上游单次上限（第 17 轮 INE/GFEX/SHFE 三次同值，待核实；不影响映射与日 K 结论）；opt_basic 的 `trade_date` 请求参数被上游忽略（恒返回全量目录），在市标的筛选须自行按 `delist_date` 过滤。fund_daily/opt_daily 直调 pro 对象方法，量额换算与 extensions 见「周期/复权/单位」节。
 - 错误指纹：上游积分限频/错误码未在文档中核实（40203 等积分错误码待核实后补充），SDK 异常统一包装 `UPSTREAM_ERROR`，不穿透 API。
 
+## SDK 客户端生命周期
+
+- 适配器对 `ts.pro_api(token)` 返回的 `DataApi` 做**实例级缓存复用**（懒创建 + 锁串行化；apikey 或 SDK 入口身份变更即重建，后者保证测试桩替换后缓存失效）；
+- 线程安全依据（SDK 1.4.29 源码实证，`tushare/pro/client.py`）：`DataApi` 为无状态薄配置对象——仅 `token`/`timeout` 两个构造期只读属性，`query` 每次经模块级 `requests.post` 发请求、无实例状态写入，跨线程共享安全；
+- 无连接池复用收益（SDK 每请求裸 `requests.post`），缓存收益为消除每请求对象构造；无 close API，停机不做释放（引用交由 GC）。
+
 ## 快照与流式
 
 不参与实时快照与 SSE 流式（未声明 quotes 能力、未实现 stream_quote）。
