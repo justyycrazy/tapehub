@@ -127,6 +127,8 @@ def _phase_summary(probes: Any) -> str:
     """history 探测记录的阶段摘要（如 ``era×3 bisect×4 verify×1``）。
 
     旧结果文件的 probes 条目没有 ``phase`` 键（历史证据），缺失时显示 ``-``。
+    仅供 JSON 证据复用工具或调试参考；Markdown 报告的 depth 复核表自
+    2026-11-18 起不再展示阶段列（判定只看 first_bar）。
     """
     if not isinstance(probes, list):
         return "-"
@@ -270,19 +272,27 @@ def render_markdown(run: RunResult) -> str:
         lines.append("（无）")
     lines.append("")
 
-    lines.append("## history.start 建议回填值（人工确认后再改 manifest）")
+    lines.append(
+        "## depth 实测首根与声明复核（判定只看 first_bar；人工确认后才改 manifest）"
+    )
     lines.append("")
     if histories:
-        lines.append(
-            "| case | earliest_estimate | 首根 bar | approx | 粒度 | 探测次数 | complete | 阶段 |"
-        )
-        lines.append("| --- | --- | --- | --- | --- | --- | --- | --- |")
+        lines.append("| case | 实测首根（first_bar） | 现声明 | 相容性 | complete |")
+        lines.append("| --- | --- | --- | --- | --- |")
         for case in histories:
             obs = case.observation
+            compat = obs.get("declaration_compat")
+            if compat == "over_claim":
+                compat_display = "**over-claim（需人工确认）**"
+            elif compat == "under_claim":
+                compat_display = "under-claim（保守成立）"
+            elif compat == "compatible":
+                compat_display = "✓ 相容"
+            else:
+                compat_display = "—（声明 null 或无首根）"
             lines.append(
-                f"| {case.case_id} | {obs.get('earliest_estimate')} | {obs.get('first_bar')} "
-                f"| {obs.get('approx')} | {obs.get('snap')} | {obs.get('calls_used')} "
-                f"| {obs.get('complete')} | {_phase_summary(obs.get('probes'))} |"
+                f"| {case.case_id} | {obs.get('first_bar')} | {obs.get('declared_start')} "
+                f"| {compat_display} | {obs.get('complete')} |"
             )
     else:
         lines.append("（无）")

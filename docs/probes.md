@@ -215,6 +215,7 @@ notes: 本探针要回答的问题与已知存疑点。
 | **探测目标轮换优先** | 探测目标因档案过浅/数据缺口/到期失效时，**轮换成熟标的优先**（目录外直测定案后换码；期权按现价锚定 ATM、ETF 选成熟标的），**不为个别目标放宽 min_bars**（2026-11-18 定案） |
 | **合约目标到期自动 skip** | 合约/期权目标的 targets 键可声明可选 `expires`（到期边界）：已过 → 该目标全部 chain case 加载期 skip（带原因进报告，与「skip 必须带 reason」同款防静默漏探；不硬错误拒绝运行——探针为开发服务、非巡检，且避免单 Provider 过期目标阻断其余 Provider）；临期 30 天内 → 运行前警告；报告 failed 的合约/期权 case 标注「疑似到期/摘牌或上游逐合约缺口，按目标轮换流程核实」（只标疑似不断言——上游缺口形态多样）；未声明视为不受限（证券类目标不设该字段）（2026-11-18 定案） |
 | **周线/月线键位跨源差异** | 周线根标注（周首日 vs 周内最后交易日）、月线根标注（自然月首日 vs 月末交易日）跨源不同——已在各 Provider docs「上游行为定案」记录（futunn/alphafeed/tickflow 等），跨源周/月线根日期不可直比；探针框架 bisect 月窗键位校准**待单独立项**（2026-11-18） |
+| **depth 声明复核** | history_depth 展开时从 manifest 读该能力该周期的 `history.start` 声明，判定后与实测首根对照——**相容性判定只看 first_bar（实测首根），earliest_estimate 二分估计不参与**（2026-11-18 裁决）：日历月粒度方向判定——相同月=相容、首根月>声明月=over-claim（声明承诺区间内实测无数据，报告加粗标注、走「复探差异处置」人工确认）、首根月<声明月=under-claim（保守成立）；判定恒不自动改 manifest，verdict 维持 observe |
 | **history.start 全局统一口径** | 探针实测/二分估计回填 `history.start` 按四条规则归一（2026-11-17 定案并经七条补充裁决细化，全 Provider 统一遵守）：① GLOBAL forex 与 US/HK stock/etf 实测早于 2000-01-01 → 统一声明 2000-01-01（HK 同 US）；② GLOBAL crypto 实测早于 2020-01-01 → 统一声明 2020-01-01；③ CN 实测首根**精确等于基日或上市日** → 按该日期锚回填（approx 估计不适用；同源实测互证不可作为他家 R3 依据；基日/上市日核实源=人工提供，实测首根必须与其一致方可锚定）；④ 其余取实测估计月份的 1 日零点（月首对齐）。统一北京时间零点（T00:00:00+08:00）；null（未核实）不适用；**开始时间之前的数据状态不入 docs、只入探针日志**（裁决 2），实测细节见 `probes/results/PROBE_LOG.md` |
 | 文件名 = Provider 名 | loader 只认 `BUILTIN_PROVIDERS` 同名文件，缺失/多余即报错 |
 | case ID | bars 自动生成 `{asset_type}-{interval}-{adjust}-{variant}`（快照为 `quote-{asset_type}-{variant}`，市场/交易所限定键带前缀，如 `quote-stock@HK-tickflow`）；分析类为 `adjust-diff-<at>-<interval>-<a>-vs-<b>-<variant>`、`history-depth-<at>-<interval>-<variant>`、`limit-<at>-<interval>-<variant>`、`variant-consistency-<at>-<interval>-<adjust>`；raw 自定义 `^[A-Za-z][A-Za-z0-9._-]*$` 且全局唯一 |
@@ -237,7 +238,7 @@ notes: 本探针要回答的问题与已知存疑点。
 | availability | chain | 对 bars 每个声明组合查一次（fetch_bars） | 0 bars / 低于 min_bars / required 字段全 null → failed；否则 confirmed |
 | quote_availability | chain | 对 quotes 每个声明组合查一次（fetch_quote，全链路二级路由→上游→标准化）；无周期/复权维度，`include_declared: true` 自动展开，`quote-` 前缀 case id | 适配器失败（含上游「无有效行情」语义）→ failed；last/bid1/ask1 全 null → failed（捕捉订阅未就绪 NaN 置空、权限静默降级）；否则 confirmed。volume/amount 的 null（如外汇无量）不判定、如实记录进 observation |
 | adjust_diff | chain | 同窗口 none vs qfq/hfq 对比（按 interval × variant × pair 全量展开） | 序列完全一致 → **suspect**（adjust_no_op_suspect）；有差异 → confirmed；无重叠 → suspect |
-| history_depth | chain | 纪元回溯 + 日历边界网格二分（`snap` 粒度，默认月边界；按 interval × variant 全量展开）：收敛到最小非空边界 B*，B* 之前逐窗实测无数据 + B* 窗口实测有数据；`full_history_targets` 中的目标改走全量模式：单次全窗口调用直接读最早 bar，适用于上游无日期参数（每次返回全量历史，适配器内存过滤）或全量拉取代价可忽略的接口 | 恒为 observe；声明值 `earliest_estimate` = 首个 ≥ 首根实测的日历边界（**保守上界**，查询从声明起点起保证有数据），`first_bar` 为首根实测（二分模式 = 验证窗返回首根；全量模式 = 精确最早 bar，approx=False）；触底（estimate=earliest）/预算中断/未收敛一律不回填 |
+| history_depth | chain | 纪元回溯 + 日历边界网格二分（`snap` 粒度，默认月边界；按 interval × variant 全量展开）：收敛到最小非空边界 B*，B* 之前逐窗实测无数据 + B* 窗口实测有数据；`full_history_targets` 中的目标改走全量模式：单次全窗口调用直接读最早 bar，适用于上游无日期参数（每次返回全量历史，适配器内存过滤）或全量拉取代价可忽略的接口 | 恒为 observe；`first_bar` 为首根实测（二分模式 = 验证窗返回首根；全量模式 = 精确最早 bar，approx=False）；**声明复核**（2026-11-18）：判定只看 first_bar，与 manifest `history.start` 声明做日历月粒度方向判定（相容/over-claim/under-claim/unknown），结果入 observation 与报告复核表；`earliest_estimate` 仅为收敛机制中间产物、不参与判定；触底/预算中断/未收敛一律不回填 |
 | limit_truncation | chain | 最小周期 + 超长窗口数 bar（按 variant 全量展开） | 实测 = documented_max → confirmed；不等 → suspect；未设 → observe |
 | variant_consistency | chain | 同一 (interval, adjust) 查询在跨能力聚合的全部 variant 下重放并两两对比 | 差异 ≤ `tolerance` → confirmed（差异幅度如实记录）；超出 → suspect，记录 max_abs_diff 与 first_divergence；无重叠 / 预算中断 → suspect |
 | raw | SDK 反射 | 声明外能力探测与错误指纹（`min_fields` 验证 mapping 字段存在性；已声明能力的快照字段矩阵自 quote_availability 入链后不再经 raw） | 期望匹配 → confirmed / 不匹配 → failed；`assert: false` → observe |
@@ -258,9 +259,10 @@ notes: 本探针要回答的问题与已知存疑点。
 
 **manifest 回填流程**：报告 → 人工确认 → 修订 manifest（`history.start`、
 复权声明收敛、新增周期/后缀声明）与 `docs/providers/<name>.md` → 单独提交。
-探针永不自动改 manifest。`history.start` 回填口径：取报告中的
-`earliest_estimate`（日历边界、保守上界），首根实测（`first_bar`）留在
-探针证据与 PROBE_LOG，不入 manifest。
+探针永不自动改 manifest。`history.start` 回填口径（2026-11-17 全局统一口径
++ 2026-11-18 裁决）：以 **first_bar 实测首根**为唯一判定证据——声明复核
+（月粒度方向判定）相容则维持，over-claim 走「复探差异处置」人工确认，
+统一规则（R1~R4/R6）由人工定案推导，`earliest_estimate` 不参与判定。
 
 ## 结果记录
 
@@ -332,6 +334,13 @@ Provider 文档「上游行为定案」节；覆盖范围与证据出处见「�
 
 ## 决策与变更记录
 
+- **2026-11-18（depth 声明复核：判定只看 first_bar）**：history_depth
+  展开时从 manifest 读 `history.start` 声明，判定后与实测首根做日历月
+  粒度方向判定（相容/over-claim/under-claim/unknown）；**earliest_estimate
+  二分估计不参与判定**（仅为收敛机制中间产物）——over-claim 报告加粗
+  标注并走「复探差异处置」，verdict 恒 observe 不自动改；报告「建议回填
+  值」表重构为「depth 实测首根与声明复核」（first_bar/现声明/相容性/
+  complete 四列，estimate/approx/粒度/阶段列退役入 JSON 证据）；
 - **2026-11-18（合约目标到期自动 skip + 临期告警 + failed 标注）**：运行时
   询问是否换码不成立（换码=运行前策划流程：选码+直测+人工确认；CLI 全
   flag 非交互设计 + 后台运行场景 stdin 不可用）——改为目标级 `expires`

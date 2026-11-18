@@ -669,11 +669,23 @@ async def _run_history_depth(ctx: RunContext, case: ChainCase, base: CaseResult)
     except TapehubError as exc:
         return _failed_from(base, {"error_code": exc.code.value, "error_text": exc.message})
     base.verdict = CaseVerdict.OBSERVE.value
+    # 声明相容性月粒度方向判定（2026-11-18 裁决：只看 first_bar 实测首根，
+    # earliest_estimate 二分估计不参与判定；over_claim 按复探差异处置——
+    # 报告并等待人工确认是否回填，不自动改判定）
+    compat = analysis.history_declaration_compat(
+        case.declared_history_start, result.first_bar
+    )
     base.observation = {
         "earliest_estimate": (
             result.earliest_estimate.isoformat() if result.earliest_estimate else None
         ),
         "first_bar": result.first_bar.isoformat() if result.first_bar else None,
+        "declared_start": (
+            case.declared_history_start.isoformat()
+            if case.declared_history_start
+            else None
+        ),
+        "declaration_compat": compat,
         "approx": result.approx,
         "snap": result.snap,
         "calls_used": result.calls_used,
@@ -684,10 +696,16 @@ async def _run_history_depth(ctx: RunContext, case: ChainCase, base: CaseResult)
         base.reason = "no data found in search range"
     elif not result.complete:
         base.reason = "search stopped early: call budget exhausted"
-    elif case.full_history:
-        base.reason = "first bar exact (full-history call); start snapped to calendar boundary"
+    elif compat == "over_claim":
+        base.reason = (
+            "declaration over-claim: first bar month is later than declared "
+            "month (manual confirmation required per re-probe drift policy)"
+        )
     else:
-        base.reason = "calendar-boundary declaration (conservative upper bound; informational)"
+        base.reason = (
+            "first-bar floor evidence; declaration cross-check: "
+            f"{compat} (informational)"
+        )
     return base
 
 

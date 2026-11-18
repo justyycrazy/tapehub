@@ -687,6 +687,18 @@ def test_quote_availability_explicit_skip() -> None:
     assert quotes[0].skip_reason == "explicit skip: 快照停机维护"
 
 
+def test_history_depth_case_carries_declared_start() -> None:
+    """depth case 携带 manifest 声明值（声明复核输入，2026-11-18 裁决）；
+    fake manifest 声明 start=null → 字段为 None（null 也是合法输入）。"""
+    expanded = expand_probe(
+        _probe(history_depth={"targets": ["stock"], "earliest": "2020-01-01", "max_calls": 4}),
+        _manifest(),  # type: ignore[arg-type]
+    )
+    cases = [c for c in expanded.chain_cases if c.kind == "history_depth"]
+    assert cases
+    assert all(c.declared_history_start is None for c in cases)
+
+
 def test_target_expired_skips_all_cases() -> None:
     """合约目标 expires 已过：该目标全部 chain case 加载期 skip（带原因进
     报告，防静默漏探；2026-11-18 决议——探针非巡检，不硬错误拒绝运行）。"""

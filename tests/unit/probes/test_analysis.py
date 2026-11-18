@@ -305,3 +305,39 @@ def test_history_depth_full_mode_empty_range_is_exact_answer() -> None:
     assert result.approx is False
     assert result.earliest_estimate is None
     assert result.first_bar is None
+
+
+def test_history_declaration_compat_month_granularity() -> None:
+    """声明相容性月粒度方向判定（2026-11-18 裁决：只看 first_bar，
+    earliest_estimate 不参与；统一口径月首对齐语义下相同月即相容）。"""
+    from probes.analysis import history_declaration_compat
+
+    cn = CN_TIMEZONE
+    declared = dt.datetime(2020, 1, 1, tzinfo=cn)
+    # 相同月 → compatible（futunn CN stock：声明 1991-01-01 vs 首根 1991-01-02）
+    assert (
+        history_declaration_compat(declared, dt.datetime(2020, 1, 2, 9, 30, tzinfo=cn))
+        == "compatible"
+    )
+    # 首根月 > 声明月 → over_claim（futunn CN stock 旧案：声明 1990-12-19
+    # vs 首根 1991-01-02——1990-12 缺失）
+    assert (
+        history_declaration_compat(
+            dt.datetime(1990, 12, 19, tzinfo=cn),
+            dt.datetime(1991, 1, 2, tzinfo=cn),
+        )
+        == "over_claim"
+    )
+    # 首根月 < 声明月 → under_claim（alphafeed US 旧案：声明 1962-02-17
+    # vs 首根 1962-01-02）
+    assert (
+        history_declaration_compat(
+            dt.datetime(1962, 2, 17, tzinfo=cn),
+            dt.datetime(1962, 1, 2, tzinfo=cn),
+        )
+        == "under_claim"
+    )
+    # 任一输入缺失 → unknown（声明 null / 未测出首根，不判定）
+    assert history_declaration_compat(None, dt.datetime(2020, 1, 1, tzinfo=cn)) == "unknown"
+    assert history_declaration_compat(declared, None) == "unknown"
+    assert history_declaration_compat(None, None) == "unknown"

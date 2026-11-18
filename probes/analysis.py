@@ -355,3 +355,30 @@ def window_back(end: dt.datetime, interval: Interval) -> dt.datetime:
         minutes=interval.minutes,
         seconds=interval.seconds,
     )
+
+
+def history_declaration_compat(
+    declared: dt.datetime | None, first_bar: dt.datetime | None
+) -> str:
+    """history.start 声明相容性月粒度方向判定（2026-11-18 裁决：只看
+    first_bar 实测首根，earliest_estimate 二分估计不参与判定）。
+
+    history.start 的承诺语义是「从声明日起可查」；统一口径为月首对齐，
+    故按日历月比对与口径语义自洽：
+
+    - 相同月 → ``compatible``（月首对齐语义下正确）
+    - 首根月 > 声明月 → ``over_claim``（声明承诺区间内实测无数据——
+      走「复探差异处置」：报告并等待人工确认是否回填）
+    - 首根月 < 声明月 → ``under_claim``（保守成立；差值大时为精化候选
+      信息性展示）
+    - 任一输入缺失 → ``unknown``（声明 null 未核实 / 未测出首根，不判定）
+    """
+    if declared is None or first_bar is None:
+        return "unknown"
+    declared_month = (declared.year, declared.month)
+    first_bar_month = (first_bar.year, first_bar.month)
+    if first_bar_month == declared_month:
+        return "compatible"
+    if first_bar_month > declared_month:
+        return "over_claim"
+    return "under_claim"

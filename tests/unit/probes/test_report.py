@@ -74,7 +74,7 @@ def test_render_markdown_sections() -> None:
     assert "## 已确认能力（confirmed）" in text
     assert "## 声明未通过（failed）" in text
     assert "## suspect / observe" in text
-    assert "## history.start 建议回填值（人工确认后再改 manifest）" in text
+    assert "## depth 实测首根与声明复核（判定只看 first_bar；人工确认后才改 manifest）" in text
     assert "## skipped" in text
     assert "stock-P1D-none-eastmoney" in text
     assert "adjust_no_op_suspect" in text
@@ -161,3 +161,49 @@ def test_failed_contract_case_annotated_with_rotation_hint() -> None:
     )
     assert "疑似到期" in contract_row
     assert "疑似到期" not in stock_row
+
+
+def test_depth_review_table_renders_compat_and_highlights_over_claim() -> None:
+    """depth 复核表（2026-11-18 裁决：判定只看 first_bar）：展示实测首根/
+    现声明/相容性列，over_claim 行加粗高亮；estimate 列退役。"""
+    started = datetime(2026, 11, 18, tzinfo=CN_TIMEZONE)
+
+    def _depth(case_id: str, first_bar: str, declared: str | None, compat: str) -> CaseResult:
+        return CaseResult(
+            case_id=case_id,
+            kind="history_depth",
+            verdict="observe",
+            reason="first-bar floor evidence; declaration cross-check",
+            dims={"asset_type": "stock"},
+            observation={
+                "first_bar": first_bar,
+                "declared_start": declared,
+                "declaration_compat": compat,
+                "complete": True,
+            },
+        )
+
+    run = RunResult(
+        provider="fake-provider",
+        started_at=started,
+        finished_at=started,
+        environment={},
+        call_budget={"max": 10, "used": 3},
+        notes="",
+        cases=[
+            _depth("history-depth-a", "1991-01-02T00:00:00+08:00",
+                   "1991-01-01T00:00:00+08:00", "compatible"),
+            _depth("history-depth-b", "1991-01-02T00:00:00+08:00",
+                   "1990-12-19T00:00:00+08:00", "over_claim"),
+            _depth("history-depth-c", "1962-01-02T00:00:00+08:00",
+                   "2000-01-01T00:00:00+08:00", "under_claim"),
+            _depth("history-depth-d", None, None, "unknown"),
+        ],
+    )
+    text = render_markdown(run)
+    assert "depth 实测首根与声明复核" in text
+    assert "**over-claim（需人工确认）**" in text
+    assert "under-claim（保守成立）" in text
+    assert "✓ 相容" in text
+    # estimate 列退役：报告不再出现 earliest_estimate 列头
+    assert "earliest_estimate" not in text

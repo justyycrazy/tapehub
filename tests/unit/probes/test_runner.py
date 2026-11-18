@@ -492,12 +492,16 @@ def test_history_depth_full_mode_exact_estimate() -> None:
     }
     for case in cases:
         assert case.verdict == "observe"
-        assert "exact" in case.reason
+        # manifest 声明 start=null → 相容性 unknown（判定不成立不报错）
+        assert "declaration cross-check: unknown" in case.reason
         obs = case.observation
         assert obs["approx"] is False
         assert obs["complete"] is True
         assert obs["calls_used"] == 1
         assert obs["earliest_estimate"] is not None
+        # 声明复核字段（2026-11-18 裁决：判定只看 first_bar）
+        assert obs["declared_start"] is None
+        assert obs["declaration_compat"] == "unknown"
 
 
 def test_run_result_is_fully_json_serializable() -> None:
