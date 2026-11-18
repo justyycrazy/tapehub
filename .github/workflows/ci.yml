@@ -1,0 +1,35 @@
+# tapehub 质量门禁：ruff 静态检查 + 全量 pytest（Mock 桩注入，零网络、零真实凭据）。
+#
+# 注意（AGENTS.md 预案）：pytest 输出直写 CI 日志、不经管道——退出码即
+# pytest 自身退出码；不在命令行叠加 -q（pyproject addopts 已带一个，
+# 叠加成 -qq 会压掉末尾汇总行）。
+
+name: ci
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install Python (from .python-version)
+        run: uv python install
+
+      - name: Sync dependencies (dev + all provider SDK extras)
+        run: uv sync --dev --all-extras
+
+      - name: Lint (ruff)
+        run: uv run ruff check .
+
+      - name: Test (pytest, offline with stubs)
+        run: uv run pytest
