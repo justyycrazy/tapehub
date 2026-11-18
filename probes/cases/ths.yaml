@@ -5,7 +5,7 @@
 # 上游限频为「约定 QPS」（超限信封 code=4001），具体 QPS 未公布：pacing 2 秒
 # （≤0.5 QPS）保守起步，探针报告中观察 4001 出现情况后收紧。
 probe: ths
-version: 2
+version: 1
 
 requires:
   # ths 无官方 Python SDK：raw case 反射 httpx 直连（pyproject 可选依赖组名

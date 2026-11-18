@@ -1,7 +1,7 @@
 # TickFlow 数据探针：三市场（CN/HK/US）全声明维度可用性、复权生效性、
 # 历史深度、单次上限与实时行情（quotes）字段矩阵实测。
 probe: tickflow
-version: 2
+version: 1
 
 requires:
   extras: [tickflow]

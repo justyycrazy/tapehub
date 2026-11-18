@@ -1,7 +1,7 @@
 # Twelve Data 数据探针：外汇/加密货币/美股可用性、历史深度、单次上限与错误指纹探测。
 # 免费档限频 8 次/分钟、800 次/天，pacing 设为 10 秒（任意 60 秒窗口最多 6 次，留安全余量）。
 probe: twelvedata
-version: 2
+version: 1
 
 requires:
   extras: [twelvedata]

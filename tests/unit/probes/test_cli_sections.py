@@ -85,7 +85,7 @@ def _probe_for(provider: str, target_key: str) -> ProbeFile:
     )
     data = {
         "probe": provider,
-        "version": 2,
+        "version": 1,
         "targets": {
             target_key: {
                 "instrument": (

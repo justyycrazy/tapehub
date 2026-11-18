@@ -115,7 +115,7 @@ def _probe(
 ) -> ProbeFile:
     data: dict[str, object] = {
         "probe": "fake-provider",
-        "version": 2,
+        "version": 1,
         "targets": {
             "stock": {
                 "instrument": "CN-SSE-600000",
@@ -308,7 +308,7 @@ def test_first_call_timeout_still_closes_client(monkeypatch: pytest.MonkeyPatch)
     probe = ProbeFile.model_validate(
         {
             "probe": "fake-provider",
-            "version": 2,
+            "version": 1,
             "pacing": {"call_interval_s": 0.01, "timeout_s": 0.2, "max_calls": 10},
             "targets": {
                 "stock": {

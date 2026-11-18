@@ -5,7 +5,7 @@
 # 1GB 带宽/月。pacing 90 秒（任意 60 分钟窗口 ≤40 次 < 50 次，留 ~20% 余量）；
 # 预算 120 覆盖单轮全量（约 2.5~3 小时，框架对截断如实记录、次日续跑）。
 probe: tiingo
-version: 2
+version: 1
 
 requires:
   # extras 按「可导入模块名」判定（框架 _module_available）：tiingo 无官方

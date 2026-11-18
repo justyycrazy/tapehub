@@ -6,7 +6,7 @@
 `probes/results/PROBE_LOG.md`（不入库，见「结果记录」一节）。
 
 本文是探针框架的唯一文档：**运行规范**（探针文件格式、类型语义、运行方式、
-结果解读）与**设计动机与决策记录**的唯一出处。各 Provider 探针覆盖范围与
+结果解读）与**设计动机**的唯一出处。各 Provider 探针覆盖范围与
 定案结论的事实记录见 [providers/](providers/)<name>.md「探针依据」与
 `probes/cases/<name>.yaml`。**探针不是服务运行时的一部分，也不进入 CI
 测试**：`uv run pytest` 保持零网络、零真实凭据。
@@ -106,7 +106,7 @@ observation 同口径。
 
 ```yaml
 probe: tushare                     # 必须等于 BUILTIN_PROVIDERS 中的名称
-version: 2                         # 探针文件格式版本（当前 2，迁移说明见下）
+version: 1                         # 探针文件格式版本（当前唯一正式版本）
 
 requires:                          # 运行前提；缺失时整文件 skip 并写入报告
   extras: [tushare]                # SDK 模块名（同时是 pyproject 可选依赖组名）
@@ -154,7 +154,7 @@ chain:                             # ── 统一链路探针 ──
     targets: [stock]               # 合约类有时限标的（contract/期权三子类）不入列（见规范化规则）
     earliest: 1991-01-01
     era_step_years: 5
-    max_calls: 24
+    max_calls: 24                   # 每条 case 预算（区别于 pacing 的文件级预算）
     snap: month                    # 可选：声明值对齐的日历边界粒度
                                    #（month=每月 1 日 / quarter=季初 / half_year=半年初，默认 month）
   variant_consistency:             # 跨 variant 一致性
@@ -194,41 +194,38 @@ raw:                               # ── 声明外探索 / 错误指纹（SDK
 notes: 本探针要回答的问题与已知存疑点。
 ```
 
-### 格式版本迁移
-
-- **v2（当前）**：`history_depth` 删除 `probe_span_days`，新增 `snap`
-  （声明值对齐的日历边界粒度：`month` / `quarter` / `half_year`，默认
-  `month`）——二分搜索空间从连续日期改为日历边界网格；声明口径变为
-  **保守上界**（首个 ≥ 首根实测的日历边界），首根实测另记 `first_bar`
-  证据；迁移方式：删除 case 文件中的 `probe_span_days` 键、`version: 2`；
-- **v1**：二分以 `probe_span_days` 天为窗口粒度，`earliest_estimate` 为
-  上界估计（粒度 = 窗口宽度，收敛点为任意日期）。
+格式版本：`version: 1` 为首个正式版本（此前未版本化形态视为初稿，不设
+迁移路径）；加载期校验版本号，不匹配即拒绝。
 
 ### 规范化规则
 
 | 规则 | 说明 |
 | --- | --- |
-| **换基准必复探** | history.depth 的上市/基日锚随基准标的走：R3 锚定基准标的发生变更 → **必须重新探测**该资产历史深度，以新实测为准后方可回填/维持锚定值（2026-11-18 定案；存量待办：twelvedata US stock 换 GE 后未复探，声明暂为 R1 归一口径） |
-| **复探差异处置** | 重新探测值与已记录声明值不同 → **按正常流程报告并等待人工确认是否回填**，不得自动回填（2026-11-18 定案；同源 Provider 库界漂移同此处置） |
-| **碎片区判据（history_depth 可回填条件）** | 稀疏碎片档案的处置（2026-11-18 定案）：**多周期互证干净收敛 → 可回填**（各声明周期独立探测收敛于同一 floor、complete）；bisect 出现全空窗/无法收敛 → 不可定案，维持 null 或按全局统一口径归一，不得以单周期观测回填 |
-| **探测目标轮换优先** | 探测目标因档案过浅/数据缺口/到期失效时，**轮换成熟标的优先**（目录外直测定案后换码；期权按现价锚定 ATM、ETF 选成熟标的），**不为个别目标放宽 min_bars**（2026-11-18 定案） |
-| **合约目标到期自动 skip** | 合约/期权目标的 targets 键可声明可选 `expires`（到期边界）：已过 → 该目标全部 chain case 加载期 skip（带原因进报告，与「skip 必须带 reason」同款防静默漏探；不硬错误拒绝运行——探针为开发服务、非巡检，且避免单 Provider 过期目标阻断其余 Provider）；临期 30 天内 → 运行前警告；报告 failed 的合约/期权 case 标注「疑似到期/摘牌或上游逐合约缺口，按目标轮换流程核实」（只标疑似不断言——上游缺口形态多样）；未声明视为不受限（证券类目标不设该字段）（2026-11-18 定案） |
-| **周线/月线键位跨源差异** | 周线根标注（周首日 vs 周内最后交易日）、月线根标注（自然月首日 vs 月末交易日）跨源不同——已在各 Provider docs「上游行为定案」记录（futunn/alphafeed/tickflow 等），跨源周/月线根日期不可直比；探针框架 bisect 月窗键位校准**待单独立项**（2026-11-18） |
-| **depth 声明复核** | history_depth 展开时从 manifest 读该能力该周期的 `history.start` 声明，判定后与实测首根对照——**相容性判定只看 first_bar（实测首根），earliest_estimate 二分估计不参与**（2026-11-18 裁决）：日历月粒度方向判定——相同月=相容、首根月>声明月=over-claim（声明承诺区间内实测无数据，报告加粗标注、走「复探差异处置」人工确认）、首根月<声明月=under-claim（保守成立）；判定恒不自动改 manifest，verdict 维持 observe |
-| **history.start 全局统一口径** | 探针实测/二分估计回填 `history.start` 按四条规则归一（2026-11-17 定案并经七条补充裁决细化，全 Provider 统一遵守）：① GLOBAL forex 与 US/HK stock/etf 实测早于 2000-01-01 → 统一声明 2000-01-01（HK 同 US）；② GLOBAL crypto 实测早于 2020-01-01 → 统一声明 2020-01-01；③ CN 实测首根**精确等于基日或上市日** → 按该日期锚回填（approx 估计不适用；同源实测互证不可作为他家 R3 依据；基日/上市日核实源=人工提供，实测首根必须与其一致方可锚定）；④ 其余取实测估计月份的 1 日零点（月首对齐）。统一北京时间零点（T00:00:00+08:00）；null（未核实）不适用；**开始时间之前的数据状态不入 docs、只入探针日志**（裁决 2），实测细节见 `probes/results/PROBE_LOG.md` |
+| **换基准必复探** | history.depth 的上市/基日锚随基准标的走：R3 锚定基准标的发生变更 → **必须重新探测**该资产历史深度，以新实测为准后方可回填/维持锚定值（存量待办：twelvedata US stock 换 GE 后未复探，声明暂为 R1 归一口径） |
+| **复探差异处置** | 重新探测值与已记录声明值不同 → **按正常流程报告并等待人工确认是否回填**，不得自动回填（同源 Provider 库界漂移同此处置） |
+| **碎片区判据（history_depth 可回填条件）** | 稀疏碎片档案的处置：**多周期互证干净收敛 → 可回填**（各声明周期独立探测收敛于同一 floor、complete；**同族互证限定**——同一 floor 仅指日/周/月同族多周期，分钟族与日线族 floor 天然不同，各族独立按统一口径回填、不做跨族同 floor 要求）；bisect 出现全空窗/无法收敛 → 不可定案，维持 null 或按全局统一口径归一，不得以单周期观测回填 |
+| **触底处置（history_depth）** | 判定特征：全部纪元均有数据、`earliest_estimate==earliest`、`first_bar=None`（`complete=True`，报告上形似正常收敛）——搜索空间撞墙而非实测库底；一律不回填（运行时虽偏保守方向，但声明值失去实测归属，且回填后快路径永远无法证伪）；处置 = 下轮调低 earliest 重探，库底下方出现空纪元即转正常收敛（先例 tickflow 1930→1900/1880）；earliest 因上游端点约束不可再降时（ths 先例）：**库底即取上游端点约束本身**（声明语义 = 最早可服务点），判定仍只看 first_bar——约束区返空构成天然空纪元、探针照常收敛出实测首根后按 R4 回填；约束区硬错误拒绝不可下探（ths 指数越界窗口 1003）、触底 first_bar=None 时维持 null；滚动窗口型约束（ths「仅近 5 年」）库底随时间前移，声明形式用 `retention_days`（ths manifest 先例）而非固定 start |
+| **探测目标轮换优先** | 探测目标因档案过浅/数据缺口/到期失效时，**轮换成熟标的优先**（目录外直测定案后换码；期权按现价锚定 ATM、ETF 选成熟标的），**不为个别目标放宽 min_bars** |
+| **早上市基准标的** | 证券类历史深度基准统一换用早上市标的：二分收敛点可能是基准标的自身上市日伪影（如 600000 收敛点即其上市月），基准收敛点远离上市日即真实库底而非标的伪影；具体标的选择是 Provider 专属事实，只记录在 `cases/*.yaml` |
+| **合约目标到期自动 skip** | 合约/期权目标的 targets 键可声明可选 `expires`（到期边界）：已过 → 该目标全部 chain case 加载期 skip（带原因进报告，与「skip 必须带 reason」同款防静默漏探；不硬错误拒绝运行——探针为开发服务、非巡检，且避免单 Provider 过期目标阻断其余 Provider）；临期 30 天内 → 运行前警告；报告 failed 的合约/期权 case 标注「疑似到期/摘牌或上游逐合约缺口，按目标轮换流程核实」（只标疑似不断言——上游缺口形态多样）；未声明视为不受限（证券类目标不设该字段） |
+| **周线/月线键位跨源差异** | 周线根标注（周首日 vs 周内最后交易日）、月线根标注（自然月首日 vs 月末交易日）跨源不同——已在各 Provider docs「上游行为定案」记录（futunn/alphafeed/tickflow 等），跨源周/月线根日期不可直比；探针框架 bisect 月窗键位校准**待单独立项** |
+| **depth 声明复核** | history_depth 展开时从 manifest 读该能力该周期的 `history.start` 声明，判定后与实测首根对照——**相容性判定只看 first_bar（实测首根），earliest_estimate 二分估计不参与**：日历月粒度方向判定——相同月=相容、首根月>声明月=over-claim（声明承诺区间内实测无数据，报告加粗标注、走「复探差异处置」人工确认）、首根月<声明月=under-claim（保守成立）；判定恒不自动改 manifest，verdict 维持 observe；**R3 锚定声明（日精度）复核须人工核对日级**——复核表 first_bar 与声明同月不同日即排查（月粒度方向判定对此存在盲区） |
+| **history.start 全局统一口径** | 探针实测/二分估计回填 `history.start` 按四条规则归一（全 Provider 统一遵守）：① GLOBAL forex 与 US/HK stock/etf 实测早于 2000-01-01 → 统一声明 2000-01-01（HK 同 US）；② GLOBAL crypto 实测早于 2020-01-01 → 统一声明 2020-01-01；③ CN 实测首根**精确等于基日或上市日** → 按该日期锚回填（approx 估计不适用；同源实测互证不可作为他家 R3 依据；基日/上市日核实源=人工提供，实测首根必须与其一致方可锚定）；④ 其余取首个不早于 first_bar 实测的日历月边界 1 日零点（月首对齐；保守上界方向，即二分收敛估计值所在月，**非 first_bar 所在月的月初**）。统一北京时间零点（T00:00:00+08:00）；null（未核实）不适用；**开始时间之前的数据状态不入 docs、只入探针日志**，实测细节见 `probes/results/PROBE_LOG.md` |
+| **多 variant 历史深度归并** | `history.start` 挂 interval 不分 adjust，而 history_depth 按 (interval × variant) 全量展开、各 variant 独立出 first_bar：同 interval 各 variant 首根不一致时回填**取最晚首根**（保守方向），并在 docs 注明该声明以哪个 variant 实测为据 |
 | 文件名 = Provider 名 | loader 只认 `BUILTIN_PROVIDERS` 同名文件，缺失/多余即报错 |
 | case ID | bars 自动生成 `{asset_type}-{interval}-{adjust}-{variant}`（快照为 `quote-{asset_type}-{variant}`，市场/交易所限定键带前缀，如 `quote-stock@HK-tickflow`）；分析类为 `adjust-diff-<at>-<interval>-<a>-vs-<b>-<variant>`、`history-depth-<at>-<interval>-<variant>`、`limit-<at>-<interval>-<variant>`、`variant-consistency-<at>-<interval>-<adjust>`；raw 自定义 `^[A-Za-z][A-Za-z0-9._-]*$` 且全局唯一 |
-| 声明内不抄写 | `include_declared: true` 从 manifest 矩阵展开，manifest 改动探针自动跟随 |
+| 声明内不抄写 | `include_declared: true` 从 manifest 矩阵展开，manifest 改动探针自动跟随——杜绝规范文件与能力目录的双抄漂移 |
 | **市场限定目标** | `targets` 键与各分析探针的 `targets` 列表项支持 `asset_type@MARKET` 与 `asset_type@MARKET-EXCHANGE` 形式；availability 按 (market × asset_type × interval × adjust × variant) 展开，每市场用对应限定键的标的（无限定键时回退不限定键且标的市场一致才命中）。市场限定目标的 case id 带前缀（如 `stock@HK-P1D-none-tickflow`、`history-depth-stock@US-P1D-tickflow`）；不限定键的 id 不变（向后兼容既有 skip 条目与历史报告） |
-| **交易所限定目标** | `asset_type@MARKET-EXCHANGE` 是市场基准标的之外的**追加**目标（不抑制基准目标、不回退裸键），每个交易所目标按同一能力矩阵独立展开全部 case（availability/adjust_diff 等），id 前缀带交易所段（如 `stock@CN-SZSE-P1D-none-tickflow`）；键的 market/exchange 段必须与标的限定段一致（加载期拒绝）；限定键的 market 段不被能力目录覆盖、或分析探针引用无法解析时，展开期硬报错（孤儿目标不静默忽略） |
+| **交易所限定目标** | `asset_type@MARKET-EXCHANGE` 是市场基准标的之外的**追加**目标（不抑制基准目标、不回退裸键），每个交易所目标按同一能力矩阵独立展开全部 case（availability/adjust_diff 等），id 前缀带交易所段（如 `stock@CN-SZSE-P1D-none-tickflow`）；键的 market/exchange 段必须与标的限定段一致（加载期拒绝）；限定键的 market 段不被能力目录覆盖、或分析探针引用无法解析时，展开期硬报错（孤儿目标不静默忽略）；manifest 能力清单按 variant 拆块的既有结构**不可再拆交易所子块**——同 (data_type, variant) 双块会在 canonical 清单撞 id（akshare BSE 收编实测踩坑），逐所覆盖并入既有同变体块、以注释说明 |
 | **分析探针全量展开** | adjust_diff 按 (interval × variant × pair)、history_depth / limit_truncation 按 (interval × variant) 在声明矩阵上**全量展开**，不与「声明顺序第一组维度」绑定；`intervals` 字段可显式收敛 interval 维度以控制预算（variant 维度永不收敛） |
-| **合约类不统计历史深度** | 有时间期限的标的合约（`contract`、期权三子类 `commodity-option`/`index-option`/`etf-option` 等合约级目标）不入 `history_depth.targets`（2026-11-16 决议）：合约级「最早可用」随挂牌/摘牌轮换漂移，深度是资产类级结论，由存续性目标（`continuous` 主连、证券类等）承载；亦不得为维持深度锚而以已摘牌合约作目标（原「已摘牌稳定锚」机制随之废止，SHFE contract 基准随之统一为现活合约） |
-| **跨 variant 一致性** | `variant_consistency` 对同一 (asset_type, interval, adjust) 在**跨能力聚合的全部声明 variant** 下重放同一查询；任何不一致（数值差异 / 无重叠 / 预算中断）都判 suspect，并记录差异幅度与首个分歧时间戳 |
+| **合约类不统计历史深度** | 有时间期限的标的合约（`contract`、期权三子类 `commodity-option`/`index-option`/`etf-option` 等合约级目标）不入 `history_depth.targets`：合约级「最早可用」随挂牌/摘牌轮换漂移，深度是资产类级结论，由存续性目标（`continuous` 主连、证券类等）承载；亦不得为维持深度锚而以已摘牌合约作目标（原「已摘牌稳定锚」机制随之废止，SHFE contract 基准随之统一为现活合约） |
+| **跨 variant 一致性** | `variant_consistency` 对同一 (asset_type, interval, adjust) 在**跨能力聚合的全部声明 variant** 下重放同一查询；任何不一致（数值差异 / 无重叠 / 预算中断）都判 suspect，并记录差异幅度与首个分歧时间戳——捕捉跨源/跨 variant 数值漂移的常态化手段 |
 | skip 必须带 reason | 防止静默漏探 |
 | kwargs 引用 | `$TAPEHUB_*` 环境变量（raw/connection 的 kwargs）；`{"$ctor": {attr, module?, kwargs}}` 轻量 SDK 对象构造（如认证对象，仅本地构造不做网络调用，module 缺省继承所在 case）；`{"$deadline_s": 秒数}` 相对当前时刻 → unix epoch。运行时注入，凭据值绝不落盘 |
 | raw call 作用对象 | 首条作用于 client、后续作用于上一条结果（链式）；`target: client` 显式强制回到客户端 |
 | raw close | 客户端型 raw case（声明 `client`）应声明 `close: {method: 客户端释放方法}`——与 connection 探针的 close 必填同款设计，case 结束（含调用失败/预算耗尽）后尽力释放客户端并记录 `closed`；close 是本地释放动作，不消耗调用预算，失败不影响判定 |
 | 跨 kind id 唯一 | raw / connection 与 chain 的 case id 全局唯一；重复在加载期拒绝 |
+| **窗口时域归一** | targets 与分析探针的裸日期 `end` 归一为**当日末** 23:59:59.999999、`start` 归一为当日零点：分钟族 bar 时间戳为盘中时刻，零点 end 经适配器闭区间复核会排除末个交易日全部盘中 bar（日历 end 恰为交易日时分钟族计数恰差一个交易日）；日/周/月线零点戳 bar 两种口径行为一致。月/周线 bar 日期在周期末尾，窗口未覆盖周期末尾时查空——属查询设计纪律（窗口须含周期末尾），与时域无关。适配器闭区间复核语义不变；API 面不受影响（纯日期在 API 边界即拒绝） |
 
 ## 探针类型语义
 
@@ -237,20 +234,23 @@ notes: 本探针要回答的问题与已知存疑点。
 | availability | chain | 对 bars 每个声明组合查一次（fetch_bars） | 0 bars / 低于 min_bars / required 字段全 null → failed；否则 confirmed |
 | quote_availability | chain | 对 quotes 每个声明组合查一次（fetch_quote，全链路二级路由→上游→标准化）；无周期/复权维度，`include_declared: true` 自动展开，`quote-` 前缀 case id | 适配器失败（含上游「无有效行情」语义）→ failed；last/bid1/ask1 全 null → failed（捕捉订阅未就绪 NaN 置空、权限静默降级）；否则 confirmed。volume/amount 的 null（如外汇无量）不判定、如实记录进 observation |
 | adjust_diff | chain | 同窗口 none vs qfq/hfq 对比（按 interval × variant × pair 全量展开） | 序列完全一致 → **suspect**（adjust_no_op_suspect）；有差异 → confirmed；无重叠 → suspect |
-| history_depth | chain | 纪元回溯 + 日历边界网格二分（`snap` 粒度，默认月边界；按 interval × variant 全量展开）：收敛到最小非空边界 B*，B* 之前逐窗实测无数据 + B* 窗口实测有数据；声明非 null 时走**声明抽验快路径**（单次调用读 [earliest, 声明月末] 最早 bar，月粒度相容判定通过即收工——2026-11-18），否则二分 | 恒为 observe；`first_bar` 为首根实测（二分模式 = 验证窗返回首根；全量模式 = 精确最早 bar，approx=False）；**声明复核**（2026-11-18）：判定只看 first_bar，与 manifest `history.start` 声明做日历月粒度方向判定（相容/over-claim/under-claim/unknown），结果入 observation 与报告复核表；`earliest_estimate` 仅为收敛机制中间产物、不参与判定；触底/预算中断/未收敛一律不回填 |
-| limit_truncation | chain | 最小周期 + 超长窗口数 bar（按 variant 全量展开） | 实测 = documented_max → confirmed；不等 → suspect；未设 → observe |
+| history_depth | chain | 纪元回溯 + 日历边界网格二分（`snap` 粒度，默认月边界；按 interval × variant 全量展开）：收敛到最小非空边界 B*，B* 之前逐窗实测无数据 + B* 窗口实测有数据；声明非 null 时走**声明抽验快路径**（单次调用读 [earliest, 声明月末] 最早 bar，月粒度相容判定通过即收工），否则二分 | 恒为 observe；`first_bar` 为首根实测（二分模式 = 验证窗返回首根；全量模式 = 精确最早 bar，approx=False）；**声明复核**：判定只看 first_bar，与 manifest `history.start` 声明做日历月粒度方向判定（相容/over-claim/under-claim/unknown），结果入 observation 与报告复核表；`earliest_estimate` 仅为收敛机制中间产物、不参与判定；触底/预算中断/未收敛一律不回填 |
+| limit_truncation | chain | 最小周期 + 超长窗口数 bar（按 variant 全量展开；框架以 100 000 超大查询 limit 抵消统一分页切片干扰，使上游/适配器自身单次上限原样可见） | 实测 = documented_max → confirmed；不等 → suspect；未设 → observe |
 | variant_consistency | chain | 同一 (interval, adjust) 查询在跨能力聚合的全部 variant 下重放并两两对比 | 差异 ≤ `tolerance` → confirmed（差异幅度如实记录）；超出 → suspect，记录 max_abs_diff 与 first_divergence；无重叠 / 预算中断 → suspect |
 | raw | SDK 反射 | 声明外能力探测与错误指纹（`min_fields` 验证 mapping 字段存在性；已声明能力的快照字段矩阵自 quote_availability 入链后不再经 raw） | 期望匹配 → confirmed / 不匹配 → failed；`assert: false` → observe |
 | connection | SDK 反射 | 客户端「创建 → 首次取数 → 释放」生命周期计时与并发共存验证（rounds × concurrent） | 全部实例创建/首调/释放成功 → confirmed；任一异常 → failed；`assert: false` → observe。观测值：每实例 create/first_call/close 毫秒 |
+
+声明内分析探针经合成 fetch 闭包直连适配器执行（不经 BarQueryService 统一包装），闭包将未识别的 SDK 异常折算为 `UpstreamError`。
 
 判定枚举：`confirmed` / `failed` / `suspect` / `skipped` / `observe`。
 
 ## 结果解读
 
 - `probes/results/<provider>/<时间戳>.json`：完整证据（case + 观测 + 判定 +
-  环境布尔）；
+  环境布尔）；证据写盘带未识别对象字符串化兜底，观测混入 SDK 内部句柄等
+  不可拷贝对象不会导致整轮证据丢失；
 - `probes/results/report-<provider>-<时间戳>.md`：人读汇总，含「已确认能力 /
-  声明未通过 / suspect+observe / history.start 建议回填值 / skipped」五张表；
+  声明未通过 / suspect+observe / depth 实测首根与声明复核 / skipped」五张表；
 - 结果是**时点证据**，报告带时间戳，不代表上游当前状态；
 - 探针工具及其报告的时间口径统一北京时间（+08:00）：运行时间戳、结果
   文件名（`YYYYMMDDTHHMMSS+0800`）与观测中的 bar 时间戳均为北京时间；
@@ -258,10 +258,9 @@ notes: 本探针要回答的问题与已知存疑点。
 
 **manifest 回填流程**：报告 → 人工确认 → 修订 manifest（`history.start`、
 复权声明收敛、新增周期/后缀声明）与 `docs/providers/<name>.md` → 单独提交。
-探针永不自动改 manifest。`history.start` 回填口径（2026-11-17 全局统一口径
-+ 2026-11-18 裁决）：以 **first_bar 实测首根**为唯一判定证据——声明复核
-（月粒度方向判定）相容则维持，over-claim 走「复探差异处置」人工确认，
-统一规则（R1~R4/R6）由人工定案推导，`earliest_estimate` 不参与判定。
+探针永不自动改 manifest；判定与回填口径的唯一出处是「规范化规则」
+（以 **first_bar 实测首根**为唯一判定证据）。回填留痕：每次回填在
+`docs/providers/<name>.md` 注明实测依据 `first_bar=X`。
 
 ## 结果记录
 
@@ -272,6 +271,9 @@ notes: 本探针要回答的问题与已知存疑点。
   后续待办；
 - 能力结论的规范出处是 `docs/providers/<name>.md`；PROBE_LOG 只记录运行
   事实与报告产物位置，不复述规范；
+- 轮次日志中发现的**框架约束 / 踩坑类事实**（manifest 结构限制、执行器
+  行为怪癖等）在定案时同步升格入本文相应章节（规范化规则 / 探针类型
+  语义），不依赖不入库的轮次日志存活；
 - 原始 JSON 证据与 `report-*.md` 报告同目录留存（时点证据，不入库）。
 
 ## 安全纪律
@@ -305,23 +307,6 @@ Provider 文档「上游行为定案」节；覆盖范围与证据出处见「�
 2. 新增分析探针时先在 `tests/unit/probes/` 补离线测试（合成 fetch 闭包）；
 3. 框架代码保持 Provider 无关：Provider 专属事实只允许出现在 `cases/*.yaml`。
 
-## 关键设计决策
-
-| 决策 | 内容与动机 |
-| --- | --- |
-| 声明内不抄写 | `include_declared: true` 从 manifest 能力矩阵自动展开全部声明组合；manifest 改动探针自动跟随，杜绝规范文件与能力目录的双抄漂移 |
-| 分析探针全量展开（2026-11-03 v2 修订） | 分析探针不再与「声明顺序第一组维度」绑定——adjust_diff 按 (interval × variant × pair)、history_depth / limit_truncation 按 (interval × variant) 在声明矩阵上全量展开；`intervals` 字段可显式收敛 interval 维度以控制预算，variant 维度永不收敛 |
-| variant_consistency（2026-11-03 引入） | 对同一 (interval, adjust) 在跨能力聚合的全部声明 variant 下重放同一查询并两两对比；任何不一致（数值差异 / 无重叠 / 预算中断）判 suspect，并记录 max_abs_diff 与 first_divergence——捕捉跨源/跨 variant 数值漂移的常态化手段 |
-| history_depth 口径演进（2026-11-15 v2 格式） | v1 以 `probe_span_days` 天窗口二分（收敛点为任意日期）→ v2 改**日历边界网格二分**（`snap` 粒度：月/季/半年边界），声明口径变为**保守上界**（首个 ≥ 首根实测的日历边界，查询从声明起点起保证有数据），首根实测另记 `first_bar` 证据；全量模式（单次全窗口调用读最早 bar）此后被声明抽验快路径吸收（2026-11-18 退役 full_history_targets）；`max_calls` 语义为**每条 case** 的预算 |
-| 合约类不统计历史深度（2026-11-16 决议） | 有时间期限的合约级标的（contract、期权三子类）不入 `history_depth.targets`：合约级「最早可用」随挂牌/摘牌轮换漂移，深度是资产类级结论，由存续性目标（`continuous` 主连、证券类）承载；亦不得为维持深度锚而以已摘牌合约作目标（原「已摘牌稳定锚」机制随之废止） |
-| 早上市基准标的 | 历史深度二分的收敛点可能是标的自身上市日伪影（如 600000 收敛点即其上市月）；各 Provider 的证券类基准统一换用早上市标的，收敛点远离上市日即真实库底而非标的伪影。具体标的选择是 Provider 专属事实，只记录在各 `cases/*.yaml` |
-| 市场/交易所限定目标 | 同一 asset_type 跨多市场声明能力的 Provider（如 tickflow/alphafeed/futunn 的 CN/HK/US stock）用 `asset_type@MARKET` 为每个市场提供独立基准；`asset_type@MARKET-EXCHANGE` 是市场基准之外的**追加**目标，用于逐所细分探测适配器交易所映射分支；限定键与标的失配、市场不被能力覆盖等孤儿键一律展开期硬报错，不静默忽略 |
-| 快照可用性入链（2026-11-15） | quotes 声明组合经 `adapter.fetch_quote` 统一链路探测（quote_availability，全链路二级路由→上游→标准化），快照字段矩阵证据由 raw 探针移交链路；捕捉订阅未就绪 NaN 置空、权限静默降级等失败形态 |
-| connection 探针与 raw close | 客户端型 SDK 资源用 connection 探针表达「创建 → 首次取数 → 释放」的计时与并发共存（rounds × concurrent）；`close` 在 connection 探针必填、客户端型 raw case 建议——case 结束（含调用失败/预算耗尽）后显式释放客户端，防止连接/asyncgen 跨段泄漏；close 是本地释放动作，不消耗调用预算 |
-| limit_truncation 超大 limit | 框架以 100 000 的超大查询 limit 抵消统一分页的切片干扰，让上游/适配器自身的单次上限原样可见 |
-| 证据序列化兜底 | JSON 证据写盘做浅层遍历 + 未识别对象字符串化兜底：观测一旦混入 SDK 内部句柄等不可拷贝对象，证据绝不因序列化失败而丢失整轮运行 |
-| 执行器缺陷修复记录（2026-11-03 v2 实施期） | 离线测试发现并修复两处执行器缺陷：adjust_diff 对比序列曾未使用 compared_adjust（实际抓了两次 baseline）；分析 fetch 闭包未兜底未识别的 SDK 异常（直连适配器绕过了 BarQueryService 的统一包装，已在 fetcher 侧折算为 `UpstreamError`） |
-
 ## 主要风险与缓解
 
 | 风险 | 缓解 |
@@ -330,65 +315,3 @@ Provider 文档「上游行为定案」节；覆盖范围与证据出处见「�
 | 结果时效性 | 报告带时间戳，明示为**时点证据**、不代表上游当前状态；各轮运行事实记录于 `probes/results/PROBE_LOG.md` |
 | 慢实例 Provider（tqsdk） | pacing 显著放宽（数值记录在 `cases/tqsdk.yaml`） |
 | 站点限流脆弱（东财 push2 等） | Provider 专属节流事实只记录在各自 `cases/*.yaml`；限流期内每轮失败调用会延长封禁（越试越封），重试规程见 `cases/akshare.yaml` |
-
-## 决策与变更记录
-
-- **2026-11-18（history_depth 两段式：声明抽验快路径 + full_history_targets
-  退役）**：抽验通过（compatible/under_claim）→ 单调用收工不跑二分
-  （depth 常驻成本降至 1 调/条，「收敛后移除」不再必要，声明每轮都有
-  抽验守护）；抽验不通过（over_claim）或窗口倒置/空结果/调用异常 →
-  降级二分辨明真实库底（最终判定以二分为准）；声明 null 直接二分
-  （收敛即首次回填证据）。full_history_targets 退役（快路径吸收其
-  场景）；判定矩阵与快/慢路径语义见「规范化规则·depth 声明复核」与
-  「探针类型语义·history_depth」；
-- **2026-11-18（depth 声明复核：判定只看 first_bar）**：history_depth
-  展开时从 manifest 读 `history.start` 声明，判定后与实测首根做日历月
-  粒度方向判定（相容/over-claim/under-claim/unknown）；**earliest_estimate
-  二分估计不参与判定**（仅为收敛机制中间产物）——over-claim 报告加粗
-  标注并走「复探差异处置」，verdict 恒 observe 不自动改；报告「建议回填
-  值」表重构为「depth 实测首根与声明复核」（first_bar/现声明/相容性/
-  complete 四列，estimate/approx/粒度/阶段列退役入 JSON 证据）；
-- **2026-11-18（合约目标到期自动 skip + 临期告警 + failed 标注）**：运行时
-  询问是否换码不成立（换码=运行前策划流程：选码+直测+人工确认；CLI 全
-  flag 非交互设计 + 后台运行场景 stdin 不可用）——改为目标级 `expires`
-  字段（加载期检查）：过期自动 skip 带原因、临期 30 天告警、failed 合约/
-  期权 case 标注疑似到期/缺口；48 个合约/期权目标一次性补齐该字段；
-- **2026-11-18（换基准必复探 + 复探差异处置）**：基准标的变更必须重新
-  探测历史深度；重新探测值与记录值不同按正常流程报告并等待人工确认
-  是否回填，不得自动回填（同源 Provider 库界漂移同此处置）；
-- **2026-11-18（回填规则三条补充成文）**：碎片区判据（多周期互证干净收敛
-  → 可回填）、探测目标轮换优先（成熟标的优先、不为个别目标放宽
-  min_bars）、周/月线键位跨源差异（已记录 docs；框架校准待单独立项）
-  成文入「规范化规则」；
-- **2026-11-17（history.start 全局统一口径 + 七条补充裁决）**：回填规则从
-  「按 Provider 各自实测首根精化」改为四条统一规则（2000/2020 深库归一、
-  CN 上市/基日锚、其余月首对齐），全 Provider 90+ 处落地；补充裁决：统一
-  北京时间零点、开始时间之前的数据状态不入 docs、R3 判定=实测首根精确
-  等于基日/上市日、同源互证不可作他家 R3 依据、index 同款基日/上市日锚、
-  HK 同 US 归一、alphafeed/tickflow 算法统一——alphafeed CN stock 首根
-  自证聚焦补测（1990-12-19=开业日，与 tickflow 一致）；证据留档探针日志；
-- **2026-11-17（窗口 end 时域口径修订）**：探针 targets/分析探针的裸日期
-  `end` 归一由「当日零点」改为「当日末 23:59:59.999999」（`start` 仍取
-  零点）。原因：分钟族 bar 时间戳为盘中时刻，零点 end 经适配器闭区间复核
-  会排除末个交易日全部盘中 bar——日历 end 恰为交易日时分钟族计数恰差一天
-  （baostock「缺末日」误判的根因）；日/周/月线零点戳 bar 两种口径行为
-  一致，daily 族证据不受影响。证据可比性注记：口径变更前产生的分钟族
-  availability 计数比新口径少一个交易日（当 end 为交易日时）。月/周线
-  bar 日期在周期末尾，窗口未覆盖周期末尾时同样查空——与 end 时域无关，
-  属查询设计纪律（窗口须含周期末尾）。适配器闭区间复核语义不变（本修
-  仅改探针层喂入的窗口边界）；API 面不受影响（纯日期在 API 边界即拒绝）；
-- **2026-11-03**：探针子系统立项（原 `probes/PLAN.md` v1 批准）；同日 v2
-  修订——分析探针全量展开、variant_consistency 引入、执行器两缺陷修复、
-  history_depth `max_calls` 改为每条 case 预算；
-- **2026-11-05**：时间口径统一北京时间（运行时间戳、结果文件名、观测
-  bar 时间戳均为 +08:00）；
-- **2026-11-14**：文档体系重构，探针运行规范定稿于 `probes/README.md`；
-- **2026-11-15**：history_depth 升级 v2 文件格式（日历边界网格二分、
-  snap 粒度、保守上界口径 + `first_bar` 精确实测、全量模式）；quotes
-  快照入链（quote_availability 展开，raw 字段矩阵退役）；
-- **2026-11-16**：聚焦目录方案入档（AGENTS.md「数据探针」节）；
-  「合约类不统计历史深度」决议与探针目标码跨源统一落地；
-- **2026-11-16（文档统一）**：`probes/PLAN.md`（设计动机）与
-  `probes/README.md`（运行规范）先后退役并入本文——探针框架文档统一为
-  `docs/probes.md` 单一出处；后续设计决策与规范变更增量记录于此
-  （探针文件格式版本迁移说明见「格式版本迁移」节）。

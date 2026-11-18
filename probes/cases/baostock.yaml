@@ -2,7 +2,7 @@
 # 实测（上游「空结果不报错、错误码仅 SDK stderr 打印」语义的适配器分类依据）。
 # 定案结论（边界行为/历史起点等）已回填 manifest 与 docs/providers/baostock.md。
 probe: baostock
-version: 2
+version: 1
 
 requires:
   # 免费无凭据数据平台（证券宝）：只依赖 SDK 安装，无环境变量前提

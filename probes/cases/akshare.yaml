@@ -1,7 +1,7 @@
 # akshare 数据探针：三源可用性、复权生效性、历史深度与字段语义核对。
 # 无凭据要求；上游为公开站点，pacing 放宽防限流。
 probe: akshare
-version: 2
+version: 1
 
 requires:
   extras: [akshare]

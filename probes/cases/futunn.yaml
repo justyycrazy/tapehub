@@ -8,7 +8,7 @@
 # 复用 availability 已占额度的基准标的（不新增占用；容量数值未公布）。
 # pacing 2 秒（任意 60 秒窗口 ≤30 次 < 100 次，留 3 倍余量）。
 probe: futunn
-version: 2
+version: 1
 
 requires:
   # extras 按「可导入模块名」判定（框架 _module_available）：futunn 无官方

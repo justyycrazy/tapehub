@@ -2,7 +2,7 @@
 # 5000 根定案，见 docs/providers/tqsdk.md「上游行为定案」）。
 # TqApi 实例创建较慢，pacing 显著放宽。
 probe: tqsdk
-version: 2
+version: 1
 
 requires:
   extras: [tqsdk]

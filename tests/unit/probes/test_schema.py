@@ -10,7 +10,7 @@ from tapehub.domain.models import AssetType
 def _base() -> dict:
     return {
         "probe": "akshare",
-        "version": 2,
+        "version": 1,
         "targets": {
             "stock": {
                 "instrument": "CN-SSE-600000",

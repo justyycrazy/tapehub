@@ -6,8 +6,7 @@
 - 维度取值直接复用 domain 枚举与 ``Interval.parse``，不另造取值体系；
 - 本模块只做静态校验，不做环境检查，也不发起任何网络访问。
 
-探针文件格式版本见 ``PROBE_SCHEMA_VERSION``；不兼容变更必须升版本，
-并在 ``docs/probes.md``「格式版本迁移」记录迁移说明。
+探针文件格式版本见 ``PROBE_SCHEMA_VERSION``；不兼容变更必须升版本。
 """
 
 from __future__ import annotations
@@ -22,7 +21,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from tapehub.domain.intervals import Interval
 from tapehub.domain.models import Adjust, AssetType, Instrument
 
-PROBE_SCHEMA_VERSION = 2
+PROBE_SCHEMA_VERSION = 1
 
 # 目标限定引用：``stock``（不限定市场，标的自身市场即市场）、``stock@HK``
 # （限定市场）或 ``stock@CN-SSE``（限定市场内交易所）。同一 asset_type 跨多

@@ -2,7 +2,7 @@
 #（交易所限定 chain 目标）、北交所接入复验、期权八所日 K（opt_daily 已声明
 # 六所、INE/GFEX 未定案两所已扩容），及错误指纹采集。
 probe: tushare
-version: 2
+version: 1
 
 requires:
   extras: [tushare]

@@ -20,7 +20,7 @@ def _manifest() -> object:
 def _probe(**chain: object) -> ProbeFile:
     data = {
         "probe": "fake-provider",
-        "version": 2,
+        "version": 1,
         "targets": {
             "stock": {
                 "instrument": "CN-SSE-600000",
@@ -75,7 +75,7 @@ def test_market_mismatch_placeholder_ids_market_qualified(tmp_path: Path) -> Non
     probe = ProbeFile.model_validate(
         {
             "probe": "fake-provider-multi-market",
-            "version": 2,
+            "version": 1,
             "targets": {
                 "stock@CN-SZSE": {
                     "instrument": "CN-SZSE-000001",
@@ -110,7 +110,7 @@ def test_market_mismatch_placeholder_no_collision_with_real_bare_case(
     probe = ProbeFile.model_validate(
         {
             "probe": "fake-provider-multi-market",
-            "version": 2,
+            "version": 1,
             "targets": {
                 "stock": {
                     "instrument": "CN-SSE-600000",
@@ -328,7 +328,7 @@ def test_full_matrix_expansion_multi_variant() -> None:
     probe = ProbeFile.model_validate(
         {
             "probe": "multi-var",
-            "version": 2,
+            "version": 1,
             "targets": {
                 "stock": {
                     "instrument": "CN-SSE-600000",
@@ -380,7 +380,7 @@ def test_full_matrix_expansion_multi_variant() -> None:
 def test_load_probe_files_validates_names(tmp_path: Path) -> None:
     # 场景一：probe 名不是内置 Provider → 加载即拒绝
     (tmp_path / "unknown.yaml").write_text(
-        "probe: fake-provider\nversion: 2\ntargets: {stock: {instrument: CN-SSE-600000, "
+        "probe: fake-provider\nversion: 1\ntargets: {stock: {instrument: CN-SSE-600000, "
         "window: {start: 2025-01-01, end: 2025-03-31}}}\n"
         "chain: {include_declared: true}\n",
         encoding="utf-8",
@@ -391,7 +391,7 @@ def test_load_probe_files_validates_names(tmp_path: Path) -> None:
     # 场景二：文件名与内置 Provider 不对应（即使内容合法）→ 拒绝
     (tmp_path / "unknown.yaml").unlink()
     (tmp_path / "extra-file.yaml").write_text(
-        "probe: akshare\nversion: 2\ntargets: {stock: {instrument: CN-SSE-600000, "
+        "probe: akshare\nversion: 1\ntargets: {stock: {instrument: CN-SSE-600000, "
         "window: {start: 2025-01-01, end: 2025-03-31}}}\n"
         "chain: {include_declared: true}\n",
         encoding="utf-8",
@@ -402,7 +402,7 @@ def test_load_probe_files_validates_names(tmp_path: Path) -> None:
     # 场景三：文件名合法但其余 Provider 缺失 → FileNotFoundError
     (tmp_path / "extra-file.yaml").unlink()
     (tmp_path / "akshare.yaml").write_text(
-        "probe: akshare\nversion: 2\ntargets: {stock: {instrument: CN-SSE-600000, "
+        "probe: akshare\nversion: 1\ntargets: {stock: {instrument: CN-SSE-600000, "
         "window: {start: 2025-01-01, end: 2025-03-31}}}\n"
         "chain: {include_declared: true}\n",
         encoding="utf-8",
@@ -439,7 +439,7 @@ def _multi_market_manifest() -> object:
 def _multi_market_probe(**chain: object) -> ProbeFile:
     data = {
         "probe": "multi-market-provider",
-        "version": 2,
+        "version": 1,
         "targets": {
             "stock@CN": {
                 "instrument": "CN-SSE-600000",

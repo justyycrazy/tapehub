@@ -34,7 +34,7 @@ def _registry() -> ProviderRegistry:
 def _probe(**chain: object) -> ProbeFile:
     data = {
         "probe": "fake-provider",
-        "version": 2,
+        "version": 1,
         "targets": {
             "stock": {
                 "instrument": "CN-SSE-600000",
@@ -364,7 +364,7 @@ def _multi_var_probe(provider: str, chain_extra: dict) -> ProbeFile:
     """probe 名必须与 manifest 的 provider 名一致，否则文件级跳过。"""
     data = {
         "probe": provider,
-        "version": 2,
+        "version": 1,
         "targets": {
             "stock": {
                 "instrument": "CN-SSE-600000",

@@ -10,7 +10,7 @@ Docker、前端（上游内部长连接不受此限，如 twelvedata WS）。
 
 文档体系与总体设计见 `README.md`；API 与数据约定（请求规范、错误码表、单位换算）
 见 `docs/api.md`；运维与配置见 `docs/operations.md`；各 Provider 上游映射与行为
-定案见 `docs/providers/<name>.md`；数据探针框架规范与设计决策记录见
+定案见 `docs/providers/<name>.md`；数据探针框架规范见
 `docs/probes.md`——改动敏感区域前先读对应文档。
 
 ## 常用命令

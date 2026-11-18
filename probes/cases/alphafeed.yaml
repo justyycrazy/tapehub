@@ -1,7 +1,7 @@
 # AlphaFeed 数据探针：三市场（CN/HK/US）日线全声明维度可用性、复权生效性、
 # 历史深度与实时行情（quotes）字段矩阵、错误指纹实测。
 probe: alphafeed
-version: 2
+version: 1
 
 requires:
   extras: [alphafeed]
