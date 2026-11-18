@@ -78,7 +78,11 @@
 - REST 认证与错误映射：`Authorization: Token <key>` 请求头；上游 429（限频）
   → `UPSTREAM_RATE_LIMITED`（可重试限流）；其余 ≥400、JSON 解析失败与非数组
   payload → `UPSTREAM_ERROR`（details 携带 status_code）；bar 行 `date` 缺失
-  或不可解析属上游契约违背，抛 `UPSTREAM_ERROR`（无时间戳无法标准化）；
+  或不可解析属上游契约违背，抛 `UPSTREAM_ERROR`（无时间戳无法标准化）。
+  无效 Key 指纹：HTTP 403 + JSON `{"detail": "Invalid token."}`（探针
+  2026-11-18 第 1 轮双通道实测一致——适配器同款 `Authorization` 头与
+  query 参数 `token` 直连同形态），适配器按 ≥400 统一包装
+  `UPSTREAM_ERROR`（details 携 status_code=403）；
 - 限频口径（免费档，账户页与官方文档一致）：50 请求/小时、1000 请求/天、
   500 个唯一品种/月、1GB 带宽/月——REST 调用计请求数，WS 不计请求数只计
   带宽；单次返回行数上限官方未标注（受 1GB/月带宽配额约束）；
