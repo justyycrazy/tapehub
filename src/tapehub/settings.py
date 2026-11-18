@@ -24,6 +24,9 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="TAPEHUB_", env_file=".env", extra="ignore")
 
     deployment_mode: Literal["single"] = "single"
+    # 交互式文档开关（/docs、/redoc、/openapi.json）：本地调试默认开启；
+    # 对外（非回环）暴露前建议置 false——API 结构不向非可信主体披露
+    docs_enabled: bool = True
     # tqsdk 连接模式：shared（进程内唯一长连接 Runtime，懒启动）为默认／
     # per_request（每请求独立实例，回滚配置）
     tqsdk_conn_mode: Literal["per_request", "shared"] = "shared"
@@ -89,6 +92,12 @@ class Settings(BaseSettings):
     # 全部业务端点的 X-Api-Key 校验（/health 除外）；空列表 = 不启用
     # （single 模式默认无鉴权，行为与历史版本完全一致）
     api_keys: list[str] = Field(default_factory=list)
+    # 入站客户端限流（每身份每固定窗口请求数上限，窗口 60 秒）：0 = 关闭
+    # （默认，行为与历史版本一致）。身份为「命中白名单的 API Key」，
+    # 未命中/未配置一律归入 anonymous——桶数上界 = len(api_keys) + 1，
+    # 随机 Key 不产生新桶。保护上游付费配额（网关侧闸门只保护自身资源），
+    # 超限 429 CLIENT_RATE_LIMITED + Retry-After；/health 豁免
+    client_rate_limit_per_minute: int = Field(default=0, ge=0)
     provider_enabled_overrides: dict[str, bool] = Field(default_factory=dict)
     # 缺省路由顺序配置（provider_routing.yaml）：None 用包内内置版本；
     # 外部文件整体替换内置版本，不做合并

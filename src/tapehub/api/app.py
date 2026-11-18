@@ -5,12 +5,13 @@ import inspect
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from typing import Any
 
 import anyio.to_thread
 from fastapi import FastAPI
 
 from tapehub.api.exception_handlers import register_exception_handlers
-from tapehub.api.middleware import RequestContextMiddleware
+from tapehub.api.middleware import ClientRateLimitMiddleware, RequestContextMiddleware
 from tapehub.api.routes import capabilities, health, instruments, market, quotes
 from tapehub.application.bar_query_service import BarQueryService
 from tapehub.application.capability_service import CapabilityService
@@ -82,11 +83,16 @@ def create_app(
                         "adapter shutdown hook failed: %r", result, exc_info=result
                     )
 
+    # 交互式文档开关（TAPEHUB_DOCS_ENABLED=false 时三端点整体下线，404）
+    docs_kwargs: dict[str, Any] = (
+        {} if settings.docs_enabled else {"docs_url": None, "redoc_url": None, "openapi_url": None}
+    )
     app = FastAPI(
         title="tapehub",
         version=settings.version,
         description="通用行情数据网关（历史 K 线查询；tqsdk 实时快照与 SSE 流式）",
         lifespan=lifespan,
+        **docs_kwargs,
     )
     app.state.settings = settings
     app.state.registry = registry
@@ -113,6 +119,15 @@ def create_app(
         secret_values=secret_values,
     )
 
+    # 中间件顺序：后 add 为外层。限流在内层（先 add）——限流 429 请求同样
+    # 经 RequestContext 获得 request_id 与访问日志行（>0 才注册，默认关闭
+    # 不加层，行为与历史版本一致）
+    if settings.client_rate_limit_per_minute > 0:
+        app.add_middleware(
+            ClientRateLimitMiddleware,
+            limit_per_minute=settings.client_rate_limit_per_minute,
+            configured_keys=tuple(settings.api_keys),
+        )
     app.add_middleware(RequestContextMiddleware)
     register_exception_handlers(app)
     app.include_router(health.router)

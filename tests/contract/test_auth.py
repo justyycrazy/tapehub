@@ -4,8 +4,9 @@
 
 - 未配置（默认）：全部端点行为与历史版本一致（回归由既有契约测试承载，
   本文件仅显式锚定一条）；
-- 已配置：无/错头 401（统一错误结构、状态码 401 而非查表改写）、正确头
-  放行、``/health`` 保持无鉴权（连接测试用途）。
+- 已配置：无/错头 401（统一错误结构 ``code=UNAUTHORIZED``，与参数错误的
+  ``INVALID_REQUEST`` 区分）、正确头放行、``/health`` 保持无鉴权（连接
+  测试用途）。
 """
 
 import pytest
@@ -48,7 +49,7 @@ def test_missing_header_rejected_401() -> None:
         resp = client.get("/v1/capabilities")
         assert resp.status_code == 401
         body = resp.json()
-        assert body["error"]["code"] == "INVALID_REQUEST"
+        assert body["error"]["code"] == "UNAUTHORIZED"
         assert body["error"]["request_id"].startswith("req_")
 
 

@@ -3,13 +3,13 @@
 import secrets
 
 from fastapi import Request
-from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from tapehub.application.bar_query_service import BarQueryService
 from tapehub.application.capability_service import CapabilityService
 from tapehub.application.instrument_resolve_service import InstrumentResolveService
 from tapehub.application.quote_query_service import QuoteQueryService
 from tapehub.application.quote_stream_service import QuoteStreamService
+from tapehub.domain.errors import UnauthorizedError
 from tapehub.providers.registry import ProviderRegistry
 from tapehub.settings import Settings
 
@@ -23,8 +23,9 @@ def require_api_key(request: Request) -> None:
 
     - 未配置（空列表）：直接放行——single 单用户模式默认无鉴权，行为与
       历史版本完全一致；
-    - 已配置：头缺失或不匹配返回 401（统一错误结构）；比较经
-      ``secrets.compare_digest`` 防时序侧信道。比较在 bytes 上进行：
+    - 已配置：头缺失或不匹配抛 ``UnauthorizedError``（401 + 统一错误结构
+      ``code=UNAUTHORIZED``，与参数错误的 ``INVALID_REQUEST`` 区分）；比较
+      经 ``secrets.compare_digest`` 防时序侧信道。比较在 bytes 上进行：
       ``compare_digest`` 的 str 形态要求 ASCII（非 ASCII 输入抛 TypeError，
       会被兜底处理器误转为 500），而请求头字节经 latin-1 解码可产生任意
       非 ASCII 字符串，bytes 化保证任意客户端输入都收敛为 401。
@@ -37,7 +38,7 @@ def require_api_key(request: Request) -> None:
     if not any(
         secrets.compare_digest(supplied_bytes, key.encode("utf-8")) for key in keys
     ):
-        raise StarletteHTTPException(status_code=401)
+        raise UnauthorizedError()
 
 
 def get_registry(request: Request) -> ProviderRegistry:

@@ -25,7 +25,7 @@ GET http://tapehub:8000/health
 ## 认证
 
 - **默认（`TAPEHUB_API_KEYS` 留空）无入站鉴权**：全部端点对本机/可信网络内的任何调用方开放（`TAPEHUB_DEPLOYMENT_MODE=single` 单进程单用户最小运行模式的设计边界）。服务不强制回环绑定——**对外（非回环）暴露前必须配置入站认证或置于可信网络**（部署警示见 [operations.md](operations.md)「安全边界」）。
-- **可选入站 API Key 认证**：`TAPEHUB_API_KEYS` 配置为 JSON 数组（如 `["k1","k2"]`）即启用——全部业务端点（bars/quotes/流受理/capabilities/instruments）要求请求头 `X-Api-Key` 匹配白名单任一 Key，缺失或不匹配返回 **401**（统一错误结构）；`/health` 保持无鉴权（连接测试用途，不访问上游）。
+- **可选入站 API Key 认证**：`TAPEHUB_API_KEYS` 配置为 JSON 数组（如 `["k1","k2"]`）即启用——全部业务端点（bars/quotes/流受理/capabilities/instruments）要求请求头 `X-Api-Key` 匹配白名单任一 Key，缺失或不匹配返回 **401**（统一错误结构，`error.code = "UNAUTHORIZED"`）；`/health` 保持无鉴权（连接测试用途，不访问上游）。
 - 启动日志在未配置时提示 `no inbound API keys configured`（如实声明无鉴权状态）。
 
 ## 能力目录
@@ -332,6 +332,7 @@ GET /v1/instruments/resolve?q=AAPL&exchange=NASDAQ
 | 错误码 | HTTP | 含义 |
 | --- | --- | --- |
 | `INVALID_REQUEST` | 422 | 参数校验失败 |
+| `UNAUTHORIZED` | 401 | 入站认证失败：`X-Api-Key` 缺失或不匹配白名单（`TAPEHUB_API_KEYS` 启用时） |
 | `PROVIDER_NOT_FOUND` | 404 | 指定的 Provider 不存在 |
 | `PROVIDER_DISABLED` | 409 | 指定的 Provider 已禁用 |
 | `PROVIDER_NOT_IMPLEMENTED` | 501 | Provider 已启用但未实现 / SDK 未安装 |
@@ -343,6 +344,7 @@ GET /v1/instruments/resolve?q=AAPL&exchange=NASDAQ
 | `UPSTREAM_ERROR` | 502 | 上游其它错误（details 可携带 `upstream_code`/`upstream_message`） |
 | `QUOTE_NOT_READY` | 408 | 实时快照首包未就绪：订阅已建立但上游未在首包超时窗口内推送（各 Provider 的超时配置见 [operations.md](operations.md)；常见于标的不存在/无权限、非交易时段静默），可稍后重试 |
 | `STREAM_LIMIT_REACHED` | 429 | 行情流并发客户端数已达 `TAPEHUB_STREAM_MAX_CLIENTS` 上限（服务容量闸门，可稍后重试或先断开空闲连接） |
+| `CLIENT_RATE_LIMITED` | 429 | 入站客户端限流：`TAPEHUB_CLIENT_RATE_LIMIT_PER_MINUTE` 固定窗口（60 秒）内该身份请求数超限（响应携带 `Retry-After`；身份为命中白名单的 API Key，未命中归 anonymous；`/health` 豁免；默认关闭），可稍后重试 |
 | `UPSTREAM_SUBSCRIPTION_LIMIT` | 429 | 上游并发订阅 symbol 数已达计划上限（twelvedata WS credit / tiingo 软上限，配置见 [operations.md](operations.md)）；空闲退订释放额度后可重试，或升档后调大配置 |
 
 SDK 异常不会穿透 API；日志不记录 Provider 密钥与完整行情响应。

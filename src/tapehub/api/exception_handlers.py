@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 
 _STATUS_BY_CODE: dict[ErrorCode, int] = {
     ErrorCode.INVALID_REQUEST: 422,
+    ErrorCode.UNAUTHORIZED: 401,
     ErrorCode.PROVIDER_NOT_FOUND: 404,
     ErrorCode.PROVIDER_DISABLED: 409,
     ErrorCode.PROVIDER_NOT_IMPLEMENTED: 501,
@@ -35,6 +36,8 @@ _STATUS_BY_CODE: dict[ErrorCode, int] = {
     ErrorCode.QUOTE_NOT_READY: 408,
     # 行情流客户端上限（服务容量闸门）：与 CONCURRENCY_LIMIT 同为可重试限流
     ErrorCode.STREAM_LIMIT_REACHED: 429,
+    # 入站客户端限流（固定窗口超限）：可重试限流（响应携带 Retry-After）
+    ErrorCode.CLIENT_RATE_LIMITED: 429,
     # 上游并发订阅上限（如 Twelve Data WS credits 计划额度）：可重试限流
     ErrorCode.UPSTREAM_SUBSCRIPTION_LIMIT: 429,
     ErrorCode.NOT_FOUND: 404,

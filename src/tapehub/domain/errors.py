@@ -12,6 +12,9 @@ class ErrorCode(str, Enum):
     """统一业务错误码。"""
 
     INVALID_REQUEST = "INVALID_REQUEST"
+    # 入站认证失败（X-Api-Key 缺失/不匹配）——与 INVALID_REQUEST（参数
+    # 校验失败）区分，客户端可按 code 判定「补认证」而非「改参数」
+    UNAUTHORIZED = "UNAUTHORIZED"
     PROVIDER_NOT_FOUND = "PROVIDER_NOT_FOUND"
     PROVIDER_DISABLED = "PROVIDER_DISABLED"
     PROVIDER_NOT_IMPLEMENTED = "PROVIDER_NOT_IMPLEMENTED"
@@ -25,6 +28,8 @@ class ErrorCode(str, Enum):
     QUOTE_NOT_READY = "QUOTE_NOT_READY"
     # 行情流客户端数达到上限（服务容量闸门）
     STREAM_LIMIT_REACHED = "STREAM_LIMIT_REACHED"
+    # 入站客户端限流（TAPEHUB_CLIENT_RATE_LIMIT_PER_MINUTE 固定窗口超限）
+    CLIENT_RATE_LIMITED = "CLIENT_RATE_LIMITED"
     # 上游并发订阅 symbol 数达到计划上限（如 Twelve Data WS credits）
     UPSTREAM_SUBSCRIPTION_LIMIT = "UPSTREAM_SUBSCRIPTION_LIMIT"
     # 以下为框架补充错误码（非业务链路产生）
@@ -50,6 +55,13 @@ class TapehubError(Exception):
 class InvalidRequestError(TapehubError):
     code = ErrorCode.INVALID_REQUEST
     default_message = "Invalid request parameters."
+
+
+class UnauthorizedError(TapehubError):
+    """入站认证失败：X-Api-Key 缺失或不匹配白名单（HTTP 401）。"""
+
+    code = ErrorCode.UNAUTHORIZED
+    default_message = "Unauthorized."
 
 
 class ProviderNotFoundError(TapehubError):
@@ -131,6 +143,17 @@ class UpstreamSubscriptionLimitError(TapehubError):
 
     code = ErrorCode.UPSTREAM_SUBSCRIPTION_LIMIT
     default_message = "Upstream concurrent subscription limit reached, retry later."
+
+
+class ClientRateLimitError(TapehubError):
+    """入站客户端限流：TAPEHUB_CLIENT_RATE_LIMIT_PER_MINUTE 固定窗口超限。
+
+    可重试限流（响应携带 Retry-After）。与 STREAM_LIMIT_REACHED 的区别：
+    本错误保护上游付费配额（按身份计数），后者保护 SSE 服务容量。
+    """
+
+    code = ErrorCode.CLIENT_RATE_LIMITED
+    default_message = "Client rate limit exceeded, retry later."
 
 
 class ManifestError(TapehubError):

@@ -49,7 +49,9 @@ uv run uvicorn tapehub.api.app:app --reload   # 启动服务（默认 127.0.0.1:
 | `TAPEHUB_API_VERSION` | `v1` | API 版本（出现在 `/health` 响应中） |
 | `TAPEHUB_CATALOG_VERSION` | `1` | 能力目录版本（出现在 `/v1/capabilities` 的 meta 中） |
 | `TAPEHUB_MAX_LIMIT` | `5000` | 统一分页最大 `limit` |
+| `TAPEHUB_DOCS_ENABLED` | `true` | 交互式文档开关（`/docs`、`/redoc`、`/openapi.json`）：false 时三端点整体下线（404）；对外暴露前建议关闭（不走鉴权，API 结构会披露） |
 | `TAPEHUB_API_KEYS` | `[]` | 入站 API Key 白名单（JSON 数组，如 `["k1","k2"]`）：非空即启用全部业务端点的 `X-Api-Key` 校验（缺失/不匹配返回 401，统一错误结构）；`/health` 保持无鉴权；留空 = 无鉴权（single 模式设计边界，对外暴露前必须配置，见「安全边界」） |
+| `TAPEHUB_CLIENT_RATE_LIMIT_PER_MINUTE` | `0` | 入站客户端限流：每身份每 60 秒固定窗口请求数上限，0 = 关闭。身份为命中白名单的 API Key（未命中一律归 anonymous，桶数上界 = len(API_KEYS)+1）；超限 429 `CLIENT_RATE_LIMITED` + `Retry-After`；`/health` 豁免。保护上游付费配额（进程内计数，不跨进程） |
 | `TAPEHUB_PROVIDER_ENABLED_OVERRIDES` | `{}` | JSON 对象，按 provider 名覆盖启用状态（如 `{"akshare": false}` 整体停用 akshare），语义见上文 |
 | `TAPEHUB_ROUTING_CONFIG_PATH` | 空 | 缺省路由顺序配置文件路径；留空用包内内置版本（`src/tapehub/config/provider_routing.yaml`），指定路径时**外部文件整体替换内置版本，不做合并** |
 
@@ -120,4 +122,7 @@ uv run uvicorn tapehub.api.app:app --reload   # 启动服务（默认 127.0.0.1:
   ths/futunn/tiingo/twelvedata Key、tqsdk 账户）并读取全部行情数据；
 - 对外（非回环）暴露前，必须配置入站认证（可选 API Key，`TAPEHUB_API_KEYS`，
   见 [api.md](api.md)「认证」）或确保端口仅处于可信网络内；
+- 对外暴露时建议关闭交互式文档（`TAPEHUB_DOCS_ENABLED=false`）——`/docs`、
+  `/redoc`、`/openapi.json` 默认开启且不走鉴权，完整 API 结构会向任何可达
+  主体披露；
 - `/health` 保持无鉴权（连接测试用途，不访问上游）。
