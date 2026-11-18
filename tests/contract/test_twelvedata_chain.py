@@ -1,5 +1,7 @@
 """Twelve Data 完整 HTTP 链路契约测试（SDK 用桩 Mock，无真实网络）。"""
 
+import time
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -290,8 +292,13 @@ def test_default_variant_routes_to_declared_default(
 # ---------------------------------------------------------------------------
 
 
-def test_quote_chain_forex(twelvedata_client: TestClient) -> None:  # type: ignore[no-untyped-def]
+def test_quote_chain_forex(  # type: ignore[no-untyped-def]
+    twelvedata_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """外汇快照链路（WS 订阅缓存）：symbol 映射 + 分钟桶时间统一北京时间。"""
+    # 冻结墙钟：到达戳（runtime）与新鲜度计算（mapper）取同一时刻，
+    # snapshot_age_ms 恒 0——真实墙钟跨毫秒 tick 时该值非确定地取 1
+    monkeypatch.setattr(time, "time", lambda: 1_700_000_000.0)
     response = twelvedata_client.get("/v1/market/quotes", params=QUOTE_PARAMS)
     assert response.status_code == 200
     body = response.json()
@@ -331,7 +338,11 @@ def test_quote_chain_forex(twelvedata_client: TestClient) -> None:  # type: igno
     assert meta["received_at"].endswith("+08:00")
 
 
-def test_quote_chain_crypto(twelvedata_client: TestClient) -> None:  # type: ignore[no-untyped-def]
+def test_quote_chain_crypto(  # type: ignore[no-untyped-def]
+    twelvedata_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # 冻结墙钟（同 test_quote_chain_forex：snapshot_age_ms 断言确定化）
+    monkeypatch.setattr(time, "time", lambda: 1_700_000_000.0)
     FakeWebSocket = fake_ws.FakeWebSocket
     FakeWebSocket.initial_payloads = {
         "BTC/USD": {

@@ -437,6 +437,9 @@ def test_fetch_quote_cold_subscription_and_cache_hit(monkeypatch: pytest.MonkeyP
 def test_fetch_quote_crypto_trade_payload(monkeypatch: pytest.MonkeyPatch) -> None:
     """加密 Trade 元素：lastPrice 直接取值、exchange 进 extensions 白名单。"""
     install(monkeypatch)
+    # 冻结墙钟：到达戳（runtime）与新鲜度计算（mapper）取同一时刻，
+    # snapshot_age_ms 恒 0——真实墙钟跨毫秒 tick 时该值非确定地取 1
+    monkeypatch.setattr(time, "time", lambda: 1_700_000_000.0)
     FakeWebSocket.initial_elements = {
         "btcusd": fake_ws.trade_element("btcusd", 43120.75, exchange="Binance")
     }

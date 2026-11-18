@@ -15,6 +15,7 @@ import asyncio
 import concurrent.futures
 import time
 import types
+from collections.abc import Iterator
 
 import pytest
 
@@ -27,6 +28,27 @@ from tests.fixtures.providers.fake_tqsdk_runtime import FakeTqApi
 @pytest.fixture()
 def fake_tqsdk(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
     return fake_rt.install(monkeypatch)
+
+
+@pytest.fixture(autouse=True)
+def _shutdown_runtimes_after_test(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """兜底停机：断言失败会跳过测试函数尾部的 ``shutdown()``，泄漏的 Runtime
+    线程在后台持续 ``wait_update``，偷走后续测试注入的类级故障次数
+    （``fail_wait_update_times``，善后口径同 contract/test_quote_stream.py），
+    造成「一次偶发失败级联出失败集漂移的后续失败」。登记每个 ``start()``
+    过的实例，teardown 无条件收编停机（幂等：已停实例直接跳过 join）。
+    """
+    started: list[TqSdkRuntime] = []
+    original_start = TqSdkRuntime.start
+
+    def _recording_start(self: TqSdkRuntime) -> None:
+        started.append(self)
+        original_start(self)
+
+    monkeypatch.setattr(TqSdkRuntime, "start", _recording_start)
+    yield
+    for runtime in started:
+        runtime.shutdown()
 
 
 def _make_runtime(**overrides: object) -> TqSdkRuntime:
@@ -266,13 +288,16 @@ def test_quote_subscribe_publishes_first_snapshot(fake_tqsdk: types.ModuleType) 
 
 
 def test_quote_snapshot_refreshed_on_updates(fake_tqsdk: types.ModuleType) -> None:
-    FakeTqApi.quote_update_every_ticks = 3  # 每 3 个 tick 推送一次增量
     runtime = _make_runtime()
     runtime.start()
     runtime.subscribe("SHFE.au2612")
     first = _wait_latest(runtime, "SHFE.au2612")
     assert first["last_price"] == 848.24
 
+    # 首读完成后再武装增量推送：旋钮若先于订阅设置，首次增量在首包后
+    # 1-2 个 tick（约 5-15ms）即落地，负载下主线程轮询可能整窗错过
+    # 848.24 值——按构造排除该竞态，而非放大轮询窗口
+    FakeTqApi.quote_update_every_ticks = 3  # 每 3 个 tick 推送一次增量
     deadline = time.time() + 5
     latest = first
     while latest["last_price"] == 848.24 and time.time() < deadline:

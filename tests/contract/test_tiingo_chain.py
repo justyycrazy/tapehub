@@ -1,5 +1,7 @@
 """Tiingo 完整 HTTP 链路契约测试（HTTP/WS 用桩 Mock，无真实网络）。"""
 
+import time
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -199,8 +201,13 @@ def test_missing_api_key_returns_clear_error(default_client) -> None:  # type: i
 # ---------------------------------------------------------------------------
 
 
-def test_quote_chain_forex(tiingo_client: TestClient) -> None:
+def test_quote_chain_forex(
+    tiingo_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """外汇快照链路（WS 订阅缓存）：TOP 元素 mid 回退 + bid/ask 防御映射。"""
+    # 冻结墙钟：到达戳（runtime）与新鲜度计算（mapper）取同一时刻，
+    # snapshot_age_ms 恒 0——真实墙钟跨毫秒 tick 时该值非确定地取 1
+    monkeypatch.setattr(time, "time", lambda: 1_700_000_000.0)
     response = tiingo_client.get("/v1/market/quotes", params=QUOTE_PARAMS)
     assert response.status_code == 200
     body = response.json()
@@ -237,8 +244,12 @@ def test_quote_chain_forex(tiingo_client: TestClient) -> None:
     assert meta["received_at"].endswith("+08:00")
 
 
-def test_quote_chain_crypto(tiingo_client: TestClient) -> None:
+def test_quote_chain_crypto(
+    tiingo_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """加密快照链路：Trade 元素 lastPrice 直接取值、crypto 端点 thresholdLevel=2。"""
+    # 冻结墙钟（同 test_quote_chain_forex：snapshot_age_ms 断言确定化）
+    monkeypatch.setattr(time, "time", lambda: 1_700_000_000.0)
     fake_ws.FakeWebSocket.initial_elements = {
         "btcusd": fake_ws.trade_element("btcusd", 43120.75, exchange="Binance")
     }
