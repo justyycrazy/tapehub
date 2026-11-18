@@ -293,8 +293,10 @@ def build_default_registry(settings: object) -> ProviderRegistry:
 
     - manifest / 路由配置缺失、格式错误或校验失败属于配置错误：直接抛出，
       启动失败，不做单 Provider 隔离；
-    - 适配器导入失败（可选 SDK 未安装等）仍隔离为该 Provider 的
-      ``load_error``，不影响服务启动（数据请求返回 ``PROVIDER_NOT_IMPLEMENTED``）；
+    - 适配器模块导入级失败（``ImportError``：可选依赖缺失或适配器模块
+      导入缺陷）隔离为该 Provider 的 ``load_error``，不影响服务启动；
+      其余异常（类型错误、适配器构造失败等代码缺陷）向上传播——启动
+      即失败，绝不静默下线；
     - 凭据缺失的 Provider 保留能力目录但标记停用（``enabled=False`` +
       ``disabled_reason``）：auto 路由跳过，显式请求返回 ``PROVIDER_DISABLED``
       并携带缺失的凭据变量名。
@@ -312,7 +314,15 @@ def build_default_registry(settings: object) -> ProviderRegistry:
             if not _is_adapter_class(adapter_cls):
                 raise TypeError("ProviderAdapter is not a class")
             record = build_provider_record(name, manifest, adapter_cls, settings=settings)
-        except Exception as exc:  # noqa: BLE001 - 适配器导入错误保持隔离（SDK 可选）
+        except ImportError as exc:
+            # 仅模块级导入问题保持隔离（可选依赖缺失等）：SDK 均为延迟导入
+            # （适配器调用期才 import），此路径现实中即「适配器模块自身的
+            # 导入缺陷」——隔离为 load_error（该 Provider 保留目录但停用，
+            # warning 日志可查）；其余异常（类型错误、构造失败）属代码缺陷，
+            # 向上传播启动即失败（fail-fast），绝不静默下线。
+            # 组合效果：内置全功能路由 yaml 下，链上 Provider 被隔离会因
+            # 路由交叉校验（引用无能力声明）而启动失败——裁剪部署形态
+            # （TAPEHUB_ROUTING_CONFIG_PATH 移除该 Provider）下隔离生效
             logger.warning("provider %s failed to load: %s: %s", name, type(exc).__name__, exc)
             fallback = ProviderManifest(provider=name)
             record = ProviderRecord(

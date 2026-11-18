@@ -157,6 +157,20 @@ def futu_code(query: BarQuery | QuoteQuery) -> str:
         if prefix == "HK":
             return f"HK.{symbol.zfill(5)}"  # 上游港股 5 位数字代码
         return f"{prefix}.{symbol}"
+    if "/" in symbol:
+        # `/` 会拼入请求 path（{code}/history-kline）形成多余路径段，上游
+        # 行为未定义——显式拒绝优于静默畸形。BRK/A 类 class-share 记法的
+        # 上游原生写法未探针核实（开放问题见 docs/providers/futunn.md），
+        # 核实前不接受任何含 `/` 的替代表示
+        raise UnsupportedCapabilityError(
+            f"futunn does not accept '/' in US symbol {symbol!r} "
+            "(class-share notation like 'BRK/A' is unverified upstream); "
+            "see docs/providers/futunn.md.",
+            details={
+                "provider": "futunn",
+                "instrument": query.instrument.code,
+            },
+        )
     return f"US.{symbol}"  # 美股 ticker 原样透传（上游不区分交易所）
 
 

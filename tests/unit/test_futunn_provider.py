@@ -378,6 +378,55 @@ def test_non_digit_symbol_rejected(
         )
 
 
+def test_us_symbol_with_slash_rejected(
+    futunn_settings: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """美股 symbol 含 `/` 明确拒绝（审查项 L8）：`/` 会拼入请求 path 形成
+    多余路径段（上游行为未定义）；BRK/A 类 class-share 记法的上游原生
+    写法未探针核实（开放问题见 docs/providers/futunn.md），核实前不接受
+    任何含 `/` 的替代表示。"""
+    install(monkeypatch)
+    adapter = _adapter(futunn_settings)
+    with pytest.raises(UnsupportedCapabilityError, match="class-share"):
+        asyncio.run(
+            adapter.fetch_bars(_query(instrument=Instrument.parse("US-NYSE-BRK/A")))
+        )
+
+
+def test_us_symbol_with_dot_passes_through(
+    futunn_settings: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """不含 `/` 的替代记法（BRK.A）不受影响，原样透传待上游验证。"""
+    install(monkeypatch)
+    preset_payload(monkeypatch, kline_page([DAY1_MS]))
+    adapter = _adapter(futunn_settings)
+    asyncio.run(adapter.fetch_bars(_query(instrument=Instrument.parse("US-NYSE-BRK.A"))))
+    assert _last_call()["url"].startswith(f"{REST_BASE}/api/v1.0/quote/US.BRK.A/")
+
+
+def test_same_token_loop_bounded_by_max_pages(
+    futunn_settings: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """上游签发永不推进的 page_token（同令牌循环，backlog #3）：分页循环
+    由 ``_MAX_PAGES`` 兜底终止而非死循环；每页行如实拼接（上游异常行为
+    由上游负责，护栏只保证终止）；行数未触 UPSTREAM_MAX_BARS → partial
+    不误报。"""
+    install(monkeypatch)
+    preset_payload(
+        monkeypatch,
+        kline_page([DAY1_MS], pagination={"has_more": True, "next_page_token": "tok-x"}),
+    )
+    adapter = _adapter(futunn_settings)
+    batch = asyncio.run(adapter.fetch_bars(_query()))
+
+    from tapehub.providers.futunn.adapter import _MAX_PAGES
+
+    client = StubClient.instances[-1]
+    assert len(client.calls) == _MAX_PAGES  # 兜底终止：恰好 15 页
+    assert batch.count == _MAX_PAGES  # 每页同 1 行如实拼接
+    assert batch.partial is False  # 未触 5550 上限，不误报截断
+
+
 def test_unsupported_asset_type_rejected_by_operation_routing(
     futunn_settings: Any,
 ) -> None:

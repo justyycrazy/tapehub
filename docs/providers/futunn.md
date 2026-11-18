@@ -52,7 +52,7 @@ history.start 历史覆盖声明（逐所/逐周期，均北京时间；全局�
 | CN etf | SSE→SH、SZSE→SZ（上游品类表 BJ 无 ETF） | |
 | HK / US | 市场段即前缀（US 限 NYSE/NASDAQ/AMEX） | `HK-HKEX-00700 → HK.00700`、`US-NASDAQ-AAPL → US.AAPL` |
 
-- symbol 段：CN 6 位证券代码原样透传（要求纯数字，非数字拒绝）；港股短码零填充 5 位（`700`→`00700`）；美股 ticker 已由域层大写归一、原样透传（上游美股前缀不区分交易所）；
+- symbol 段：CN 6 位证券代码原样透传（要求纯数字，非数字拒绝）；港股短码零填充 5 位（`700`→`00700`）；美股 ticker 已由域层大写归一、原样透传（上游美股前缀不区分交易所），**含 `/` 的 symbol 映射层拒绝**（`UnsupportedCapabilityError`）——`/` 会拼入请求 path 形成多余路径段（上游行为未定义）；BRK/A 类 class-share 记法的上游原生写法（`BRK.A`？）**未探针核实，属开放问题**，核实前不接受任何含 `/` 的替代表示；
 - 资产类型层面：futunn 仅支持 stock/index/etf 三类，其余 asset_type（contract/期权三子类/forex/crypto 等）在映射层直接拒绝（`UnsupportedCapabilityError`），不透传上游。
 
 ## 周期 / 复权 / 单位映射

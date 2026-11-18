@@ -247,3 +247,69 @@ class TestAutoRoutingFollowsChainOrder:
                 )
             )
         assert winners[False] != winners[True]
+
+
+class TestAdapterLoadFailureIsolation:
+    """适配器加载失败分层（审查项 L6）：仅导入级错误隔离，其余 fail-fast。
+
+    SDK 均为延迟导入——适配器模块的模块级 ``ImportError`` 现实中即「适配器
+    自身导入缺陷或其顶层依赖缺失」，隔离为 ``load_error`` 合理；构造失败/
+    类型错误等代码缺陷向上传播（启动即失败，绝不静默下线）。
+
+    隔离在**裁剪部署形态**下验证（单 Provider + 空路由表）：内置全功能
+    yaml 下，链上 Provider 被隔离会因路由交叉校验「引用无能力声明」而
+    fail-fast（隔离 + 校验组合的既有自洽行为——部署者经
+    ``TAPEHUB_ROUTING_CONFIG_PATH`` 裁剪 yaml 移除坏 Provider 后隔离生效）。
+    """
+
+    @staticmethod
+    def _patch_single_provider_env(
+        tmp_path, monkeypatch: pytest.MonkeyPatch, exc: Exception  # type: ignore[no-untyped-def]
+    ) -> None:
+        """注入单 Provider（fake）+ 空路由表 + 导入异常的裁剪环境。
+
+        manifest 加载一并 mock（内置清单按包资源加载，fake 无真实包）——
+        本类只针对「manifest 合法、适配器导入失败」的分层。
+        """
+        from tapehub.providers import registry as registry_module
+        from tapehub.providers import routing as routing_module
+        from tapehub.providers.manifest import ProviderManifest
+
+        routing_file = tmp_path / "routing.yaml"
+        routing_file.write_text("version: 1\ndefaults: []\n", encoding="utf-8")
+        monkeypatch.setattr(routing_module, "builtin_routing_path", lambda: routing_file)
+        monkeypatch.setattr(registry_module, "BUILTIN_PROVIDERS", ("fake",))
+        monkeypatch.setattr(
+            registry_module,
+            "load_builtin_manifest",
+            lambda name: ProviderManifest(provider=name),
+        )
+
+        def fake_import(name: str, *args: object, **kwargs: object):  # type: ignore[no-untyped-def]
+            raise exc
+
+        monkeypatch.setattr(registry_module, "import_module", fake_import)
+
+    def test_import_error_isolated_as_load_error(
+        self, tmp_path, monkeypatch: pytest.MonkeyPatch  # type: ignore[no-untyped-def]
+    ) -> None:
+        self._patch_single_provider_env(
+            tmp_path, monkeypatch, ModuleNotFoundError("No module named 'broken_dep'")
+        )
+        registry = build_default_registry(make_settings())
+        record = registry.get("fake")
+        assert record is not None
+        assert record.load_error is not None
+        assert record.load_error.startswith("ModuleNotFoundError")
+        assert record.enabled is False
+        assert record.capabilities == []
+        assert len(registry.list_records()) == 1
+
+    def test_non_import_error_propagates_fail_fast(
+        self, tmp_path, monkeypatch: pytest.MonkeyPatch  # type: ignore[no-untyped-def]
+    ) -> None:
+        self._patch_single_provider_env(
+            tmp_path, monkeypatch, ValueError("boom: adapter code bug")
+        )
+        with pytest.raises(ValueError, match="boom: adapter code bug"):
+            build_default_registry(make_settings())

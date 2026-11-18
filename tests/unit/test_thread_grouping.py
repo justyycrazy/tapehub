@@ -277,3 +277,34 @@ def test_registry_warns_unknown_provider_keys(caplog: pytest.LogCaptureFixture) 
     assert akshare is not None and akshare.adapter is not None
     limiter = akshare.adapter.thread_limiter
     assert limiter is not None and limiter.total_tokens == 8
+
+
+def test_adapter_cancel_releases_grouped_limiter_token() -> None:
+    """分组池下请求级取消（backlog #4）：经 adapter.call_in_thread 的取数
+    在客户端断开/请求超时取消后，本家 limiter 名额即时归零（SSE/请求取消
+    叠加分组的释放语义锚定），后续调用即时进入不被孤儿线程阻塞。"""
+    settings = make_settings(thread_pool_size_map={"a": 1})
+    adapter = _StubAdapter("a", settings)
+    release = threading.Event()
+
+    def slow() -> str:
+        release.wait(5)  # 模拟长上游调用
+        return "slow-done"
+
+    adapter.sync_fn = slow
+
+    async def scenario() -> None:
+        task = asyncio.ensure_future(adapter.fetch_bars(object()))
+        await asyncio.sleep(0.2)
+        limiter = adapter.thread_limiter
+        assert limiter is not None and limiter.borrowed_tokens == 1
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert limiter.borrowed_tokens == 0
+        # 名额已归还：后续调用限时即时完成
+        adapter.sync_fn = lambda: "next"
+        assert await asyncio.wait_for(adapter.fetch_bars(object()), 2.0) == "next"
+
+    asyncio.run(scenario())
+    release.set()  # 双保险：异常路径不留挂死线程

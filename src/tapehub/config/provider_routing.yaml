@@ -9,6 +9,9 @@
 # 覆盖完整性；代码注册顺序不承载路由语义。
 # 部署覆盖：Settings 的 TAPEHUB_ROUTING_CONFIG_PATH 指定外部文件路径时，
 # 外部文件整体替换本内置版本（不做合并）。
+# akshare 恒居各链尾位（成本警示，审查项 M5）：其部分 operation 为全量
+# 拉取型（上游不支持时间过滤），单请求成本与查询窗口无关，且背后为非
+# 官方接口无 SLA——仅作前排免费同侪全部不可用时的兜底，不要前移。
 # 路由模型与裁决细节见 README.md「总体设计」；各 Provider 位次依据见
 # docs/providers/<name>.md。
 version: 1

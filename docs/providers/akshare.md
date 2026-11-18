@@ -86,16 +86,15 @@ history.start（历史覆盖声明，探针实测回填；二分近似窗口粒�
 
 ## 缺省路由参与
 
-当前回退链顺序以 `src/tapehub/config/provider_routing.yaml` 为准，本文不复述 order 列表。参与组合与角色：
+当前回退链顺序以 `src/tapehub/config/provider_routing.yaml` 为准，本文不复述 order 列表。参与组合与角色（**仅 CN bars 五链尾位**，不参与 HK/US 与任何快照组合）：
 
-- bars CN stock：回退位（免凭据兜底）；
-- bars CN index：**缺省**；
-- bars CN etf：回退位（免凭据兜底）；
-- bars CN contract / CN continuous：回退位（新浪源）；
-- bars HK stock / US stock：回退位（免凭据兜底）；
+- bars CN stock / index / etf：尾位（免凭据兜底）；
+- bars CN contract / CN continuous：尾位（新浪源）；
 - quotes：不参与任何快照组合。
 
-位次依据一句话：免凭据恒可用，居回退链兜底位；CN 指数缺省源于指数库底最深（≈1991-01-01）；CN 个股链中居后位（上游稳定性不及免费同侪）。
+位次依据一句话：免凭据恒可用，居回退链兜底位（在前排免费同侪——baostock/ths——全部不可用时才兜底）。
+
+**成本警示**（审查项 M5）：部分 operation 为**全量拉取型**——`stock_zh_index_daily`（新浪指数）、`futures_zh_daily_sina`（新浪期货）、`stock_hk_hist`（港股，上游忽略日期参数）上游不支持时间过滤，每次请求传输标的**完整历史**并由适配器内存复核窗口：单请求的上游流量/延迟/CPU 与查询窗口大小无关（新浪指数约 9,000+ 行起）。且 akshare 背后为东财/新浪非官方接口（无 SLA），高频调用有触发上游 IP 风控的实际风险——生产不建议将其配置为缺省数据源（当前 yaml 尾位安排即为该结论的落地）。
 
 ## extensions 白名单
 
