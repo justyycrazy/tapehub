@@ -19,9 +19,9 @@ pacing:
   # index 三周期 + etf 日线，逐 case 二分自预算 20、实测约
   # 14 调；contract 全量已随 2026-11-16「合约类不统计历史深度」决议移除）+
   # limit 2（contract 结构性 suspect 如实保留 + continuous P16Y）+
-  # raw 4 case 8 调（目录 3：bj 证券目录 + INE/GFEX 期权目录常态留存·标的
-  # 轮换证据来源 + 错误指纹 1），
-  # 最坏 261（cli list 实测合计，含 history_depth 8 case × 上限 20 调；实测
+  # raw 1 case 2 调（错误指纹 1；目录 3 条 2026-11-18 退役——chain 收编后
+  # 使命完成，轮换改目录外直测，见 raw 段注释），
+  # 最坏 255（cli list 实测合计，含 history_depth 8 case × 上限 20 调；实测
   # 口径第 15 轮约 166——二分通常提前收敛），预算 300 对齐最坏口径留余量
   max_calls: 300
 
@@ -48,7 +48,8 @@ targets:
     instrument: CN-BSE-920000
     # 安徽凤凰（精选层存量平移，2020-12-23 上市）：BSE→BJ 后缀经 raw 三证
     # 接入（目录 920 段/daily/adj_factor），chain 级常态复验（availability
-    # × adjust_diff）；目录 case 保留作标的轮换证据
+    # × adjust_diff）；目录 case 已退役（2026-11-18，chain 收编后使命完成）
+    # ——标的退市轮换时目录外直测 stock_basic exchange=BSE
     window: {start: 2025-01-01, end: 2025-12-31}
     min_bars: 10
     required_fields: [open, high, low, close, volume, amount]
@@ -301,17 +302,12 @@ chain:
     documented_max: 2000
 
 raw:
-  - id: bj-stock-directory-probe
-    purpose: 北交所目录核实（stock_basic exchange=BSE 在市列表）：确认 .BJ 标的
-      真实存在并记录代码段构成。首轮结论（20261112T172236）：全市场统一 920
-      段，83/87/43 老段已迁移替换；常态复验目录仍在市——目录是在市标的的
-      证据来源，后端链路由 chain stock@CN-BSE（availability × adjust_diff）
-      复验，标的退市时按本 case 结果轮换 targets
-    module: tushare
-    client: {attr: pro_api, kwargs: {token: "$TAPEHUB_TUSHARE_TOKEN"}}
-    call:
-      - {method: query, kwargs: {api_name: "stock_basic", exchange: "BSE", list_status: "L"}}
-    expect: {status: ok, min_rows: 1}
+  # ── 目录探针三条已退役（2026-11-18）：bj-stock-directory-probe 使命完成
+  #    （.BJ 三证接入已 chain 收编 stock@CN-BSE 常态复验）；opt-ine/gfex
+  #    两条退役后期权轮换口径八所统一——「事件触发时目录外直测 opt_basic +
+  #    ATM 锚定重选」（与 ths/tqsdk 期权目标轮换注释同口径；此前仅 INE/GFEX
+  #    两所常态留存系对称缺口）。目录 min_rows 判定本就不产出「该换哪个
+  #    合约」，轮换属低频事件，常态留存探针不值得每轮消耗配额
   # 错误指纹仅观察：采集“接口不存在/无权限”类原始报错文本，供错误码细分参考
   - id: unknown-api-fingerprint
     purpose: 采集未知接口名的原始错误指纹（仅观察，不判定）
@@ -321,24 +317,5 @@ raw:
     call:
       - {method: query, kwargs: {api_name: "probe_nonexistent_api_for_fingerprint"}}
     expect: {status: error, error_contains: ""}
-
-  - id: opt-ine-directory-probe
-    purpose: 能源中心期权目录常态留存（opt_basic exchange=INE 在市列表，
-      2026-11-16 首轮 6528 行）：commodity-option@CN-INE 目标的在市标的轮换
-      证据来源，到期轮换按本 case 结果重选近月/主力系列
-    module: tushare
-    client: {attr: pro_api, kwargs: {token: "$TAPEHUB_TUSHARE_TOKEN"}}
-    call:
-      - {method: query, kwargs: {api_name: "opt_basic", exchange: "INE"}}
-    expect: {status: ok, min_rows: 1}
-  - id: opt-gfex-directory-probe
-    purpose: 广期所期权目录常态留存（opt_basic exchange=GFEX，2026-11-16 首轮
-      12000 行——doc_id=159 文档枚举未列 GFEX 属文档滞后）：commodity-option@CN-GFEX
-      目标的在市标的轮换证据来源，到期轮换按本 case 结果重选
-    module: tushare
-    client: {attr: pro_api, kwargs: {token: "$TAPEHUB_TUSHARE_TOKEN"}}
-    call:
-      - {method: query, kwargs: {api_name: "opt_basic", exchange: "GFEX"}}
-    expect: {status: ok, min_rows: 1}
 
 notes: 探针框架规范见 docs/probes.md。
