@@ -27,6 +27,9 @@ capabilities:
     fields: [open, high, low, close, volume, amount]
 
   # 个股 · 新浪：仅日线，支持三种复权
+  #（市场段 [CN] 覆盖 SSE/SZSE/BSE——BSE 920 段 2026-11-18 探针实证已收录，
+  # `bj` 前缀直通；BSE 标的均 2020 年后上市，各标的数据以自身上市日起，
+  # 库级 history.start 沿用声明。tencent 变体不含 BSE，KeyError 指纹未收录）
   - data_type: bars
     markets: [CN]
     asset_types: [stock]
@@ -37,7 +40,8 @@ capabilities:
     adjustments: [none, qfq, hfq]
     fields: [open, high, low, close, volume, amount]
 
-  # 个股 · 腾讯：仅日线，支持三种复权
+  # 个股 · 腾讯：仅日线，支持三种复权（不含 BSE——bj920000 KeyError 指纹
+  # 2026-11-18 负闸门留档，维持 SSE/SZSE）
   - data_type: bars
     markets: [CN]
     asset_types: [stock]

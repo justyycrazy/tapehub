@@ -25,8 +25,13 @@ _US_EM_MARKET_CODES = {
     "NYSE": "106",
 }
 
-# 各上游接口文档中确认支持的交易所前缀
-_STOCK_PREFIX_EXCHANGES = ("SSE", "SZSE")
+# 各上游接口文档中确认支持的交易所前缀（个股按变体拆分：sina BSE→bj 前缀
+# 2026-11-18 探针实证已收录；tencent bj920000 KeyError 指纹未收录——
+# eastmoney 白名单内联于 stock_symbol，不取自本表）
+_STOCK_PREFIX_EXCHANGES = {
+    DataVariant.SINA: ("SSE", "SZSE", "BSE"),
+    DataVariant.TENCENT: ("SSE", "SZSE"),
+}
 _INDEX_PREFIX_EXCHANGES = {
     DataVariant.EASTMONEY: ("SSE", "SZSE", "CSI", "BSE"),
     DataVariant.SINA: ("SSE", "SZSE"),
@@ -94,15 +99,16 @@ def _prefixed_symbol(query: BarQuery, allowed_exchanges: tuple[str, ...]) -> str
 
 def stock_symbol(query: BarQuery) -> str:
     """个股符号：eastmoney 用纯 6 位代码（SSE/SZSE/BSE——BSE 920 段 2026-11-17
-    探针实证已收录，纯 6 位直通上游按市场判定）；sina/tencent 用带市场前缀
-    符号。"""
+    探针实证已收录，纯 6 位直通上游按市场判定）；sina 用带市场前缀符号
+    （SSE/SZSE/BSE——BSE 920 段 2026-11-18 探针实证已收录，`bj` 前缀直通）；
+    tencent 用带市场前缀符号（仅 SSE/SZSE，BSE KeyError 指纹未收录）。"""
     if query.variant == DataVariant.EASTMONEY:
         if query.instrument.exchange not in ("SSE", "SZSE", "BSE"):
             raise _unsupported(
                 query, f"exchange {query.instrument.exchange!r} is not supported here"
             )
         return query.instrument.symbol
-    return _prefixed_symbol(query, _STOCK_PREFIX_EXCHANGES)
+    return _prefixed_symbol(query, _STOCK_PREFIX_EXCHANGES.get(query.variant, ()))
 
 
 def index_symbol(query: BarQuery) -> str:

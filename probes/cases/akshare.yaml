@@ -9,9 +9,9 @@ requires:
 pacing:
   call_interval_s: 5.0   # 东方财富 push2 对高频断连限流：首次约 5 分钟恢复，
   timeout_s: 60          # 反复触发需 40 分钟以上；实测 2s 节流即被限流
-  max_calls: 420         # availability 100（CN stock 15 + stock@CN-SZSE 15 +
-                         # stock@CN-BSE 9（eastmoney 变体，D/W/M×三复权；
-                         # sina/tencent 显式 skip）+
+  max_calls: 460         # availability 100（CN stock 15 + stock@CN-SZSE 15 +
+                         # stock@CN-BSE 12（eastmoney D/W/M×三复权 9 +
+                         # sina P1D×三复权 3；tencent 显式 skip）+
                          # index 5 + index@CN-SZSE 5 + index@CN-BSE 3
                          #（eastmoney 变体；sina/tencent 变体显式 skip）+
                          # etf 9 + etf@CN-SZSE 9 +
@@ -22,10 +22,11 @@ pacing:
                          # adjust_diff 24（P1D 限定）+
                          # history_depth 11 条（证券类 10 条 × ≤24 +
                          # continuous 全量 1；contract 深度已随
-                         # 2026-11-16「合约类不统计历史深度」决议移除）+
+                         # 2026-11-16「合约类不统计历史深度」决议移除；
+                         # stock@CN-BSE 深度 eastmoney/sina 可达、tencent skip）+
                          # variant_consistency 29）+
-                         # raw 2 case 2 调（sina/tencent BSE 负闸门：
-                         # 上游收录监测，不受东财限流影响）
+                         # raw 1 case 1 调（tencent BSE 负闸门：上游收录
+                         # 监测，不受东财限流影响；sina 侧已随收编退役）
                          # history_depth 不随逐所扩容——深度是资产类级结论，
                          # 基准目标承载）
   # ⚠ 东财限流恢复态脆弱：封禁期后单次零星调用「预检通过」不代表恢复——
@@ -60,9 +61,12 @@ targets:
     # 代码直通——负闸门 bse-stock-fingerprint 2026-11-17 转正（东财 A 股
     # 接口 920 段开始返回真实数据，与既往多轮「不返回」相反），聚焦证据轮
     # daily/weekly/monthly × none/qfq/hfq 全实证（全史自上市日 2020-12-23
-    # 起 1429 行）后收编。仅 eastmoney 变体声明（sina/tencent 未探针不
-    # 声明）；复权生效性由同日证据轮 raw 实证（qfq/hfq 各 8 行），逐所
-    # adjust_diff 不随扩容（对齐既有口径）
+    # 起 1429 行）后收编。sina 变体 2026-11-18 同款收编——负闸门
+    # bse-sina-fingerprint 首验开启（bj920000 返回 8 行）后证据轮实证：
+    # 三复权同窗互异（open 8.03/7.72/10.04）、全史首根 2020-12-23 起约
+    # 1414 行互证，stock 白名单 per-variant 拆分放行；复权生效性由证据轮
+    # raw 实证，逐所 adjust_diff 不随扩容（对齐既有口径）。tencent 变体
+    # 不含 BSE（KeyError 指纹，负闸门 bse-tencent-fingerprint 继续监测）
     window: {start: 2025-01-01, end: 2025-12-31}
     min_bars: 10
     required_fields: [open, high, low, close, volume]
@@ -202,27 +206,20 @@ chain:
       reason: sina 变体指数白名单仅 SSE/SZSE，映射层拒绝 BSE（不做上游调用）
     - case: index@CN-BSE-P1D-none-tencent
       reason: tencent 变体指数白名单仅 SSE/SZSE，映射层拒绝 BSE（不做上游调用）
-    # stock@CN-BSE 仅 eastmoney 变体声明：sina/tencent 个股白名单仅
-    # {SSE, SZSE}（映射层拒绝 BSE），其全部 BSE availability case 显式
-    # 跳过（P1D × 三复权）——变体不对称如实留痕（与 index@CN-BSE 同款
-    # 模式），eastmoney 侧常态复验；收录监测由负闸门 bse-sina/
-    # tencent-fingerprint 承担（见 raw 段）
-    - case: stock@CN-BSE-P1D-none-sina
-      reason: sina 变体个股白名单仅 SSE/SZSE，映射层拒绝 BSE（不做上游调用）
-    - case: stock@CN-BSE-P1D-qfq-sina
-      reason: sina 变体个股白名单仅 SSE/SZSE，映射层拒绝 BSE（不做上游调用）
-    - case: stock@CN-BSE-P1D-hfq-sina
-      reason: sina 变体个股白名单仅 SSE/SZSE，映射层拒绝 BSE（不做上游调用）
+    # stock@CN-BSE eastmoney/sina 变体已收编（sina 2026-11-18，负闸门
+    # bse-sina-fingerprint 首验开启 + 证据轮三复权/全史实证后 per-variant
+    # 白名单放行）；tencent 变体个股白名单仅 {SSE, SZSE}（映射层拒绝
+    # BSE），其全部 BSE availability case 显式跳过（P1D × 三复权）——
+    # 变体不对称如实留痕，eastmoney/sina 侧常态复验；收录监测由负闸门
+    # bse-tencent-fingerprint 承担（见 raw 段）
     - case: stock@CN-BSE-P1D-none-tencent
       reason: tencent 变体个股白名单仅 SSE/SZSE，映射层拒绝 BSE（不做上游调用）
     - case: stock@CN-BSE-P1D-qfq-tencent
       reason: tencent 变体个股白名单仅 SSE/SZSE，映射层拒绝 BSE（不做上游调用）
     - case: stock@CN-BSE-P1D-hfq-tencent
       reason: tencent 变体个股白名单仅 SSE/SZSE，映射层拒绝 BSE（不做上游调用）
-    # history_depth 按 (interval × variant) 展开，BSE 深度仅 eastmoney
-    # 变体可达（sina/tencent 映射层拒绝），显式 skip 如实留痕
-    - case: history-depth-stock@CN-BSE-P1D-sina
-      reason: sina 变体个股白名单仅 SSE/SZSE，映射层拒绝 BSE（不做上游调用）
+    # history_depth 按 (interval × variant) 展开，BSE 深度 eastmoney/sina
+    # 变体可达（sina 2026-11-18 收编），tencent 显式 skip 如实留痕
     - case: history-depth-stock@CN-BSE-P1D-tencent
       reason: tencent 变体个股白名单仅 SSE/SZSE，映射层拒绝 BSE（不做上游调用）
   adjust_diff:
@@ -249,27 +246,19 @@ chain:
     tolerance: 0.01      # 指数新浪源多一位小数（±0.005）属表示层精度差，不是口径不一致
 
 raw:
-  # ── sina/tencent BSE 个股负闸门（2026-11-18 重建，bse-stock-fingerprint
-  #    先例口径）：东财变体 2026-11-17 转正收编 stock@CN-BSE 后，sina/
-  #    tencent 变体维持「未探针不声明」（八条 BSE case 显式 skip 留痕）。
-  #    本组负闸门直测上游「放行后适配器将发出的符号」（映射层前缀表
-  #    BSE→bj，白名单扩容前的形态）：调用成功返回数据（matched=True——
-  #    expect {ok, min_rows: 0} 语义为「调用成功即匹配」，首尾日期落窗
-  #    人工核对）→ 按先例人工评估白名单扩容 + skip 移除 + 声明收编；
-  #    错误/异常（matched=False）→ 指纹留档，维持现状。sina/tencent
-  #    不受东财限流影响
-  - id: bse-sina-fingerprint
-    purpose: 北交所个股（920000）在新浪 A 股接口（stock_zh_a_daily）的
-      支持性负闸门（观察不判定）：bj 前缀符号直测，行数与首尾日期即收录
-      证据；matched=True（调用成功返回数据）→ 触发扩容收编评估
-    module: akshare
-    call:
-      - {module_func: stock_zh_a_daily, kwargs: {symbol: "bj920000", start_date: "20251101", end_date: "20251112", adjust: ""}}
-    expect: {status: ok, min_rows: 0}
-    assert: false
+  # ── tencent BSE 个股负闸门（bse-stock-fingerprint 先例口径，2026-11-18
+  #    起 tencent 侧常态监测）：东财 2026-11-17 / sina 2026-11-18 已先后
+  #    转正收编 stock@CN-BSE；tencent 直测 bj920000 现为 KeyError 指纹
+  #   （SDK 解析层，收录状态不可判），负闸门继续监测收录——调用成功返回
+  #    数据（matched=True——expect {ok, min_rows: 0} 语义为「调用成功即
+  #    匹配」，首尾日期落窗人工核对）→ 按先例人工评估收编；错误/异常
+  #   （matched=False）→ 指纹留档维持现状。sina/tencent 不受东财限流
+  #    影响。sina 侧负闸门已随收编退役（2026-11-18，状态转 chain 常态
+  #    复验，「上游转正后退役本 case」设计使命完成）
   - id: bse-tencent-fingerprint
     purpose: 北交所个股（920000）在腾讯 A 股接口（stock_zh_a_hist_tx）的
-      支持性负闸门（观察不判定）：同 bse-sina-fingerprint 口径
+      支持性负闸门（观察不判定）：bj 前缀符号直测，行数与首尾日期即收录
+      证据；matched=True（调用成功返回数据）→ 触发扩容收编评估
     module: akshare
     call:
       - {module_func: stock_zh_a_hist_tx, kwargs: {symbol: "bj920000", start_date: "20251101", end_date: "20251112", adjust: ""}}

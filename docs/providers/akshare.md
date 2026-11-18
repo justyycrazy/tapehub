@@ -18,6 +18,7 @@
 | bars | CN | stock | eastmoney | `stock_zh_a_hist` | P1D/P1W/P1M | none/qfq/hfq | open/high/low/close/volume/amount |
 | bars | CN | stock（BSE） | eastmoney | `stock_zh_a_hist` | P1D/P1W/P1M | none/qfq/hfq | 同上 |
 | bars | CN | stock | sina | `stock_zh_a_daily` | P1D | none/qfq/hfq | 同上 |
+| bars | CN | stock（BSE） | sina | `stock_zh_a_daily` | P1D | none/qfq/hfq | 同上（`bj` 前缀符号） |
 | bars | CN | stock | tencent | `stock_zh_a_hist_tx` | P1D | none/qfq/hfq | 同上 |
 | bars | CN | index | eastmoney | `index_zh_a_hist` | P1D/P1W/P1M | none | open/high/low/close/volume/amount |
 | bars | CN | index | sina | `stock_zh_index_daily` | P1D | none | 无 amount |
@@ -40,14 +41,14 @@ history.start（历史覆盖声明，探针实测回填；二分近似窗口粒�
 | stock（HK，eastmoney） | P1D/P1W/P1M | 2000-01-01 | R6（HK 同 US 归一） |
 | stock（US，eastmoney） | P1D/P1W/P1M | 2000-01-01 | R1 |
 | contract（CN，sina） | P1D | null（2026-11-16 决议） | 合约级数据随挂牌起、随摘牌止，无资产类级固定起点——原 RB2410 全量锚定值 2023-10-17 随「合约类不统计历史深度」决议废止 |
-| stock（CN，BSE） | eastmoney P1D/P1W/P1M | 1990-12-19 | R3（库级口径沿用 CN stock 声明；BSE 标的均 2020 年后上市，各标的数据以自身上市日起。仅 eastmoney 变体，sina/tencent 未探针不声明） |
+| stock（CN，BSE） | eastmoney P1D/P1W/P1M；sina P1D | 1990-12-19 | R3（库级口径沿用 CN stock 声明；BSE 标的均 2020 年后上市，各标的数据以自身上市日起——sina 侧基准 920000 实测自上市日 2020-12-23 起约 1414 行、三复权同窗互异，2026-11-18 聚焦证据轮收编。tencent 变体不含 BSE，KeyError 指纹未收录） |
 | continuous（CN，sina） | P1D | 2009-03-01 | R4 |
 
 ## 标的代码映射
 
 标准代码 `{market}-{exchange}-{symbol}` → 上游 symbol：
 
-- 个股：eastmoney 用纯 6 位代码（SSE/SZSE/BSE——BSE 920 段 2026-11-17 探针实证已收录，纯 6 位直通上游按市场判定）；sina/tencent 用带市场前缀符号（`SSE→sh`、`SZSE→sz`，如 `sh600000`；仅 SSE/SZSE，BSE 未探针不声明）；
+- 个股：eastmoney 用纯 6 位代码（SSE/SZSE/BSE——BSE 920 段 2026-11-17 探针实证已收录，纯 6 位直通上游按市场判定）；sina 用带市场前缀符号（`SSE→sh`、`SZSE→sz`、`BSE→bj`，如 `sh600000`、`bj920000`——BSE 920 段 2026-11-18 探针实证已收录）；tencent 用带市场前缀符号（`SSE→sh`、`SZSE→sz`，如 `sh600000`；仅 SSE/SZSE，BSE KeyError 指纹未收录，负闸门常态监测）；
 - 指数：eastmoney（`index_zh_a_hist`）为**纯 6 位代码**（`CN-SSE-000001 → 000001`），上游按指数代码映射表自动判定市场（SSE/SZSE/CSI/BSE 探针实测覆盖；映射表首次调用拉取，进程内缓存）；sina/tencent 为带前缀符号（如 `sh000001`），仅支持 SSE/SZSE；
 - ETF（eastmoney）：纯 6 位代码原样传递（`CN-SSE-510050 → 510050`、`CN-SZSE-159915 → 159915`），上游按代码首位自动判断沪深（5/6 开头→沪、其余→深）；
 - 港股（eastmoney）：5 位数字代码，短代码零填充归一（`HK-HKEX-700 → 00700`，上游 secid `116.{symbol}`）；非 HKEX 或非纯数字代码拒绝；

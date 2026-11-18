@@ -126,6 +126,29 @@ def test_tencent_stock_symbol(
     assert batch.bars[0].volume == 1234500.0
 
 
+def test_sina_bse_stock_symbol_prefix(
+    akshare_adapter: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # sina 个股 BSE→bj 前缀（2026-11-18 探针实证收录收编，stock 白名单
+    # per-variant 拆分后 sina 放行 BSE；tencent 仍拒绝，见下方拒绝测试）
+    stub = _install_stub(monkeypatch)
+    stub.set_rows("stock_zh_a_daily", stock_rows_en(["2026-01-01"]))
+
+    query = _query(variant=DataVariant.SINA, instrument=Instrument.parse("CN-BSE-920000"))
+    asyncio.run(akshare_adapter.fetch_bars(query))
+
+    _, kwargs = stub.calls[0]
+    assert kwargs["symbol"] == "bj920000"
+
+
+def test_tencent_bse_stock_rejected(akshare_adapter: Any) -> None:
+    # tencent 个股白名单仅 SSE/SZSE：BSE（bj920000 KeyError 指纹未收录）
+    # 映射层拒绝，收录状态由负闸门 bse-tencent-fingerprint 常态监测
+    query = _query(variant=DataVariant.TENCENT, instrument=Instrument.parse("CN-BSE-920000"))
+    with pytest.raises(UnsupportedCapabilityError):
+        asyncio.run(akshare_adapter.fetch_bars(query))
+
+
 def test_em_stock_weekly_period(
     akshare_adapter: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
