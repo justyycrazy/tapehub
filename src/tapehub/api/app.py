@@ -93,17 +93,24 @@ def create_app(
     app.state.capability_service = CapabilityService(registry)
     app.state.instrument_resolve_service = InstrumentResolveService()
     router = ProviderRouter(registry)
+    # 服务层凭据脱敏（scrub）来源：Settings.credential_values() 集中枚举
+    secret_values = settings.credential_values()
     app.state.bar_query_service = BarQueryService(
-        router, upstream_timeout_seconds=settings.upstream_timeout_seconds
+        router,
+        upstream_timeout_seconds=settings.upstream_timeout_seconds,
+        secret_values=secret_values,
     )
     app.state.quote_query_service = QuoteQueryService(
-        router, upstream_timeout_seconds=settings.upstream_timeout_seconds
+        router,
+        upstream_timeout_seconds=settings.upstream_timeout_seconds,
+        secret_values=secret_values,
     )
     app.state.quote_stream_service = QuoteStreamService(
         router,
         max_clients=settings.stream_max_clients,
         heartbeat_seconds=settings.stream_heartbeat_seconds,
         idle_timeout_seconds=settings.stream_idle_timeout_seconds,
+        secret_values=secret_values,
     )
 
     app.add_middleware(RequestContextMiddleware)

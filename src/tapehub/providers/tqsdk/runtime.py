@@ -45,6 +45,21 @@ _CONSTRUCT_BACKOFF_CAP_SECONDS = 60.0
 logger = logging.getLogger("tapehub.tqsdk.runtime")
 
 
+def _scrub(text: str, values: tuple[str, ...]) -> str:
+    """日志与错误消息脱敏：把认证值替换为 *** 。
+
+    TqApi 构造/订阅异常文本可能回显 TqAuth 账户信息；此类文本既进日志、
+    也经 FATAL 分支的 details 与 inflight 失败 reason 到达客户端响应
+    （UpstreamError 的 message/details 原样透出），脱敏在源头统一收口。
+    与 twelvedata/tiingo runtime 的本地 ``_scrub`` 同款先例（provider 层
+    不反向依赖 application 层的共享助手）。
+    """
+    for value in values:
+        if value:
+            text = text.replace(value, "***")
+    return text
+
+
 class _GenerationReset(Exception):
     """内部信号：当前 TqApi 代际作废（跨交易日回收 / watchdog），重建新一代。"""
 
@@ -96,6 +111,8 @@ class TqSdkRuntime:
     ) -> None:
         self._auth_user = auth_user
         self._auth_password = auth_password
+        # 脱敏值（认证账户/密码）：异常文本进日志或错误响应前统一替换
+        self._scrub_values = (auth_user, auth_password)
         self._max_inflight = max_inflight
         self._tick_seconds = tick_seconds
         self._construct_timeout = construct_timeout
@@ -185,7 +202,13 @@ class TqSdkRuntime:
             if self._status == RuntimeStatus.FATAL:
                 raise UpstreamError(
                     "tqsdk runtime is in fatal state.",
-                    details={"error": str(self._last_error) if self._last_error else None},
+                    details={
+                        "error": (
+                            _scrub(str(self._last_error), self._scrub_values)
+                            if self._last_error
+                            else None
+                        )
+                    },
                 )
             if self._inflight >= self._max_inflight:
                 raise ConcurrencyLimitError(
@@ -221,7 +244,13 @@ class TqSdkRuntime:
             if self._status == RuntimeStatus.FATAL:
                 raise UpstreamError(
                     "tqsdk runtime is in fatal state.",
-                    details={"error": str(self._last_error) if self._last_error else None},
+                    details={
+                        "error": (
+                            _scrub(str(self._last_error), self._scrub_values)
+                            if self._last_error
+                            else None
+                        )
+                    },
                 )
             refs = self._sub_refs.get(symbol, 0)
             self._sub_refs[symbol] = refs + 1
@@ -354,9 +383,12 @@ class TqSdkRuntime:
             with self._lock:
                 self._last_error = exc
                 self._status = RuntimeStatus.FATAL
-            logger.error("tqsdk runtime thread died: %r", exc)
+            # 原文经 scrub 后再进日志与 inflight 失败 reason（reason 会成为
+            # UpstreamError 的 message 到达客户端，见 _fail_all_jobs）
+            scrubbed = _scrub(repr(exc), self._scrub_values)
+            logger.error("tqsdk runtime thread died: %s", scrubbed)
             self._ready.set()  # 唤醒 start() 的等待（否则空等 construct_timeout）
-            self._fail_all_jobs(f"tqsdk runtime thread died: {exc!r}")
+            self._fail_all_jobs(f"tqsdk runtime thread died: {scrubbed}")
 
     def _thread_main_inner(self) -> None:
         from tqsdk import TqApi, TqAuth  # 延迟导入：SDK 未安装时 fatal
@@ -401,9 +433,9 @@ class TqSdkRuntime:
                     _CONSTRUCT_BACKOFF_CAP_SECONDS,
                 )
                 logger.warning(
-                    "tqsdk runtime construction failed (attempt %d): %r; retrying in %.1fs",
+                    "tqsdk runtime construction failed (attempt %d): %s; retrying in %.1fs",
                     attempt,
-                    exc,
+                    _scrub(repr(exc), self._scrub_values),
                     backoff,
                 )
                 continue
@@ -436,7 +468,9 @@ class TqSdkRuntime:
             except _GenerationReset as exc:
                 reset_reason = exc.reason
             except Exception as exc:  # noqa: BLE001 - tick 循环未知异常也按代际重建处理
-                reset_reason = f"unexpected tick-loop error: {exc!r}"
+                # reason 经 _fail_inflight 成为客户端可见错误消息，脱敏后组装
+                scrubbed = _scrub(repr(exc), self._scrub_values)
+                reset_reason = f"unexpected tick-loop error: {scrubbed}"
                 with self._lock:
                     self._last_error = exc
             # 新一代重建：通知流监听器（仍被引用的订阅将自动重订并恢复推送）
@@ -582,7 +616,11 @@ class TqSdkRuntime:
         try:
             quote = await api.get_quote(symbol)
         except Exception as exc:  # noqa: BLE001 - 单标的订阅失败不伤实例
-            logger.warning("tqsdk quote subscribe failed for %s: %r", symbol, exc)
+            logger.warning(
+                "tqsdk quote subscribe failed for %s: %s",
+                symbol,
+                _scrub(repr(exc), self._scrub_values),
+            )
             with self._lock:
                 self._last_error = exc
             return
@@ -608,7 +646,11 @@ class TqSdkRuntime:
                 if api.is_changing(quote):
                     changed[symbol] = self._stamp_snapshot(quote)
             except Exception as exc:  # noqa: BLE001 - 单标的判定异常不伤实例
-                logger.warning("tqsdk is_changing failed for %s: %r", symbol, exc)
+                logger.warning(
+                    "tqsdk is_changing failed for %s: %s",
+                    symbol,
+                    _scrub(repr(exc), self._scrub_values),
+                )
         if changed:
             with self._lock:
                 # 只刷新仍处于活跃集合的订阅（发布窗口内退订的标的不复活）

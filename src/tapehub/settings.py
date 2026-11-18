@@ -115,3 +115,27 @@ class Settings(BaseSettings):
         if self.max_limit < 1:
             raise ValueError("max_limit must be >= 1")
         return self
+
+    def credential_values(self) -> tuple[str, ...]:
+        """全部 Provider 凭据值（非空者），供日志脱敏使用。
+
+        字段与 ``providers/registry.py`` 的 ``_REQUIRED_CREDENTIALS`` 对应
+        （新增凭据字段时两处同步登记）；``futunn_private_key_path`` 是本地
+        文件路径而非密钥值，不纳入。仅收集非空值：空串替换无意义。
+        """
+        fields = (
+            "tickflow_api_key",
+            "alphafeed_api_key",
+            "tushare_token",
+            "tqsdk_auth_user",
+            "tqsdk_auth_password",
+            "tiingo_api_key",
+            "twelvedata_api_key",
+            "ths_api_key",
+            "futunn_app_key",
+        )
+        return tuple(
+            value
+            for value in (str(getattr(self, field, "") or "").strip() for field in fields)
+            if value
+        )

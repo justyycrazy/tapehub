@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from tapehub.application.provider_router import ProviderRouter
+from tapehub.application.scrub import scrub
 from tapehub.domain.errors import StreamLimitReachedError, UnsupportedCapabilityError
 from tapehub.domain.models import QuoteQuery, QuoteStreamEvent, StreamStatusKind
 
@@ -104,11 +105,15 @@ class QuoteStreamService:
         max_clients: int = 8,
         heartbeat_seconds: float = 15.0,
         idle_timeout_seconds: float = 300.0,
+        secret_values: tuple[str, ...] = (),
     ) -> None:
+        """``secret_values``：Provider 凭据值（``Settings.credential_values()``），
+        供流内上游异常/关闭异常日志脱敏（同 bars/quotes 服务，见 scrub.py）。"""
         self._router = router
         self._max_clients = max_clients
         self._heartbeat_seconds = heartbeat_seconds
         self._idle_timeout_seconds = idle_timeout_seconds
+        self._secret_values = secret_values
         self._lock = threading.Lock()
         self._clients = 0
         self._slots: set[_ClientSlot] = set()
@@ -200,7 +205,9 @@ class QuoteStreamService:
                         raise
                     except Exception as exc:  # noqa: BLE001 - 流中错误事件化收尾
                         logger.warning(
-                            "quote stream upstream failed: %s: %s", type(exc).__name__, exc
+                            "quote stream upstream failed: %s: %s",
+                            type(exc).__name__,
+                            scrub(str(exc), self._secret_values),
                         )
                         yield QuoteStreamEvent(status=StreamStatusKind.UPSTREAM_DISCONNECTED)
                         return
@@ -229,7 +236,11 @@ class QuoteStreamService:
             try:
                 await upstream.aclose()
             except Exception as exc:  # noqa: BLE001 - 清理异常只记录
-                logger.warning("quote stream close failed: %s: %s", type(exc).__name__, exc)
+                logger.warning(
+                    "quote stream close failed: %s: %s",
+                    type(exc).__name__,
+                    scrub(str(exc), self._secret_values),
+                )
 
     def _release(self, slot: _ClientSlot) -> None:
         """幂等释放客户端配额（生成器 finally 与迭代器 aclose 双路径兜底）。"""
