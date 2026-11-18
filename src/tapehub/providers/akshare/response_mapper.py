@@ -74,14 +74,19 @@ _FUTURES_SINA_EXTENSIONS = {"hold": "hold", "settle": "settle"}
 
 
 def _to_float(value: Any) -> float | None:
-    """转换为 float；None/NaN/不可转换值返回 None，不用 0 冒充。"""
+    """转换为 float；None/NaN/±inf/不可转换值返回 None，不用 0 冒充。
+
+    ±inf 与 NaN 同语义置 null：JSON 路由经 pydantic 序列化会把 inf 静默
+    置 null（未声明口径），SSE 帧经 ``json.dumps`` 则输出非法 JSON token
+    （``Infinity``，严格解析器拒收）——非有限值不进入统一口径。
+    """
     if value is None:
         return None
     try:
         result = float(value)
     except (TypeError, ValueError):
         return None
-    if math.isnan(result):
+    if math.isnan(result) or math.isinf(result):
         return None
     return result
 
